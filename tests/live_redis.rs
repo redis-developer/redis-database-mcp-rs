@@ -1,8 +1,104 @@
+use std::time::Duration;
+
 use redis_mcp::{AccessMode, DirectRedis, RedisMcp, tool_names};
 use tower_mcp::client::{ChannelTransport, McpClient, StdioClientTransport};
 
-fn redis_url() -> Option<String> {
-    std::env::var("REDIS_URL").ok()
+#[cfg(unix)]
+use redis_mcp::RedisErrorKind;
+#[cfg(unix)]
+use redis_server_wrapper::{
+    Direction, Error as RedisServerError, FaultProxy, RedisServer, RedisServerHandle,
+};
+
+struct TestRedis {
+    url: String,
+    #[cfg(unix)]
+    _managed: Option<ManagedRedis>,
+}
+
+impl TestRedis {
+    async fn start() -> Option<Self> {
+        if let Ok(url) = std::env::var("REDIS_URL") {
+            return Some(Self {
+                url,
+                #[cfg(unix)]
+                _managed: None,
+            });
+        }
+
+        #[cfg(unix)]
+        {
+            match ManagedRedis::start().await {
+                Ok(managed) => Some(Self {
+                    url: managed.url(),
+                    _managed: Some(managed),
+                }),
+                Err(RedisServerError::BinaryNotFound { binary }) => {
+                    eprintln!(
+                        "skipping live Redis test: REDIS_URL is not set and {binary} is not on PATH"
+                    );
+                    None
+                }
+                Err(error) => panic!("start wrapper-managed Redis: {error}"),
+            }
+        }
+
+        #[cfg(not(unix))]
+        {
+            eprintln!(
+                "skipping live Redis test: REDIS_URL is not set and self-hosting requires Unix"
+            );
+            None
+        }
+    }
+}
+
+#[cfg(unix)]
+struct ManagedRedis {
+    _server: RedisServerHandle,
+    _directory: tempfile::TempDir,
+    port: u16,
+}
+
+#[cfg(unix)]
+impl ManagedRedis {
+    async fn start() -> Result<Self, RedisServerError> {
+        let directory = tempfile::tempdir().expect("create Redis test directory");
+        let port = available_port();
+        let server = start_server(port, directory.path()).await?;
+        Ok(Self {
+            _server: server,
+            _directory: directory,
+            port,
+        })
+    }
+
+    fn url(&self) -> String {
+        format!("redis://127.0.0.1:{}/", self.port)
+    }
+}
+
+#[cfg(unix)]
+fn available_port() -> u16 {
+    std::net::TcpListener::bind(("127.0.0.1", 0))
+        .expect("reserve an ephemeral Redis test port")
+        .local_addr()
+        .expect("read ephemeral Redis test port")
+        .port()
+}
+
+#[cfg(unix)]
+async fn start_server(
+    port: u16,
+    directory: &std::path::Path,
+) -> Result<RedisServerHandle, RedisServerError> {
+    RedisServer::new()
+        .port(port)
+        .bind("127.0.0.1")
+        .dir(directory)
+        .no_stack_modules()
+        .start()
+        .await
 }
 
 fn test_key(suffix: &str) -> String {
@@ -15,10 +111,19 @@ fn with_protocol(url: &str, protocol: &str) -> String {
 }
 
 async fn router_client(url: &str, access: AccessMode) -> McpClient {
+    router_client_with_timeout(url, access, Duration::from_secs(30)).await
+}
+
+async fn router_client_with_timeout(
+    url: &str,
+    access: AccessMode,
+    command_timeout: Duration,
+) -> McpClient {
     let executor = DirectRedis::connect(url).await.expect("connect to Redis");
     let router = RedisMcp::builder(executor)
         .access(access)
         .raw_commands(access == AccessMode::Full)
+        .command_timeout(command_timeout)
         .build();
     let client = McpClient::connect(ChannelTransport::new(router))
         .await
@@ -32,10 +137,10 @@ async fn router_client(url: &str, access: AccessMode) -> McpClient {
 
 #[tokio::test]
 async fn live_redis_round_trip_through_router() {
-    let Some(url) = redis_url() else {
-        eprintln!("skipping live Redis test: REDIS_URL is not set");
+    let Some(redis) = TestRedis::start().await else {
         return;
     };
+    let url = redis.url;
 
     for protocol in ["resp2", "resp3"] {
         let client = router_client(&with_protocol(&url, protocol), AccessMode::Full).await;
@@ -68,10 +173,10 @@ async fn live_redis_round_trip_through_router() {
 
 #[tokio::test]
 async fn live_curated_catalog_round_trip_in_resp2_and_resp3() {
-    let Some(url) = redis_url() else {
-        eprintln!("skipping curated live Redis test: REDIS_URL is not set");
+    let Some(redis) = TestRedis::start().await else {
         return;
     };
+    let url = redis.url;
 
     for protocol in ["resp2", "resp3"] {
         let client = router_client(&with_protocol(&url, protocol), AccessMode::Full).await;
@@ -263,10 +368,10 @@ async fn live_curated_catalog_round_trip_in_resp2_and_resp3() {
 
 #[tokio::test]
 async fn live_binary_values_remain_explicit_in_resp2_and_resp3() {
-    let Some(url) = redis_url() else {
-        eprintln!("skipping binary live Redis test: REDIS_URL is not set");
+    let Some(redis) = TestRedis::start().await else {
         return;
     };
+    let url = redis.url;
 
     for protocol in ["resp2", "resp3"] {
         let protocol_url = with_protocol(&url, protocol);
@@ -375,10 +480,10 @@ async fn live_binary_values_remain_explicit_in_resp2_and_resp3() {
 
 #[tokio::test]
 async fn live_redis_round_trip_through_stdio_server() {
-    let Some(url) = redis_url() else {
-        eprintln!("skipping stdio test: REDIS_URL is not set");
+    let Some(redis) = TestRedis::start().await else {
         return;
     };
+    let url = redis.url;
 
     let binary = env!("CARGO_BIN_EXE_redis-mcp-server");
     let transport = StdioClientTransport::spawn(
@@ -455,4 +560,153 @@ async fn live_redis_round_trip_through_stdio_server() {
         .call_tool("redis_del", serde_json::json!({"keys": [key, hash_key]}))
         .await
         .expect("delete stdio test key");
+}
+
+#[cfg(unix)]
+#[tokio::test]
+async fn live_acl_failures_are_classified_without_leaking_credentials() {
+    let Some(redis) = TestRedis::start().await else {
+        return;
+    };
+    let password = "mcp-test-secret-42";
+    let username = format!("mcp_reader_{}", std::process::id());
+
+    let admin = redis::Client::open(redis.url.as_str()).expect("open admin Redis client");
+    let mut connection = admin
+        .get_multiplexed_async_connection()
+        .await
+        .expect("connect admin Redis client");
+    redis::cmd("ACL")
+        .arg("SETUSER")
+        .arg(&username)
+        .arg("reset")
+        .arg("on")
+        .arg(format!(">{password}"))
+        .arg("~*")
+        .arg("+ping")
+        .arg("+get")
+        .query_async::<()>(&mut connection)
+        .await
+        .expect("create restricted ACL user");
+
+    let mut restricted_url = redis::parse_redis_url(&redis.url).expect("parse Redis test URL");
+    restricted_url
+        .set_username(&username)
+        .expect("set restricted Redis username");
+    restricted_url
+        .set_password(Some("wrong-password"))
+        .expect("set wrong Redis password");
+    let authentication = match DirectRedis::connect(restricted_url.as_str()).await {
+        Ok(_) => panic!("wrong Redis password unexpectedly authenticated"),
+        Err(error) => error,
+    };
+    assert_eq!(authentication.kind(), RedisErrorKind::Authentication);
+    assert!(!authentication.to_string().contains("wrong-password"));
+
+    restricted_url
+        .set_password(Some(password))
+        .expect("set restricted Redis password");
+    let client = router_client(restricted_url.as_str(), AccessMode::ReadWrite).await;
+    let allowed = client
+        .call_tool(
+            "redis_get",
+            serde_json::json!({"key": test_key("acl-readable")}),
+        )
+        .await
+        .expect("ACL-allowed GET");
+    assert!(!allowed.is_error);
+
+    let denied = client
+        .call_tool(
+            "redis_set",
+            serde_json::json!({"key": test_key("acl-denied"), "value": "blocked"}),
+        )
+        .await
+        .expect("ACL-denied SET is represented as a tool result");
+    assert!(denied.is_error);
+    let denied = serde_json::to_string(&denied).expect("serialize ACL denial");
+    assert!(denied.contains("[Authorization]"), "{denied}");
+    assert!(!denied.contains(password));
+
+    redis::cmd("ACL")
+        .arg("DELUSER")
+        .arg(&username)
+        .query_async::<()>(&mut connection)
+        .await
+        .expect("delete restricted ACL user");
+}
+
+#[cfg(unix)]
+#[tokio::test]
+async fn live_connection_loss_is_bounded_and_direct_redis_recovers() {
+    let Some(redis) = TestRedis::start().await else {
+        return;
+    };
+    let target_url = redis::parse_redis_url(&redis.url).expect("parse Redis test URL");
+    let Some(target_host) = target_url.host_str() else {
+        eprintln!("skipping reconnect test: Redis URL does not use a TCP host");
+        return;
+    };
+    let target_port = target_url.port().unwrap_or(6379);
+    let proxy = FaultProxy::spawn((target_host, target_port))
+        .await
+        .expect("start Redis fault proxy");
+    let mut proxy_url = target_url.clone();
+    proxy_url
+        .set_host(Some(&proxy.addr().ip().to_string()))
+        .expect("set Redis fault-proxy host");
+    proxy_url
+        .set_port(Some(proxy.addr().port()))
+        .expect("set Redis fault-proxy port");
+    let client = router_client_with_timeout(
+        proxy_url.as_str(),
+        AccessMode::ReadOnly,
+        Duration::from_millis(250),
+    )
+    .await;
+
+    let initial = client
+        .call_tool("redis_ping", serde_json::json!({}))
+        .await
+        .expect("initial PING");
+    assert!(!initial.is_error);
+
+    proxy.close_after(Direction::UpstreamToClient, 1);
+    let disconnected = tokio::time::timeout(
+        Duration::from_secs(2),
+        client.call_tool("redis_ping", serde_json::json!({})),
+    )
+    .await
+    .expect("library command timeout bounds connection loss")
+    .expect("connection loss is represented as a tool result");
+    assert!(disconnected.is_error);
+    let disconnected = serde_json::to_string(&disconnected).expect("serialize disconnected result");
+    assert!(
+        disconnected.contains("[Connection]") || disconnected.contains("timed out"),
+        "{disconnected}"
+    );
+
+    proxy.clear_close_after(Direction::UpstreamToClient);
+    let deadline = tokio::time::Instant::now() + Duration::from_secs(5);
+    loop {
+        let result = client
+            .call_tool("redis_ping", serde_json::json!({}))
+            .await
+            .expect("reconnect PING is represented as a tool result");
+        if !result.is_error {
+            break;
+        }
+        assert!(
+            tokio::time::Instant::now() < deadline,
+            "existing DirectRedis connection manager did not recover: {result:?}"
+        );
+        tokio::time::sleep(Duration::from_millis(100)).await;
+    }
+
+    let fresh = router_client(proxy_url.as_str(), AccessMode::ReadOnly).await;
+    let fresh_ping = fresh
+        .call_tool("redis_ping", serde_json::json!({}))
+        .await
+        .expect("fresh DirectRedis PING");
+    assert!(!fresh_ping.is_error);
 }

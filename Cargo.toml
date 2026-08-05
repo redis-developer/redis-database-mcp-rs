@@ -37,3 +37,7 @@ tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 [dev-dependencies]
 pretty_assertions = "1.4"
 tower-mcp = { version = "0.19", features = ["childproc", "protocol-2026-07-28"] }
+
+[target.'cfg(unix)'.dev-dependencies]
+redis-server-wrapper = "0.4.3"
+tempfile = "3"

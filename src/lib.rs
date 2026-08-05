@@ -176,7 +176,7 @@ impl std::fmt::Display for RedisMcpBuildError {
 
 impl std::error::Error for RedisMcpBuildError {}
 
-/// Stable tool names in the initial curated surface.
+/// Stable tool names in the curated default surface.
 pub fn tool_names(access: AccessMode, raw_commands: bool) -> Vec<&'static str> {
     tool_names_for(access, ToolBundle::DEFAULTS.iter().copied(), raw_commands)
 }

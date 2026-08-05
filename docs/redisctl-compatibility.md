@@ -30,8 +30,9 @@ Redis Stack behavior is covered primarily by `tests/redis_tools.rs` and
 
 ## Current overlap
 
-The initial library implements ten names from the baseline. Matching a name
-does not imply an identical contract:
+The curated library implements 30 names from the baseline: 29 default tools and
+the separately enabled raw tool. Matching a name does not imply an identical
+contract:
 
 | Tool | Input compatibility | Intentional library behavior |
 | --- | --- | --- |
@@ -45,6 +46,22 @@ does not imply an identical contract:
 | `redis_set` | `key` and `value` match. redisctl uses `ex`, `px`, `nx`, and `xx`; the initial library only has `expires_in_seconds`. | Structured result. Full conditional/expiry compatibility must be decided before catalog migration. |
 | `redis_del` | `keys` matches; redisctl also injects target fields. | Enforces 1–1000 keys and returns requested/deleted counts. |
 | `redis_command` | redisctl uses `args`, `dry_run`, `url`, and `profile`; the library uses `arguments` and fixed-target configuration. | Structured RESP output, a library timeout, classified fail-closed mode, and a separate unrestricted opt-in. This is intentionally not wire-compatible today. |
+
+The expanded overlap also includes `redis_exists`, `redis_mget`,
+`redis_strlen`, `redis_memory_usage`, `redis_randomkey`, `redis_expire`,
+`redis_persist`, `redis_mset`, `redis_incr`, `redis_append`, `redis_unlink`,
+`redis_hget`, `redis_hgetall`, `redis_hset`, `redis_lrange`, `redis_lpush`,
+`redis_smembers`, `redis_sadd`, `redis_zrange`, and `redis_zadd`.
+
+- Redis-domain input names remain compatible where practical (`keys`,
+  `entries`, `fields`, `elements`, `members`, and the ZADD/ZRANGE flags).
+- Every collection input is bounded to 1–1000 items in both JSON Schema and
+  handler validation.
+- `redis_expire` accepts only positive seconds at the read-write tier; Redis's
+  delete-on-nonpositive behavior belongs behind full access instead.
+- Collection reads use explicit UTF-8/base64 encodings and deterministic order
+  where Redis itself is unordered (hash fields and set members).
+- Outputs are structured rather than preserving redisctl's prose rendering.
 
 ## Bundle mapping direction
 

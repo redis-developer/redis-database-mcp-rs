@@ -13,7 +13,21 @@ pub enum AccessMode {
 }
 
 impl AccessMode {
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::ReadOnly => "read_only",
+            Self::ReadWrite => "read_write",
+            Self::Full => "full",
+        }
+    }
+
     pub(crate) fn permits(self, required: Self) -> bool {
         self >= required
+    }
+}
+
+impl std::fmt::Display for AccessMode {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str(self.as_str())
     }
 }

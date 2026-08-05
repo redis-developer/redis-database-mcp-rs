@@ -1,0 +1,39 @@
+[package]
+name = "redis-mcp"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.90"
+authors = ["Josh Rotenberg <josh.rotenberg@redis.com>"]
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/redis-developer/redis-database-mcp-rs"
+homepage = "https://github.com/redis-developer/redis-database-mcp-rs"
+documentation = "https://docs.rs/redis-mcp"
+description = "Composable MCP tools for Redis databases"
+keywords = ["redis", "mcp", "database", "ai", "tower"]
+categories = ["database", "development-tools"]
+readme = "README.md"
+
+[lib]
+name = "redis_mcp"
+path = "src/lib.rs"
+
+[[bin]]
+name = "redis-mcp-server"
+path = "src/main.rs"
+
+[dependencies]
+async-trait = "0.1"
+base64 = "0.23"
+clap = { version = "4", features = ["derive", "env"] }
+redis = { version = "1.5", default-features = false, features = ["connection-manager", "tokio-rustls-comp"] }
+schemars = "1.2"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tokio = { version = "1.40", features = ["macros", "rt-multi-thread", "time"] }
+tower-mcp = { version = "0.19", features = ["protocol-2026-07-28"] }
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+
+[dev-dependencies]
+pretty_assertions = "1.4"
+tower-mcp = { version = "0.19", features = ["childproc", "protocol-2026-07-28"] }

@@ -1,6 +1,60 @@
 {
   "catalog": [
     {
+      "bundle": "essentials",
+      "name": "redis_append",
+      "protocol": {
+        "annotations": {
+          "destructiveHint": false
+        },
+        "description": "Append a UTF-8 value to a Redis string and return its new byte length.",
+        "inputSchema": {
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "key": {
+              "description": "Redis key.",
+              "type": "string"
+            },
+            "value": {
+              "description": "UTF-8 value to append.",
+              "type": "string"
+            }
+          },
+          "required": [
+            "key",
+            "value"
+          ],
+          "title": "AppendInput",
+          "type": "object"
+        },
+        "name": "redis_append",
+        "outputSchema": {
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "key": {
+              "type": "string"
+            },
+            "length_bytes": {
+              "format": "uint64",
+              "minimum": 0,
+              "type": "integer"
+            }
+          },
+          "required": [
+            "key",
+            "length_bytes"
+          ],
+          "title": "AppendOutput",
+          "type": "object"
+        },
+        "title": "Append Redis String"
+      },
+      "required_access": "read_write",
+      "requires_raw_opt_in": false
+    },
+    {
       "bundle": "raw",
       "name": "redis_command",
       "protocol": {
@@ -145,6 +199,129 @@
     },
     {
       "bundle": "essentials",
+      "name": "redis_exists",
+      "protocol": {
+        "annotations": {
+          "destructiveHint": false,
+          "idempotentHint": true,
+          "readOnlyHint": true
+        },
+        "description": "Count how many of the requested Redis keys currently exist.",
+        "inputSchema": {
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "keys": {
+              "description": "Redis keys. Between 1 and 1000 keys are accepted per call.",
+              "items": {
+                "type": "string"
+              },
+              "maxItems": 1000,
+              "minItems": 1,
+              "type": "array"
+            }
+          },
+          "required": [
+            "keys"
+          ],
+          "title": "KeysInput",
+          "type": "object"
+        },
+        "name": "redis_exists",
+        "outputSchema": {
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "all_exist": {
+              "type": "boolean"
+            },
+            "existing": {
+              "format": "uint64",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "requested": {
+              "format": "uint",
+              "minimum": 0,
+              "type": "integer"
+            }
+          },
+          "required": [
+            "requested",
+            "existing",
+            "all_exist"
+          ],
+          "title": "ExistsOutput",
+          "type": "object"
+        },
+        "title": "Check Redis Keys"
+      },
+      "required_access": "read_only",
+      "requires_raw_opt_in": false
+    },
+    {
+      "bundle": "essentials",
+      "name": "redis_expire",
+      "protocol": {
+        "annotations": {
+          "destructiveHint": false,
+          "idempotentHint": true
+        },
+        "description": "Set a positive key expiration in seconds. Missing keys are reported without error.",
+        "inputSchema": {
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "key": {
+              "description": "Redis key.",
+              "type": "string"
+            },
+            "seconds": {
+              "description": "Positive expiration in seconds.",
+              "format": "uint64",
+              "minimum": 1,
+              "type": "integer"
+            }
+          },
+          "required": [
+            "key",
+            "seconds"
+          ],
+          "title": "ExpireInput",
+          "type": "object"
+        },
+        "name": "redis_expire",
+        "outputSchema": {
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "applied": {
+              "type": "boolean"
+            },
+            "key": {
+              "type": "string"
+            },
+            "seconds": {
+              "format": "uint64",
+              "minimum": 0,
+              "type": "integer"
+            }
+          },
+          "required": [
+            "key",
+            "seconds",
+            "applied"
+          ],
+          "title": "ExpireOutput",
+          "type": "object"
+        },
+        "title": "Expire Redis Key"
+      },
+      "required_access": "read_write",
+      "requires_raw_opt_in": false
+    },
+    {
+      "bundle": "essentials",
       "name": "redis_get",
       "protocol": {
         "annotations": {
@@ -218,6 +395,296 @@
       "requires_raw_opt_in": false
     },
     {
+      "bundle": "data_structures",
+      "name": "redis_hget",
+      "protocol": {
+        "annotations": {
+          "destructiveHint": false,
+          "idempotentHint": true,
+          "readOnlyHint": true
+        },
+        "description": "Read one Redis hash field. Binary values are returned as base64.",
+        "inputSchema": {
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "field": {
+              "description": "Hash field.",
+              "type": "string"
+            },
+            "key": {
+              "description": "Redis hash key.",
+              "type": "string"
+            }
+          },
+          "required": [
+            "key",
+            "field"
+          ],
+          "title": "HashFieldInput",
+          "type": "object"
+        },
+        "name": "redis_hget",
+        "outputSchema": {
+          "$defs": {
+            "ValueEncoding": {
+              "enum": [
+                "utf8",
+                "base64"
+              ],
+              "type": "string"
+            }
+          },
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "encoding": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/ValueEncoding"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "exists": {
+              "type": "boolean"
+            },
+            "field": {
+              "type": "string"
+            },
+            "key": {
+              "type": "string"
+            },
+            "value": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          "required": [
+            "key",
+            "field",
+            "exists"
+          ],
+          "title": "HgetOutput",
+          "type": "object"
+        },
+        "title": "Get Redis Hash Field"
+      },
+      "required_access": "read_only",
+      "requires_raw_opt_in": false
+    },
+    {
+      "bundle": "data_structures",
+      "name": "redis_hgetall",
+      "protocol": {
+        "annotations": {
+          "destructiveHint": false,
+          "idempotentHint": true,
+          "readOnlyHint": true
+        },
+        "description": "Read all fields and values in a Redis hash with binary-safe encodings.",
+        "inputSchema": {
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "key": {
+              "description": "Redis key.",
+              "type": "string"
+            }
+          },
+          "required": [
+            "key"
+          ],
+          "title": "KeyInput",
+          "type": "object"
+        },
+        "name": "redis_hgetall",
+        "outputSchema": {
+          "$defs": {
+            "HashEntry": {
+              "additionalProperties": false,
+              "properties": {
+                "field": {
+                  "type": "string"
+                },
+                "field_encoding": {
+                  "$ref": "#/$defs/ValueEncoding"
+                },
+                "value": {
+                  "type": "string"
+                },
+                "value_encoding": {
+                  "$ref": "#/$defs/ValueEncoding"
+                }
+              },
+              "required": [
+                "field",
+                "field_encoding",
+                "value",
+                "value_encoding"
+              ],
+              "type": "object"
+            },
+            "ValueEncoding": {
+              "enum": [
+                "utf8",
+                "base64"
+              ],
+              "type": "string"
+            }
+          },
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "count": {
+              "format": "uint",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "entries": {
+              "items": {
+                "$ref": "#/$defs/HashEntry"
+              },
+              "type": "array"
+            },
+            "exists": {
+              "type": "boolean"
+            },
+            "key": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "key",
+            "exists",
+            "count",
+            "entries"
+          ],
+          "title": "HgetallOutput",
+          "type": "object"
+        },
+        "title": "Get Redis Hash"
+      },
+      "required_access": "read_only",
+      "requires_raw_opt_in": false
+    },
+    {
+      "bundle": "data_structures",
+      "name": "redis_hset",
+      "protocol": {
+        "annotations": {
+          "destructiveHint": false,
+          "idempotentHint": true
+        },
+        "description": "Set between 1 and 1000 UTF-8 field-value pairs in a Redis hash.",
+        "inputSchema": {
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "fields": {
+              "additionalProperties": {
+                "type": "string"
+              },
+              "description": "Field-value pairs to set.",
+              "type": "object"
+            },
+            "key": {
+              "description": "Redis hash key.",
+              "type": "string"
+            }
+          },
+          "required": [
+            "key",
+            "fields"
+          ],
+          "title": "HsetInput",
+          "type": "object"
+        },
+        "name": "redis_hset",
+        "outputSchema": {
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "fields_added": {
+              "format": "uint64",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "fields_set": {
+              "format": "uint",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "key": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "key",
+            "fields_set",
+            "fields_added"
+          ],
+          "title": "HsetOutput",
+          "type": "object"
+        },
+        "title": "Set Redis Hash Fields"
+      },
+      "required_access": "read_write",
+      "requires_raw_opt_in": false
+    },
+    {
+      "bundle": "essentials",
+      "name": "redis_incr",
+      "protocol": {
+        "annotations": {
+          "destructiveHint": false
+        },
+        "description": "Increment a Redis integer string by one and return the new value.",
+        "inputSchema": {
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "key": {
+              "description": "Redis key.",
+              "type": "string"
+            }
+          },
+          "required": [
+            "key"
+          ],
+          "title": "KeyInput",
+          "type": "object"
+        },
+        "name": "redis_incr",
+        "outputSchema": {
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "key": {
+              "type": "string"
+            },
+            "value": {
+              "format": "int64",
+              "type": "integer"
+            }
+          },
+          "required": [
+            "key",
+            "value"
+          ],
+          "title": "IncrOutput",
+          "type": "object"
+        },
+        "title": "Increment Redis Integer"
+      },
+      "required_access": "read_write",
+      "requires_raw_opt_in": false
+    },
+    {
       "bundle": "diagnostics",
       "name": "redis_info",
       "protocol": {
@@ -277,6 +744,452 @@
       "requires_raw_opt_in": false
     },
     {
+      "bundle": "data_structures",
+      "name": "redis_lpush",
+      "protocol": {
+        "annotations": {
+          "destructiveHint": false
+        },
+        "description": "Push between 1 and 1000 UTF-8 elements to the head of a Redis list.",
+        "inputSchema": {
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "elements": {
+              "description": "UTF-8 elements to push to the head in argument order.",
+              "items": {
+                "type": "string"
+              },
+              "maxItems": 1000,
+              "minItems": 1,
+              "type": "array"
+            },
+            "key": {
+              "description": "Redis list key.",
+              "type": "string"
+            }
+          },
+          "required": [
+            "key",
+            "elements"
+          ],
+          "title": "ListPushInput",
+          "type": "object"
+        },
+        "name": "redis_lpush",
+        "outputSchema": {
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "key": {
+              "type": "string"
+            },
+            "length": {
+              "format": "uint64",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "pushed": {
+              "format": "uint",
+              "minimum": 0,
+              "type": "integer"
+            }
+          },
+          "required": [
+            "key",
+            "pushed",
+            "length"
+          ],
+          "title": "LpushOutput",
+          "type": "object"
+        },
+        "title": "Push Redis List Elements"
+      },
+      "required_access": "read_write",
+      "requires_raw_opt_in": false
+    },
+    {
+      "bundle": "data_structures",
+      "name": "redis_lrange",
+      "protocol": {
+        "annotations": {
+          "destructiveHint": false,
+          "idempotentHint": true,
+          "readOnlyHint": true
+        },
+        "description": "Read an inclusive range from a Redis list. Binary elements are base64.",
+        "inputSchema": {
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "key": {
+              "description": "Redis key.",
+              "type": "string"
+            },
+            "start": {
+              "default": 0,
+              "description": "Zero-based inclusive start index.",
+              "format": "int64",
+              "type": "integer"
+            },
+            "stop": {
+              "default": -1,
+              "description": "Inclusive stop index. Negative indexes address from the end.",
+              "format": "int64",
+              "type": "integer"
+            }
+          },
+          "required": [
+            "key"
+          ],
+          "title": "RangeInput",
+          "type": "object"
+        },
+        "name": "redis_lrange",
+        "outputSchema": {
+          "$defs": {
+            "EncodedValue": {
+              "additionalProperties": false,
+              "properties": {
+                "encoding": {
+                  "$ref": "#/$defs/ValueEncoding"
+                },
+                "value": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "value",
+                "encoding"
+              ],
+              "type": "object"
+            },
+            "ValueEncoding": {
+              "enum": [
+                "utf8",
+                "base64"
+              ],
+              "type": "string"
+            }
+          },
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "count": {
+              "format": "uint",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "elements": {
+              "items": {
+                "$ref": "#/$defs/EncodedValue"
+              },
+              "type": "array"
+            },
+            "key": {
+              "type": "string"
+            },
+            "start": {
+              "format": "int64",
+              "type": "integer"
+            },
+            "stop": {
+              "format": "int64",
+              "type": "integer"
+            }
+          },
+          "required": [
+            "key",
+            "start",
+            "stop",
+            "count",
+            "elements"
+          ],
+          "title": "LrangeOutput",
+          "type": "object"
+        },
+        "title": "Read Redis List Range"
+      },
+      "required_access": "read_only",
+      "requires_raw_opt_in": false
+    },
+    {
+      "bundle": "essentials",
+      "name": "redis_memory_usage",
+      "protocol": {
+        "annotations": {
+          "destructiveHint": false,
+          "idempotentHint": true,
+          "readOnlyHint": true
+        },
+        "description": "Read the number of bytes a Redis key and its value require in memory.",
+        "inputSchema": {
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "key": {
+              "description": "Redis key.",
+              "type": "string"
+            }
+          },
+          "required": [
+            "key"
+          ],
+          "title": "KeyInput",
+          "type": "object"
+        },
+        "name": "redis_memory_usage",
+        "outputSchema": {
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "bytes": {
+              "format": "uint64",
+              "minimum": 0,
+              "type": [
+                "integer",
+                "null"
+              ]
+            },
+            "exists": {
+              "type": "boolean"
+            },
+            "key": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "key",
+            "exists"
+          ],
+          "title": "MemoryUsageOutput",
+          "type": "object"
+        },
+        "title": "Redis Key Memory Usage"
+      },
+      "required_access": "read_only",
+      "requires_raw_opt_in": false
+    },
+    {
+      "bundle": "essentials",
+      "name": "redis_mget",
+      "protocol": {
+        "annotations": {
+          "destructiveHint": false,
+          "idempotentHint": true,
+          "readOnlyHint": true
+        },
+        "description": "Read multiple Redis string values atomically. Binary values are base64.",
+        "inputSchema": {
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "keys": {
+              "description": "Redis keys. Between 1 and 1000 keys are accepted per call.",
+              "items": {
+                "type": "string"
+              },
+              "maxItems": 1000,
+              "minItems": 1,
+              "type": "array"
+            }
+          },
+          "required": [
+            "keys"
+          ],
+          "title": "KeysInput",
+          "type": "object"
+        },
+        "name": "redis_mget",
+        "outputSchema": {
+          "$defs": {
+            "MgetEntry": {
+              "additionalProperties": false,
+              "properties": {
+                "encoding": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/$defs/ValueEncoding"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "exists": {
+                  "type": "boolean"
+                },
+                "key": {
+                  "type": "string"
+                },
+                "value": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                }
+              },
+              "required": [
+                "key",
+                "exists"
+              ],
+              "type": "object"
+            },
+            "ValueEncoding": {
+              "enum": [
+                "utf8",
+                "base64"
+              ],
+              "type": "string"
+            }
+          },
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "count": {
+              "format": "uint",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "values": {
+              "items": {
+                "$ref": "#/$defs/MgetEntry"
+              },
+              "type": "array"
+            }
+          },
+          "required": [
+            "values",
+            "count"
+          ],
+          "title": "MgetOutput",
+          "type": "object"
+        },
+        "title": "Get Multiple Redis Strings"
+      },
+      "required_access": "read_only",
+      "requires_raw_opt_in": false
+    },
+    {
+      "bundle": "essentials",
+      "name": "redis_mset",
+      "protocol": {
+        "annotations": {
+          "destructiveHint": false,
+          "idempotentHint": true
+        },
+        "description": "Atomically store between 1 and 1000 UTF-8 key-value pairs.",
+        "inputSchema": {
+          "$defs": {
+            "KeyValuePair": {
+              "additionalProperties": false,
+              "properties": {
+                "key": {
+                  "description": "Redis key.",
+                  "type": "string"
+                },
+                "value": {
+                  "description": "UTF-8 value.",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "key",
+                "value"
+              ],
+              "type": "object"
+            }
+          },
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "entries": {
+              "description": "Key-value pairs to store atomically.",
+              "items": {
+                "$ref": "#/$defs/KeyValuePair"
+              },
+              "maxItems": 1000,
+              "minItems": 1,
+              "type": "array"
+            }
+          },
+          "required": [
+            "entries"
+          ],
+          "title": "MsetInput",
+          "type": "object"
+        },
+        "name": "redis_mset",
+        "outputSchema": {
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "stored": {
+              "format": "uint",
+              "minimum": 0,
+              "type": "integer"
+            }
+          },
+          "required": [
+            "stored"
+          ],
+          "title": "MsetOutput",
+          "type": "object"
+        },
+        "title": "Set Multiple Redis Strings"
+      },
+      "required_access": "read_write",
+      "requires_raw_opt_in": false
+    },
+    {
+      "bundle": "essentials",
+      "name": "redis_persist",
+      "protocol": {
+        "annotations": {
+          "destructiveHint": false,
+          "idempotentHint": true
+        },
+        "description": "Remove a key expiration. Missing or already-persistent keys report false.",
+        "inputSchema": {
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "key": {
+              "description": "Redis key.",
+              "type": "string"
+            }
+          },
+          "required": [
+            "key"
+          ],
+          "title": "KeyInput",
+          "type": "object"
+        },
+        "name": "redis_persist",
+        "outputSchema": {
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "applied": {
+              "type": "boolean"
+            },
+            "key": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "key",
+            "applied"
+          ],
+          "title": "PersistOutput",
+          "type": "object"
+        },
+        "title": "Persist Redis Key"
+      },
+      "required_access": "read_write",
+      "requires_raw_opt_in": false
+    },
+    {
       "bundle": "essentials",
       "name": "redis_ping",
       "protocol": {
@@ -313,6 +1226,125 @@
         "title": "Ping Redis"
       },
       "required_access": "read_only",
+      "requires_raw_opt_in": false
+    },
+    {
+      "bundle": "essentials",
+      "name": "redis_randomkey",
+      "protocol": {
+        "annotations": {
+          "destructiveHint": false,
+          "idempotentHint": true,
+          "readOnlyHint": true
+        },
+        "description": "Return one random key, or null when the selected database is empty.",
+        "inputSchema": {
+          "additionalProperties": false,
+          "type": "object"
+        },
+        "name": "redis_randomkey",
+        "outputSchema": {
+          "$defs": {
+            "ValueEncoding": {
+              "enum": [
+                "utf8",
+                "base64"
+              ],
+              "type": "string"
+            }
+          },
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "encoding": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/ValueEncoding"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "key": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          "title": "RandomKeyOutput",
+          "type": "object"
+        },
+        "title": "Random Redis Key"
+      },
+      "required_access": "read_only",
+      "requires_raw_opt_in": false
+    },
+    {
+      "bundle": "data_structures",
+      "name": "redis_sadd",
+      "protocol": {
+        "annotations": {
+          "destructiveHint": false,
+          "idempotentHint": true
+        },
+        "description": "Add between 1 and 1000 UTF-8 members to a Redis set.",
+        "inputSchema": {
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "key": {
+              "description": "Redis set key.",
+              "type": "string"
+            },
+            "members": {
+              "description": "UTF-8 members to add.",
+              "items": {
+                "type": "string"
+              },
+              "maxItems": 1000,
+              "minItems": 1,
+              "type": "array"
+            }
+          },
+          "required": [
+            "key",
+            "members"
+          ],
+          "title": "SetAddInput",
+          "type": "object"
+        },
+        "name": "redis_sadd",
+        "outputSchema": {
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "added": {
+              "format": "uint64",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "key": {
+              "type": "string"
+            },
+            "requested": {
+              "format": "uint",
+              "minimum": 0,
+              "type": "integer"
+            }
+          },
+          "required": [
+            "key",
+            "requested",
+            "added"
+          ],
+          "title": "SaddOutput",
+          "type": "object"
+        },
+        "title": "Add Redis Set Members"
+      },
+      "required_access": "read_write",
       "requires_raw_opt_in": false
     },
     {
@@ -468,6 +1500,144 @@
       "requires_raw_opt_in": false
     },
     {
+      "bundle": "data_structures",
+      "name": "redis_smembers",
+      "protocol": {
+        "annotations": {
+          "destructiveHint": false,
+          "idempotentHint": true,
+          "readOnlyHint": true
+        },
+        "description": "Read all Redis set members in deterministic byte order. Binary members are base64.",
+        "inputSchema": {
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "key": {
+              "description": "Redis key.",
+              "type": "string"
+            }
+          },
+          "required": [
+            "key"
+          ],
+          "title": "KeyInput",
+          "type": "object"
+        },
+        "name": "redis_smembers",
+        "outputSchema": {
+          "$defs": {
+            "EncodedValue": {
+              "additionalProperties": false,
+              "properties": {
+                "encoding": {
+                  "$ref": "#/$defs/ValueEncoding"
+                },
+                "value": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "value",
+                "encoding"
+              ],
+              "type": "object"
+            },
+            "ValueEncoding": {
+              "enum": [
+                "utf8",
+                "base64"
+              ],
+              "type": "string"
+            }
+          },
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "count": {
+              "format": "uint",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "exists": {
+              "type": "boolean"
+            },
+            "key": {
+              "type": "string"
+            },
+            "members": {
+              "items": {
+                "$ref": "#/$defs/EncodedValue"
+              },
+              "type": "array"
+            }
+          },
+          "required": [
+            "key",
+            "exists",
+            "count",
+            "members"
+          ],
+          "title": "SmembersOutput",
+          "type": "object"
+        },
+        "title": "Read Redis Set"
+      },
+      "required_access": "read_only",
+      "requires_raw_opt_in": false
+    },
+    {
+      "bundle": "essentials",
+      "name": "redis_strlen",
+      "protocol": {
+        "annotations": {
+          "destructiveHint": false,
+          "idempotentHint": true,
+          "readOnlyHint": true
+        },
+        "description": "Read a Redis string length in bytes. Missing keys have length zero.",
+        "inputSchema": {
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "key": {
+              "description": "Redis key.",
+              "type": "string"
+            }
+          },
+          "required": [
+            "key"
+          ],
+          "title": "KeyInput",
+          "type": "object"
+        },
+        "name": "redis_strlen",
+        "outputSchema": {
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "key": {
+              "type": "string"
+            },
+            "length_bytes": {
+              "format": "uint64",
+              "minimum": 0,
+              "type": "integer"
+            }
+          },
+          "required": [
+            "key",
+            "length_bytes"
+          ],
+          "title": "StrlenOutput",
+          "type": "object"
+        },
+        "title": "Redis String Length"
+      },
+      "required_access": "read_only",
+      "requires_raw_opt_in": false
+    },
+    {
       "bundle": "essentials",
       "name": "redis_ttl",
       "protocol": {
@@ -573,9 +1743,311 @@
       },
       "required_access": "read_only",
       "requires_raw_opt_in": false
+    },
+    {
+      "bundle": "essentials",
+      "name": "redis_unlink",
+      "protocol": {
+        "annotations": {
+          "idempotentHint": true
+        },
+        "description": "Asynchronously unlink one or more Redis keys. Requires full access.",
+        "inputSchema": {
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "keys": {
+              "description": "Redis keys. Between 1 and 1000 keys are accepted per call.",
+              "items": {
+                "type": "string"
+              },
+              "maxItems": 1000,
+              "minItems": 1,
+              "type": "array"
+            }
+          },
+          "required": [
+            "keys"
+          ],
+          "title": "KeysInput",
+          "type": "object"
+        },
+        "name": "redis_unlink",
+        "outputSchema": {
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "requested": {
+              "format": "uint",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "unlinked": {
+              "format": "uint64",
+              "minimum": 0,
+              "type": "integer"
+            }
+          },
+          "required": [
+            "requested",
+            "unlinked"
+          ],
+          "title": "UnlinkOutput",
+          "type": "object"
+        },
+        "title": "Asynchronously Delete Redis Keys"
+      },
+      "required_access": "full",
+      "requires_raw_opt_in": false
+    },
+    {
+      "bundle": "data_structures",
+      "name": "redis_zadd",
+      "protocol": {
+        "annotations": {
+          "destructiveHint": false,
+          "idempotentHint": true
+        },
+        "description": "Add or update scored UTF-8 members in a Redis sorted set.",
+        "inputSchema": {
+          "$defs": {
+            "ScoreMember": {
+              "additionalProperties": false,
+              "properties": {
+                "member": {
+                  "description": "UTF-8 member.",
+                  "type": "string"
+                },
+                "score": {
+                  "description": "Finite score.",
+                  "format": "double",
+                  "type": "number"
+                }
+              },
+              "required": [
+                "score",
+                "member"
+              ],
+              "type": "object"
+            }
+          },
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "ch": {
+              "default": false,
+              "description": "Report both added and changed members.",
+              "type": "boolean"
+            },
+            "gt": {
+              "default": false,
+              "description": "Update only when the new score is greater.",
+              "type": "boolean"
+            },
+            "key": {
+              "description": "Redis sorted-set key.",
+              "type": "string"
+            },
+            "lt": {
+              "default": false,
+              "description": "Update only when the new score is less.",
+              "type": "boolean"
+            },
+            "members": {
+              "description": "Score-member pairs to add or update.",
+              "items": {
+                "$ref": "#/$defs/ScoreMember"
+              },
+              "maxItems": 1000,
+              "minItems": 1,
+              "type": "array"
+            },
+            "nx": {
+              "default": false,
+              "description": "Add new members only.",
+              "type": "boolean"
+            },
+            "xx": {
+              "default": false,
+              "description": "Update existing members only.",
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "key",
+            "members"
+          ],
+          "title": "ZaddInput",
+          "type": "object"
+        },
+        "name": "redis_zadd",
+        "outputSchema": {
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "affected": {
+              "format": "uint64",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "key": {
+              "type": "string"
+            },
+            "reports_changed": {
+              "type": "boolean"
+            },
+            "requested": {
+              "format": "uint",
+              "minimum": 0,
+              "type": "integer"
+            }
+          },
+          "required": [
+            "key",
+            "requested",
+            "affected",
+            "reports_changed"
+          ],
+          "title": "ZaddOutput",
+          "type": "object"
+        },
+        "title": "Add Redis Sorted Set Members"
+      },
+      "required_access": "read_write",
+      "requires_raw_opt_in": false
+    },
+    {
+      "bundle": "data_structures",
+      "name": "redis_zrange",
+      "protocol": {
+        "annotations": {
+          "destructiveHint": false,
+          "idempotentHint": true,
+          "readOnlyHint": true
+        },
+        "description": "Read a rank range from a Redis sorted set, optionally with scores.",
+        "inputSchema": {
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "key": {
+              "description": "Redis sorted-set key.",
+              "type": "string"
+            },
+            "rev": {
+              "default": false,
+              "description": "Return highest scores first.",
+              "type": "boolean"
+            },
+            "start": {
+              "default": 0,
+              "description": "Zero-based inclusive start rank.",
+              "format": "int64",
+              "type": "integer"
+            },
+            "stop": {
+              "default": -1,
+              "description": "Inclusive stop rank. Negative indexes address from the end.",
+              "format": "int64",
+              "type": "integer"
+            },
+            "withscores": {
+              "default": false,
+              "description": "Include scores in the response.",
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "key"
+          ],
+          "title": "ZrangeInput",
+          "type": "object"
+        },
+        "name": "redis_zrange",
+        "outputSchema": {
+          "$defs": {
+            "ValueEncoding": {
+              "enum": [
+                "utf8",
+                "base64"
+              ],
+              "type": "string"
+            },
+            "ZrangeEntry": {
+              "additionalProperties": false,
+              "properties": {
+                "encoding": {
+                  "$ref": "#/$defs/ValueEncoding"
+                },
+                "member": {
+                  "type": "string"
+                },
+                "score": {
+                  "format": "double",
+                  "type": [
+                    "number",
+                    "null"
+                  ]
+                }
+              },
+              "required": [
+                "member",
+                "encoding"
+              ],
+              "type": "object"
+            }
+          },
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "count": {
+              "format": "uint",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "key": {
+              "type": "string"
+            },
+            "members": {
+              "items": {
+                "$ref": "#/$defs/ZrangeEntry"
+              },
+              "type": "array"
+            },
+            "rev": {
+              "type": "boolean"
+            },
+            "start": {
+              "format": "int64",
+              "type": "integer"
+            },
+            "stop": {
+              "format": "int64",
+              "type": "integer"
+            }
+          },
+          "required": [
+            "key",
+            "start",
+            "stop",
+            "rev",
+            "count",
+            "members"
+          ],
+          "title": "ZrangeOutput",
+          "type": "object"
+        },
+        "title": "Read Redis Sorted Set Range"
+      },
+      "required_access": "read_only",
+      "requires_raw_opt_in": false
     }
   ],
   "structured_results": {
+    "redis_append": {
+      "key": "greeting",
+      "length_bytes": 5
+    },
     "redis_command": {
       "command": "ECHO",
       "value": {
@@ -590,11 +2062,50 @@
       "deleted": 1,
       "requested": 1
     },
+    "redis_exists": {
+      "all_exist": true,
+      "existing": 1,
+      "requested": 1
+    },
+    "redis_expire": {
+      "applied": true,
+      "key": "greeting",
+      "seconds": 60
+    },
     "redis_get": {
       "encoding": "utf8",
       "exists": true,
       "key": "greeting",
       "value": "hello"
+    },
+    "redis_hget": {
+      "encoding": "utf8",
+      "exists": true,
+      "field": "name",
+      "key": "user:1",
+      "value": "Ada"
+    },
+    "redis_hgetall": {
+      "count": 1,
+      "entries": [
+        {
+          "field": "name",
+          "field_encoding": "utf8",
+          "value": "Ada",
+          "value_encoding": "utf8"
+        }
+      ],
+      "exists": true,
+      "key": "user:1"
+    },
+    "redis_hset": {
+      "fields_added": 1,
+      "fields_set": 1,
+      "key": "user:1"
+    },
+    "redis_incr": {
+      "key": "counter",
+      "value": 2
     },
     "redis_info": {
       "properties": {
@@ -603,9 +2114,68 @@
       "raw": "# Server\r\nredis_version:8.2.0\r\n",
       "section": null
     },
+    "redis_lpush": {
+      "key": "queue",
+      "length": 2,
+      "pushed": 2
+    },
+    "redis_lrange": {
+      "count": 2,
+      "elements": [
+        {
+          "encoding": "utf8",
+          "value": "second"
+        },
+        {
+          "encoding": "utf8",
+          "value": "first"
+        }
+      ],
+      "key": "queue",
+      "start": 0,
+      "stop": -1
+    },
+    "redis_memory_usage": {
+      "bytes": 64,
+      "exists": true,
+      "key": "greeting"
+    },
+    "redis_mget": {
+      "count": 2,
+      "values": [
+        {
+          "encoding": "utf8",
+          "exists": true,
+          "key": "greeting",
+          "value": "hello"
+        },
+        {
+          "encoding": null,
+          "exists": false,
+          "key": "missing",
+          "value": null
+        }
+      ]
+    },
+    "redis_mset": {
+      "stored": 2
+    },
+    "redis_persist": {
+      "applied": true,
+      "key": "greeting"
+    },
     "redis_ping": {
       "latency_ms": 0.0,
       "response": "PONG"
+    },
+    "redis_randomkey": {
+      "encoding": "utf8",
+      "key": "alpha"
+    },
+    "redis_sadd": {
+      "added": 1,
+      "key": "tags",
+      "requested": 2
     },
     "redis_scan": {
       "count": 2,
@@ -620,6 +2190,25 @@
       "key": "greeting",
       "stored": true
     },
+    "redis_smembers": {
+      "count": 2,
+      "exists": true,
+      "key": "tags",
+      "members": [
+        {
+          "encoding": "utf8",
+          "value": "alpha"
+        },
+        {
+          "encoding": "utf8",
+          "value": "beta"
+        }
+      ]
+    },
+    "redis_strlen": {
+      "key": "greeting",
+      "length_bytes": 5
+    },
     "redis_ttl": {
       "exists": true,
       "key": "greeting",
@@ -629,6 +2218,30 @@
     "redis_type": {
       "key": "greeting",
       "key_type": "string"
+    },
+    "redis_unlink": {
+      "requested": 1,
+      "unlinked": 1
+    },
+    "redis_zadd": {
+      "affected": 1,
+      "key": "leaders",
+      "reports_changed": false,
+      "requested": 1
+    },
+    "redis_zrange": {
+      "count": 1,
+      "key": "leaders",
+      "members": [
+        {
+          "encoding": "utf8",
+          "member": "alice",
+          "score": 1.5
+        }
+      ],
+      "rev": false,
+      "start": 0,
+      "stop": -1
     }
   }
 }

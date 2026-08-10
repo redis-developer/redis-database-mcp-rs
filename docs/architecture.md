@@ -84,8 +84,9 @@ which side effects that host permits. These decisions are orthogonal.
 
 The public taxonomy is `essentials`, `data_structures`, `search`,
 `diagnostics`, `admin`, `bulk`, and `raw`. The curated default enables
-`essentials` and `diagnostics`. Empty bundles are reserved for coherent catalog
-growth and do not expose placeholder tools.
+`essentials`, `data_structures`, and `diagnostics`, totaling 29 tools. Empty
+bundles are reserved for coherent catalog growth and do not expose placeholder
+tools.
 
 Raw commands remain a separate opt-in even though their metadata belongs to the
 `raw` bundle. They require full access and one of two enabled policies:

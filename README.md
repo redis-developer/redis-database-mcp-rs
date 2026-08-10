@@ -10,14 +10,20 @@ boundary.
 The repository is named redis-database-mcp-rs to distinguish this surface from
 Redis Cloud and Redis Enterprise APIs. The Rust package is simply redis-mcp.
 
-## Spike scope
+## Curated default
 
-The initial curated surface is deliberately small:
+The standalone default exposes 29 broadly useful tools:
 
-- read-only: redis_ping, redis_info, redis_dbsize, redis_scan, redis_get,
-  redis_type, redis_ttl
-- read-write: redis_set
-- full: redis_del
+- read-only essentials: `redis_ping`, `redis_dbsize`, `redis_scan`,
+  `redis_get`, `redis_type`, `redis_ttl`, `redis_exists`, `redis_mget`,
+  `redis_strlen`, `redis_memory_usage`, `redis_randomkey`
+- read-write essentials: `redis_set`, `redis_expire`, `redis_persist`,
+  `redis_mset`, `redis_incr`, `redis_append`
+- full-access essentials: `redis_del`, `redis_unlink`
+- data structures: `redis_hget`, `redis_hgetall`, `redis_hset`,
+  `redis_lrange`, `redis_lpush`, `redis_smembers`, `redis_sadd`,
+  `redis_zrange`, `redis_zadd`
+- diagnostics: `redis_info`
 - explicit full-access escape hatch: redis_command
 
 Every successful tool result includes MCP structuredContent and an output
@@ -84,15 +90,25 @@ need to share this crate's redis-rs dependency line. Commands include the
 originating tool and required access level for host telemetry and audit
 records. See [the custom executor example](examples/custom_executor.rs).
 
-The curated default enables the `essentials` and `diagnostics` bundles. The
-public taxonomy also reserves `data_structures`, `search`, `admin`, `bulk`, and
-`raw` for deliberate composition as the catalog grows. Raw execution is always
-controlled by its separate policy rather than bundle selection alone.
+The curated default enables the `essentials`, `data_structures`, and
+`diagnostics` bundles. The public taxonomy also reserves `search`, `admin`,
+`bulk`, and `raw` for deliberate composition as the catalog grows. Raw
+execution is always controlled by its separate policy rather than bundle
+selection alone.
 
 See [the architecture decisions](docs/architecture.md) for the intentional
 Tower-MCP boundary and fixed-target model, and the
 [redisctl compatibility inventory](docs/redisctl-compatibility.md) for the
 132-tool read-only baseline and known contract differences.
+
+## Compatibility and testing
+
+CI runs the complete suite on Redis 8.8 and the live router/stdio contract on
+every currently supported Redis Open Source series: 6.2, 7.2, 7.4, 8.0, 8.2,
+8.4, 8.6, and 8.8. Live tests exercise both RESP2 and RESP3, the 29-tool curated
+catalog, binary and nil responses, and the real `redis-mcp-server` stdio process.
+The version list follows the
+[Redis Open Source version-management table](https://redis.io/docs/latest/operate/oss_and_stack/install/version-mgmt/).
 
 ## Non-goals
 

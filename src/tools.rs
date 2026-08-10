@@ -1,5 +1,8 @@
 //! Curated Redis database MCP tools.
 
+mod data_structures;
+mod essentials;
+
 use std::{
     collections::{BTreeMap, BTreeSet},
     sync::Arc,
@@ -106,6 +109,10 @@ pub(crate) fn add_read_only_tools(
         router = router.tool(get_tool(state.clone()));
         router = router.tool(type_tool(state.clone()));
         router = router.tool(ttl_tool(state.clone()));
+        router = essentials::add_read_tools(router, state.clone());
+    }
+    if bundles.contains(&ToolBundle::DataStructures) {
+        router = data_structures::add_read_tools(router, state.clone());
     }
     if bundles.contains(&ToolBundle::Diagnostics) {
         router = router.tool(info_tool(state));
@@ -114,15 +121,18 @@ pub(crate) fn add_read_only_tools(
 }
 
 pub(crate) fn add_write_tools(
-    router: McpRouter,
+    mut router: McpRouter,
     state: Arc<ToolState>,
     bundles: &BTreeSet<ToolBundle>,
 ) -> McpRouter {
     if bundles.contains(&ToolBundle::Essentials) {
-        router.tool(set_tool(state))
-    } else {
-        router
+        router = router.tool(set_tool(state.clone()));
+        router = essentials::add_write_tools(router, state.clone());
     }
+    if bundles.contains(&ToolBundle::DataStructures) {
+        router = data_structures::add_write_tools(router, state);
+    }
+    router
 }
 
 pub(crate) fn add_destructive_tools(
@@ -131,7 +141,7 @@ pub(crate) fn add_destructive_tools(
     bundles: &BTreeSet<ToolBundle>,
 ) -> McpRouter {
     if bundles.contains(&ToolBundle::Essentials) {
-        router.tool(del_tool(state))
+        essentials::add_destructive_tools(router.tool(del_tool(state.clone())), state)
     } else {
         router
     }

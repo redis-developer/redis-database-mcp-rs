@@ -19,7 +19,7 @@ matrix.
 | --- | --- | ---: | ---: |
 | [`redis/mcp-redis`](https://github.com/redis/mcp-redis) | `5945b0b5b098c9a1882075a161a6a58f23de81ed` | 0.5.1 | 53 |
 | [`redisctl`](https://github.com/redis/redisctl) | `955f4b18f4266c332bc640cada67d125d23edde8` | read-only inventory | 132 |
-| `redis-mcp` | current catalog | 0.1 development line | 39 |
+| `redis-mcp` | current catalog | 0.1 development line | 42 |
 
 The redisctl baseline is a compatibility and breadth reference, not a promise
 to copy application-specific profile fields, aliases, or weak contracts.
@@ -42,8 +42,9 @@ The dispositions mean:
 
 One tool name is not necessarily one capability. `redis_ft_info`, for example,
 subsumes both `get_index_info` and `get_indexed_keys_number`. Conversely, name
-overlap does not imply equivalent quality: current whole-collection tools still
-carry issue #16 until uniform response budgets land.
+overlap does not imply equivalent quality. The library now adds three bounded
+cursor tools absent from both pinned inventories: `redis_hscan`, `redis_sscan`,
+and `redis_zscan`.
 
 ### Remaining `redis/mcp-redis` gaps
 
@@ -81,17 +82,39 @@ Scores use a checked-in four-level rubric:
 | structured results | 3 | 1 | Keep success and error semantics independent of prose. |
 | error semantics | 3 | 1 | Preserve stable categories, Redis codes, and redaction. |
 | annotations and access | 3 | 0 | Keep discovery and handler enforcement derived from one policy. |
-| output bounds | 1 | 1 | Complete #16. |
+| output bounds | 3 | 1 | Preserve centralized byte limits, typed continuations, and adversarial boundary coverage. |
 | binary safety | 3 | 0 | Preserve explicit UTF-8/base64 values. |
 | cluster behavior | 3 | 1 | Specify slot, fan-out, aggregation, and partial failures per tool. |
 | capability/version awareness | 1 | 1 | Complete #17. |
 | live compatibility testing | 3 | 1 | Keep real MCP calls across Redis, Stack, and cluster CI. |
 | embedding and host policy | 3 | 0 | Keep redisctl and REPL policy outside tool definitions. |
 
-The aggregate is currently 26/30 versus 8/30, with the library leading in
-eight of ten dimensions. The aggregate is descriptive, not the completion
+The aggregate is currently 28/30 versus 8/30, with the library leading in
+nine of ten dimensions. The aggregate is descriptive, not the completion
 test: a high score cannot compensate for a missing strategic capability or an
 unbounded default tool.
+
+### Output-policy audit
+
+Every successful result is measured as a complete encoded MCP
+`CallToolResult`, including its structured content and text rendering. Binary
+values are measured after base64 expansion. The configured entry ceiling is
+also applied to collection results and raw RESP collections.
+
+| Policy | Tools |
+| --- | --- |
+| cursor paginated | `redis_scan`, `redis_hscan`, `redis_sscan`, `redis_zscan` |
+| range paginated | `redis_lrange`, `redis_zrange` |
+| offset paginated | `redis_ft_search` |
+| budget guarded | `redis_info`, `redis_get`, `redis_mget`, `redis_randomkey`, `redis_hget`, `redis_hgetall`, `redis_smembers`, `redis_json_get`, `redis_json_type`, `redis_ft_list`, `redis_ft_info`, `redis_command` |
+| intrinsically bounded | `redis_ping`, `redis_dbsize`, `redis_type`, `redis_ttl`, `redis_exists`, `redis_strlen`, `redis_memory_usage`, `redis_set`, `redis_expire`, `redis_persist`, `redis_mset`, `redis_incr`, `redis_append`, `redis_hset`, `redis_lpush`, `redis_sadd`, `redis_zadd`, `redis_json_set`, `redis_ft_create`, `redis_del`, `redis_unlink`, `redis_json_del`, `redis_ft_dropindex` |
+
+Budget-guarded whole-collection reads fail with an `output_limit_exceeded`
+reason and machine-readable `io.redis.mcp/outputLimit` metadata instead of
+emitting partial JSON. `redis_hgetall` and `redis_smembers` point callers to
+their cursor alternatives. INFO can be narrowed by section, Search continues
+by offset, ranges continue by start, and cursor tools continue using the
+returned Redis cursor.
 
 ## Objective completion gate
 

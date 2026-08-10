@@ -225,7 +225,7 @@
   },
   "current_gate": {
     "met": false,
-    "blockers": [15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 26, 27, 28, 29, 30, 31, 32, 33]
+    "blockers": [17, 18, 19, 20, 21, 22, 23, 24, 26, 27, 28, 29, 30, 31, 32, 33]
   },
   "contract_scorecard": {
     "scale": {
@@ -269,11 +269,11 @@
       },
       {
         "id": "output_bounds",
-        "library_score": 1,
+        "library_score": 3,
         "redis_mcp_score": 1,
-        "library_evidence": ["src/tools.rs", "src/tools/data_structures.rs"],
+        "library_evidence": ["src/output.rs", "src/tools.rs", "tests/router_contract.rs", "tests/live_redis.rs"],
         "redis_mcp_evidence": ["src/tools/misc.py"],
-        "target": "Complete issue #16 so every default tool is intrinsically bounded, paginated, or budget-enforced."
+        "target": "Preserve centralized encoded-byte limits, per-tool entry policies, typed continuations, and boundary coverage as the surface grows."
       },
       {
         "id": "binary_safety",
@@ -332,8 +332,7 @@
       "redisctl_tools": ["redis_info"],
       "library_tools": ["redis_info"],
       "disposition": "implemented",
-      "quality_issues": [16],
-      "reason": "The library returns parsed properties plus the raw response; issue #16 will enforce a uniform response budget."
+      "reason": "Parsed properties and the raw response share the global entry and encoded-byte budget."
     },
     {
       "id": "key.dbsize",
@@ -496,8 +495,8 @@
       "redisctl_tools": ["redis_command"],
       "library_tools": ["redis_command"],
       "disposition": "implemented",
-      "quality_issues": [16, 24],
-      "reason": "The escape hatch requires full access plus explicit policy and retains hard request-response safety blocks."
+      "quality_issues": [24],
+      "reason": "The escape hatch requires full access plus explicit policy, retains hard request-response safety blocks, and shares the global response budgets."
     },
     {
       "id": "hash.get",
@@ -513,8 +512,15 @@
       "redisctl_tools": ["redis_hgetall"],
       "library_tools": ["redis_hgetall"],
       "disposition": "implemented",
-      "quality_issues": [16],
-      "reason": "Structured binary-safe fields are implemented; issue #16 adds the uniform large-result policy."
+      "reason": "Structured binary-safe fields are budget-guarded with redis_hscan as the cursor alternative."
+    },
+    {
+      "id": "hash.scan",
+      "redis_mcp_tools": [],
+      "redisctl_tools": [],
+      "library_tools": ["redis_hscan"],
+      "disposition": "implemented",
+      "reason": "HSCAN pages expose a typed continuation cursor and obey both configured output ceilings."
     },
     {
       "id": "hash.set",
@@ -531,8 +537,7 @@
       "redisctl_tools": ["redis_lrange"],
       "library_tools": ["redis_lrange"],
       "disposition": "implemented",
-      "quality_issues": [16],
-      "reason": "Binary-safe ranges are implemented; issue #16 makes open-ended output limits uniform."
+      "reason": "Binary-safe ranges default to 100 ranks, reject database-dependent mixed-sign ranges, and expose a continuation start."
     },
     {
       "id": "list.push_left",
@@ -548,8 +553,15 @@
       "redisctl_tools": ["redis_smembers"],
       "library_tools": ["redis_smembers"],
       "disposition": "implemented",
-      "quality_issues": [16],
-      "reason": "Members are binary-safe and deterministic; issue #16 adds a uniform whole-set budget."
+      "reason": "Members are binary-safe, deterministic, and budget-guarded with redis_sscan as the cursor alternative."
+    },
+    {
+      "id": "set.scan",
+      "redis_mcp_tools": [],
+      "redisctl_tools": [],
+      "library_tools": ["redis_sscan"],
+      "disposition": "implemented",
+      "reason": "SSCAN pages expose a typed continuation cursor and obey both configured output ceilings."
     },
     {
       "id": "set.add",
@@ -565,8 +577,16 @@
       "redisctl_tools": ["redis_zrange"],
       "library_tools": ["redis_zrange"],
       "disposition": "implemented",
-      "quality_issues": [16, 22],
-      "reason": "Rank ranges and scores are structured; issues #16 and #22 complete bounds and range forms."
+      "quality_issues": [22],
+      "reason": "Rank ranges and scores are structured, default-bounded, and expose a continuation start; issue #22 completes additional sorted-set forms."
+    },
+    {
+      "id": "sorted_set.scan",
+      "redis_mcp_tools": [],
+      "redisctl_tools": [],
+      "library_tools": ["redis_zscan"],
+      "disposition": "implemented",
+      "reason": "ZSCAN pages expose binary-safe scored members, a typed continuation cursor, and both configured output ceilings."
     },
     {
       "id": "sorted_set.add",
@@ -632,7 +652,7 @@
       "library_tools": ["redis_ft_search"],
       "disposition": "implemented",
       "quality_issues": [26, 28],
-      "reason": "Bounded structured search exists; vector parameters and advanced query options are tracked separately."
+      "reason": "Bounded structured search always emits LIMIT and exposes a typed continuation offset; vector parameters and advanced query options are tracked separately."
     },
     {
       "id": "search.create_index",

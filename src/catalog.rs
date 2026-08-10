@@ -4,6 +4,36 @@ use std::fmt;
 
 use crate::AccessMode;
 
+/// Dominant strategy a tool uses to keep successful MCP output bounded.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[non_exhaustive]
+pub enum ToolOutputPolicy {
+    /// The result has a fixed or input-bounded number of fields. The global
+    /// encoded-byte ceiling still applies.
+    IntrinsicallyBounded,
+    /// The result is variable-sized and relies on the global entry and byte
+    /// ceilings, with an error that tells callers how to narrow the request.
+    BudgetGuarded,
+    /// Redis cursor pagination exposes an explicit continuation cursor.
+    CursorPaginated,
+    /// A bounded rank/index range exposes an explicit continuation start.
+    RangePaginated,
+    /// Offset pagination exposes an explicit continuation offset.
+    OffsetPaginated,
+}
+
+impl ToolOutputPolicy {
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::IntrinsicallyBounded => "intrinsically_bounded",
+            Self::BudgetGuarded => "budget_guarded",
+            Self::CursorPaginated => "cursor_paginated",
+            Self::RangePaginated => "range_paginated",
+            Self::OffsetPaginated => "offset_paginated",
+        }
+    }
+}
+
 /// Optional Redis capability required by a tool or command.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 #[non_exhaustive]
@@ -115,6 +145,23 @@ impl ToolMetadata {
             _ => None,
         }
     }
+
+    /// Dominant output-bounding strategy for this tool.
+    pub fn output_policy(self) -> ToolOutputPolicy {
+        match self.name {
+            "redis_scan" | "redis_hscan" | "redis_sscan" | "redis_zscan" => {
+                ToolOutputPolicy::CursorPaginated
+            }
+            "redis_lrange" | "redis_zrange" => ToolOutputPolicy::RangePaginated,
+            "redis_ft_search" => ToolOutputPolicy::OffsetPaginated,
+            "redis_info" | "redis_get" | "redis_mget" | "redis_randomkey" | "redis_hget"
+            | "redis_hgetall" | "redis_smembers" | "redis_json_get" | "redis_json_type"
+            | "redis_ft_list" | "redis_ft_info" | "redis_command" => {
+                ToolOutputPolicy::BudgetGuarded
+            }
+            _ => ToolOutputPolicy::IntrinsicallyBounded,
+        }
+    }
 }
 
 pub(crate) const CATALOG: &[ToolMetadata] = &[
@@ -203,6 +250,12 @@ pub(crate) const CATALOG: &[ToolMetadata] = &[
         requires_raw_opt_in: false,
     },
     ToolMetadata {
+        name: "redis_hscan",
+        bundle: ToolBundle::DataStructures,
+        required_access: AccessMode::ReadOnly,
+        requires_raw_opt_in: false,
+    },
+    ToolMetadata {
         name: "redis_lrange",
         bundle: ToolBundle::DataStructures,
         required_access: AccessMode::ReadOnly,
@@ -215,7 +268,19 @@ pub(crate) const CATALOG: &[ToolMetadata] = &[
         requires_raw_opt_in: false,
     },
     ToolMetadata {
+        name: "redis_sscan",
+        bundle: ToolBundle::DataStructures,
+        required_access: AccessMode::ReadOnly,
+        requires_raw_opt_in: false,
+    },
+    ToolMetadata {
         name: "redis_zrange",
+        bundle: ToolBundle::DataStructures,
+        required_access: AccessMode::ReadOnly,
+        requires_raw_opt_in: false,
+    },
+    ToolMetadata {
+        name: "redis_zscan",
         bundle: ToolBundle::DataStructures,
         required_access: AccessMode::ReadOnly,
         requires_raw_opt_in: false,

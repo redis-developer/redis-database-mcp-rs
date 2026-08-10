@@ -3,7 +3,7 @@ use std::{collections::BTreeMap, time::Duration};
 use async_trait::async_trait;
 use pretty_assertions::assert_eq;
 use redis_mcp::{
-    AccessMode, RawCommandPolicy, RedisCommand, RedisError, RedisExecutor, RedisMcp,
+    AccessMode, OutputBudget, RawCommandPolicy, RedisCommand, RedisError, RedisExecutor, RedisMcp,
     RedisMcpBuildError, RedisModule, RedisValue, ToolBundle, tool_catalog, tool_names,
     tool_names_for,
 };
@@ -40,6 +40,13 @@ impl RedisExecutor for StubRedis {
                 RedisValue::BulkString(b"name".to_vec()),
                 RedisValue::BulkString(b"Ada".to_vec()),
             )]),
+            "HSCAN" => RedisValue::Array(vec![
+                RedisValue::BulkString(b"7".to_vec()),
+                RedisValue::Array(vec![
+                    RedisValue::BulkString(b"name".to_vec()),
+                    RedisValue::BulkString(b"Ada".to_vec()),
+                ]),
+            ]),
             "LRANGE" => RedisValue::Array(vec![
                 RedisValue::BulkString(b"second".to_vec()),
                 RedisValue::BulkString(b"first".to_vec()),
@@ -47,6 +54,10 @@ impl RedisExecutor for StubRedis {
             "SMEMBERS" => RedisValue::Set(vec![
                 RedisValue::BulkString(b"beta".to_vec()),
                 RedisValue::BulkString(b"alpha".to_vec()),
+            ]),
+            "SSCAN" => RedisValue::Array(vec![
+                RedisValue::BulkString(b"0".to_vec()),
+                RedisValue::Array(vec![RedisValue::BulkString(b"alpha".to_vec())]),
             ]),
             "ZRANGE" => {
                 if command
@@ -62,6 +73,13 @@ impl RedisExecutor for StubRedis {
                     RedisValue::Array(vec![RedisValue::BulkString(b"alice".to_vec())])
                 }
             }
+            "ZSCAN" => RedisValue::Array(vec![
+                RedisValue::BulkString(b"3".to_vec()),
+                RedisValue::Array(vec![
+                    RedisValue::BulkString(b"alice".to_vec()),
+                    RedisValue::BulkString(b"1.5".to_vec()),
+                ]),
+            ]),
             "TYPE" => RedisValue::SimpleString("string".into()),
             "TTL" => RedisValue::Integer(-1),
             "SET" | "MSET" => RedisValue::Okay,
@@ -110,6 +128,26 @@ async fn client(access: AccessMode, raw: bool) -> McpClient {
         .initialize("redis-mcp-contract-test", "0")
         .await
         .expect("initialize client");
+    client
+}
+
+async fn client_with_budget(
+    access: AccessMode,
+    raw: bool,
+    output_budget: OutputBudget,
+) -> McpClient {
+    let router = RedisMcp::builder(StubRedis)
+        .access(access)
+        .raw_commands(raw)
+        .output_budget(output_budget)
+        .build();
+    let client = McpClient::connect(ChannelTransport::new(router))
+        .await
+        .expect("connect in-process budget client");
+    client
+        .initialize("redis-mcp-budget-test", "0")
+        .await
+        .expect("initialize budget client");
     client
 }
 
@@ -195,8 +233,13 @@ fn structured_cases() -> Vec<(&'static str, serde_json::Value, &'static str)> {
             "entries",
         ),
         (
+            "redis_hscan",
+            serde_json::json!({"key": "user:1", "count": 10}),
+            "page",
+        ),
+        (
             "redis_lrange",
-            serde_json::json!({"key": "queue", "start": 0, "stop": -1}),
+            serde_json::json!({"key": "queue", "start": 0, "stop": 1}),
             "elements",
         ),
         (
@@ -205,9 +248,19 @@ fn structured_cases() -> Vec<(&'static str, serde_json::Value, &'static str)> {
             "members",
         ),
         (
+            "redis_sscan",
+            serde_json::json!({"key": "tags", "count": 10}),
+            "page",
+        ),
+        (
             "redis_zrange",
-            serde_json::json!({"key": "leaders", "start": 0, "stop": -1, "withscores": true}),
+            serde_json::json!({"key": "leaders", "start": 0, "stop": 0, "withscores": true}),
             "members",
+        ),
+        (
+            "redis_zscan",
+            serde_json::json!({"key": "leaders", "count": 10}),
+            "page",
         ),
         (
             "redis_json_get",
@@ -321,8 +374,8 @@ fn structured_cases() -> Vec<(&'static str, serde_json::Value, &'static str)> {
 
 #[tokio::test]
 async fn access_modes_expose_exactly_the_expected_tools() {
-    assert_eq!(tool_names(AccessMode::Full, false).len(), 29);
-    assert_eq!(tool_names(AccessMode::Full, true).len(), 30);
+    assert_eq!(tool_names(AccessMode::Full, false).len(), 32);
+    assert_eq!(tool_names(AccessMode::Full, true).len(), 33);
     for (access, raw) in [
         (AccessMode::ReadOnly, false),
         (AccessMode::ReadWrite, false),
@@ -447,6 +500,151 @@ fn invalid_builder_safety_configuration_is_rejected() {
             .try_build(),
         Err(RedisMcpBuildError::ZeroCommandTimeout)
     ));
+    assert!(matches!(
+        RedisMcp::builder(StubRedis)
+            .output_budget(OutputBudget::new(0, 1))
+            .try_build(),
+        Err(RedisMcpBuildError::ZeroOutputBytes)
+    ));
+    assert!(matches!(
+        RedisMcp::builder(StubRedis)
+            .output_budget(OutputBudget::new(1, 0))
+            .try_build(),
+        Err(RedisMcpBuildError::ZeroOutputEntries)
+    ));
+}
+
+fn assert_output_limit(
+    result: &tower_mcp::CallToolResult,
+    dimension: &str,
+    actual: usize,
+    limit: usize,
+) {
+    assert!(result.is_error);
+    let error = &result
+        .meta
+        .as_ref()
+        .expect("structured output-limit metadata")["io.redis.mcp/outputLimit"];
+    assert_eq!(error["code"], "output_limit_exceeded");
+    assert_eq!(error["dimension"], dimension);
+    assert_eq!(error["actual"], actual);
+    assert_eq!(error["limit"], limit);
+    assert_eq!(error["retryable"], true);
+}
+
+#[tokio::test]
+async fn encoded_output_budget_accepts_exact_limit_and_rejects_one_byte_over() {
+    let generous = client_with_budget(
+        AccessMode::ReadOnly,
+        false,
+        OutputBudget::new(1_000_000, 1_000),
+    )
+    .await;
+    let baseline = generous
+        .call_tool("redis_get", serde_json::json!({"key": "greeting"}))
+        .await
+        .expect("baseline GET");
+    let encoded_bytes = serde_json::to_vec(&baseline)
+        .expect("serialize baseline GET")
+        .len();
+
+    let exact = client_with_budget(
+        AccessMode::ReadOnly,
+        false,
+        OutputBudget::new(encoded_bytes, 1_000),
+    )
+    .await
+    .call_tool("redis_get", serde_json::json!({"key": "greeting"}))
+    .await
+    .expect("exact-limit GET");
+    assert!(!exact.is_error);
+
+    let limited = client_with_budget(
+        AccessMode::ReadOnly,
+        false,
+        OutputBudget::new(encoded_bytes - 1, 1_000),
+    )
+    .await
+    .call_tool("redis_get", serde_json::json!({"key": "greeting"}))
+    .await
+    .expect("over-limit GET");
+    assert_output_limit(&limited, "encoded_bytes", encoded_bytes, encoded_bytes - 1);
+}
+
+#[tokio::test]
+async fn collection_budget_accepts_exact_limit_and_returns_retry_guidance() {
+    let exact = client_with_budget(AccessMode::ReadOnly, false, OutputBudget::new(1_000_000, 2))
+        .await
+        .call_tool("redis_smembers", serde_json::json!({"key": "tags"}))
+        .await
+        .expect("exact-limit SMEMBERS");
+    assert!(!exact.is_error);
+
+    let limited = client_with_budget(AccessMode::ReadOnly, false, OutputBudget::new(1_000_000, 1))
+        .await
+        .call_tool("redis_smembers", serde_json::json!({"key": "tags"}))
+        .await
+        .expect("over-limit SMEMBERS");
+    assert_output_limit(&limited, "collection_entries", 2, 1);
+    assert!(
+        limited.meta.as_ref().unwrap()["io.redis.mcp/outputLimit"]["guidance"]
+            .as_str()
+            .unwrap()
+            .contains("redis_sscan")
+    );
+}
+
+#[tokio::test]
+async fn raw_commands_share_the_hard_encoded_response_budget() {
+    let arguments = serde_json::json!({"command": "ECHO", "arguments": ["hello"]});
+    let baseline = client_with_budget(AccessMode::Full, true, OutputBudget::new(1_000_000, 1_000))
+        .await
+        .call_tool("redis_command", arguments.clone())
+        .await
+        .expect("baseline raw command");
+    let encoded_bytes = serde_json::to_vec(&baseline)
+        .expect("serialize baseline raw result")
+        .len();
+
+    let limited = client_with_budget(
+        AccessMode::Full,
+        true,
+        OutputBudget::new(encoded_bytes - 1, 1_000),
+    )
+    .await
+    .call_tool("redis_command", arguments)
+    .await
+    .expect("over-limit raw command");
+    assert_output_limit(&limited, "encoded_bytes", encoded_bytes, encoded_bytes - 1);
+}
+
+#[tokio::test]
+async fn scan_and_range_outputs_expose_typed_continuations() {
+    let client = client(AccessMode::ReadOnly, false).await;
+    let scan = client
+        .call_tool(
+            "redis_hscan",
+            serde_json::json!({"key": "user:1", "count": 10}),
+        )
+        .await
+        .expect("HSCAN")
+        .structured_content
+        .expect("structured HSCAN");
+    assert_eq!(scan["page"]["complete"], false);
+    assert_eq!(scan["page"]["continuation"]["cursor"], 7);
+
+    let range = client
+        .call_tool(
+            "redis_lrange",
+            serde_json::json!({"key": "queue", "start": 0, "stop": 0}),
+        )
+        .await
+        .expect("LRANGE")
+        .structured_content
+        .expect("structured LRANGE");
+    assert_eq!(range["count"], 1);
+    assert_eq!(range["page"]["complete"], false);
+    assert_eq!(range["page"]["continuation"]["start"], 1);
 }
 
 #[tokio::test]
@@ -498,6 +696,14 @@ async fn malformed_and_unbounded_inputs_fail_as_tool_results() {
         (
             "redis_scan",
             serde_json::json!({"pattern": "*", "count": 0}),
+        ),
+        (
+            "redis_lrange",
+            serde_json::json!({"key": "queue", "start": 0, "stop": -1}),
+        ),
+        (
+            "redis_zrange",
+            serde_json::json!({"key": "leaders", "start": 0, "stop": 1000}),
         ),
         (
             "redis_get",
@@ -628,6 +834,47 @@ async fn binary_and_nil_values_are_explicit_across_curated_reads() {
             .unwrap_or_else(|| panic!("{name}: no structured content"));
         assert_eq!(structured.pointer(path), Some(&serde_json::json!("base64")));
     }
+}
+
+#[tokio::test]
+async fn encoded_budget_is_measured_after_binary_base64_expansion() {
+    let generous_router = RedisMcp::builder(BinaryRedis)
+        .output_budget(OutputBudget::new(1_000_000, 1_000))
+        .build();
+    let generous = McpClient::connect(ChannelTransport::new(generous_router))
+        .await
+        .expect("connect generous binary client");
+    generous
+        .initialize("redis-mcp-binary-budget-test", "0")
+        .await
+        .expect("initialize generous binary client");
+    let baseline = generous
+        .call_tool("redis_get", serde_json::json!({"key": "binary"}))
+        .await
+        .expect("baseline binary GET");
+    assert_eq!(
+        baseline.structured_content.as_ref().unwrap()["value"],
+        "/wA="
+    );
+    let encoded_bytes = serde_json::to_vec(&baseline)
+        .expect("serialize binary GET")
+        .len();
+
+    let limited_router = RedisMcp::builder(BinaryRedis)
+        .output_budget(OutputBudget::new(encoded_bytes - 1, 1_000))
+        .build();
+    let limited = McpClient::connect(ChannelTransport::new(limited_router))
+        .await
+        .expect("connect limited binary client");
+    limited
+        .initialize("redis-mcp-binary-budget-test", "0")
+        .await
+        .expect("initialize limited binary client");
+    let result = limited
+        .call_tool("redis_get", serde_json::json!({"key": "binary"}))
+        .await
+        .expect("over-limit binary GET");
+    assert_output_limit(&result, "encoded_bytes", encoded_bytes, encoded_bytes - 1);
 }
 
 #[tokio::test]
@@ -767,6 +1014,7 @@ async fn curated_catalog_matches_checked_in_contract_snapshot() {
                 "required_access": metadata.required_access.as_str(),
                 "required_module": metadata.required_module().map(|module| module.as_str()),
                 "requires_raw_opt_in": metadata.requires_raw_opt_in,
+                "output_policy": metadata.output_policy().as_str(),
                 "protocol": tool,
             })
         })

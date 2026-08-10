@@ -191,6 +191,21 @@ async fn redis_json_and_search_lifecycle_through_router() {
     assert_eq!(info["index"], index);
     assert!(info["attributes"].is_object());
 
+    let mut extra_keys = Vec::new();
+    for number in 2..=12 {
+        let extra_key = format!("{prefix}{number}");
+        call(
+            &client,
+            "redis_json_set",
+            serde_json::json!({
+                "key": extra_key,
+                "value": {"name": format!("Ada Lovelace {number}"), "score": number}
+            }),
+        )
+        .await;
+        extra_keys.push(extra_key);
+    }
+
     let mut found = None;
     for _ in 0..20 {
         let search = structured(
@@ -214,6 +229,48 @@ async fn redis_json_and_search_lifecycle_through_router() {
     let search = found.expect("new JSON document becomes searchable");
     assert!(search["response"].to_string().contains(&key));
 
+    let mut first_page = None;
+    for _ in 0..40 {
+        let search = structured(
+            call(
+                &client,
+                "redis_ft_search",
+                serde_json::json!({
+                    "index": index,
+                    "query": "@name:Ada",
+                    "limit_offset": 0,
+                    "limit_num": 5
+                }),
+            )
+            .await,
+        );
+        if search["total"].as_u64().is_some_and(|total| total >= 12) {
+            first_page = Some(search);
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(50)).await;
+    }
+    let first_page = first_page.expect("all JSON documents become searchable");
+    assert_eq!(first_page["page"]["returned"], 5);
+    assert_eq!(first_page["page"]["complete"], false);
+    assert_eq!(first_page["page"]["continuation"]["offset"], 5);
+
+    let second_page = structured(
+        call(
+            &client,
+            "redis_ft_search",
+            serde_json::json!({
+                "index": index,
+                "query": "@name:Ada",
+                "limit_offset": first_page["page"]["continuation"]["offset"],
+                "limit_num": 5
+            }),
+        )
+        .await,
+    );
+    assert_eq!(second_page["limit_offset"], 5);
+    assert_eq!(second_page["page"]["returned"], 5);
+
     let dropped = structured(
         call(
             &client,
@@ -225,7 +282,15 @@ async fn redis_json_and_search_lifecycle_through_router() {
     assert_eq!(dropped["dropped"], true);
     assert_eq!(dropped["documents_deleted"], false);
 
-    let deleted =
-        structured(call(&client, "redis_json_del", serde_json::json!({"key": key})).await);
-    assert_eq!(deleted["deleted"], 1);
+    for document_key in std::iter::once(key).chain(extra_keys) {
+        let deleted = structured(
+            call(
+                &client,
+                "redis_json_del",
+                serde_json::json!({"key": document_key}),
+            )
+            .await,
+        );
+        assert_eq!(deleted["deleted"], 1);
+    }
 }

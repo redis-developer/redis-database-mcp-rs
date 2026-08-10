@@ -5,7 +5,7 @@ use std::sync::Arc;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use tower_mcp::{
-    CallToolResult, McpRouter, Tool, ToolBuilder,
+    McpRouter, Tool, ToolBuilder,
     extract::{Json, State},
 };
 
@@ -59,7 +59,7 @@ fn exists_tool(state: Arc<ToolState>) -> Tool {
                     command.arg(key.as_str());
                 }
                 let existing = state.query(command, "EXISTS failed").await?;
-                CallToolResult::from_serialize(&ExistsOutput {
+                state.output(&ExistsOutput {
                     requested,
                     existing,
                     all_exist: existing == requested as u64,
@@ -129,10 +129,11 @@ fn mget_tool(state: Arc<ToolState>) -> Tool {
                         },
                     })
                     .collect::<Vec<_>>();
-                CallToolResult::from_serialize(&MgetOutput {
+                let output = MgetOutput {
                     count: values.len(),
                     values,
-                })
+                };
+                state.output_collection(&output, output.count, "Retry MGET with fewer keys.")
             },
         )
         .build()
@@ -164,7 +165,7 @@ fn strlen_tool(state: Arc<ToolState>) -> Tool {
                 let mut command = command("redis_strlen", AccessMode::ReadOnly, "STRLEN");
                 command.arg(input.key.as_str());
                 let length_bytes = state.query(command, "STRLEN failed").await?;
-                CallToolResult::from_serialize(&StrlenOutput {
+                state.output(&StrlenOutput {
                     key: input.key,
                     length_bytes,
                 })
@@ -193,7 +194,7 @@ fn memory_usage_tool(state: Arc<ToolState>) -> Tool {
                 let mut command = command("redis_memory_usage", AccessMode::ReadOnly, "MEMORY");
                 command.arg("USAGE").arg(input.key.as_str());
                 let bytes: Option<u64> = state.query(command, "MEMORY USAGE failed").await?;
-                CallToolResult::from_serialize(&MemoryUsageOutput {
+                state.output(&MemoryUsageOutput {
                     key: input.key,
                     exists: bytes.is_some(),
                     bytes,
@@ -231,7 +232,7 @@ fn randomkey_tool(state: Arc<ToolState>) -> Tool {
                 }
                 None => (None, None),
             };
-            CallToolResult::from_serialize(&RandomKeyOutput { key, encoding })
+            state.output(&RandomKeyOutput { key, encoding })
         })
         .build()
 }
@@ -274,7 +275,7 @@ fn expire_tool(state: Arc<ToolState>) -> Tool {
                     .arg(input.key.as_str())
                     .arg(input.seconds.to_string());
                 let applied = state.query(command, "EXPIRE failed").await?;
-                CallToolResult::from_serialize(&ExpireOutput {
+                state.output(&ExpireOutput {
                     key: input.key,
                     seconds: input.seconds,
                     applied,
@@ -304,7 +305,7 @@ fn persist_tool(state: Arc<ToolState>) -> Tool {
                 let mut command = command("redis_persist", AccessMode::ReadWrite, "PERSIST");
                 command.arg(input.key.as_str());
                 let applied = state.query(command, "PERSIST failed").await?;
-                CallToolResult::from_serialize(&PersistOutput {
+                state.output(&PersistOutput {
                     key: input.key,
                     applied,
                 })
@@ -353,7 +354,7 @@ fn mset_tool(state: Arc<ToolState>) -> Tool {
                     command.arg(entry.key).arg(entry.value);
                 }
                 let _: String = state.query(command, "MSET failed").await?;
-                CallToolResult::from_serialize(&MsetOutput { stored })
+                state.output(&MsetOutput { stored })
             },
         )
         .build()
@@ -379,7 +380,7 @@ fn incr_tool(state: Arc<ToolState>) -> Tool {
                 let mut command = command("redis_incr", AccessMode::ReadWrite, "INCR");
                 command.arg(input.key.as_str());
                 let value = state.query(command, "INCR failed").await?;
-                CallToolResult::from_serialize(&IncrOutput {
+                state.output(&IncrOutput {
                     key: input.key,
                     value,
                 })
@@ -417,7 +418,7 @@ fn append_tool(state: Arc<ToolState>) -> Tool {
                 let mut command = command("redis_append", AccessMode::ReadWrite, "APPEND");
                 command.arg(input.key.as_str()).arg(input.value);
                 let length_bytes = state.query(command, "APPEND failed").await?;
-                CallToolResult::from_serialize(&AppendOutput {
+                state.output(&AppendOutput {
                     key: input.key,
                     length_bytes,
                 })
@@ -448,7 +449,7 @@ fn unlink_tool(state: Arc<ToolState>) -> Tool {
                 let mut command = command("redis_unlink", AccessMode::Full, "UNLINK");
                 command.args(input.keys);
                 let unlinked = state.query(command, "UNLINK failed").await?;
-                CallToolResult::from_serialize(&UnlinkOutput {
+                state.output(&UnlinkOutput {
                     requested,
                     unlinked,
                 })

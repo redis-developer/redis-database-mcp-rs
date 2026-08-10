@@ -5,16 +5,18 @@ use std::{collections::BTreeMap, sync::Arc};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use tower_mcp::{
-    CallToolResult, McpRouter, Tool, ToolBuilder,
+    McpRouter, Tool, ToolBuilder,
     extract::{Json, State},
 };
 
 use super::{
-    ToolState, ValueEncoding, command, output_schema, read_annotations, write_annotations,
+    PageMetadata, ToolState, ValueEncoding, command, output_schema, read_annotations,
+    write_annotations,
 };
 use crate::AccessMode;
 
 const MAX_ITEMS: usize = 1_000;
+type BinaryPair = (Vec<u8>, Vec<u8>);
 
 fn validate_items(items: &[impl Sized], name: &str) -> tower_mcp::Result<()> {
     if items.is_empty() || items.len() > MAX_ITEMS {
@@ -78,7 +80,7 @@ fn hget_tool(state: Arc<ToolState>) -> Tool {
                     }
                     None => (None, None),
                 };
-                CallToolResult::from_serialize(&HgetOutput {
+                state.output(&HgetOutput {
                     key: input.key,
                     field: input.field,
                     exists: value.is_some(),
@@ -118,7 +120,9 @@ struct HgetallOutput {
 fn hgetall_tool(state: Arc<ToolState>) -> Tool {
     ToolBuilder::new("redis_hgetall")
         .title("Get Redis Hash")
-        .description("Read all fields and values in a Redis hash with binary-safe encodings.")
+        .description(
+            "Read all fields and values in a Redis hash with binary-safe encodings. The configured output budget is enforced; use redis_hscan for large hashes.",
+        )
         .output_schema(output_schema::<HgetallOutput>())
         .annotations(read_annotations())
         .extractor_handler(
@@ -126,7 +130,7 @@ fn hgetall_tool(state: Arc<ToolState>) -> Tool {
             |State(state): State<Arc<ToolState>>, Json(input): Json<KeyInput>| async move {
                 let mut command = command("redis_hgetall", AccessMode::ReadOnly, "HGETALL");
                 command.arg(input.key.as_str());
-                let mut values: Vec<(Vec<u8>, Vec<u8>)> =
+                let mut values: Vec<BinaryPair> =
                     state.query(command, "HGETALL failed").await?;
                 values.sort_by(|left, right| left.0.cmp(&right.0));
                 let entries = values
@@ -142,19 +146,258 @@ fn hgetall_tool(state: Arc<ToolState>) -> Tool {
                         }
                     })
                     .collect::<Vec<_>>();
-                CallToolResult::from_serialize(&HgetallOutput {
+                let output = HgetallOutput {
                     key: input.key,
                     exists: !entries.is_empty(),
                     count: entries.len(),
                     entries,
-                })
+                };
+                state.output_collection(
+                    &output,
+                    output.count,
+                    "Use redis_hscan to read the hash incrementally.",
+                )
+            },
+        )
+        .build()
+}
+
+fn default_pattern() -> String {
+    "*".to_string()
+}
+
+fn default_scan_count() -> usize {
+    100
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+struct CollectionScanInput {
+    /// Redis key containing the collection.
+    key: String,
+    /// Cursor returned by the previous page. Start with zero.
+    #[serde(default)]
+    cursor: u64,
+    /// Glob-style field or member pattern.
+    #[serde(default = "default_pattern")]
+    pattern: String,
+    /// Approximate number of fields or members Redis should inspect.
+    #[serde(default = "default_scan_count")]
+    #[schemars(range(min = 1, max = 1000))]
+    count: usize,
+}
+
+#[derive(Debug, Serialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+struct HscanOutput {
+    key: String,
+    cursor: u64,
+    count: usize,
+    entries: Vec<HashEntry>,
+    page: PageMetadata,
+}
+
+fn hscan_tool(state: Arc<ToolState>) -> Tool {
+    ToolBuilder::new("redis_hscan")
+        .title("Scan Redis Hash")
+        .description(
+            "Read one bounded HSCAN page. Pass page.continuation.cursor as cursor until page.complete is true. Fields and values are binary-safe.",
+        )
+        .output_schema(output_schema::<HscanOutput>())
+        .annotations(read_annotations())
+        .extractor_handler(
+            state,
+            |State(state): State<Arc<ToolState>>,
+             Json(input): Json<CollectionScanInput>| async move {
+                state.validate_requested_entries(input.count, "count")?;
+                let mut command = command("redis_hscan", AccessMode::ReadOnly, "HSCAN");
+                command
+                    .arg(input.key.as_str())
+                    .arg(input.cursor.to_string())
+                    .arg("MATCH")
+                    .arg(input.pattern.as_str())
+                    .arg("COUNT")
+                    .arg(input.count.to_string());
+                let (cursor, values): (u64, Vec<BinaryPair>) =
+                    state.query(command, "HSCAN failed").await?;
+                let entries = values
+                    .into_iter()
+                    .map(|(field, value)| {
+                        let (field, field_encoding) = super::encode_bytes(field);
+                        let (value, value_encoding) = super::encode_bytes(value);
+                        HashEntry {
+                            field,
+                            field_encoding,
+                            value,
+                            value_encoding,
+                        }
+                    })
+                    .collect::<Vec<_>>();
+                let output = HscanOutput {
+                    key: input.key,
+                    cursor,
+                    count: entries.len(),
+                    page: PageMetadata::cursor(input.count, entries.len(), cursor),
+                    entries,
+                };
+                state.output_collection(
+                    &output,
+                    output.count,
+                    "Retry HSCAN with a smaller count and the same cursor.",
+                )
+            },
+        )
+        .build()
+}
+
+#[derive(Debug, Serialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+struct SscanOutput {
+    key: String,
+    cursor: u64,
+    count: usize,
+    members: Vec<EncodedValue>,
+    page: PageMetadata,
+}
+
+fn sscan_tool(state: Arc<ToolState>) -> Tool {
+    ToolBuilder::new("redis_sscan")
+        .title("Scan Redis Set")
+        .description(
+            "Read one bounded SSCAN page. Pass page.continuation.cursor as cursor until page.complete is true. Members are binary-safe.",
+        )
+        .output_schema(output_schema::<SscanOutput>())
+        .annotations(read_annotations())
+        .extractor_handler(
+            state,
+            |State(state): State<Arc<ToolState>>,
+             Json(input): Json<CollectionScanInput>| async move {
+                state.validate_requested_entries(input.count, "count")?;
+                let mut command = command("redis_sscan", AccessMode::ReadOnly, "SSCAN");
+                command
+                    .arg(input.key.as_str())
+                    .arg(input.cursor.to_string())
+                    .arg("MATCH")
+                    .arg(input.pattern.as_str())
+                    .arg("COUNT")
+                    .arg(input.count.to_string());
+                let (cursor, values): (u64, Vec<Vec<u8>>) =
+                    state.query(command, "SSCAN failed").await?;
+                let members = values
+                    .into_iter()
+                    .map(EncodedValue::from)
+                    .collect::<Vec<_>>();
+                let output = SscanOutput {
+                    key: input.key,
+                    cursor,
+                    count: members.len(),
+                    page: PageMetadata::cursor(input.count, members.len(), cursor),
+                    members,
+                };
+                state.output_collection(
+                    &output,
+                    output.count,
+                    "Retry SSCAN with a smaller count and the same cursor.",
+                )
+            },
+        )
+        .build()
+}
+
+#[derive(Debug, Serialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+struct ZscanEntry {
+    member: String,
+    encoding: ValueEncoding,
+    score: f64,
+}
+
+#[derive(Debug, Serialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+struct ZscanOutput {
+    key: String,
+    cursor: u64,
+    count: usize,
+    members: Vec<ZscanEntry>,
+    page: PageMetadata,
+}
+
+fn zscan_tool(state: Arc<ToolState>) -> Tool {
+    ToolBuilder::new("redis_zscan")
+        .title("Scan Redis Sorted Set")
+        .description(
+            "Read one bounded ZSCAN page. Pass page.continuation.cursor as cursor until page.complete is true. Members are binary-safe and include scores.",
+        )
+        .output_schema(output_schema::<ZscanOutput>())
+        .annotations(read_annotations())
+        .extractor_handler(
+            state,
+            |State(state): State<Arc<ToolState>>,
+             Json(input): Json<CollectionScanInput>| async move {
+                state.validate_requested_entries(input.count, "count")?;
+                let mut command = command("redis_zscan", AccessMode::ReadOnly, "ZSCAN");
+                command
+                    .arg(input.key.as_str())
+                    .arg(input.cursor.to_string())
+                    .arg("MATCH")
+                    .arg(input.pattern.as_str())
+                    .arg("COUNT")
+                    .arg(input.count.to_string());
+                let (cursor, values): (u64, Vec<(Vec<u8>, f64)>) =
+                    state.query(command, "ZSCAN failed").await?;
+                let members = values
+                    .into_iter()
+                    .map(|(member, score)| {
+                        let member = EncodedValue::from(member);
+                        ZscanEntry {
+                            member: member.value,
+                            encoding: member.encoding,
+                            score,
+                        }
+                    })
+                    .collect::<Vec<_>>();
+                let output = ZscanOutput {
+                    key: input.key,
+                    cursor,
+                    count: members.len(),
+                    page: PageMetadata::cursor(input.count, members.len(), cursor),
+                    members,
+                };
+                state.output_collection(
+                    &output,
+                    output.count,
+                    "Retry ZSCAN with a smaller count and the same cursor.",
+                )
             },
         )
         .build()
 }
 
 fn default_stop() -> i64 {
-    -1
+    99
+}
+
+fn validate_range(start: i64, stop: i64, limit: usize) -> tower_mcp::Result<usize> {
+    if (start < 0) != (stop < 0) {
+        return Err(tower_mcp::Error::tool(
+            "start and stop must both be non-negative or both be negative so the response is bounded",
+        ));
+    }
+    if stop < start {
+        return Ok(0);
+    }
+    let requested = stop
+        .checked_sub(start)
+        .and_then(|span| span.checked_add(1))
+        .and_then(|span| usize::try_from(span).ok())
+        .ok_or_else(|| tower_mcp::Error::tool("requested range is too large"))?;
+    if requested > limit {
+        Err(tower_mcp::Error::tool(format!(
+            "requested range contains {requested} entries; configured output limit is {limit}"
+        )))
+    } else {
+        Ok(requested)
+    }
 }
 
 #[derive(Debug, Deserialize, JsonSchema)]
@@ -178,34 +421,56 @@ struct LrangeOutput {
     stop: i64,
     count: usize,
     elements: Vec<EncodedValue>,
+    page: PageMetadata,
 }
 
 fn lrange_tool(state: Arc<ToolState>) -> Tool {
     ToolBuilder::new("redis_lrange")
         .title("Read Redis List Range")
-        .description("Read an inclusive range from a Redis list. Binary elements are base64.")
+        .description(
+            "Read a bounded inclusive range from a Redis list. Defaults to ranks 0 through 99. Follow page.continuation.start until page.complete is true. Binary elements are base64.",
+        )
         .output_schema(output_schema::<LrangeOutput>())
         .annotations(read_annotations())
         .extractor_handler(
             state,
             |State(state): State<Arc<ToolState>>, Json(input): Json<RangeInput>| async move {
+                let requested = validate_range(
+                    input.start,
+                    input.stop,
+                    state.max_collection_entries(),
+                )?;
+                let fetch_stop = if input.start >= 0 && requested > 0 {
+                    input.stop.checked_add(1).unwrap_or(input.stop)
+                } else {
+                    input.stop
+                };
                 let mut command = command("redis_lrange", AccessMode::ReadOnly, "LRANGE");
                 command
                     .arg(input.key.as_str())
                     .arg(input.start.to_string())
-                    .arg(input.stop.to_string());
-                let values: Vec<Vec<u8>> = state.query(command, "LRANGE failed").await?;
+                    .arg(fetch_stop.to_string());
+                let mut values: Vec<Vec<u8>> = state.query(command, "LRANGE failed").await?;
+                let has_more = input.start >= 0 && requested > 0 && values.len() > requested;
+                values.truncate(requested);
                 let elements = values
                     .into_iter()
                     .map(EncodedValue::from)
                     .collect::<Vec<_>>();
-                CallToolResult::from_serialize(&LrangeOutput {
+                let next_start = has_more.then(|| input.stop.saturating_add(1));
+                let output = LrangeOutput {
                     key: input.key,
                     start: input.start,
                     stop: input.stop,
                     count: elements.len(),
+                    page: PageMetadata::range(requested, elements.len(), next_start),
                     elements,
-                })
+                };
+                state.output_collection(
+                    &output,
+                    output.count,
+                    "Retry LRANGE with a smaller start/stop span.",
+                )
             },
         )
         .build()
@@ -224,7 +489,7 @@ fn smembers_tool(state: Arc<ToolState>) -> Tool {
     ToolBuilder::new("redis_smembers")
         .title("Read Redis Set")
         .description(
-            "Read all Redis set members in deterministic byte order. Binary members are base64.",
+            "Read all Redis set members in deterministic byte order. The configured output budget is enforced; use redis_sscan for large sets. Binary members are base64.",
         )
         .output_schema(output_schema::<SmembersOutput>())
         .annotations(read_annotations())
@@ -239,12 +504,17 @@ fn smembers_tool(state: Arc<ToolState>) -> Tool {
                     .into_iter()
                     .map(EncodedValue::from)
                     .collect::<Vec<_>>();
-                CallToolResult::from_serialize(&SmembersOutput {
+                let output = SmembersOutput {
                     key: input.key,
                     exists: !members.is_empty(),
                     count: members.len(),
                     members,
-                })
+                };
+                state.output_collection(
+                    &output,
+                    output.count,
+                    "Use redis_sscan to read the set incrementally.",
+                )
             },
         )
         .build()
@@ -286,26 +556,39 @@ struct ZrangeOutput {
     rev: bool,
     count: usize,
     members: Vec<ZrangeEntry>,
+    page: PageMetadata,
 }
 
 fn zrange_tool(state: Arc<ToolState>) -> Tool {
     ToolBuilder::new("redis_zrange")
         .title("Read Redis Sorted Set Range")
-        .description("Read a rank range from a Redis sorted set, optionally with scores.")
+        .description(
+            "Read a bounded rank range from a Redis sorted set, optionally with scores. Defaults to ranks 0 through 99. Follow page.continuation.start until page.complete is true.",
+        )
         .output_schema(output_schema::<ZrangeOutput>())
         .annotations(read_annotations())
         .extractor_handler(
             state,
             |State(state): State<Arc<ToolState>>, Json(input): Json<ZrangeInput>| async move {
+                let requested = validate_range(
+                    input.start,
+                    input.stop,
+                    state.max_collection_entries(),
+                )?;
+                let fetch_stop = if input.start >= 0 && requested > 0 {
+                    input.stop.checked_add(1).unwrap_or(input.stop)
+                } else {
+                    input.stop
+                };
                 let mut command = command("redis_zrange", AccessMode::ReadOnly, "ZRANGE");
                 command
                     .arg(input.key.as_str())
                     .arg(input.start.to_string())
-                    .arg(input.stop.to_string());
+                    .arg(fetch_stop.to_string());
                 if input.rev {
                     command.arg("REV");
                 }
-                let members = if input.withscores {
+                let mut members = if input.withscores {
                     command.arg("WITHSCORES");
                     let values: Vec<(Vec<u8>, f64)> = state.query(command, "ZRANGE failed").await?;
                     values
@@ -333,14 +616,23 @@ fn zrange_tool(state: Arc<ToolState>) -> Tool {
                         })
                         .collect::<Vec<_>>()
                 };
-                CallToolResult::from_serialize(&ZrangeOutput {
+                let has_more = input.start >= 0 && requested > 0 && members.len() > requested;
+                members.truncate(requested);
+                let next_start = has_more.then(|| input.stop.saturating_add(1));
+                let output = ZrangeOutput {
                     key: input.key,
                     start: input.start,
                     stop: input.stop,
                     rev: input.rev,
                     count: members.len(),
+                    page: PageMetadata::range(requested, members.len(), next_start),
                     members,
-                })
+                };
+                state.output_collection(
+                    &output,
+                    output.count,
+                    "Retry ZRANGE with a smaller start/stop span.",
+                )
             },
         )
         .build()
@@ -382,7 +674,7 @@ fn hset_tool(state: Arc<ToolState>) -> Tool {
                     command.arg(field).arg(value);
                 }
                 let fields_added = state.query(command, "HSET failed").await?;
-                CallToolResult::from_serialize(&HsetOutput {
+                state.output(&HsetOutput {
                     key: input.key,
                     fields_set,
                     fields_added,
@@ -425,7 +717,7 @@ fn lpush_tool(state: Arc<ToolState>) -> Tool {
                 let mut command = command("redis_lpush", AccessMode::ReadWrite, "LPUSH");
                 command.arg(input.key.as_str()).args(input.elements);
                 let length = state.query(command, "LPUSH failed").await?;
-                CallToolResult::from_serialize(&LpushOutput {
+                state.output(&LpushOutput {
                     key: input.key,
                     pushed,
                     length,
@@ -468,7 +760,7 @@ fn sadd_tool(state: Arc<ToolState>) -> Tool {
                 let mut command = command("redis_sadd", AccessMode::ReadWrite, "SADD");
                 command.arg(input.key.as_str()).args(input.members);
                 let added = state.query(command, "SADD failed").await?;
-                CallToolResult::from_serialize(&SaddOutput {
+                state.output(&SaddOutput {
                     key: input.key,
                     requested,
                     added,
@@ -575,7 +867,7 @@ fn zadd_tool(state: Arc<ToolState>) -> Tool {
                     command.arg(member.score.to_string()).arg(member.member);
                 }
                 let affected = state.query(command, "ZADD failed").await?;
-                CallToolResult::from_serialize(&ZaddOutput {
+                state.output(&ZaddOutput {
                     key: input.key,
                     requested,
                     affected,
@@ -589,9 +881,12 @@ fn zadd_tool(state: Arc<ToolState>) -> Tool {
 pub(super) fn add_read_tools(mut router: McpRouter, state: Arc<ToolState>) -> McpRouter {
     router = router.tool(hget_tool(state.clone()));
     router = router.tool(hgetall_tool(state.clone()));
+    router = router.tool(hscan_tool(state.clone()));
     router = router.tool(lrange_tool(state.clone()));
     router = router.tool(smembers_tool(state.clone()));
-    router.tool(zrange_tool(state))
+    router = router.tool(sscan_tool(state.clone()));
+    router = router.tool(zrange_tool(state.clone()));
+    router.tool(zscan_tool(state))
 }
 
 pub(super) fn add_write_tools(mut router: McpRouter, state: Arc<ToolState>) -> McpRouter {

@@ -10,17 +10,19 @@
 mod access;
 mod catalog;
 mod executor;
+mod output;
 mod raw;
 mod tools;
 
 use std::{collections::BTreeSet, sync::Arc, time::Duration};
 
 pub use access::AccessMode;
-pub use catalog::{RedisModule, ToolBundle, ToolMetadata, tool_catalog};
+pub use catalog::{RedisModule, ToolBundle, ToolMetadata, ToolOutputPolicy, tool_catalog};
 pub use executor::{
     DirectRedis, DirectRedisCluster, RedisCommand, RedisError, RedisErrorKind, RedisExecutor,
     RedisValue,
 };
+pub use output::{DEFAULT_MAX_OUTPUT_BYTES, DEFAULT_MAX_OUTPUT_ENTRIES, OutputBudget};
 pub use raw::RawCommandPolicy;
 use tower_mcp::McpRouter;
 
@@ -39,6 +41,7 @@ impl RedisMcp {
             bundles: ToolBundle::DEFAULTS.iter().copied().collect(),
             raw_command_policy: RawCommandPolicy::Disabled,
             command_timeout: DEFAULT_COMMAND_TIMEOUT,
+            output_budget: OutputBudget::default(),
             server_name: "redis-mcp".to_string(),
             server_version: env!("CARGO_PKG_VERSION").to_string(),
         }
@@ -52,6 +55,7 @@ pub struct RedisMcpBuilder {
     bundles: BTreeSet<ToolBundle>,
     raw_command_policy: RawCommandPolicy,
     command_timeout: Duration,
+    output_budget: OutputBudget,
     server_name: String,
     server_version: String,
 }
@@ -109,6 +113,17 @@ impl RedisMcpBuilder {
         self
     }
 
+    /// Set hard limits for encoded MCP responses and returned collection
+    /// entries.
+    ///
+    /// The byte limit measures the complete serialized tool result, including
+    /// both structured content and its MCP text rendering. Both limits must be
+    /// greater than zero.
+    pub fn output_budget(mut self, output_budget: OutputBudget) -> Self {
+        self.output_budget = output_budget;
+        self
+    }
+
     /// Override the server identity advertised during MCP initialization.
     pub fn server_info(mut self, name: impl Into<String>, version: impl Into<String>) -> Self {
         self.server_name = name.into();
@@ -127,6 +142,12 @@ impl RedisMcpBuilder {
         if self.command_timeout.is_zero() {
             return Err(RedisMcpBuildError::ZeroCommandTimeout);
         }
+        if self.output_budget.max_bytes() == 0 {
+            return Err(RedisMcpBuildError::ZeroOutputBytes);
+        }
+        if self.output_budget.max_collection_entries() == 0 {
+            return Err(RedisMcpBuildError::ZeroOutputEntries);
+        }
         if self.raw_command_policy.is_enabled() && self.access != AccessMode::Full {
             return Err(RedisMcpBuildError::RawCommandsRequireFullAccess);
         }
@@ -135,6 +156,7 @@ impl RedisMcpBuilder {
             self.access,
             self.command_timeout,
             self.raw_command_policy,
+            self.output_budget,
         ));
         let mut router = McpRouter::new().server_info(self.server_name, self.server_version);
         router = tools::add_read_only_tools(router, state.clone(), &self.bundles);
@@ -157,6 +179,10 @@ impl RedisMcpBuilder {
 pub enum RedisMcpBuildError {
     /// A zero timeout would make every command fail immediately.
     ZeroCommandTimeout,
+    /// A zero byte budget cannot represent a valid MCP tool result.
+    ZeroOutputBytes,
+    /// A zero entry budget cannot represent a collection page.
+    ZeroOutputEntries,
     /// Raw commands are an escape hatch and require full access in addition to
     /// their separate policy opt-in.
     RawCommandsRequireFullAccess,
@@ -167,6 +193,12 @@ impl std::fmt::Display for RedisMcpBuildError {
         match self {
             Self::ZeroCommandTimeout => {
                 formatter.write_str("command timeout must be greater than zero")
+            }
+            Self::ZeroOutputBytes => {
+                formatter.write_str("maximum output bytes must be greater than zero")
+            }
+            Self::ZeroOutputEntries => {
+                formatter.write_str("maximum output collection entries must be greater than zero")
             }
             Self::RawCommandsRequireFullAccess => {
                 formatter.write_str("raw command execution requires full access")

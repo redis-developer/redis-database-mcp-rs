@@ -12,7 +12,7 @@ Redis Cloud and Redis Enterprise APIs. The Rust package is simply redis-mcp.
 
 ## Curated default
 
-The standalone default exposes 29 broadly useful tools:
+The standalone default exposes 32 broadly useful tools:
 
 - read-only essentials: `redis_ping`, `redis_dbsize`, `redis_scan`,
   `redis_get`, `redis_type`, `redis_ttl`, `redis_exists`, `redis_mget`,
@@ -20,9 +20,9 @@ The standalone default exposes 29 broadly useful tools:
 - read-write essentials: `redis_set`, `redis_expire`, `redis_persist`,
   `redis_mset`, `redis_incr`, `redis_append`
 - full-access essentials: `redis_del`, `redis_unlink`
-- data structures: `redis_hget`, `redis_hgetall`, `redis_hset`,
-  `redis_lrange`, `redis_lpush`, `redis_smembers`, `redis_sadd`,
-  `redis_zrange`, `redis_zadd`
+- data structures: `redis_hget`, `redis_hgetall`, `redis_hscan`, `redis_hset`,
+  `redis_lrange`, `redis_lpush`, `redis_smembers`, `redis_sscan`, `redis_sadd`,
+  `redis_zrange`, `redis_zscan`, `redis_zadd`
 - diagnostics: `redis_info`
 - optional RedisJSON lifecycle: `redis_json_get`, `redis_json_type`,
   `redis_json_set`, `redis_json_del`
@@ -31,8 +31,12 @@ The standalone default exposes 29 broadly useful tools:
 - explicit full-access escape hatch: `redis_command`
 
 Every successful tool result includes MCP structuredContent and an output
-schema. A fixed Redis target is configured once by the server; arbitrary URLs
-are not accepted in tool calls.
+schema. Results are limited by default to 256 KiB for the complete encoded MCP
+result and 1,000 collection entries. Oversized results return a stable
+`output_limit_exceeded` reason with machine-readable
+`io.redis.mcp/outputLimit` metadata; hashes, sets, sorted sets, ranges, and
+Search also expose typed continuation metadata. A fixed Redis target is
+configured once by the server; arbitrary URLs are not accepted in tool calls.
 
 See [the spike decision record](docs/spike.md) for the tested architecture,
 REPL findings, and redisctl migration sequence.
@@ -99,7 +103,7 @@ configured Redis target must provide the corresponding capability:
 ## Embed the router
 
     use std::time::Duration;
-    use redis_mcp::{AccessMode, DirectRedis, RedisMcp, ToolBundle};
+    use redis_mcp::{AccessMode, DirectRedis, OutputBudget, RedisMcp, ToolBundle};
 
     # async fn example() -> Result<(), Box<dyn std::error::Error>> {
     let redis = DirectRedis::connect("redis://127.0.0.1:6379").await?;
@@ -107,6 +111,7 @@ configured Redis target must provide the corresponding capability:
         .access(AccessMode::ReadWrite)
         .bundles([ToolBundle::Essentials, ToolBundle::Diagnostics])
         .command_timeout(Duration::from_secs(10))
+        .output_budget(OutputBudget::new(512 * 1024, 2_000))
         .build();
 
     // Serve or merge router in the host application.
@@ -170,7 +175,7 @@ is also exercised to keep missing-module errors stable and actionable.
 
 CI runs the complete suite on Redis 8.8 and the live router/stdio contract on
 every currently supported Redis Open Source series: 6.2, 7.2, 7.4, 8.0, 8.2,
-8.4, 8.6, and 8.8. Live tests exercise both RESP2 and RESP3, the 29-tool curated
+8.4, 8.6, and 8.8. Live tests exercise both RESP2 and RESP3, the 32-tool curated
 catalog, binary and nil responses, ACL failures, bounded connection loss and
 recovery, and the real `redis-mcp-server` stdio process. A separate job pins the
 official `redis/redis-stack-server:7.4.0-v8` image and runs the JSON/Search

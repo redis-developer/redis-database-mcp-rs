@@ -97,7 +97,7 @@ which side effects that host permits. These decisions are orthogonal.
 
 The public taxonomy is `essentials`, `data_structures`, `json`, `search`,
 `diagnostics`, `admin`, `bulk`, and `raw`. The curated default enables
-`essentials`, `data_structures`, and `diagnostics`, totaling 29 tools. The
+`essentials`, `data_structures`, and `diagnostics`, totaling 32 tools. The
 module-backed `json` and `search` bundles are explicitly selected so a default
 router never advertises capabilities that its Redis target may not provide.
 Empty bundles are reserved for coherent catalog growth and do not expose
@@ -120,7 +120,32 @@ Raw commands remain a separate opt-in even though their metadata belongs to the
 - `Unrestricted` permits unknown request/response commands, while retaining
   hard blocks for authentication/connection state, transactions, streaming,
   subscriptions, replication handshakes, unbounded scripts, and blocking
-  forms.
+forms.
+
+## Output budgets and continuation contracts
+
+`OutputBudget` is host policy applied after each typed tool has built its
+result. The byte ceiling measures the complete serialized MCP
+`CallToolResult`, including structured content, text rendering, and base64
+expansion. The entry ceiling applies to typed collection results and recursively
+to collection-shaped raw RESP values. Defaults are 256 KiB and 1,000 entries;
+zero limits are rejected at router construction.
+
+Oversized success candidates are replaced by an MCP error result with stable
+`io.redis.mcp/outputLimit` metadata containing the `output_limit_exceeded` code,
+dimension, actual size, configured limit, retryability, and narrowing guidance.
+Error details live in MCP `_meta` rather than `structuredContent`, so they do not
+conflict with the tool's advertised success `outputSchema`. The library never
+emits partial JSON. Every catalog entry also exposes its dominant
+`ToolOutputPolicy` so hosts can audit whether a tool is intrinsically bounded,
+budget guarded, or cursor-, range-, or offset-paginated.
+
+`redis_scan`, `redis_hscan`, `redis_sscan`, and `redis_zscan` continue with a
+Redis cursor. `redis_lrange` and `redis_zrange` default to ranks 0 through 99
+and continue with a start index. `redis_ft_search` always emits a LIMIT clause
+and continues with an offset. Whole-collection reads remain available for small
+values, but `redis_hgetall` and `redis_smembers` direct oversized callers to the
+corresponding scan tool.
 
 Redis ACLs remain the ultimate authorization boundary. Bundle selection, access
 mode, annotations, raw policy, and timeouts are defense-in-depth and product

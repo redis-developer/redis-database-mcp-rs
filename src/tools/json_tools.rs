@@ -6,7 +6,7 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
 use tower_mcp::{
-    CallToolResult, McpRouter, Tool, ToolBuilder,
+    McpRouter, Tool, ToolBuilder,
     extract::{Json, State},
 };
 
@@ -75,7 +75,7 @@ fn json_get_tool(state: Arc<ToolState>) -> Tool {
                         })
                     })
                     .transpose()?;
-                CallToolResult::from_serialize(&JsonGetOutput {
+                state.output(&JsonGetOutput {
                     key: input.key,
                     path: input.path,
                     exists: value.is_some(),
@@ -139,12 +139,17 @@ fn json_type_tool(state: Arc<ToolState>) -> Tool {
                 command.arg(input.key.as_str()).arg(input.path.as_str());
                 let value = state.raw(command, "JSON.TYPE failed").await?;
                 let types = json_types(value)?;
-                CallToolResult::from_serialize(&JsonTypeOutput {
+                let output = JsonTypeOutput {
                     key: input.key,
                     path: input.path,
                     exists: !types.is_empty(),
                     types,
-                })
+                };
+                state.output_collection(
+                    &output,
+                    output.types.len(),
+                    "Use a narrower JSONPath expression.",
+                )
             },
         )
         .build()
@@ -220,7 +225,7 @@ fn json_set_tool(state: Arc<ToolState>) -> Tool {
                     command.arg("XX");
                 }
                 let stored: Option<String> = state.query(command, "JSON.SET failed").await?;
-                CallToolResult::from_serialize(&JsonSetOutput {
+                state.output(&JsonSetOutput {
                     key: input.key,
                     path: input.path,
                     stored: stored.is_some(),
@@ -259,7 +264,7 @@ fn json_del_tool(state: Arc<ToolState>) -> Tool {
                 );
                 command.arg(input.key.as_str()).arg(input.path.as_str());
                 let deleted = state.query(command, "JSON.DEL failed").await?;
-                CallToolResult::from_serialize(&JsonDelOutput {
+                state.output(&JsonDelOutput {
                     key: input.key,
                     path: input.path,
                     deleted,

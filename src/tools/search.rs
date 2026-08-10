@@ -6,13 +6,13 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
 use tower_mcp::{
-    CallToolResult, McpRouter, Tool, ToolBuilder,
+    McpRouter, Tool, ToolBuilder,
     extract::{Json, State},
 };
 
 use super::{
-    ToolState, destructive_annotations, empty_input_schema, module_command, output_schema,
-    read_annotations, redis_value_to_json, write_annotations,
+    PageMetadata, ToolState, destructive_annotations, empty_input_schema, module_command,
+    output_schema, read_annotations, redis_value_to_json, write_annotations,
 };
 use crate::{AccessMode, RedisModule, RedisValue};
 
@@ -62,10 +62,15 @@ fn ft_list_tool(state: Arc<ToolState>) -> Tool {
                 })
                 .collect::<tower_mcp::Result<Vec<_>>>()?;
             indexes.sort();
-            CallToolResult::from_serialize(&FtListOutput {
+            let output = FtListOutput {
                 count: indexes.len(),
                 indexes,
-            })
+            };
+            state.output_collection(
+                &output,
+                output.count,
+                "Use a larger configured entry budget or inspect a known index with redis_ft_info.",
+            )
         })
         .build()
 }
@@ -144,10 +149,15 @@ fn ft_info_tool(state: Arc<ToolState>) -> Tool {
                 command.arg(input.index.as_str());
                 let value = state.raw(command, "FT.INFO failed").await?;
                 let attributes = info_attributes(value)?;
-                CallToolResult::from_serialize(&FtInfoOutput {
+                let output = FtInfoOutput {
                     index: input.index,
                     attributes,
-                })
+                };
+                state.output_collection(
+                    &output,
+                    output.attributes.len(),
+                    "Use a larger configured entry budget; FT.INFO has no Redis cursor form.",
+                )
             },
         )
         .build()
@@ -160,12 +170,12 @@ struct FtSearchInput {
     index: String,
     /// Query expression. Use `*` to match all indexed documents.
     query: String,
-    /// Result offset. Supplying either limit field emits a LIMIT clause.
+    /// Result offset. Start with zero and follow page.continuation.offset.
     #[serde(default)]
     limit_offset: Option<u64>,
     /// Maximum results to return, bounded to 100 per call.
     #[serde(default)]
-    #[schemars(range(max = 100))]
+    #[schemars(range(min = 1, max = 100))]
     limit_num: Option<u64>,
     /// Sortable field name.
     #[serde(default)]
@@ -226,6 +236,9 @@ struct FtSearchOutput {
     query: String,
     total: Option<u64>,
     response: JsonValue,
+    limit_offset: u64,
+    limit_num: u64,
+    page: PageMetadata,
 }
 
 fn search_response(value: RedisValue) -> (Option<u64>, JsonValue) {
@@ -251,7 +264,7 @@ fn ft_search_tool(state: Arc<ToolState>) -> Tool {
     ToolBuilder::new("redis_ft_search")
         .title("Search Redis Index")
         .description(
-            "Run a bounded Redis Query Engine search. Binary response values retain explicit encodings.",
+            "Run a bounded Redis Query Engine search. Pass page.continuation.offset as limit_offset until page.complete is true. Binary response values retain explicit encodings.",
         )
         .output_schema(output_schema::<FtSearchOutput>())
         .annotations(read_annotations())
@@ -259,6 +272,9 @@ fn ft_search_tool(state: Arc<ToolState>) -> Tool {
             state,
             |State(state): State<Arc<ToolState>>, Json(input): Json<FtSearchInput>| async move {
                 input.validate()?;
+                let limit_offset = input.limit_offset.unwrap_or(0);
+                let limit_num = input.limit_num.unwrap_or(10);
+                state.validate_requested_entries(limit_num as usize, "limit_num")?;
                 let mut command = module_command(
                     "redis_ft_search",
                     AccessMode::ReadOnly,
@@ -285,20 +301,37 @@ fn ft_search_tool(state: Arc<ToolState>) -> Tool {
                         command.arg(order.to_ascii_uppercase());
                     }
                 }
-                if input.limit_offset.is_some() || input.limit_num.is_some() {
-                    command
-                        .arg("LIMIT")
-                        .arg(input.limit_offset.unwrap_or(0).to_string())
-                        .arg(input.limit_num.unwrap_or(10).to_string());
-                }
+                command
+                    .arg("LIMIT")
+                    .arg(limit_offset.to_string())
+                    .arg(limit_num.to_string());
                 let value = state.raw(command, "FT.SEARCH failed").await?;
                 let (total, response) = search_response(value);
-                CallToolResult::from_serialize(&FtSearchOutput {
+                let returned = total
+                    .map(|total| total.saturating_sub(limit_offset).min(limit_num) as usize)
+                    .unwrap_or_else(|| {
+                        response
+                            .as_array()
+                            .map_or(0, |values| values.len().min(limit_num as usize))
+                    });
+                let next_offset = total.and_then(|total| {
+                    let next = limit_offset.saturating_add(returned as u64);
+                    (next < total).then_some(next)
+                });
+                let output = FtSearchOutput {
                     index: input.index,
                     query: input.query,
                     total,
                     response,
-                })
+                    limit_offset,
+                    limit_num,
+                    page: PageMetadata::offset(limit_num as usize, returned, next_offset),
+                };
+                state.output_collection(
+                    &output,
+                    returned,
+                    "Retry FT.SEARCH with a smaller limit_num and page.continuation.offset.",
+                )
             },
         )
         .build()
@@ -439,7 +472,7 @@ fn ft_create_tool(state: Arc<ToolState>) -> Tool {
                     }
                 }
                 let _: String = state.query(command, "FT.CREATE failed").await?;
-                CallToolResult::from_serialize(&FtCreateOutput {
+                state.output(&FtCreateOutput {
                     index: input.index,
                     on,
                     fields: input.schema.len(),
@@ -491,7 +524,7 @@ fn ft_dropindex_tool(state: Arc<ToolState>) -> Tool {
                     command.arg("DD");
                 }
                 let _: String = state.query(command, "FT.DROPINDEX failed").await?;
-                CallToolResult::from_serialize(&FtDropIndexOutput {
+                state.output(&FtDropIndexOutput {
                     index: input.index,
                     dropped: true,
                     documents_deleted: input.delete_docs,

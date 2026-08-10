@@ -1,6 +1,6 @@
 use std::time::Duration;
 
-use redis_mcp::{AccessMode, DirectRedis, RedisMcp, ToolBundle, tool_names};
+use redis_mcp::{AccessMode, DirectRedis, OutputBudget, RedisMcp, ToolBundle, tool_names};
 use tower_mcp::client::{ChannelTransport, McpClient, StdioClientTransport};
 
 #[cfg(unix)]
@@ -115,6 +115,27 @@ async fn router_client_with_timeout(
         .initialize("redis-mcp-live-test", "0")
         .await
         .expect("initialize MCP client");
+    client
+}
+
+async fn router_client_with_budget(
+    url: &str,
+    access: AccessMode,
+    output_budget: OutputBudget,
+) -> McpClient {
+    let executor = DirectRedis::connect(url).await.expect("connect to Redis");
+    let router = RedisMcp::builder(executor)
+        .access(access)
+        .raw_commands(access == AccessMode::Full)
+        .output_budget(output_budget)
+        .build();
+    let client = McpClient::connect(ChannelTransport::new(router))
+        .await
+        .expect("connect budget MCP client");
+    client
+        .initialize("redis-mcp-live-budget-test", "0")
+        .await
+        .expect("initialize budget MCP client");
     client
 }
 
@@ -392,6 +413,128 @@ async fn live_curated_catalog_round_trip_in_resp2_and_resp3() {
             .expect("structured unlink");
         assert_eq!(cleanup["unlinked"], cleanup_keys.len());
     }
+}
+
+#[tokio::test]
+async fn live_large_collections_are_paged_or_fail_with_stable_budget_errors() {
+    let Some(redis) = TestRedis::start().await else {
+        return;
+    };
+    let hash = test_key("budget:hash");
+    let list = test_key("budget:list");
+    let set = test_key("budget:set");
+    let zset = test_key("budget:zset");
+
+    let direct = redis::Client::open(redis.url.as_str()).expect("open direct Redis client");
+    let mut connection = direct
+        .get_multiplexed_async_connection()
+        .await
+        .expect("connect direct Redis client");
+    let mut seed = redis::pipe();
+    for index in 0..600 {
+        seed.cmd("HSET")
+            .arg(&hash)
+            .arg(format!("field:{index:04}"))
+            .arg(format!("value:{index:04}"))
+            .ignore();
+        seed.cmd("SADD")
+            .arg(&set)
+            .arg(format!("member:{index:04}"))
+            .ignore();
+        if index < 200 {
+            seed.cmd("LPUSH")
+                .arg(&list)
+                .arg(format!("element:{index:04}"))
+                .ignore();
+            seed.cmd("ZADD")
+                .arg(&zset)
+                .arg(index)
+                .arg(format!("member:{index:04}"))
+                .ignore();
+        }
+    }
+    seed.query_async::<()>(&mut connection)
+        .await
+        .expect("seed large collections");
+
+    let client = router_client_with_budget(
+        &redis.url,
+        AccessMode::Full,
+        OutputBudget::new(1_000_000, 100),
+    )
+    .await;
+
+    for (tool, input, alternative) in [
+        (
+            "redis_hgetall",
+            serde_json::json!({"key": hash}),
+            "redis_hscan",
+        ),
+        (
+            "redis_smembers",
+            serde_json::json!({"key": set}),
+            "redis_sscan",
+        ),
+    ] {
+        let result = client
+            .call_tool(tool, input)
+            .await
+            .unwrap_or_else(|error| panic!("{tool}: {error}"));
+        assert!(result.is_error, "{tool}");
+        let error = &result.meta.as_ref().unwrap()["io.redis.mcp/outputLimit"];
+        assert_eq!(error["code"], "output_limit_exceeded");
+        assert_eq!(error["dimension"], "collection_entries");
+        assert!(error["guidance"].as_str().unwrap().contains(alternative));
+    }
+
+    for (tool, key) in [
+        ("redis_hscan", &hash),
+        ("redis_sscan", &set),
+        ("redis_zscan", &zset),
+    ] {
+        let page = client
+            .call_tool(
+                tool,
+                serde_json::json!({"key": key, "cursor": 0, "count": 10}),
+            )
+            .await
+            .unwrap_or_else(|error| panic!("{tool}: {error}"));
+        assert!(!page.is_error, "{tool}: {page:?}");
+        let page = page.structured_content.unwrap();
+        assert!(page["count"].as_u64().is_some_and(|count| count > 0));
+        assert_eq!(page["page"]["complete"], false);
+        assert!(page["page"]["continuation"]["cursor"].as_u64().is_some());
+    }
+
+    for (tool, key) in [("redis_lrange", &list), ("redis_zrange", &zset)] {
+        let page = client
+            .call_tool(tool, serde_json::json!({"key": key, "start": 0, "stop": 9}))
+            .await
+            .unwrap_or_else(|error| panic!("{tool}: {error}"));
+        assert!(!page.is_error, "{tool}: {page:?}");
+        let page = page.structured_content.unwrap();
+        assert_eq!(page["count"], 10);
+        assert_eq!(page["page"]["continuation"]["start"], 10);
+    }
+
+    let raw = client
+        .call_tool(
+            "redis_command",
+            serde_json::json!({"command": "HGETALL", "arguments": [hash]}),
+        )
+        .await
+        .expect("raw HGETALL");
+    assert!(raw.is_error);
+    assert_eq!(
+        raw.meta.as_ref().unwrap()["io.redis.mcp/outputLimit"]["code"],
+        "output_limit_exceeded"
+    );
+
+    redis::cmd("DEL")
+        .arg(&[&hash, &list, &set, &zset])
+        .query_async::<()>(&mut connection)
+        .await
+        .expect("clean up large collections");
 }
 
 #[tokio::test]

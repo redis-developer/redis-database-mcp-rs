@@ -7,6 +7,11 @@ Read-only source: redisctl commit
 
 No redisctl files were changed while producing this inventory.
 
+The cross-project [command-surface scorecard](surface-comparison.md) maps this
+baseline and the pinned `redis/mcp-redis` catalog to implemented, planned,
+superseded, or excluded library capabilities. Its machine-readable source and
+test keep this inventory connected to the live `redis-mcp` catalog.
+
 ## Catalog baseline
 
 The redisctl database router declares 132 unique tool names across nine

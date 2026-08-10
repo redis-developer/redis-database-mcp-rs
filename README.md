@@ -149,7 +149,10 @@ separate policy rather than bundle selection alone.
 See [the architecture decisions](docs/architecture.md) for the intentional
 Tower-MCP boundary and fixed-target model, and the
 [redisctl compatibility inventory](docs/redisctl-compatibility.md) for the
-132-tool read-only baseline and known contract differences.
+132-tool read-only baseline and known contract differences. The
+[command-surface scorecard](docs/surface-comparison.md) pins both redisctl and
+`redis/mcp-redis`, maps every baseline tool, and defines the objective gate for
+the library surface roadmap.
 
 ## Compatibility and testing
 

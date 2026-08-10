@@ -1,0 +1,866 @@
+{
+  "schema_version": 1,
+  "captured_at": "2026-08-10",
+  "baselines": {
+    "redis_mcp": {
+      "repository": "https://github.com/redis/mcp-redis",
+      "revision": "5945b0b5b098c9a1882075a161a6a58f23de81ed",
+      "release": "0.5.1",
+      "tool_count": 53,
+      "tools": [
+        "client_list",
+        "create_vector_index_hash",
+        "dbsize",
+        "delete",
+        "expire",
+        "get",
+        "get_index_info",
+        "get_indexed_keys_number",
+        "get_indexes",
+        "get_vector_from_hash",
+        "hdel",
+        "hexists",
+        "hget",
+        "hgetall",
+        "hset",
+        "hybrid_search",
+        "info",
+        "json_del",
+        "json_get",
+        "json_set",
+        "llen",
+        "lpop",
+        "lpush",
+        "lrange",
+        "lrem",
+        "psubscribe",
+        "publish",
+        "read_messages",
+        "rename",
+        "rpop",
+        "rpush",
+        "sadd",
+        "scan_all_keys",
+        "scan_keys",
+        "search_redis_documents",
+        "set",
+        "set_vector_in_hash",
+        "smembers",
+        "srem",
+        "subscribe",
+        "type",
+        "unsubscribe",
+        "vector_search_hash",
+        "xack",
+        "xadd",
+        "xdel",
+        "xgroup_create",
+        "xgroup_destroy",
+        "xrange",
+        "xreadgroup",
+        "zadd",
+        "zrange",
+        "zrem"
+      ]
+    },
+    "redisctl": {
+      "repository": "https://github.com/redis/redisctl",
+      "revision": "955f4b18f4266c332bc640cada67d125d23edde8",
+      "tool_count": 132,
+      "tools": [
+        "redis_alias_delete",
+        "redis_alias_list",
+        "redis_alias_run",
+        "redis_alias_set",
+        "redis_bulk_load",
+        "redis_seed",
+        "redis_connection_summary",
+        "redis_health_check",
+        "redis_hotkeys",
+        "redis_key_summary",
+        "redis_json_arrappend",
+        "redis_json_arrinsert",
+        "redis_json_arrlen",
+        "redis_json_arrpop",
+        "redis_json_arrtrim",
+        "redis_json_clear",
+        "redis_json_del",
+        "redis_json_get",
+        "redis_json_mget",
+        "redis_json_numincrby",
+        "redis_json_objkeys",
+        "redis_json_objlen",
+        "redis_json_set",
+        "redis_json_strlen",
+        "redis_json_toggle",
+        "redis_json_type",
+        "redis_append",
+        "redis_copy",
+        "redis_decr",
+        "redis_del",
+        "redis_dump",
+        "redis_exists",
+        "redis_expire",
+        "redis_get",
+        "redis_getrange",
+        "redis_incr",
+        "redis_keys",
+        "redis_memory_usage",
+        "redis_mget",
+        "redis_mset",
+        "redis_object_encoding",
+        "redis_object_freq",
+        "redis_object_help",
+        "redis_object_idletime",
+        "redis_persist",
+        "redis_randomkey",
+        "redis_rename",
+        "redis_restore",
+        "redis_scan",
+        "redis_set",
+        "redis_setnx",
+        "redis_setrange",
+        "redis_strlen",
+        "redis_touch",
+        "redis_ttl",
+        "redis_type",
+        "redis_unlink",
+        "redis_command",
+        "redis_ft_aggregate",
+        "redis_ft_aliasadd",
+        "redis_ft_aliasdel",
+        "redis_ft_aliasupdate",
+        "redis_ft_alter",
+        "redis_ft_create",
+        "redis_ft_dictadd",
+        "redis_ft_dictdel",
+        "redis_ft_dictdump",
+        "redis_ft_dropindex",
+        "redis_ft_explain",
+        "redis_ft_info",
+        "redis_ft_list",
+        "redis_ft_profile",
+        "redis_ft_search",
+        "redis_ft_syndump",
+        "redis_ft_synupdate",
+        "redis_ft_tagvals",
+        "redis_acl_list",
+        "redis_acl_whoami",
+        "redis_client_list",
+        "redis_cluster_info",
+        "redis_config_get",
+        "redis_config_set",
+        "redis_dbsize",
+        "redis_flushdb",
+        "redis_info",
+        "redis_latency_history",
+        "redis_memory_stats",
+        "redis_module_list",
+        "redis_ping",
+        "redis_slowlog",
+        "redis_hdel",
+        "redis_hexists",
+        "redis_hexpire",
+        "redis_hget",
+        "redis_hgetall",
+        "redis_hincrby",
+        "redis_hkeys",
+        "redis_hlen",
+        "redis_hmget",
+        "redis_hset",
+        "redis_hvals",
+        "redis_lindex",
+        "redis_llen",
+        "redis_lpop",
+        "redis_lpush",
+        "redis_lrange",
+        "redis_pubsub_channels",
+        "redis_pubsub_numsub",
+        "redis_rpop",
+        "redis_rpush",
+        "redis_sadd",
+        "redis_scard",
+        "redis_sdiff",
+        "redis_sinter",
+        "redis_sismember",
+        "redis_smembers",
+        "redis_srem",
+        "redis_sunion",
+        "redis_xadd",
+        "redis_xinfo_stream",
+        "redis_xlen",
+        "redis_xrange",
+        "redis_xtrim",
+        "redis_zadd",
+        "redis_zcard",
+        "redis_zcount",
+        "redis_zrange",
+        "redis_zrangebyscore",
+        "redis_zrank",
+        "redis_zrem",
+        "redis_zremrangebyscore",
+        "redis_zscore"
+      ]
+    }
+  },
+  "status_definitions": {
+    "implemented": "The library has a first-class structured tool for the capability.",
+    "planned": "The capability belongs in the library and has a tracked implementation issue.",
+    "superseded": "The baseline tool is intentionally replaced by a safer or more composable library contract.",
+    "excluded": "The capability is outside the Redis database library boundary or is intentionally unsafe as a first-class tool."
+  },
+  "completion_gate": {
+    "redis_mcp": "Every redis/mcp-redis baseline tool must be implemented, superseded, or excluded with a concrete rationale; no planned mappings may remain.",
+    "library_catalog": "Every implemented redis-mcp catalog tool must appear exactly once in the capability matrix.",
+    "contract": {
+      "minimum_library_score": 2,
+      "must_not_trail_redis_mcp": true,
+      "minimum_leading_dimensions": 6
+    },
+    "strategic_capabilities": [
+      "vector.search",
+      "streams.consumer_groups",
+      "pubsub.sessions"
+    ]
+  },
+  "current_gate": {
+    "met": false,
+    "blockers": [15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 26, 27, 28, 29, 30, 31, 32, 33]
+  },
+  "contract_scorecard": {
+    "scale": {
+      "0": "absent or actively misleading",
+      "1": "partial, inconsistent, or substantially unbounded",
+      "2": "complete and dependable for the selected surface",
+      "3": "differentiated with enforced contracts and adversarial coverage"
+    },
+    "dimensions": [
+      {
+        "id": "schemas",
+        "library_score": 3,
+        "redis_mcp_score": 2,
+        "library_evidence": ["tests/snapshots/curated_catalog.json", "tests/router_contract.rs"],
+        "redis_mcp_evidence": ["src/tools", "tests/test_integration.py"],
+        "target": "Keep every input and output schema snapshotted as the catalog grows."
+      },
+      {
+        "id": "structured_results",
+        "library_score": 3,
+        "redis_mcp_score": 1,
+        "library_evidence": ["tests/router_contract.rs"],
+        "redis_mcp_evidence": ["src/tools"],
+        "target": "Keep successful and error results machine-readable without prose-dependent semantics."
+      },
+      {
+        "id": "error_semantics",
+        "library_score": 3,
+        "redis_mcp_score": 1,
+        "library_evidence": ["src/executor.rs", "tests/live_redis.rs"],
+        "redis_mcp_evidence": ["src/tools"],
+        "target": "Preserve stable categories, Redis codes, redaction, and MCP error signaling."
+      },
+      {
+        "id": "annotations_and_access",
+        "library_score": 3,
+        "redis_mcp_score": 0,
+        "library_evidence": ["src/access.rs", "src/catalog.rs", "tests/router_contract.rs"],
+        "redis_mcp_evidence": ["src/common/server.py"],
+        "target": "Keep discovery, annotations, and handler enforcement derived from one access classification."
+      },
+      {
+        "id": "output_bounds",
+        "library_score": 1,
+        "redis_mcp_score": 1,
+        "library_evidence": ["src/tools.rs", "src/tools/data_structures.rs"],
+        "redis_mcp_evidence": ["src/tools/misc.py"],
+        "target": "Complete issue #16 so every default tool is intrinsically bounded, paginated, or budget-enforced."
+      },
+      {
+        "id": "binary_safety",
+        "library_score": 3,
+        "redis_mcp_score": 0,
+        "library_evidence": ["src/executor.rs", "tests/live_redis.rs"],
+        "redis_mcp_evidence": ["src/common/connection.py", "src/tools/hash.py"],
+        "target": "Preserve explicit UTF-8/base64 values across every new data type."
+      },
+      {
+        "id": "cluster_behavior",
+        "library_score": 3,
+        "redis_mcp_score": 1,
+        "library_evidence": ["tests/live_redis_cluster.rs", ".github/workflows/ci.yml"],
+        "redis_mcp_evidence": ["src/common/connection.py"],
+        "target": "Specify single-slot, fan-out, aggregation, and partial-failure behavior for every new multi-key tool."
+      },
+      {
+        "id": "capability_and_version_awareness",
+        "library_score": 1,
+        "redis_mcp_score": 1,
+        "library_evidence": ["src/catalog.rs", "tests/live_redis_stack.rs"],
+        "redis_mcp_evidence": ["src/common/config.py"],
+        "target": "Complete issue #17 and attach explicit version or module requirements to affected tools."
+      },
+      {
+        "id": "live_compatibility_testing",
+        "library_score": 3,
+        "redis_mcp_score": 1,
+        "library_evidence": ["tests/live_redis.rs", "tests/live_redis_stack.rs", "tests/live_redis_cluster.rs", ".github/workflows/ci.yml"],
+        "redis_mcp_evidence": ["tests/test_integration.py", ".github/workflows/ci.yml"],
+        "target": "Keep real MCP calls in the supported Redis, Stack, and cluster matrix."
+      },
+      {
+        "id": "embedding_and_host_policy",
+        "library_score": 3,
+        "redis_mcp_score": 0,
+        "library_evidence": ["src/executor.rs", "examples/custom_executor.rs", "docs/architecture.md"],
+        "redis_mcp_evidence": ["src/common/server.py", "src/common/connection.py"],
+        "target": "Keep redisctl and future REPL policy outside the Redis tool definitions."
+      }
+    ]
+  },
+  "capabilities": [
+    {
+      "id": "connection.ping",
+      "redis_mcp_tools": [],
+      "redisctl_tools": ["redis_ping"],
+      "library_tools": ["redis_ping"],
+      "disposition": "implemented",
+      "reason": "The library adds structured response text and measured latency."
+    },
+    {
+      "id": "server.info",
+      "redis_mcp_tools": ["info"],
+      "redisctl_tools": ["redis_info"],
+      "library_tools": ["redis_info"],
+      "disposition": "implemented",
+      "quality_issues": [16],
+      "reason": "The library returns parsed properties plus the raw response; issue #16 will enforce a uniform response budget."
+    },
+    {
+      "id": "key.dbsize",
+      "redis_mcp_tools": ["dbsize"],
+      "redisctl_tools": ["redis_dbsize"],
+      "library_tools": ["redis_dbsize"],
+      "disposition": "implemented",
+      "reason": "The result is a structured unsigned key count."
+    },
+    {
+      "id": "key.scan_page",
+      "redis_mcp_tools": ["scan_keys"],
+      "redisctl_tools": ["redis_scan"],
+      "library_tools": ["redis_scan"],
+      "disposition": "implemented",
+      "reason": "The library exposes one explicit cursor page instead of hiding a full keyspace walk."
+    },
+    {
+      "id": "key.full_scan",
+      "redis_mcp_tools": ["scan_all_keys"],
+      "redisctl_tools": ["redis_keys"],
+      "library_tools": [],
+      "replacement_library_tools": ["redis_scan"],
+      "disposition": "superseded",
+      "reason": "A first-class full-keyspace materialization is unbounded; callers continue bounded redis_scan pages instead."
+    },
+    {
+      "id": "string.get",
+      "redis_mcp_tools": ["get"],
+      "redisctl_tools": ["redis_get"],
+      "library_tools": ["redis_get"],
+      "disposition": "implemented",
+      "reason": "Nil and binary values have explicit structured representations."
+    },
+    {
+      "id": "key.type",
+      "redis_mcp_tools": ["type"],
+      "redisctl_tools": ["redis_type"],
+      "library_tools": ["redis_type"],
+      "disposition": "implemented",
+      "reason": "The key and Redis type are returned structurally."
+    },
+    {
+      "id": "key.ttl",
+      "redis_mcp_tools": [],
+      "redisctl_tools": ["redis_ttl"],
+      "library_tools": ["redis_ttl"],
+      "disposition": "implemented",
+      "reason": "The result distinguishes missing, persistent, and expiring keys."
+    },
+    {
+      "id": "key.exists",
+      "redis_mcp_tools": [],
+      "redisctl_tools": ["redis_exists"],
+      "library_tools": ["redis_exists"],
+      "disposition": "implemented",
+      "reason": "Bounded multi-key existence is part of the curated default."
+    },
+    {
+      "id": "string.mget",
+      "redis_mcp_tools": [],
+      "redisctl_tools": ["redis_mget"],
+      "library_tools": ["redis_mget"],
+      "disposition": "implemented",
+      "reason": "Bounded binary-safe multi-key reads work across standalone and cluster targets."
+    },
+    {
+      "id": "string.strlen",
+      "redis_mcp_tools": [],
+      "redisctl_tools": ["redis_strlen"],
+      "library_tools": ["redis_strlen"],
+      "disposition": "implemented",
+      "reason": "The byte length is returned without decoding the stored value."
+    },
+    {
+      "id": "key.memory_usage",
+      "redis_mcp_tools": [],
+      "redisctl_tools": ["redis_memory_usage"],
+      "library_tools": ["redis_memory_usage"],
+      "disposition": "implemented",
+      "reason": "Missing keys and byte counts are explicit."
+    },
+    {
+      "id": "key.random",
+      "redis_mcp_tools": [],
+      "redisctl_tools": ["redis_randomkey"],
+      "library_tools": ["redis_randomkey"],
+      "disposition": "implemented",
+      "reason": "Nil and binary keys are represented without loss."
+    },
+    {
+      "id": "string.set",
+      "redis_mcp_tools": ["set"],
+      "redisctl_tools": ["redis_set"],
+      "library_tools": ["redis_set"],
+      "disposition": "implemented",
+      "quality_issues": [18],
+      "reason": "The current atomic SET supports expiration; issue #18 completes conditional and absolute-expiry semantics."
+    },
+    {
+      "id": "key.expire",
+      "redis_mcp_tools": ["expire"],
+      "redisctl_tools": ["redis_expire"],
+      "library_tools": ["redis_expire"],
+      "disposition": "implemented",
+      "reason": "Positive-only expiry avoids hiding delete-on-nonpositive behavior below full access."
+    },
+    {
+      "id": "key.persist",
+      "redis_mcp_tools": [],
+      "redisctl_tools": ["redis_persist"],
+      "library_tools": ["redis_persist"],
+      "disposition": "implemented",
+      "reason": "Persistence changes are structured and read-write classified."
+    },
+    {
+      "id": "string.mset",
+      "redis_mcp_tools": [],
+      "redisctl_tools": ["redis_mset"],
+      "library_tools": ["redis_mset"],
+      "disposition": "implemented",
+      "reason": "Bounded entries and cluster slot decomposition are explicit."
+    },
+    {
+      "id": "string.increment",
+      "redis_mcp_tools": [],
+      "redisctl_tools": ["redis_incr"],
+      "library_tools": ["redis_incr"],
+      "disposition": "implemented",
+      "quality_issues": [18],
+      "reason": "INCR is implemented; issue #18 adds the remaining numeric variants."
+    },
+    {
+      "id": "string.append",
+      "redis_mcp_tools": [],
+      "redisctl_tools": ["redis_append"],
+      "library_tools": ["redis_append"],
+      "disposition": "implemented",
+      "reason": "The result reports the new byte length."
+    },
+    {
+      "id": "key.delete",
+      "redis_mcp_tools": ["delete"],
+      "redisctl_tools": ["redis_del"],
+      "library_tools": ["redis_del"],
+      "disposition": "implemented",
+      "reason": "Bounded multi-key deletion is full-access, destructive, and cluster-aware."
+    },
+    {
+      "id": "key.unlink",
+      "redis_mcp_tools": [],
+      "redisctl_tools": ["redis_unlink"],
+      "library_tools": ["redis_unlink"],
+      "disposition": "implemented",
+      "reason": "Asynchronous bounded deletion is a separately named destructive tool."
+    },
+    {
+      "id": "command.raw",
+      "redis_mcp_tools": [],
+      "redisctl_tools": ["redis_command"],
+      "library_tools": ["redis_command"],
+      "disposition": "implemented",
+      "quality_issues": [16, 24],
+      "reason": "The escape hatch requires full access plus explicit policy and retains hard request-response safety blocks."
+    },
+    {
+      "id": "hash.get",
+      "redis_mcp_tools": ["hget"],
+      "redisctl_tools": ["redis_hget"],
+      "library_tools": ["redis_hget"],
+      "disposition": "implemented",
+      "reason": "Missing and binary field values are explicit."
+    },
+    {
+      "id": "hash.get_all",
+      "redis_mcp_tools": ["hgetall"],
+      "redisctl_tools": ["redis_hgetall"],
+      "library_tools": ["redis_hgetall"],
+      "disposition": "implemented",
+      "quality_issues": [16],
+      "reason": "Structured binary-safe fields are implemented; issue #16 adds the uniform large-result policy."
+    },
+    {
+      "id": "hash.set",
+      "redis_mcp_tools": ["hset"],
+      "redisctl_tools": ["redis_hset"],
+      "library_tools": ["redis_hset"],
+      "disposition": "implemented",
+      "quality_issues": [19],
+      "reason": "Bounded multi-field writes are implemented; issue #19 completes the hash family."
+    },
+    {
+      "id": "list.range",
+      "redis_mcp_tools": ["lrange"],
+      "redisctl_tools": ["redis_lrange"],
+      "library_tools": ["redis_lrange"],
+      "disposition": "implemented",
+      "quality_issues": [16],
+      "reason": "Binary-safe ranges are implemented; issue #16 makes open-ended output limits uniform."
+    },
+    {
+      "id": "list.push_left",
+      "redis_mcp_tools": ["lpush"],
+      "redisctl_tools": ["redis_lpush"],
+      "library_tools": ["redis_lpush"],
+      "disposition": "implemented",
+      "reason": "Bounded multi-element left pushes return the resulting length."
+    },
+    {
+      "id": "set.members",
+      "redis_mcp_tools": ["smembers"],
+      "redisctl_tools": ["redis_smembers"],
+      "library_tools": ["redis_smembers"],
+      "disposition": "implemented",
+      "quality_issues": [16],
+      "reason": "Members are binary-safe and deterministic; issue #16 adds a uniform whole-set budget."
+    },
+    {
+      "id": "set.add",
+      "redis_mcp_tools": ["sadd"],
+      "redisctl_tools": ["redis_sadd"],
+      "library_tools": ["redis_sadd"],
+      "disposition": "implemented",
+      "reason": "Bounded multi-member writes return requested and added counts."
+    },
+    {
+      "id": "sorted_set.range",
+      "redis_mcp_tools": ["zrange"],
+      "redisctl_tools": ["redis_zrange"],
+      "library_tools": ["redis_zrange"],
+      "disposition": "implemented",
+      "quality_issues": [16, 22],
+      "reason": "Rank ranges and scores are structured; issues #16 and #22 complete bounds and range forms."
+    },
+    {
+      "id": "sorted_set.add",
+      "redis_mcp_tools": ["zadd"],
+      "redisctl_tools": ["redis_zadd"],
+      "library_tools": ["redis_zadd"],
+      "disposition": "implemented",
+      "reason": "Bounded members and ZADD flags have a validated structured contract."
+    },
+    {
+      "id": "json.get",
+      "redis_mcp_tools": ["json_get"],
+      "redisctl_tools": ["redis_json_get"],
+      "library_tools": ["redis_json_get"],
+      "disposition": "implemented",
+      "reason": "Enhanced JSONPath results are normalized to structured JSON."
+    },
+    {
+      "id": "json.type",
+      "redis_mcp_tools": [],
+      "redisctl_tools": ["redis_json_type"],
+      "library_tools": ["redis_json_type"],
+      "disposition": "implemented",
+      "reason": "Single and multi-path type results are explicit."
+    },
+    {
+      "id": "json.set",
+      "redis_mcp_tools": ["json_set"],
+      "redisctl_tools": ["redis_json_set"],
+      "library_tools": ["redis_json_set"],
+      "disposition": "implemented",
+      "quality_issues": [27],
+      "reason": "The library accepts structured JSON directly and avoids a second JSON string encoding."
+    },
+    {
+      "id": "json.delete",
+      "redis_mcp_tools": ["json_del"],
+      "redisctl_tools": ["redis_json_del"],
+      "library_tools": ["redis_json_del"],
+      "disposition": "implemented",
+      "reason": "Deletion is full-access with destructive annotations."
+    },
+    {
+      "id": "search.list_indexes",
+      "redis_mcp_tools": ["get_indexes"],
+      "redisctl_tools": ["redis_ft_list"],
+      "library_tools": ["redis_ft_list"],
+      "disposition": "implemented",
+      "reason": "Index names use explicit binary-safe values."
+    },
+    {
+      "id": "search.index_info",
+      "redis_mcp_tools": ["get_index_info", "get_indexed_keys_number"],
+      "redisctl_tools": ["redis_ft_info"],
+      "library_tools": ["redis_ft_info"],
+      "disposition": "implemented",
+      "reason": "One complete FT.INFO result supersedes a separate indexed-key-count helper."
+    },
+    {
+      "id": "search.query",
+      "redis_mcp_tools": [],
+      "redisctl_tools": ["redis_ft_search"],
+      "library_tools": ["redis_ft_search"],
+      "disposition": "implemented",
+      "quality_issues": [26, 28],
+      "reason": "Bounded structured search exists; vector parameters and advanced query options are tracked separately."
+    },
+    {
+      "id": "search.create_index",
+      "redis_mcp_tools": [],
+      "redisctl_tools": ["redis_ft_create"],
+      "library_tools": ["redis_ft_create"],
+      "disposition": "implemented",
+      "quality_issues": [26],
+      "reason": "HASH and JSON indexes with TEXT, TAG, NUMERIC, and GEO fields are implemented; VECTOR is tracked in #26."
+    },
+    {
+      "id": "search.drop_index",
+      "redis_mcp_tools": [],
+      "redisctl_tools": ["redis_ft_dropindex"],
+      "library_tools": ["redis_ft_dropindex"],
+      "disposition": "implemented",
+      "reason": "Index deletion is a full-access destructive operation."
+    },
+    {
+      "id": "key_string.expansion",
+      "redis_mcp_tools": ["rename"],
+      "redisctl_tools": [
+        "redis_copy",
+        "redis_decr",
+        "redis_dump",
+        "redis_getrange",
+        "redis_object_encoding",
+        "redis_object_freq",
+        "redis_object_idletime",
+        "redis_rename",
+        "redis_restore",
+        "redis_setnx",
+        "redis_setrange",
+        "redis_touch"
+      ],
+      "library_tools": [],
+      "disposition": "planned",
+      "issue": 18,
+      "reason": "Issue #18 completes conditional writes, ranges, copy/rename, numeric variants, restore, and safe object inspection."
+    },
+    {
+      "id": "hash.expansion",
+      "redis_mcp_tools": ["hdel", "hexists"],
+      "redisctl_tools": [
+        "redis_hdel",
+        "redis_hexists",
+        "redis_hexpire",
+        "redis_hincrby",
+        "redis_hkeys",
+        "redis_hlen",
+        "redis_hmget",
+        "redis_hvals"
+      ],
+      "library_tools": [],
+      "disposition": "planned",
+      "issue": 19,
+      "reason": "Issue #19 adds complete reads, bounded scans, increments, removals, and version-gated field expiration."
+    },
+    {
+      "id": "list.expansion",
+      "redis_mcp_tools": ["llen", "lpop", "lrem", "rpop", "rpush"],
+      "redisctl_tools": ["redis_lindex", "redis_llen", "redis_lpop", "redis_rpop", "redis_rpush"],
+      "library_tools": [],
+      "disposition": "planned",
+      "issue": 20,
+      "reason": "Issue #20 adds bounded reads, pushes, pops, movement, replacement, and trimming without indefinite blocking."
+    },
+    {
+      "id": "set.expansion",
+      "redis_mcp_tools": ["srem"],
+      "redisctl_tools": ["redis_scard", "redis_sdiff", "redis_sinter", "redis_sismember", "redis_srem", "redis_sunion"],
+      "library_tools": [],
+      "disposition": "planned",
+      "issue": 21,
+      "reason": "Issue #21 adds membership, scans, removal, and bounded set algebra."
+    },
+    {
+      "id": "sorted_set.expansion",
+      "redis_mcp_tools": ["zrem"],
+      "redisctl_tools": ["redis_zcard", "redis_zcount", "redis_zrangebyscore", "redis_zrank", "redis_zrem", "redis_zremrangebyscore", "redis_zscore"],
+      "library_tools": [],
+      "disposition": "planned",
+      "issue": 22,
+      "reason": "Issue #22 adds scoring, rank, scan, pop, removal, and complete bounded range semantics."
+    },
+    {
+      "id": "streams.consumer_groups",
+      "redis_mcp_tools": ["xack", "xadd", "xdel", "xgroup_create", "xgroup_destroy", "xrange", "xreadgroup"],
+      "redisctl_tools": ["redis_xadd", "redis_xinfo_stream", "redis_xlen", "redis_xrange", "redis_xtrim"],
+      "library_tools": [],
+      "disposition": "planned",
+      "issue": 23,
+      "reason": "Issue #23 defines a bounded stream and consumer-group superset without indefinite reads."
+    },
+    {
+      "id": "vector.search",
+      "redis_mcp_tools": ["create_vector_index_hash", "get_vector_from_hash", "hybrid_search", "set_vector_in_hash", "vector_search_hash"],
+      "redisctl_tools": [],
+      "library_tools": [],
+      "disposition": "planned",
+      "issue": 26,
+      "reason": "Issue #26 adds typed vector index schemas, safe numeric encoding, KNN, and hybrid search for HASH and JSON documents."
+    },
+    {
+      "id": "json.expansion",
+      "redis_mcp_tools": [],
+      "redisctl_tools": [
+        "redis_json_arrappend",
+        "redis_json_arrinsert",
+        "redis_json_arrlen",
+        "redis_json_arrpop",
+        "redis_json_arrtrim",
+        "redis_json_clear",
+        "redis_json_mget",
+        "redis_json_numincrby",
+        "redis_json_objkeys",
+        "redis_json_objlen",
+        "redis_json_strlen",
+        "redis_json_toggle"
+      ],
+      "library_tools": [],
+      "disposition": "planned",
+      "issue": 27,
+      "reason": "Issue #27 completes bounded array, object, numeric, string, and multi-key JSON operations."
+    },
+    {
+      "id": "search.expansion",
+      "redis_mcp_tools": [],
+      "redisctl_tools": [
+        "redis_ft_aggregate",
+        "redis_ft_aliasadd",
+        "redis_ft_aliasdel",
+        "redis_ft_aliasupdate",
+        "redis_ft_alter",
+        "redis_ft_dictadd",
+        "redis_ft_dictdel",
+        "redis_ft_dictdump",
+        "redis_ft_explain",
+        "redis_ft_profile",
+        "redis_ft_syndump",
+        "redis_ft_synupdate",
+        "redis_ft_tagvals"
+      ],
+      "library_tools": [],
+      "disposition": "planned",
+      "issue": 28,
+      "reason": "Issue #28 adds aggregate, alias, alter, explain, profile, dictionary, synonym, and tag-value operations."
+    },
+    {
+      "id": "pubsub.request_response",
+      "redis_mcp_tools": ["publish"],
+      "redisctl_tools": ["redis_pubsub_channels", "redis_pubsub_numsub"],
+      "library_tools": [],
+      "disposition": "planned",
+      "issue": 29,
+      "reason": "Issue #29 adds bounded publication and channel inspection with explicit cluster behavior."
+    },
+    {
+      "id": "pubsub.sessions",
+      "redis_mcp_tools": ["psubscribe", "read_messages", "subscribe", "unsubscribe"],
+      "redisctl_tools": [],
+      "library_tools": [],
+      "disposition": "planned",
+      "issue": 30,
+      "reason": "Issue #30 replaces process-global handles with isolated, quota-bound, cancellable subscription sessions."
+    },
+    {
+      "id": "diagnostics.inspection",
+      "redis_mcp_tools": ["client_list"],
+      "redisctl_tools": [
+        "redis_connection_summary",
+        "redis_health_check",
+        "redis_hotkeys",
+        "redis_key_summary",
+        "redis_acl_whoami",
+        "redis_client_list",
+        "redis_cluster_info",
+        "redis_latency_history",
+        "redis_memory_stats",
+        "redis_module_list",
+        "redis_slowlog"
+      ],
+      "library_tools": [],
+      "disposition": "planned",
+      "issue": 31,
+      "reason": "Issue #31 adds bounded, redacted, structured diagnostics across standalone and cluster targets."
+    },
+    {
+      "id": "admin.guarded",
+      "redis_mcp_tools": [],
+      "redisctl_tools": ["redis_acl_list", "redis_config_get", "redis_config_set", "redis_flushdb"],
+      "library_tools": [],
+      "disposition": "planned",
+      "issue": 32,
+      "reason": "Issue #32 activates an explicitly selected admin bundle with accurate destructive and per-node behavior."
+    },
+    {
+      "id": "bulk.workflows",
+      "redis_mcp_tools": [],
+      "redisctl_tools": ["redis_bulk_load", "redis_seed"],
+      "library_tools": [],
+      "disposition": "planned",
+      "issue": 33,
+      "reason": "Issue #33 defines bounded, resumable, structured bulk load and deterministic seed workflows."
+    },
+    {
+      "id": "aliases.application",
+      "redis_mcp_tools": [],
+      "redisctl_tools": ["redis_alias_delete", "redis_alias_list", "redis_alias_run", "redis_alias_set"],
+      "library_tools": [],
+      "disposition": "excluded",
+      "reason": "Alias persistence and expansion are application and REPL concerns, not Redis database command semantics."
+    },
+    {
+      "id": "object.help",
+      "redis_mcp_tools": [],
+      "redisctl_tools": ["redis_object_help"],
+      "library_tools": [],
+      "disposition": "excluded",
+      "reason": "Static command help belongs in tool descriptions and client help rather than a separate database tool."
+    },
+    {
+      "id": "documentation.search",
+      "redis_mcp_tools": ["search_redis_documents"],
+      "redisctl_tools": [],
+      "library_tools": [],
+      "disposition": "excluded",
+      "reason": "External Redis documentation search is valuable but is not a Redis database command and introduces unrelated network egress."
+    }
+  ]
+}

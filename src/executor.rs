@@ -5,7 +5,9 @@ use std::{error::Error, fmt};
 use async_trait::async_trait;
 use redis::{
     ErrorKind as RedisRsErrorKind, ServerErrorKind as RedisRsServerErrorKind,
-    aio::ConnectionManager,
+    aio::{ConnectionLike, ConnectionManager},
+    cluster::ClusterClient,
+    cluster_async::ClusterConnection,
 };
 
 use crate::{AccessMode, RedisModule};
@@ -348,6 +350,9 @@ impl From<redis::RedisError> for RedisError {
                 RedisRsErrorKind::Server(RedisRsServerErrorKind::NoPerm) => {
                     RedisErrorKind::Authorization
                 }
+                RedisRsErrorKind::Server(RedisRsServerErrorKind::CrossSlot) => {
+                    RedisErrorKind::InvalidRequest
+                }
                 RedisRsErrorKind::Io
                 | RedisRsErrorKind::MasterNameNotFoundBySentinel
                 | RedisRsErrorKind::NoValidReplicasFoundBySentinel
@@ -380,6 +385,26 @@ pub trait RedisExecutor: Send + Sync + 'static {
     async fn execute(&self, command: RedisCommand) -> Result<RedisValue, RedisError>;
 }
 
+async fn execute_redis_command(
+    mut connection: impl ConnectionLike + Send,
+    command: RedisCommand,
+) -> Result<RedisValue, RedisError> {
+    let required_module = command.required_module();
+    let command_name = command.name().to_string();
+    let mut redis_command = redis::cmd(command.name());
+    for argument in command.arguments() {
+        redis_command.arg(argument);
+    }
+    let value: redis::Value = redis_command
+        .query_async(&mut connection)
+        .await
+        .map_err(RedisError::from)
+        .map_err(|error| {
+            error.classify_module_requirement(required_module, command_name.as_str())
+        })?;
+    Ok(RedisValue::from(value))
+}
+
 /// A fixed Redis target backed by redis-rs' reconnecting connection manager.
 #[derive(Clone)]
 pub struct DirectRedis {
@@ -408,21 +433,65 @@ impl DirectRedis {
 #[async_trait]
 impl RedisExecutor for DirectRedis {
     async fn execute(&self, command: RedisCommand) -> Result<RedisValue, RedisError> {
-        let required_module = command.required_module();
-        let command_name = command.name().to_string();
-        let mut redis_command = redis::cmd(command.name());
-        for argument in command.arguments() {
-            redis_command.arg(argument);
+        execute_redis_command(self.connection.clone(), command).await
+    }
+}
+
+/// A fixed Redis Cluster target backed by redis-rs' async cluster router.
+///
+/// The adapter discovers topology from one or more seed URLs and handles
+/// `MOVED`/`ASK` redirections, topology refreshes, and supported multi-slot
+/// commands. Cluster selection remains server configuration and never appears
+/// in MCP tool schemas.
+#[derive(Clone)]
+pub struct DirectRedisCluster {
+    connection: ClusterConnection,
+}
+
+impl DirectRedisCluster {
+    /// Connect to a Redis Cluster through one or more seed URLs.
+    ///
+    /// All seeds must use compatible authentication, TLS, and RESP settings.
+    /// Supplying multiple nodes improves initial discovery when one seed is
+    /// unavailable.
+    pub async fn connect<I, S>(seed_urls: I) -> Result<Self, RedisError>
+    where
+        I: IntoIterator<Item = S>,
+        S: AsRef<str>,
+    {
+        let seed_urls = seed_urls
+            .into_iter()
+            .map(|url| url.as_ref().to_string())
+            .collect::<Vec<_>>();
+        if seed_urls.is_empty() {
+            return Err(RedisError::new(
+                RedisErrorKind::InvalidRequest,
+                "at least one Redis Cluster seed URL is required",
+            )
+            .with_code("EMPTY_CLUSTER_SEEDS"));
         }
-        let mut connection = self.connection.clone();
-        let value: redis::Value = redis_command
-            .query_async(&mut connection)
+        let client = ClusterClient::new(seed_urls).map_err(RedisError::from)?;
+        let connection = client
+            .get_async_connection()
             .await
-            .map_err(RedisError::from)
-            .map_err(|error| {
-                error.classify_module_requirement(required_module, command_name.as_str())
-            })?;
-        Ok(RedisValue::from(value))
+            .map_err(RedisError::from)?;
+        Ok(Self { connection })
+    }
+
+    /// Wrap an existing redis-rs async cluster connection.
+    ///
+    /// This convenience method intentionally lives on the redis-rs-backed
+    /// adapter. Implementing [`RedisExecutor`] itself does not require
+    /// redis-rs.
+    pub fn from_cluster_connection(connection: ClusterConnection) -> Self {
+        Self { connection }
+    }
+}
+
+#[async_trait]
+impl RedisExecutor for DirectRedisCluster {
+    async fn execute(&self, command: RedisCommand) -> Result<RedisValue, RedisError> {
+        execute_redis_command(self.connection.clone(), command).await
     }
 }
 
@@ -474,6 +543,27 @@ mod tests {
             RedisError::from(error).kind(),
             RedisErrorKind::Authentication
         );
+    }
+
+    #[test]
+    fn cross_slot_errors_are_invalid_requests_with_stable_codes() {
+        let error = redis::RedisError::from((
+            RedisRsErrorKind::Server(RedisRsServerErrorKind::CrossSlot),
+            "keys hash to different slots",
+        ));
+        let error = RedisError::from(error);
+        assert_eq!(error.kind(), RedisErrorKind::InvalidRequest);
+        assert_eq!(error.code(), Some("CROSSSLOT"));
+    }
+
+    #[tokio::test]
+    async fn cluster_executor_rejects_an_empty_seed_list() {
+        let error = match DirectRedisCluster::connect(Vec::<String>::new()).await {
+            Ok(_) => panic!("empty cluster seeds unexpectedly connected"),
+            Err(error) => error,
+        };
+        assert_eq!(error.kind(), RedisErrorKind::InvalidRequest);
+        assert_eq!(error.code(), Some("EMPTY_CLUSTER_SEEDS"));
     }
 
     #[test]

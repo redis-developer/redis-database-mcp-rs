@@ -1,8 +1,11 @@
 #![forbid(unsafe_code)]
 
 use clap::{Parser, ValueEnum};
-use redis_mcp::{AccessMode, DirectRedis, RawCommandPolicy, RedisMcp, ToolBundle};
-use tower_mcp::{ProtocolSupport, StdioTransport};
+use redis_mcp::{
+    AccessMode, DirectRedis, DirectRedisCluster, RawCommandPolicy, RedisExecutor, RedisMcp,
+    ToolBundle,
+};
+use tower_mcp::{McpRouter, ProtocolSupport, StdioTransport};
 use tracing::info;
 use tracing_subscriber::EnvFilter;
 
@@ -41,9 +44,18 @@ impl From<CliOptionalBundle> for ToolBundle {
 #[derive(Debug, Parser)]
 #[command(name = "redis-mcp-server", version, about)]
 struct Args {
-    /// Fixed Redis target. The URL is server configuration and is never exposed as a tool argument.
-    #[arg(long, env = "REDIS_URL", default_value = "redis://127.0.0.1:6379")]
-    url: String,
+    /// Fixed standalone Redis target. Defaults to redis://127.0.0.1:6379.
+    #[arg(long, env = "REDIS_URL", conflicts_with = "cluster_urls")]
+    url: Option<String>,
+
+    /// Redis Cluster seed URL. Repeat for multiple seeds; conflicts with --url.
+    #[arg(
+        long = "cluster-url",
+        env = "REDIS_CLUSTER_URLS",
+        value_delimiter = ',',
+        conflicts_with = "url"
+    )]
+    cluster_urls: Vec<String>,
 
     /// Maximum side-effect level to expose.
     #[arg(long, value_enum, default_value = "read-only")]
@@ -64,6 +76,22 @@ struct Args {
     /// Explicit transport marker for MCP client configurations. Stdio is always used.
     #[arg(long)]
     stdio: bool,
+}
+
+fn build_router(
+    executor: impl RedisExecutor,
+    access: AccessMode,
+    raw_command_policy: RawCommandPolicy,
+    optional_bundles: &[CliOptionalBundle],
+) -> McpRouter {
+    let mut builder = RedisMcp::builder(executor)
+        .access(access)
+        .raw_command_policy(raw_command_policy)
+        .server_info("redis-mcp-server", env!("CARGO_PKG_VERSION"));
+    for bundle in optional_bundles {
+        builder = builder.bundle((*bundle).into());
+    }
+    builder.build()
 }
 
 #[tokio::main]
@@ -87,17 +115,27 @@ async fn main() -> Result<(), tower_mcp::BoxError> {
         .with_writer(std::io::stderr)
         .try_init();
 
-    let executor = DirectRedis::connect(&args.url).await?;
-    let mut builder = RedisMcp::builder(executor)
-        .access(access)
-        .raw_command_policy(raw_command_policy)
-        .server_info("redis-mcp-server", env!("CARGO_PKG_VERSION"));
-    for bundle in args.optional_bundles {
-        builder = builder.bundle(bundle.into());
-    }
-    let router = builder.build();
+    let cluster_mode = !args.cluster_urls.is_empty();
+    let router = if cluster_mode {
+        let executor = DirectRedisCluster::connect(&args.cluster_urls).await?;
+        build_router(executor, access, raw_command_policy, &args.optional_bundles)
+    } else {
+        let url = args.url.as_deref().unwrap_or("redis://127.0.0.1:6379");
+        let executor = DirectRedis::connect(url).await?;
+        build_router(executor, access, raw_command_policy, &args.optional_bundles)
+    };
 
-    info!(?access, ?raw_command_policy, "Redis MCP server ready");
+    let topology = if cluster_mode {
+        "cluster"
+    } else {
+        "standalone"
+    };
+    info!(
+        ?access,
+        ?raw_command_policy,
+        topology,
+        "Redis MCP server ready"
+    );
     let protocols = ProtocolSupport::try_new(["2025-11-25", "2026-07-28"])?;
     StdioTransport::new(router)
         .protocol_support(protocols)

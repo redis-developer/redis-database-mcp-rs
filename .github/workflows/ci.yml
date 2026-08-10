@@ -82,3 +82,49 @@ jobs:
         with:
           key: redis-stack-7.4.0-v8
       - run: cargo test --all-features --test live_redis_stack
+
+  redis-cluster:
+    name: Redis Cluster ${{ matrix.redis }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        redis: ["6.2", "8.8"]
+    env:
+      REDIS_CLUSTER_URLS: redis://127.0.0.1:7000,redis://127.0.0.1:7001,redis://127.0.0.1:7002
+    steps:
+      - uses: actions/checkout@v6
+      - uses: dtolnay/rust-toolchain@1.90.0
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: redis-cluster-${{ matrix.redis }}
+      - name: Start Redis Cluster
+        run: |
+          docker run --detach --name redis-cluster \
+            --publish 7000-7002:7000-7002 \
+            redis:${{ matrix.redis }} \
+            sh -c '
+              for port in 7000 7001 7002; do
+                mkdir -p /tmp/redis-$port
+                redis-server \
+                  --port $port \
+                  --dir /tmp/redis-$port \
+                  --cluster-enabled yes \
+                  --cluster-config-file nodes.conf \
+                  --cluster-announce-ip 127.0.0.1 \
+                  --cluster-announce-port $port \
+                  --appendonly no \
+                  --save "" \
+                  --daemonize yes
+              done
+              tail -f /dev/null
+            '
+          docker exec redis-cluster sh -c \
+            'until redis-cli -p 7000 ping >/dev/null 2>&1; do sleep 0.1; done'
+          docker exec redis-cluster redis-cli --cluster create \
+            127.0.0.1:7000 \
+            127.0.0.1:7001 \
+            127.0.0.1:7002 \
+            --cluster-yes
+          docker exec redis-cluster redis-cli -p 7000 CLUSTER INFO
+      - run: cargo test --all-features --test live_redis_cluster

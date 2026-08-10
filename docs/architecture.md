@@ -27,9 +27,19 @@ credentials, and target selection do not appear in the default tool schemas.
 - `RedisErrorKind` gives adapters and tool handlers stable authentication,
   authorization, timeout, connection, request, response, server, and fallback
   categories.
-- `DirectRedis` is the convenience adapter that converts these types to and
-  from redis-rs 1.5. Its `from_connection_manager` constructor is intentionally
-  redis-rs-specific, but implementing `RedisExecutor` is not.
+- `DirectRedis` is the standalone convenience adapter that converts these
+  types to and from redis-rs 1.5 and uses its reconnecting connection manager.
+- `DirectRedisCluster` is the fixed-cluster convenience adapter. It discovers
+  topology from configured seed URLs and delegates redirection, topology
+  refresh, and supported multi-slot command splitting to redis-rs.
+- Their `from_connection_manager` and `from_cluster_connection` constructors
+  are intentionally redis-rs-specific, but implementing `RedisExecutor` is not.
+
+Redis Cluster `CROSSSLOT` failures map to `RedisErrorKind::InvalidRequest` and
+retain the stable `CROSSSLOT` code. Other server-side cluster failures retain
+their Redis codes under the stable error categories. A custom host adapter can
+make different routing decisions while preserving the same crate-owned result
+surface.
 
 Every executor future is bounded by the router's command timeout (30 seconds by
 default). A custom executor can apply a shorter transport or command timeout,
@@ -50,10 +60,13 @@ repository does not carry a compatibility copy of Tower-MCP types.
 
 ## Target selection and the future redisctl adapter
 
-The default composition model binds one executor to one router. A host can
-resolve a profile, cluster, or other connection policy before constructing its
-executor, as shown in `examples/custom_executor.rs`. The executor receives tool
-and access metadata for host-side telemetry and audit records.
+The default composition model binds one executor to one router. The standalone
+binary accepts either one standalone URL or one or more Redis Cluster seed URLs;
+both are server configuration and neither appears in tool schemas. A host can
+instead resolve a profile, cluster, or other connection policy before
+constructing its executor, as shown in `examples/custom_executor.rs`. The
+executor receives tool and access metadata for host-side telemetry and audit
+records.
 
 redisctl currently exposes optional `url` and `profile` on each database tool.
 Those fields are deliberately absent here:

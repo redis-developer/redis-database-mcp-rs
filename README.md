@@ -59,6 +59,24 @@ Inside the REPL:
     redis_get key=greeting
     redis_scan pattern=gre* count=20
 
+For Redis Cluster, provide one or more seed URLs instead of `--url`. Multiple
+seeds improve initial discovery when a node is unavailable:
+
+    redis-mcp-server \
+      --cluster-url redis://127.0.0.1:7000 \
+      --cluster-url redis://127.0.0.1:7001 \
+      --cluster-url redis://127.0.0.1:7002 \
+      --access read-write \
+      --stdio
+
+`REDIS_CLUSTER_URLS` accepts the same seeds as a comma-separated list and
+conflicts with the standalone `REDIS_URL`. The target remains fixed for the
+life of the server and is never exposed in tool inputs. Normal Redis Cluster
+slot rules still apply: supported multi-key commands such as `MGET`, `MSET`,
+and `DEL` are split across slots by the adapter, while commands that require
+all keys in one slot (for example `RENAME`) return a stable `CROSSSLOT`
+invalid-request error.
+
 Classified raw commands require full access plus their own opt-in. Unknown
 commands fail closed:
 
@@ -92,6 +110,25 @@ configured Redis target must provide the corresponding capability:
         .build();
 
     // Serve or merge router in the host application.
+    # let _ = router;
+    # Ok(())
+    # }
+
+For a fixed Redis Cluster target, use the cluster-aware convenience adapter;
+the router and tool contracts are otherwise identical:
+
+    use redis_mcp::{AccessMode, DirectRedisCluster, RedisMcp};
+
+    # async fn cluster_example() -> Result<(), Box<dyn std::error::Error>> {
+    let redis = DirectRedisCluster::connect([
+        "redis://127.0.0.1:7000",
+        "redis://127.0.0.1:7001",
+        "redis://127.0.0.1:7002",
+    ]).await?;
+    let router = RedisMcp::builder(redis)
+        .access(AccessMode::ReadWrite)
+        .build();
+
     # let _ = router;
     # Ok(())
     # }
@@ -134,7 +171,9 @@ every currently supported Redis Open Source series: 6.2, 7.2, 7.4, 8.0, 8.2,
 catalog, binary and nil responses, ACL failures, bounded connection loss and
 recovery, and the real `redis-mcp-server` stdio process. A separate job pins the
 official `redis/redis-stack-server:7.4.0-v8` image and runs the JSON/Search
-lifecycle. The version list
+lifecycle. Dedicated three-master cluster jobs run on Redis 6.2 and 8.8 and
+exercise redirection, multi-slot aggregation, stable cross-slot failures, and
+the cluster-configured stdio server. The version list
 follows the [Redis Open Source version-management table](https://redis.io/docs/latest/operate/oss_and_stack/install/version-mgmt/).
 
 ## Non-goals

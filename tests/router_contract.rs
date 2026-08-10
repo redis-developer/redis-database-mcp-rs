@@ -3,9 +3,10 @@ use std::{collections::BTreeMap, time::Duration};
 use async_trait::async_trait;
 use pretty_assertions::assert_eq;
 use redis_mcp::{
-    AccessMode, OutputBudget, RawCommandPolicy, RedisCommand, RedisError, RedisExecutor, RedisMcp,
-    RedisMcpBuildError, RedisModule, RedisValue, ToolBundle, tool_catalog, tool_names,
-    tool_names_for,
+    AccessMode, CapabilityStatus, OutputBudget, RawCommandPolicy, RedisCapabilities, RedisCommand,
+    RedisDeployment, RedisError, RedisExecutor, RedisMcp, RedisMcpBuildError, RedisModule,
+    RedisModuleCapability, RedisValue, RedisVersion, ToolBundle, UnavailableToolPolicy,
+    tool_catalog, tool_names, tool_names_for, tool_names_for_capabilities,
 };
 use tower_mcp::client::{ChannelTransport, McpClient};
 
@@ -178,6 +179,26 @@ async fn full_catalog_client() -> McpClient {
         RawCommandPolicy::Classified,
     )
     .await
+}
+
+async fn capability_client(
+    capabilities: RedisCapabilities,
+    policy: UnavailableToolPolicy,
+) -> McpClient {
+    let router = RedisMcp::builder(StubRedis)
+        .access(AccessMode::Full)
+        .bundles(ToolBundle::ALL.iter().copied())
+        .capabilities(capabilities)
+        .unavailable_tool_policy(policy)
+        .build();
+    let client = McpClient::connect(ChannelTransport::new(router))
+        .await
+        .expect("connect capability-aware client");
+    client
+        .initialize("redis-mcp-capability-test", "0")
+        .await
+        .expect("initialize capability-aware client");
+    client
 }
 
 fn structured_cases() -> Vec<(&'static str, serde_json::Value, &'static str)> {
@@ -960,6 +981,199 @@ async fn module_absence_is_stable_for_custom_executors() {
     assert!(!text.contains("secret-key"));
 }
 
+#[tokio::test]
+async fn unknown_capabilities_preserve_custom_executor_compatibility() {
+    let client = capability_client(RedisCapabilities::unknown(), UnavailableToolPolicy::Hide).await;
+    let names = client
+        .list_tools()
+        .await
+        .expect("list unknown-capability tools")
+        .tools
+        .into_iter()
+        .map(|tool| tool.name)
+        .collect::<Vec<_>>();
+    assert!(names.iter().any(|name| name == "redis_json_get"));
+    assert!(names.iter().any(|name| name == "redis_memory_usage"));
+
+    let result = client
+        .call_tool("redis_ping", serde_json::json!({}))
+        .await
+        .expect("unknown capabilities allow execution");
+    assert!(!result.is_error);
+}
+
+#[tokio::test]
+async fn known_old_redis_can_hide_only_version_incompatible_tools() {
+    let old = RedisCapabilities::unknown().with_redis_version(RedisVersion::new(3, 2, 12));
+    let client = capability_client(old.clone(), UnavailableToolPolicy::Hide).await;
+    let names = client
+        .list_tools()
+        .await
+        .expect("list old Redis tools")
+        .tools
+        .into_iter()
+        .map(|tool| tool.name)
+        .collect::<Vec<_>>();
+    assert!(!names.iter().any(|name| name == "redis_memory_usage"));
+    assert!(!names.iter().any(|name| name == "redis_unlink"));
+    assert!(names.iter().any(|name| name == "redis_get"));
+
+    let helper_names = tool_names_for_capabilities(
+        AccessMode::Full,
+        ToolBundle::ALL.iter().copied(),
+        false,
+        &old,
+        UnavailableToolPolicy::Hide,
+    );
+    assert!(!helper_names.contains(&"redis_memory_usage"));
+
+    let new = RedisCapabilities::unknown().with_redis_version(RedisVersion::new(4, 0, 0));
+    let new_names = tool_names_for_capabilities(
+        AccessMode::Full,
+        [ToolBundle::Essentials],
+        false,
+        &new,
+        UnavailableToolPolicy::Hide,
+    );
+    assert!(new_names.contains(&"redis_memory_usage"));
+    assert!(new_names.contains(&"redis_unlink"));
+}
+
+#[tokio::test]
+async fn known_missing_modules_commands_and_module_versions_filter_precisely() {
+    let missing_modules = RedisCapabilities::unknown().with_module_inventory([]);
+    let client = capability_client(missing_modules, UnavailableToolPolicy::Hide).await;
+    let names = client
+        .list_tools()
+        .await
+        .expect("list missing-module tools")
+        .tools
+        .into_iter()
+        .map(|tool| tool.name)
+        .collect::<Vec<_>>();
+    assert!(!names.iter().any(|name| name.starts_with("redis_json_")));
+    assert!(!names.iter().any(|name| name.starts_with("redis_ft_")));
+
+    let missing_get = RedisCapabilities::unknown().with_command_inventory(["MGET"]);
+    let client = capability_client(missing_get, UnavailableToolPolicy::Hide).await;
+    let names = client
+        .list_tools()
+        .await
+        .expect("list command-filtered tools")
+        .tools
+        .into_iter()
+        .map(|tool| tool.name)
+        .collect::<Vec<_>>();
+    assert!(!names.iter().any(|name| name == "redis_get"));
+    assert!(names.iter().any(|name| name == "redis_mget"));
+
+    let old_search = RedisCapabilities::unknown().with_module(
+        RedisModule::Search,
+        RedisModuleCapability::available(Some(RedisVersion::new(1, 8, 0))),
+    );
+    let client = capability_client(old_search, UnavailableToolPolicy::Hide).await;
+    let names = client
+        .list_tools()
+        .await
+        .expect("list old Search tools")
+        .tools
+        .into_iter()
+        .map(|tool| tool.name)
+        .collect::<Vec<_>>();
+    assert!(!names.iter().any(|name| name == "redis_ft_list"));
+    assert!(names.iter().any(|name| name == "redis_ft_search"));
+}
+
+#[tokio::test]
+async fn known_cluster_mode_hides_tools_with_unimplemented_cluster_wide_semantics() {
+    let cluster = RedisCapabilities::unknown().with_deployment(RedisDeployment::Cluster);
+    let client = capability_client(cluster, UnavailableToolPolicy::Hide).await;
+    let names = client
+        .list_tools()
+        .await
+        .expect("list cluster-compatible tools")
+        .tools
+        .into_iter()
+        .map(|tool| tool.name)
+        .collect::<Vec<_>>();
+    for standalone_only in [
+        "redis_info",
+        "redis_dbsize",
+        "redis_scan",
+        "redis_randomkey",
+    ] {
+        assert!(!names.iter().any(|name| name == standalone_only));
+    }
+    assert!(names.iter().any(|name| name == "redis_get"));
+    assert!(names.iter().any(|name| name == "redis_mget"));
+}
+
+#[tokio::test]
+async fn advertised_capability_failures_have_stable_categories_and_codes() {
+    let old = RedisCapabilities::unknown().with_redis_version(RedisVersion::new(3, 2, 12));
+    let client = capability_client(old, UnavailableToolPolicy::Advertise).await;
+    let result = client
+        .call_tool(
+            "redis_memory_usage",
+            serde_json::json!({"key": "never-sent"}),
+        )
+        .await
+        .expect("version failure is a tool result");
+    let text = serde_json::to_string(&result).expect("serialize version failure");
+    assert!(result.is_error);
+    assert!(text.contains("CapabilityUnavailable"));
+    assert!(text.contains("REDIS_VERSION_UNAVAILABLE"));
+
+    let missing_json = RedisCapabilities::unknown()
+        .with_module(RedisModule::Json, RedisModuleCapability::unavailable());
+    let client = capability_client(missing_json, UnavailableToolPolicy::Advertise).await;
+    let result = client
+        .call_tool("redis_json_get", serde_json::json!({"key": "never-sent"}))
+        .await
+        .expect("module failure is a tool result");
+    let text = serde_json::to_string(&result).expect("serialize module failure");
+    assert!(result.is_error);
+    assert!(text.contains("ModuleUnavailable"));
+    assert!(text.contains("MODULE_UNAVAILABLE"));
+
+    let old_search = RedisCapabilities::unknown().with_module(
+        RedisModule::Search,
+        RedisModuleCapability::available(Some(RedisVersion::new(1, 8, 0))),
+    );
+    let client = capability_client(old_search, UnavailableToolPolicy::Advertise).await;
+    let result = client
+        .call_tool("redis_ft_list", serde_json::json!({}))
+        .await
+        .expect("module version failure is a tool result");
+    let text = serde_json::to_string(&result).expect("serialize module version failure");
+    assert!(result.is_error);
+    assert!(text.contains("ModuleUnavailable"));
+    assert!(text.contains("MODULE_VERSION_UNAVAILABLE"));
+
+    let missing_command =
+        RedisCapabilities::unknown().with_command("PING", CapabilityStatus::Unavailable);
+    let client = capability_client(missing_command, UnavailableToolPolicy::Advertise).await;
+    let result = client
+        .call_tool("redis_ping", serde_json::json!({}))
+        .await
+        .expect("command failure is a tool result");
+    let text = serde_json::to_string(&result).expect("serialize command failure");
+    assert!(result.is_error);
+    assert!(text.contains("CapabilityUnavailable"));
+    assert!(text.contains("COMMAND_UNAVAILABLE"));
+
+    let cluster = RedisCapabilities::unknown().with_deployment(RedisDeployment::Cluster);
+    let client = capability_client(cluster, UnavailableToolPolicy::Advertise).await;
+    let result = client
+        .call_tool("redis_dbsize", serde_json::json!({}))
+        .await
+        .expect("deployment failure is a tool result");
+    let text = serde_json::to_string(&result).expect("serialize deployment failure");
+    assert!(result.is_error);
+    assert!(text.contains("CapabilityUnavailable"));
+    assert!(text.contains("DEPLOYMENT_UNAVAILABLE"));
+}
+
 #[derive(Clone, Copy)]
 struct SlowRedis;
 
@@ -1008,11 +1222,19 @@ async fn curated_catalog_matches_checked_in_contract_snapshot() {
                 .iter()
                 .find(|metadata| metadata.name == tool.name)
                 .unwrap_or_else(|| panic!("missing catalog metadata for {}", tool.name));
+            let requirements = metadata.capability_requirements();
             serde_json::json!({
                 "name": metadata.name,
                 "bundle": metadata.bundle.as_str(),
                 "required_access": metadata.required_access.as_str(),
                 "required_module": metadata.required_module().map(|module| module.as_str()),
+                "capability_requirements": {
+                    "minimum_redis_version": requirements.minimum_redis_version().map(|version| version.to_string()),
+                    "required_module": requirements.required_module().map(|module| module.as_str()),
+                    "minimum_module_version": requirements.minimum_module_version().map(|version| version.to_string()),
+                    "required_commands": requirements.required_commands(),
+                    "deployment": requirements.deployment().as_str(),
+                },
                 "requires_raw_opt_in": metadata.requires_raw_opt_in,
                 "output_policy": metadata.output_policy().as_str(),
                 "protocol": tool,

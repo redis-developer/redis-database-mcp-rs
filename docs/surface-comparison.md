@@ -85,12 +85,12 @@ Scores use a checked-in four-level rubric:
 | output bounds | 3 | 1 | Preserve centralized byte limits, typed continuations, and adversarial boundary coverage. |
 | binary safety | 3 | 0 | Preserve explicit UTF-8/base64 values. |
 | cluster behavior | 3 | 1 | Specify slot, fan-out, aggregation, and partial failures per tool. |
-| capability/version awareness | 1 | 1 | Complete #17. |
+| capability/version awareness | 3 | 1 | Preserve bounded direct discovery, partial custom snapshots, catalog requirements, and hide/advertise policy. |
 | live compatibility testing | 3 | 1 | Keep real MCP calls across Redis, Stack, and cluster CI. |
 | embedding and host policy | 3 | 0 | Keep redisctl and REPL policy outside tool definitions. |
 
-The aggregate is currently 28/30 versus 8/30, with the library leading in
-nine of ten dimensions. The aggregate is descriptive, not the completion
+The aggregate is currently 30/30 versus 8/30, with the library leading in
+all ten dimensions. The aggregate is descriptive, not the completion
 test: a high score cannot compensate for a missing strategic capability or an
 unbounded default tool.
 

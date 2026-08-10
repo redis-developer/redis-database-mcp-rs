@@ -2,6 +2,15 @@
   "catalog": [
     {
       "bundle": "essentials",
+      "capability_requirements": {
+        "deployment": "any",
+        "minimum_module_version": null,
+        "minimum_redis_version": null,
+        "required_commands": [
+          "APPEND"
+        ],
+        "required_module": null
+      },
       "name": "redis_append",
       "output_policy": "intrinsically_bounded",
       "protocol": {
@@ -58,6 +67,13 @@
     },
     {
       "bundle": "raw",
+      "capability_requirements": {
+        "deployment": "any",
+        "minimum_module_version": null,
+        "minimum_redis_version": null,
+        "required_commands": [],
+        "required_module": null
+      },
       "name": "redis_command",
       "output_policy": "budget_guarded",
       "protocol": {
@@ -111,6 +127,15 @@
     },
     {
       "bundle": "essentials",
+      "capability_requirements": {
+        "deployment": "standalone",
+        "minimum_module_version": null,
+        "minimum_redis_version": null,
+        "required_commands": [
+          "DBSIZE"
+        ],
+        "required_module": null
+      },
       "name": "redis_dbsize",
       "output_policy": "intrinsically_bounded",
       "protocol": {
@@ -149,6 +174,15 @@
     },
     {
       "bundle": "essentials",
+      "capability_requirements": {
+        "deployment": "any",
+        "minimum_module_version": null,
+        "minimum_redis_version": null,
+        "required_commands": [
+          "DEL"
+        ],
+        "required_module": null
+      },
       "name": "redis_del",
       "output_policy": "intrinsically_bounded",
       "protocol": {
@@ -207,6 +241,15 @@
     },
     {
       "bundle": "essentials",
+      "capability_requirements": {
+        "deployment": "any",
+        "minimum_module_version": null,
+        "minimum_redis_version": null,
+        "required_commands": [
+          "EXISTS"
+        ],
+        "required_module": null
+      },
       "name": "redis_exists",
       "output_policy": "intrinsically_bounded",
       "protocol": {
@@ -271,6 +314,15 @@
     },
     {
       "bundle": "essentials",
+      "capability_requirements": {
+        "deployment": "any",
+        "minimum_module_version": null,
+        "minimum_redis_version": null,
+        "required_commands": [
+          "EXPIRE"
+        ],
+        "required_module": null
+      },
       "name": "redis_expire",
       "output_policy": "intrinsically_bounded",
       "protocol": {
@@ -334,6 +386,15 @@
     },
     {
       "bundle": "search",
+      "capability_requirements": {
+        "deployment": "any",
+        "minimum_module_version": null,
+        "minimum_redis_version": null,
+        "required_commands": [
+          "FT.CREATE"
+        ],
+        "required_module": "search"
+      },
       "name": "redis_ft_create",
       "output_policy": "intrinsically_bounded",
       "protocol": {
@@ -463,6 +524,15 @@
     },
     {
       "bundle": "search",
+      "capability_requirements": {
+        "deployment": "any",
+        "minimum_module_version": null,
+        "minimum_redis_version": null,
+        "required_commands": [
+          "FT.DROPINDEX"
+        ],
+        "required_module": "search"
+      },
       "name": "redis_ft_dropindex",
       "output_policy": "intrinsically_bounded",
       "protocol": {
@@ -519,6 +589,15 @@
     },
     {
       "bundle": "search",
+      "capability_requirements": {
+        "deployment": "any",
+        "minimum_module_version": null,
+        "minimum_redis_version": null,
+        "required_commands": [
+          "FT.INFO"
+        ],
+        "required_module": "search"
+      },
       "name": "redis_ft_info",
       "output_policy": "budget_guarded",
       "protocol": {
@@ -571,6 +650,15 @@
     },
     {
       "bundle": "search",
+      "capability_requirements": {
+        "deployment": "any",
+        "minimum_module_version": "2.0.0",
+        "minimum_redis_version": null,
+        "required_commands": [
+          "FT._LIST"
+        ],
+        "required_module": "search"
+      },
       "name": "redis_ft_list",
       "output_policy": "budget_guarded",
       "protocol": {
@@ -616,6 +704,15 @@
     },
     {
       "bundle": "search",
+      "capability_requirements": {
+        "deployment": "any",
+        "minimum_module_version": null,
+        "minimum_redis_version": null,
+        "required_commands": [
+          "FT.SEARCH"
+        ],
+        "required_module": "search"
+      },
       "name": "redis_ft_search",
       "output_policy": "offset_paginated",
       "protocol": {
@@ -827,6 +924,15 @@
     },
     {
       "bundle": "essentials",
+      "capability_requirements": {
+        "deployment": "any",
+        "minimum_module_version": null,
+        "minimum_redis_version": null,
+        "required_commands": [
+          "GET"
+        ],
+        "required_module": null
+      },
       "name": "redis_get",
       "output_policy": "budget_guarded",
       "protocol": {
@@ -903,6 +1009,15 @@
     },
     {
       "bundle": "data_structures",
+      "capability_requirements": {
+        "deployment": "any",
+        "minimum_module_version": null,
+        "minimum_redis_version": null,
+        "required_commands": [
+          "HGET"
+        ],
+        "required_module": null
+      },
       "name": "redis_hget",
       "output_policy": "budget_guarded",
       "protocol": {
@@ -988,6 +1103,15 @@
     },
     {
       "bundle": "data_structures",
+      "capability_requirements": {
+        "deployment": "any",
+        "minimum_module_version": null,
+        "minimum_redis_version": null,
+        "required_commands": [
+          "HGETALL"
+        ],
+        "required_module": null
+      },
       "name": "redis_hgetall",
       "output_policy": "budget_guarded",
       "protocol": {
@@ -1085,6 +1209,15 @@
     },
     {
       "bundle": "data_structures",
+      "capability_requirements": {
+        "deployment": "any",
+        "minimum_module_version": null,
+        "minimum_redis_version": null,
+        "required_commands": [
+          "HSCAN"
+        ],
+        "required_module": null
+      },
       "name": "redis_hscan",
       "output_policy": "cursor_paginated",
       "protocol": {
@@ -1271,6 +1404,15 @@
     },
     {
       "bundle": "data_structures",
+      "capability_requirements": {
+        "deployment": "any",
+        "minimum_module_version": null,
+        "minimum_redis_version": null,
+        "required_commands": [
+          "HSET"
+        ],
+        "required_module": null
+      },
       "name": "redis_hset",
       "output_policy": "intrinsically_bounded",
       "protocol": {
@@ -1337,6 +1479,15 @@
     },
     {
       "bundle": "essentials",
+      "capability_requirements": {
+        "deployment": "any",
+        "minimum_module_version": null,
+        "minimum_redis_version": null,
+        "required_commands": [
+          "INCR"
+        ],
+        "required_module": null
+      },
       "name": "redis_incr",
       "output_policy": "intrinsically_bounded",
       "protocol": {
@@ -1387,6 +1538,15 @@
     },
     {
       "bundle": "diagnostics",
+      "capability_requirements": {
+        "deployment": "standalone",
+        "minimum_module_version": null,
+        "minimum_redis_version": null,
+        "required_commands": [
+          "INFO"
+        ],
+        "required_module": null
+      },
       "name": "redis_info",
       "output_policy": "budget_guarded",
       "protocol": {
@@ -1448,6 +1608,15 @@
     },
     {
       "bundle": "json",
+      "capability_requirements": {
+        "deployment": "any",
+        "minimum_module_version": null,
+        "minimum_redis_version": null,
+        "required_commands": [
+          "JSON.DEL"
+        ],
+        "required_module": "redis_json"
+      },
       "name": "redis_json_del",
       "output_policy": "intrinsically_bounded",
       "protocol": {
@@ -1508,6 +1677,15 @@
     },
     {
       "bundle": "json",
+      "capability_requirements": {
+        "deployment": "any",
+        "minimum_module_version": null,
+        "minimum_redis_version": null,
+        "required_commands": [
+          "JSON.GET"
+        ],
+        "required_module": "redis_json"
+      },
       "name": "redis_json_get",
       "output_policy": "budget_guarded",
       "protocol": {
@@ -1569,6 +1747,15 @@
     },
     {
       "bundle": "json",
+      "capability_requirements": {
+        "deployment": "any",
+        "minimum_module_version": null,
+        "minimum_redis_version": null,
+        "required_commands": [
+          "JSON.SET"
+        ],
+        "required_module": "redis_json"
+      },
       "name": "redis_json_set",
       "output_policy": "intrinsically_bounded",
       "protocol": {
@@ -1642,6 +1829,15 @@
     },
     {
       "bundle": "json",
+      "capability_requirements": {
+        "deployment": "any",
+        "minimum_module_version": null,
+        "minimum_redis_version": null,
+        "required_commands": [
+          "JSON.TYPE"
+        ],
+        "required_module": "redis_json"
+      },
       "name": "redis_json_type",
       "output_policy": "budget_guarded",
       "protocol": {
@@ -1709,6 +1905,15 @@
     },
     {
       "bundle": "data_structures",
+      "capability_requirements": {
+        "deployment": "any",
+        "minimum_module_version": null,
+        "minimum_redis_version": null,
+        "required_commands": [
+          "LPUSH"
+        ],
+        "required_module": null
+      },
       "name": "redis_lpush",
       "output_policy": "intrinsically_bounded",
       "protocol": {
@@ -1776,6 +1981,15 @@
     },
     {
       "bundle": "data_structures",
+      "capability_requirements": {
+        "deployment": "any",
+        "minimum_module_version": null,
+        "minimum_redis_version": null,
+        "required_commands": [
+          "LRANGE"
+        ],
+        "required_module": null
+      },
       "name": "redis_lrange",
       "output_policy": "range_paginated",
       "protocol": {
@@ -1950,6 +2164,15 @@
     },
     {
       "bundle": "essentials",
+      "capability_requirements": {
+        "deployment": "any",
+        "minimum_module_version": null,
+        "minimum_redis_version": "4.0.0",
+        "required_commands": [
+          "MEMORY"
+        ],
+        "required_module": null
+      },
       "name": "redis_memory_usage",
       "output_policy": "intrinsically_bounded",
       "protocol": {
@@ -2009,6 +2232,15 @@
     },
     {
       "bundle": "essentials",
+      "capability_requirements": {
+        "deployment": "any",
+        "minimum_module_version": null,
+        "minimum_redis_version": null,
+        "required_commands": [
+          "MGET"
+        ],
+        "required_module": null
+      },
       "name": "redis_mget",
       "output_policy": "budget_guarded",
       "protocol": {
@@ -2111,6 +2343,15 @@
     },
     {
       "bundle": "essentials",
+      "capability_requirements": {
+        "deployment": "any",
+        "minimum_module_version": null,
+        "minimum_redis_version": null,
+        "required_commands": [
+          "MSET"
+        ],
+        "required_module": null
+      },
       "name": "redis_mset",
       "output_policy": "intrinsically_bounded",
       "protocol": {
@@ -2184,6 +2425,15 @@
     },
     {
       "bundle": "essentials",
+      "capability_requirements": {
+        "deployment": "any",
+        "minimum_module_version": null,
+        "minimum_redis_version": null,
+        "required_commands": [
+          "PERSIST"
+        ],
+        "required_module": null
+      },
       "name": "redis_persist",
       "output_policy": "intrinsically_bounded",
       "protocol": {
@@ -2234,6 +2484,15 @@
     },
     {
       "bundle": "essentials",
+      "capability_requirements": {
+        "deployment": "any",
+        "minimum_module_version": null,
+        "minimum_redis_version": null,
+        "required_commands": [
+          "PING"
+        ],
+        "required_module": null
+      },
       "name": "redis_ping",
       "output_policy": "intrinsically_bounded",
       "protocol": {
@@ -2275,6 +2534,15 @@
     },
     {
       "bundle": "essentials",
+      "capability_requirements": {
+        "deployment": "standalone",
+        "minimum_module_version": null,
+        "minimum_redis_version": null,
+        "required_commands": [
+          "RANDOMKEY"
+        ],
+        "required_module": null
+      },
       "name": "redis_randomkey",
       "output_policy": "budget_guarded",
       "protocol": {
@@ -2330,6 +2598,15 @@
     },
     {
       "bundle": "data_structures",
+      "capability_requirements": {
+        "deployment": "any",
+        "minimum_module_version": null,
+        "minimum_redis_version": null,
+        "required_commands": [
+          "SADD"
+        ],
+        "required_module": null
+      },
       "name": "redis_sadd",
       "output_policy": "intrinsically_bounded",
       "protocol": {
@@ -2398,6 +2675,15 @@
     },
     {
       "bundle": "essentials",
+      "capability_requirements": {
+        "deployment": "standalone",
+        "minimum_module_version": null,
+        "minimum_redis_version": null,
+        "required_commands": [
+          "SCAN"
+        ],
+        "required_module": null
+      },
       "name": "redis_scan",
       "output_policy": "cursor_paginated",
       "protocol": {
@@ -2550,6 +2836,15 @@
     },
     {
       "bundle": "essentials",
+      "capability_requirements": {
+        "deployment": "any",
+        "minimum_module_version": null,
+        "minimum_redis_version": null,
+        "required_commands": [
+          "SET"
+        ],
+        "required_module": null
+      },
       "name": "redis_set",
       "output_policy": "intrinsically_bounded",
       "protocol": {
@@ -2623,6 +2918,15 @@
     },
     {
       "bundle": "data_structures",
+      "capability_requirements": {
+        "deployment": "any",
+        "minimum_module_version": null,
+        "minimum_redis_version": null,
+        "required_commands": [
+          "SMEMBERS"
+        ],
+        "required_module": null
+      },
       "name": "redis_smembers",
       "output_policy": "budget_guarded",
       "protocol": {
@@ -2712,6 +3016,15 @@
     },
     {
       "bundle": "data_structures",
+      "capability_requirements": {
+        "deployment": "any",
+        "minimum_module_version": null,
+        "minimum_redis_version": null,
+        "required_commands": [
+          "SSCAN"
+        ],
+        "required_module": null
+      },
       "name": "redis_sscan",
       "output_policy": "cursor_paginated",
       "protocol": {
@@ -2890,6 +3203,15 @@
     },
     {
       "bundle": "essentials",
+      "capability_requirements": {
+        "deployment": "any",
+        "minimum_module_version": null,
+        "minimum_redis_version": null,
+        "required_commands": [
+          "STRLEN"
+        ],
+        "required_module": null
+      },
       "name": "redis_strlen",
       "output_policy": "intrinsically_bounded",
       "protocol": {
@@ -2943,6 +3265,15 @@
     },
     {
       "bundle": "essentials",
+      "capability_requirements": {
+        "deployment": "any",
+        "minimum_module_version": null,
+        "minimum_redis_version": null,
+        "required_commands": [
+          "TTL"
+        ],
+        "required_module": null
+      },
       "name": "redis_ttl",
       "output_policy": "intrinsically_bounded",
       "protocol": {
@@ -3003,6 +3334,15 @@
     },
     {
       "bundle": "essentials",
+      "capability_requirements": {
+        "deployment": "any",
+        "minimum_module_version": null,
+        "minimum_redis_version": null,
+        "required_commands": [
+          "TYPE"
+        ],
+        "required_module": null
+      },
       "name": "redis_type",
       "output_policy": "intrinsically_bounded",
       "protocol": {
@@ -3054,6 +3394,15 @@
     },
     {
       "bundle": "essentials",
+      "capability_requirements": {
+        "deployment": "any",
+        "minimum_module_version": null,
+        "minimum_redis_version": "4.0.0",
+        "required_commands": [
+          "UNLINK"
+        ],
+        "required_module": null
+      },
       "name": "redis_unlink",
       "output_policy": "intrinsically_bounded",
       "protocol": {
@@ -3112,6 +3461,15 @@
     },
     {
       "bundle": "data_structures",
+      "capability_requirements": {
+        "deployment": "any",
+        "minimum_module_version": null,
+        "minimum_redis_version": null,
+        "required_commands": [
+          "ZADD"
+        ],
+        "required_module": null
+      },
       "name": "redis_zadd",
       "output_policy": "intrinsically_bounded",
       "protocol": {
@@ -3230,6 +3588,15 @@
     },
     {
       "bundle": "data_structures",
+      "capability_requirements": {
+        "deployment": "any",
+        "minimum_module_version": null,
+        "minimum_redis_version": null,
+        "required_commands": [
+          "ZRANGE"
+        ],
+        "required_module": null
+      },
       "name": "redis_zrange",
       "output_policy": "range_paginated",
       "protocol": {
@@ -3425,6 +3792,15 @@
     },
     {
       "bundle": "data_structures",
+      "capability_requirements": {
+        "deployment": "any",
+        "minimum_module_version": null,
+        "minimum_redis_version": null,
+        "required_commands": [
+          "ZSCAN"
+        ],
+        "required_module": null
+      },
       "name": "redis_zscan",
       "output_policy": "cursor_paginated",
       "protocol": {

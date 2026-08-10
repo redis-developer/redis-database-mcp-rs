@@ -307,5 +307,5 @@ fn completion_gate_is_objective_and_self_consistent() {
         .copied()
         .collect::<BTreeSet<_>>();
     assert!(planned_issues.is_subset(&blockers));
-    assert!(BTreeSet::from([17, 24]).is_subset(&blockers));
+    assert!(BTreeSet::from([24]).is_subset(&blockers));
 }

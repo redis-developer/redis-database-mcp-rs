@@ -1,6 +1,9 @@
 use std::time::Duration;
 
-use redis_mcp::{AccessMode, DirectRedis, OutputBudget, RedisMcp, ToolBundle, tool_names};
+use redis_mcp::{
+    AccessMode, CapabilityStatus, DirectRedis, OutputBudget, RedisDeployment, RedisMcp,
+    RedisModule, ToolBundle, tool_names,
+};
 use tower_mcp::client::{ChannelTransport, McpClient, StdioClientTransport};
 
 #[cfg(unix)]
@@ -153,6 +156,35 @@ async fn module_router_client(url: &str) -> McpClient {
         .await
         .expect("initialize module MCP client");
     client
+}
+
+#[tokio::test]
+async fn direct_adapter_discovers_bounded_standalone_capabilities() {
+    let Some(redis) = TestRedis::start().await else {
+        return;
+    };
+    let executor = DirectRedis::connect(&redis.url)
+        .await
+        .expect("connect for capability discovery");
+    let capabilities = executor
+        .discover_capabilities_with_timeout(Duration::from_secs(2))
+        .await
+        .expect("discover standalone capabilities");
+
+    assert!(capabilities.redis_version().is_some());
+    assert_eq!(capabilities.deployment(), RedisDeployment::Standalone);
+    assert_eq!(capabilities.command("PING"), CapabilityStatus::Available);
+    #[cfg(unix)]
+    if redis._managed.is_some() {
+        assert_eq!(
+            capabilities.module(RedisModule::Json).status(),
+            CapabilityStatus::Unavailable
+        );
+        assert_eq!(
+            capabilities.module(RedisModule::Search).status(),
+            CapabilityStatus::Unavailable
+        );
+    }
 }
 
 #[tokio::test]

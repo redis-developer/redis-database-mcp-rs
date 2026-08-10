@@ -103,15 +103,21 @@ configured Redis target must provide the corresponding capability:
 ## Embed the router
 
     use std::time::Duration;
-    use redis_mcp::{AccessMode, DirectRedis, OutputBudget, RedisMcp, ToolBundle};
+    use redis_mcp::{
+        AccessMode, DirectRedis, OutputBudget, RedisMcp, ToolBundle,
+        UnavailableToolPolicy,
+    };
 
     # async fn example() -> Result<(), Box<dyn std::error::Error>> {
     let redis = DirectRedis::connect("redis://127.0.0.1:6379").await?;
+    let capabilities = redis.discover_capabilities().await?;
     let router = RedisMcp::builder(redis)
         .access(AccessMode::ReadWrite)
         .bundles([ToolBundle::Essentials, ToolBundle::Diagnostics])
         .command_timeout(Duration::from_secs(10))
         .output_budget(OutputBudget::new(512 * 1024, 2_000))
+        .capabilities(capabilities)
+        .unavailable_tool_policy(UnavailableToolPolicy::Hide)
         .build();
 
     // Serve or merge router in the host application.
@@ -144,6 +150,26 @@ need to share this crate's redis-rs dependency line. Commands include the
 originating tool, required access level, and any required Redis module for host
 telemetry, capability routing, and audit records. See
 [the custom executor example](examples/custom_executor.rs).
+
+`RedisCapabilities` is crate-owned too. A host can supply an authoritative or
+partial snapshot containing Redis and module versions, deployment mode, and
+per-command availability without sharing the library's redis-rs dependency.
+`with_command_inventory` and `with_module_inventory` make omitted catalog
+requirements explicitly unavailable; the individual `with_command` and
+`with_module` methods support partial knowledge.
+`DirectRedis` and `DirectRedisCluster` provide bounded asynchronous discovery
+for hosts that use the bundled adapters. Unknown facts remain permissive for
+custom-executor compatibility. Known-unavailable tools are advertised with a
+stable capability error by default; `UnavailableToolPolicy::Hide` removes them
+from `tools/list` instead. Every catalog entry exposes its minimum Redis/module
+versions and required command names.
+
+The current catalog marks `redis_info`, `redis_dbsize`, `redis_scan`, and
+`redis_randomkey` as standalone-only because redis-rs otherwise routes them to
+one cluster node or returns a fan-out shape without the database-wide
+aggregation their contracts imply. A discovered cluster snapshot therefore
+hides or rejects those tools instead of silently reporting one node as the
+whole database.
 
 The curated default enables the `essentials`, `data_structures`, and
 `diagnostics` bundles. The module-backed `json` and `search` bundles are

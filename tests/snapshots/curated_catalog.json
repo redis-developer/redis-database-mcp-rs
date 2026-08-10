@@ -3,6 +3,7 @@
     {
       "bundle": "essentials",
       "name": "redis_append",
+      "output_policy": "intrinsically_bounded",
       "protocol": {
         "annotations": {
           "destructiveHint": false
@@ -58,6 +59,7 @@
     {
       "bundle": "raw",
       "name": "redis_command",
+      "output_policy": "budget_guarded",
       "protocol": {
         "annotations": {},
         "description": "Run a classified or explicitly unrestricted Redis request/response command. Connection-state, streaming, transaction, script, and blocking forms are rejected.",
@@ -110,6 +112,7 @@
     {
       "bundle": "essentials",
       "name": "redis_dbsize",
+      "output_policy": "intrinsically_bounded",
       "protocol": {
         "annotations": {
           "destructiveHint": false,
@@ -147,6 +150,7 @@
     {
       "bundle": "essentials",
       "name": "redis_del",
+      "output_policy": "intrinsically_bounded",
       "protocol": {
         "annotations": {
           "idempotentHint": true
@@ -204,6 +208,7 @@
     {
       "bundle": "essentials",
       "name": "redis_exists",
+      "output_policy": "intrinsically_bounded",
       "protocol": {
         "annotations": {
           "destructiveHint": false,
@@ -267,6 +272,7 @@
     {
       "bundle": "essentials",
       "name": "redis_expire",
+      "output_policy": "intrinsically_bounded",
       "protocol": {
         "annotations": {
           "destructiveHint": false,
@@ -329,6 +335,7 @@
     {
       "bundle": "search",
       "name": "redis_ft_create",
+      "output_policy": "intrinsically_bounded",
       "protocol": {
         "annotations": {
           "destructiveHint": false
@@ -457,6 +464,7 @@
     {
       "bundle": "search",
       "name": "redis_ft_dropindex",
+      "output_policy": "intrinsically_bounded",
       "protocol": {
         "annotations": {},
         "description": "Drop a search index. Optionally delete indexed documents too; requires full access.",
@@ -512,6 +520,7 @@
     {
       "bundle": "search",
       "name": "redis_ft_info",
+      "output_policy": "budget_guarded",
       "protocol": {
         "annotations": {
           "destructiveHint": false,
@@ -563,6 +572,7 @@
     {
       "bundle": "search",
       "name": "redis_ft_list",
+      "output_policy": "budget_guarded",
       "protocol": {
         "annotations": {
           "destructiveHint": false,
@@ -607,13 +617,14 @@
     {
       "bundle": "search",
       "name": "redis_ft_search",
+      "output_policy": "offset_paginated",
       "protocol": {
         "annotations": {
           "destructiveHint": false,
           "idempotentHint": true,
           "readOnlyHint": true
         },
-        "description": "Run a bounded Redis Query Engine search. Binary response values retain explicit encodings.",
+        "description": "Run a bounded Redis Query Engine search. Pass page.continuation.offset as limit_offset until page.complete is true. Binary response values retain explicit encodings.",
         "inputSchema": {
           "$schema": "https://json-schema.org/draft/2020-12/schema",
           "additionalProperties": false,
@@ -627,7 +638,7 @@
               "description": "Maximum results to return, bounded to 100 per call.",
               "format": "uint64",
               "maximum": 100,
-              "minimum": 0,
+              "minimum": 1,
               "type": [
                 "integer",
                 "null"
@@ -635,7 +646,7 @@
             },
             "limit_offset": {
               "default": null,
-              "description": "Result offset. Supplying either limit field emits a LIMIT clause.",
+              "description": "Result offset. Start with zero and follow page.continuation.offset.",
               "format": "uint64",
               "minimum": 0,
               "type": [
@@ -700,11 +711,89 @@
         },
         "name": "redis_ft_search",
         "outputSchema": {
+          "$defs": {
+            "PageContinuation": {
+              "additionalProperties": false,
+              "properties": {
+                "cursor": {
+                  "format": "uint64",
+                  "minimum": 0,
+                  "type": [
+                    "integer",
+                    "null"
+                  ]
+                },
+                "offset": {
+                  "format": "uint64",
+                  "minimum": 0,
+                  "type": [
+                    "integer",
+                    "null"
+                  ]
+                },
+                "start": {
+                  "format": "int64",
+                  "type": [
+                    "integer",
+                    "null"
+                  ]
+                }
+              },
+              "type": "object"
+            },
+            "PageMetadata": {
+              "additionalProperties": false,
+              "properties": {
+                "complete": {
+                  "type": "boolean"
+                },
+                "continuation": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/$defs/PageContinuation"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "requested": {
+                  "format": "uint",
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                "returned": {
+                  "format": "uint",
+                  "minimum": 0,
+                  "type": "integer"
+                }
+              },
+              "required": [
+                "requested",
+                "returned",
+                "complete"
+              ],
+              "type": "object"
+            }
+          },
           "$schema": "https://json-schema.org/draft/2020-12/schema",
           "additionalProperties": false,
           "properties": {
             "index": {
               "type": "string"
+            },
+            "limit_num": {
+              "format": "uint64",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "limit_offset": {
+              "format": "uint64",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "page": {
+              "$ref": "#/$defs/PageMetadata"
             },
             "query": {
               "type": "string"
@@ -722,7 +811,10 @@
           "required": [
             "index",
             "query",
-            "response"
+            "response",
+            "limit_offset",
+            "limit_num",
+            "page"
           ],
           "title": "FtSearchOutput",
           "type": "object"
@@ -736,6 +828,7 @@
     {
       "bundle": "essentials",
       "name": "redis_get",
+      "output_policy": "budget_guarded",
       "protocol": {
         "annotations": {
           "destructiveHint": false,
@@ -811,6 +904,7 @@
     {
       "bundle": "data_structures",
       "name": "redis_hget",
+      "output_policy": "budget_guarded",
       "protocol": {
         "annotations": {
           "destructiveHint": false,
@@ -895,13 +989,14 @@
     {
       "bundle": "data_structures",
       "name": "redis_hgetall",
+      "output_policy": "budget_guarded",
       "protocol": {
         "annotations": {
           "destructiveHint": false,
           "idempotentHint": true,
           "readOnlyHint": true
         },
-        "description": "Read all fields and values in a Redis hash with binary-safe encodings.",
+        "description": "Read all fields and values in a Redis hash with binary-safe encodings. The configured output budget is enforced; use redis_hscan for large hashes.",
         "inputSchema": {
           "$schema": "https://json-schema.org/draft/2020-12/schema",
           "additionalProperties": false,
@@ -990,7 +1085,194 @@
     },
     {
       "bundle": "data_structures",
+      "name": "redis_hscan",
+      "output_policy": "cursor_paginated",
+      "protocol": {
+        "annotations": {
+          "destructiveHint": false,
+          "idempotentHint": true,
+          "readOnlyHint": true
+        },
+        "description": "Read one bounded HSCAN page. Pass page.continuation.cursor as cursor until page.complete is true. Fields and values are binary-safe.",
+        "inputSchema": {
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "count": {
+              "default": 100,
+              "description": "Approximate number of fields or members Redis should inspect.",
+              "format": "uint",
+              "maximum": 1000,
+              "minimum": 1,
+              "type": "integer"
+            },
+            "cursor": {
+              "default": 0,
+              "description": "Cursor returned by the previous page. Start with zero.",
+              "format": "uint64",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "key": {
+              "description": "Redis key containing the collection.",
+              "type": "string"
+            },
+            "pattern": {
+              "default": "*",
+              "description": "Glob-style field or member pattern.",
+              "type": "string"
+            }
+          },
+          "required": [
+            "key"
+          ],
+          "title": "CollectionScanInput",
+          "type": "object"
+        },
+        "name": "redis_hscan",
+        "outputSchema": {
+          "$defs": {
+            "HashEntry": {
+              "additionalProperties": false,
+              "properties": {
+                "field": {
+                  "type": "string"
+                },
+                "field_encoding": {
+                  "$ref": "#/$defs/ValueEncoding"
+                },
+                "value": {
+                  "type": "string"
+                },
+                "value_encoding": {
+                  "$ref": "#/$defs/ValueEncoding"
+                }
+              },
+              "required": [
+                "field",
+                "field_encoding",
+                "value",
+                "value_encoding"
+              ],
+              "type": "object"
+            },
+            "PageContinuation": {
+              "additionalProperties": false,
+              "properties": {
+                "cursor": {
+                  "format": "uint64",
+                  "minimum": 0,
+                  "type": [
+                    "integer",
+                    "null"
+                  ]
+                },
+                "offset": {
+                  "format": "uint64",
+                  "minimum": 0,
+                  "type": [
+                    "integer",
+                    "null"
+                  ]
+                },
+                "start": {
+                  "format": "int64",
+                  "type": [
+                    "integer",
+                    "null"
+                  ]
+                }
+              },
+              "type": "object"
+            },
+            "PageMetadata": {
+              "additionalProperties": false,
+              "properties": {
+                "complete": {
+                  "type": "boolean"
+                },
+                "continuation": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/$defs/PageContinuation"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "requested": {
+                  "format": "uint",
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                "returned": {
+                  "format": "uint",
+                  "minimum": 0,
+                  "type": "integer"
+                }
+              },
+              "required": [
+                "requested",
+                "returned",
+                "complete"
+              ],
+              "type": "object"
+            },
+            "ValueEncoding": {
+              "enum": [
+                "utf8",
+                "base64"
+              ],
+              "type": "string"
+            }
+          },
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "count": {
+              "format": "uint",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "cursor": {
+              "format": "uint64",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "entries": {
+              "items": {
+                "$ref": "#/$defs/HashEntry"
+              },
+              "type": "array"
+            },
+            "key": {
+              "type": "string"
+            },
+            "page": {
+              "$ref": "#/$defs/PageMetadata"
+            }
+          },
+          "required": [
+            "key",
+            "cursor",
+            "count",
+            "entries",
+            "page"
+          ],
+          "title": "HscanOutput",
+          "type": "object"
+        },
+        "title": "Scan Redis Hash"
+      },
+      "required_access": "read_only",
+      "required_module": null,
+      "requires_raw_opt_in": false
+    },
+    {
+      "bundle": "data_structures",
       "name": "redis_hset",
+      "output_policy": "intrinsically_bounded",
       "protocol": {
         "annotations": {
           "destructiveHint": false,
@@ -1056,6 +1338,7 @@
     {
       "bundle": "essentials",
       "name": "redis_incr",
+      "output_policy": "intrinsically_bounded",
       "protocol": {
         "annotations": {
           "destructiveHint": false
@@ -1105,6 +1388,7 @@
     {
       "bundle": "diagnostics",
       "name": "redis_info",
+      "output_policy": "budget_guarded",
       "protocol": {
         "annotations": {
           "destructiveHint": false,
@@ -1165,6 +1449,7 @@
     {
       "bundle": "json",
       "name": "redis_json_del",
+      "output_policy": "intrinsically_bounded",
       "protocol": {
         "annotations": {
           "idempotentHint": true
@@ -1224,6 +1509,7 @@
     {
       "bundle": "json",
       "name": "redis_json_get",
+      "output_policy": "budget_guarded",
       "protocol": {
         "annotations": {
           "destructiveHint": false,
@@ -1284,6 +1570,7 @@
     {
       "bundle": "json",
       "name": "redis_json_set",
+      "output_policy": "intrinsically_bounded",
       "protocol": {
         "annotations": {
           "destructiveHint": false,
@@ -1356,6 +1643,7 @@
     {
       "bundle": "json",
       "name": "redis_json_type",
+      "output_policy": "budget_guarded",
       "protocol": {
         "annotations": {
           "destructiveHint": false,
@@ -1422,6 +1710,7 @@
     {
       "bundle": "data_structures",
       "name": "redis_lpush",
+      "output_policy": "intrinsically_bounded",
       "protocol": {
         "annotations": {
           "destructiveHint": false
@@ -1488,13 +1777,14 @@
     {
       "bundle": "data_structures",
       "name": "redis_lrange",
+      "output_policy": "range_paginated",
       "protocol": {
         "annotations": {
           "destructiveHint": false,
           "idempotentHint": true,
           "readOnlyHint": true
         },
-        "description": "Read an inclusive range from a Redis list. Binary elements are base64.",
+        "description": "Read a bounded inclusive range from a Redis list. Defaults to ranks 0 through 99. Follow page.continuation.start until page.complete is true. Binary elements are base64.",
         "inputSchema": {
           "$schema": "https://json-schema.org/draft/2020-12/schema",
           "additionalProperties": false,
@@ -1510,7 +1800,7 @@
               "type": "integer"
             },
             "stop": {
-              "default": -1,
+              "default": 99,
               "description": "Inclusive stop index. Negative indexes address from the end.",
               "format": "int64",
               "type": "integer"
@@ -1541,6 +1831,69 @@
               ],
               "type": "object"
             },
+            "PageContinuation": {
+              "additionalProperties": false,
+              "properties": {
+                "cursor": {
+                  "format": "uint64",
+                  "minimum": 0,
+                  "type": [
+                    "integer",
+                    "null"
+                  ]
+                },
+                "offset": {
+                  "format": "uint64",
+                  "minimum": 0,
+                  "type": [
+                    "integer",
+                    "null"
+                  ]
+                },
+                "start": {
+                  "format": "int64",
+                  "type": [
+                    "integer",
+                    "null"
+                  ]
+                }
+              },
+              "type": "object"
+            },
+            "PageMetadata": {
+              "additionalProperties": false,
+              "properties": {
+                "complete": {
+                  "type": "boolean"
+                },
+                "continuation": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/$defs/PageContinuation"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "requested": {
+                  "format": "uint",
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                "returned": {
+                  "format": "uint",
+                  "minimum": 0,
+                  "type": "integer"
+                }
+              },
+              "required": [
+                "requested",
+                "returned",
+                "complete"
+              ],
+              "type": "object"
+            },
             "ValueEncoding": {
               "enum": [
                 "utf8",
@@ -1566,6 +1919,9 @@
             "key": {
               "type": "string"
             },
+            "page": {
+              "$ref": "#/$defs/PageMetadata"
+            },
             "start": {
               "format": "int64",
               "type": "integer"
@@ -1580,7 +1936,8 @@
             "start",
             "stop",
             "count",
-            "elements"
+            "elements",
+            "page"
           ],
           "title": "LrangeOutput",
           "type": "object"
@@ -1594,6 +1951,7 @@
     {
       "bundle": "essentials",
       "name": "redis_memory_usage",
+      "output_policy": "intrinsically_bounded",
       "protocol": {
         "annotations": {
           "destructiveHint": false,
@@ -1652,6 +2010,7 @@
     {
       "bundle": "essentials",
       "name": "redis_mget",
+      "output_policy": "budget_guarded",
       "protocol": {
         "annotations": {
           "destructiveHint": false,
@@ -1753,6 +2112,7 @@
     {
       "bundle": "essentials",
       "name": "redis_mset",
+      "output_policy": "intrinsically_bounded",
       "protocol": {
         "annotations": {
           "destructiveHint": false,
@@ -1825,6 +2185,7 @@
     {
       "bundle": "essentials",
       "name": "redis_persist",
+      "output_policy": "intrinsically_bounded",
       "protocol": {
         "annotations": {
           "destructiveHint": false,
@@ -1874,6 +2235,7 @@
     {
       "bundle": "essentials",
       "name": "redis_ping",
+      "output_policy": "intrinsically_bounded",
       "protocol": {
         "annotations": {
           "destructiveHint": false,
@@ -1914,6 +2276,7 @@
     {
       "bundle": "essentials",
       "name": "redis_randomkey",
+      "output_policy": "budget_guarded",
       "protocol": {
         "annotations": {
           "destructiveHint": false,
@@ -1968,6 +2331,7 @@
     {
       "bundle": "data_structures",
       "name": "redis_sadd",
+      "output_policy": "intrinsically_bounded",
       "protocol": {
         "annotations": {
           "destructiveHint": false,
@@ -2035,13 +2399,14 @@
     {
       "bundle": "essentials",
       "name": "redis_scan",
+      "output_policy": "cursor_paginated",
       "protocol": {
         "annotations": {
           "destructiveHint": false,
           "idempotentHint": true,
           "readOnlyHint": true
         },
-        "description": "Read one non-blocking SCAN page. Pass the returned cursor to continue.",
+        "description": "Read one bounded non-blocking SCAN page. Pass page.continuation.cursor as cursor until page.complete is true.",
         "inputSchema": {
           "$schema": "https://json-schema.org/draft/2020-12/schema",
           "additionalProperties": false,
@@ -2080,6 +2445,71 @@
         },
         "name": "redis_scan",
         "outputSchema": {
+          "$defs": {
+            "PageContinuation": {
+              "additionalProperties": false,
+              "properties": {
+                "cursor": {
+                  "format": "uint64",
+                  "minimum": 0,
+                  "type": [
+                    "integer",
+                    "null"
+                  ]
+                },
+                "offset": {
+                  "format": "uint64",
+                  "minimum": 0,
+                  "type": [
+                    "integer",
+                    "null"
+                  ]
+                },
+                "start": {
+                  "format": "int64",
+                  "type": [
+                    "integer",
+                    "null"
+                  ]
+                }
+              },
+              "type": "object"
+            },
+            "PageMetadata": {
+              "additionalProperties": false,
+              "properties": {
+                "complete": {
+                  "type": "boolean"
+                },
+                "continuation": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/$defs/PageContinuation"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "requested": {
+                  "format": "uint",
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                "returned": {
+                  "format": "uint",
+                  "minimum": 0,
+                  "type": "integer"
+                }
+              },
+              "required": [
+                "requested",
+                "returned",
+                "complete"
+              ],
+              "type": "object"
+            }
+          },
           "$schema": "https://json-schema.org/draft/2020-12/schema",
           "additionalProperties": false,
           "properties": {
@@ -2098,12 +2528,16 @@
                 "type": "string"
               },
               "type": "array"
+            },
+            "page": {
+              "$ref": "#/$defs/PageMetadata"
             }
           },
           "required": [
             "cursor",
             "keys",
-            "count"
+            "count",
+            "page"
           ],
           "title": "ScanOutput",
           "type": "object"
@@ -2117,6 +2551,7 @@
     {
       "bundle": "essentials",
       "name": "redis_set",
+      "output_policy": "intrinsically_bounded",
       "protocol": {
         "annotations": {
           "destructiveHint": false,
@@ -2189,13 +2624,14 @@
     {
       "bundle": "data_structures",
       "name": "redis_smembers",
+      "output_policy": "budget_guarded",
       "protocol": {
         "annotations": {
           "destructiveHint": false,
           "idempotentHint": true,
           "readOnlyHint": true
         },
-        "description": "Read all Redis set members in deterministic byte order. Binary members are base64.",
+        "description": "Read all Redis set members in deterministic byte order. The configured output budget is enforced; use redis_sscan for large sets. Binary members are base64.",
         "inputSchema": {
           "$schema": "https://json-schema.org/draft/2020-12/schema",
           "additionalProperties": false,
@@ -2275,8 +2711,187 @@
       "requires_raw_opt_in": false
     },
     {
+      "bundle": "data_structures",
+      "name": "redis_sscan",
+      "output_policy": "cursor_paginated",
+      "protocol": {
+        "annotations": {
+          "destructiveHint": false,
+          "idempotentHint": true,
+          "readOnlyHint": true
+        },
+        "description": "Read one bounded SSCAN page. Pass page.continuation.cursor as cursor until page.complete is true. Members are binary-safe.",
+        "inputSchema": {
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "count": {
+              "default": 100,
+              "description": "Approximate number of fields or members Redis should inspect.",
+              "format": "uint",
+              "maximum": 1000,
+              "minimum": 1,
+              "type": "integer"
+            },
+            "cursor": {
+              "default": 0,
+              "description": "Cursor returned by the previous page. Start with zero.",
+              "format": "uint64",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "key": {
+              "description": "Redis key containing the collection.",
+              "type": "string"
+            },
+            "pattern": {
+              "default": "*",
+              "description": "Glob-style field or member pattern.",
+              "type": "string"
+            }
+          },
+          "required": [
+            "key"
+          ],
+          "title": "CollectionScanInput",
+          "type": "object"
+        },
+        "name": "redis_sscan",
+        "outputSchema": {
+          "$defs": {
+            "EncodedValue": {
+              "additionalProperties": false,
+              "properties": {
+                "encoding": {
+                  "$ref": "#/$defs/ValueEncoding"
+                },
+                "value": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "value",
+                "encoding"
+              ],
+              "type": "object"
+            },
+            "PageContinuation": {
+              "additionalProperties": false,
+              "properties": {
+                "cursor": {
+                  "format": "uint64",
+                  "minimum": 0,
+                  "type": [
+                    "integer",
+                    "null"
+                  ]
+                },
+                "offset": {
+                  "format": "uint64",
+                  "minimum": 0,
+                  "type": [
+                    "integer",
+                    "null"
+                  ]
+                },
+                "start": {
+                  "format": "int64",
+                  "type": [
+                    "integer",
+                    "null"
+                  ]
+                }
+              },
+              "type": "object"
+            },
+            "PageMetadata": {
+              "additionalProperties": false,
+              "properties": {
+                "complete": {
+                  "type": "boolean"
+                },
+                "continuation": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/$defs/PageContinuation"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "requested": {
+                  "format": "uint",
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                "returned": {
+                  "format": "uint",
+                  "minimum": 0,
+                  "type": "integer"
+                }
+              },
+              "required": [
+                "requested",
+                "returned",
+                "complete"
+              ],
+              "type": "object"
+            },
+            "ValueEncoding": {
+              "enum": [
+                "utf8",
+                "base64"
+              ],
+              "type": "string"
+            }
+          },
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "count": {
+              "format": "uint",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "cursor": {
+              "format": "uint64",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "key": {
+              "type": "string"
+            },
+            "members": {
+              "items": {
+                "$ref": "#/$defs/EncodedValue"
+              },
+              "type": "array"
+            },
+            "page": {
+              "$ref": "#/$defs/PageMetadata"
+            }
+          },
+          "required": [
+            "key",
+            "cursor",
+            "count",
+            "members",
+            "page"
+          ],
+          "title": "SscanOutput",
+          "type": "object"
+        },
+        "title": "Scan Redis Set"
+      },
+      "required_access": "read_only",
+      "required_module": null,
+      "requires_raw_opt_in": false
+    },
+    {
       "bundle": "essentials",
       "name": "redis_strlen",
+      "output_policy": "intrinsically_bounded",
       "protocol": {
         "annotations": {
           "destructiveHint": false,
@@ -2329,6 +2944,7 @@
     {
       "bundle": "essentials",
       "name": "redis_ttl",
+      "output_policy": "intrinsically_bounded",
       "protocol": {
         "annotations": {
           "destructiveHint": false,
@@ -2388,6 +3004,7 @@
     {
       "bundle": "essentials",
       "name": "redis_type",
+      "output_policy": "intrinsically_bounded",
       "protocol": {
         "annotations": {
           "destructiveHint": false,
@@ -2438,6 +3055,7 @@
     {
       "bundle": "essentials",
       "name": "redis_unlink",
+      "output_policy": "intrinsically_bounded",
       "protocol": {
         "annotations": {
           "idempotentHint": true
@@ -2495,6 +3113,7 @@
     {
       "bundle": "data_structures",
       "name": "redis_zadd",
+      "output_policy": "intrinsically_bounded",
       "protocol": {
         "annotations": {
           "destructiveHint": false,
@@ -2612,13 +3231,14 @@
     {
       "bundle": "data_structures",
       "name": "redis_zrange",
+      "output_policy": "range_paginated",
       "protocol": {
         "annotations": {
           "destructiveHint": false,
           "idempotentHint": true,
           "readOnlyHint": true
         },
-        "description": "Read a rank range from a Redis sorted set, optionally with scores.",
+        "description": "Read a bounded rank range from a Redis sorted set, optionally with scores. Defaults to ranks 0 through 99. Follow page.continuation.start until page.complete is true.",
         "inputSchema": {
           "$schema": "https://json-schema.org/draft/2020-12/schema",
           "additionalProperties": false,
@@ -2639,7 +3259,7 @@
               "type": "integer"
             },
             "stop": {
-              "default": -1,
+              "default": 99,
               "description": "Inclusive stop rank. Negative indexes address from the end.",
               "format": "int64",
               "type": "integer"
@@ -2659,6 +3279,69 @@
         "name": "redis_zrange",
         "outputSchema": {
           "$defs": {
+            "PageContinuation": {
+              "additionalProperties": false,
+              "properties": {
+                "cursor": {
+                  "format": "uint64",
+                  "minimum": 0,
+                  "type": [
+                    "integer",
+                    "null"
+                  ]
+                },
+                "offset": {
+                  "format": "uint64",
+                  "minimum": 0,
+                  "type": [
+                    "integer",
+                    "null"
+                  ]
+                },
+                "start": {
+                  "format": "int64",
+                  "type": [
+                    "integer",
+                    "null"
+                  ]
+                }
+              },
+              "type": "object"
+            },
+            "PageMetadata": {
+              "additionalProperties": false,
+              "properties": {
+                "complete": {
+                  "type": "boolean"
+                },
+                "continuation": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/$defs/PageContinuation"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "requested": {
+                  "format": "uint",
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                "returned": {
+                  "format": "uint",
+                  "minimum": 0,
+                  "type": "integer"
+                }
+              },
+              "required": [
+                "requested",
+                "returned",
+                "complete"
+              ],
+              "type": "object"
+            },
             "ValueEncoding": {
               "enum": [
                 "utf8",
@@ -2707,6 +3390,9 @@
               },
               "type": "array"
             },
+            "page": {
+              "$ref": "#/$defs/PageMetadata"
+            },
             "rev": {
               "type": "boolean"
             },
@@ -2725,12 +3411,196 @@
             "stop",
             "rev",
             "count",
-            "members"
+            "members",
+            "page"
           ],
           "title": "ZrangeOutput",
           "type": "object"
         },
         "title": "Read Redis Sorted Set Range"
+      },
+      "required_access": "read_only",
+      "required_module": null,
+      "requires_raw_opt_in": false
+    },
+    {
+      "bundle": "data_structures",
+      "name": "redis_zscan",
+      "output_policy": "cursor_paginated",
+      "protocol": {
+        "annotations": {
+          "destructiveHint": false,
+          "idempotentHint": true,
+          "readOnlyHint": true
+        },
+        "description": "Read one bounded ZSCAN page. Pass page.continuation.cursor as cursor until page.complete is true. Members are binary-safe and include scores.",
+        "inputSchema": {
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "count": {
+              "default": 100,
+              "description": "Approximate number of fields or members Redis should inspect.",
+              "format": "uint",
+              "maximum": 1000,
+              "minimum": 1,
+              "type": "integer"
+            },
+            "cursor": {
+              "default": 0,
+              "description": "Cursor returned by the previous page. Start with zero.",
+              "format": "uint64",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "key": {
+              "description": "Redis key containing the collection.",
+              "type": "string"
+            },
+            "pattern": {
+              "default": "*",
+              "description": "Glob-style field or member pattern.",
+              "type": "string"
+            }
+          },
+          "required": [
+            "key"
+          ],
+          "title": "CollectionScanInput",
+          "type": "object"
+        },
+        "name": "redis_zscan",
+        "outputSchema": {
+          "$defs": {
+            "PageContinuation": {
+              "additionalProperties": false,
+              "properties": {
+                "cursor": {
+                  "format": "uint64",
+                  "minimum": 0,
+                  "type": [
+                    "integer",
+                    "null"
+                  ]
+                },
+                "offset": {
+                  "format": "uint64",
+                  "minimum": 0,
+                  "type": [
+                    "integer",
+                    "null"
+                  ]
+                },
+                "start": {
+                  "format": "int64",
+                  "type": [
+                    "integer",
+                    "null"
+                  ]
+                }
+              },
+              "type": "object"
+            },
+            "PageMetadata": {
+              "additionalProperties": false,
+              "properties": {
+                "complete": {
+                  "type": "boolean"
+                },
+                "continuation": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/$defs/PageContinuation"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "requested": {
+                  "format": "uint",
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                "returned": {
+                  "format": "uint",
+                  "minimum": 0,
+                  "type": "integer"
+                }
+              },
+              "required": [
+                "requested",
+                "returned",
+                "complete"
+              ],
+              "type": "object"
+            },
+            "ValueEncoding": {
+              "enum": [
+                "utf8",
+                "base64"
+              ],
+              "type": "string"
+            },
+            "ZscanEntry": {
+              "additionalProperties": false,
+              "properties": {
+                "encoding": {
+                  "$ref": "#/$defs/ValueEncoding"
+                },
+                "member": {
+                  "type": "string"
+                },
+                "score": {
+                  "format": "double",
+                  "type": "number"
+                }
+              },
+              "required": [
+                "member",
+                "encoding",
+                "score"
+              ],
+              "type": "object"
+            }
+          },
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "count": {
+              "format": "uint",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "cursor": {
+              "format": "uint64",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "key": {
+              "type": "string"
+            },
+            "members": {
+              "items": {
+                "$ref": "#/$defs/ZscanEntry"
+              },
+              "type": "array"
+            },
+            "page": {
+              "$ref": "#/$defs/PageMetadata"
+            }
+          },
+          "required": [
+            "key",
+            "cursor",
+            "count",
+            "members",
+            "page"
+          ],
+          "title": "ZscanOutput",
+          "type": "object"
+        },
+        "title": "Scan Redis Sorted Set"
       },
       "required_access": "read_only",
       "required_module": null,
@@ -2795,6 +3665,14 @@
     },
     "redis_ft_search": {
       "index": "idx:docs",
+      "limit_num": 10,
+      "limit_offset": 0,
+      "page": {
+        "complete": true,
+        "continuation": null,
+        "requested": 10,
+        "returned": 1
+      },
       "query": "redis",
       "response": [
         {
@@ -2839,6 +3717,29 @@
       ],
       "exists": true,
       "key": "user:1"
+    },
+    "redis_hscan": {
+      "count": 1,
+      "cursor": 7,
+      "entries": [
+        {
+          "field": "name",
+          "field_encoding": "utf8",
+          "value": "Ada",
+          "value_encoding": "utf8"
+        }
+      ],
+      "key": "user:1",
+      "page": {
+        "complete": false,
+        "continuation": {
+          "cursor": 7,
+          "offset": null,
+          "start": null
+        },
+        "requested": 10,
+        "returned": 1
+      }
     },
     "redis_hset": {
       "fields_added": 1,
@@ -2902,8 +3803,14 @@
         }
       ],
       "key": "queue",
+      "page": {
+        "complete": true,
+        "continuation": null,
+        "requested": 2,
+        "returned": 2
+      },
       "start": 0,
-      "stop": -1
+      "stop": 1
     },
     "redis_memory_usage": {
       "bytes": 64,
@@ -2953,7 +3860,13 @@
       "keys": [
         "alpha",
         "beta"
-      ]
+      ],
+      "page": {
+        "complete": true,
+        "continuation": null,
+        "requested": 10,
+        "returned": 2
+      }
     },
     "redis_set": {
       "expires_in_seconds": null,
@@ -2974,6 +3887,23 @@
           "value": "beta"
         }
       ]
+    },
+    "redis_sscan": {
+      "count": 1,
+      "cursor": 0,
+      "key": "tags",
+      "members": [
+        {
+          "encoding": "utf8",
+          "value": "alpha"
+        }
+      ],
+      "page": {
+        "complete": true,
+        "continuation": null,
+        "requested": 10,
+        "returned": 1
+      }
     },
     "redis_strlen": {
       "key": "greeting",
@@ -3009,9 +3939,37 @@
           "score": 1.5
         }
       ],
+      "page": {
+        "complete": true,
+        "continuation": null,
+        "requested": 1,
+        "returned": 1
+      },
       "rev": false,
       "start": 0,
-      "stop": -1
+      "stop": 0
+    },
+    "redis_zscan": {
+      "count": 1,
+      "cursor": 3,
+      "key": "leaders",
+      "members": [
+        {
+          "encoding": "utf8",
+          "member": "alice",
+          "score": 1.5
+        }
+      ],
+      "page": {
+        "complete": false,
+        "continuation": {
+          "cursor": 3,
+          "offset": null,
+          "start": null
+        },
+        "requested": 10,
+        "returned": 1
+      }
     }
   }
 }

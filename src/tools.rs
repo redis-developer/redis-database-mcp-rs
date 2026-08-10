@@ -22,10 +22,13 @@ use tower_mcp::{
 };
 
 use crate::{
-    AccessMode, RawCommandPolicy, RedisCommand, RedisExecutor, RedisModule, RedisValue, ToolBundle,
+    AccessMode, OutputBudget, RawCommandPolicy, RedisCommand, RedisExecutor, RedisModule,
+    RedisValue, ToolBundle,
 };
 
 pub(crate) const RAW_TOOL_NAME: &str = "redis_command";
+const OUTPUT_LIMIT_CODE: &str = "output_limit_exceeded";
+const OUTPUT_LIMIT_META_KEY: &str = "io.redis.mcp/outputLimit";
 
 #[derive(Clone)]
 pub(crate) struct ToolState {
@@ -33,6 +36,7 @@ pub(crate) struct ToolState {
     access: AccessMode,
     command_timeout: Duration,
     raw_command_policy: RawCommandPolicy,
+    output_budget: OutputBudget,
 }
 
 impl ToolState {
@@ -41,12 +45,64 @@ impl ToolState {
         access: AccessMode,
         command_timeout: Duration,
         raw_command_policy: RawCommandPolicy,
+        output_budget: OutputBudget,
     ) -> Self {
         Self {
             executor,
             access,
             command_timeout,
             raw_command_policy,
+            output_budget,
+        }
+    }
+
+    fn max_collection_entries(&self) -> usize {
+        self.output_budget.max_collection_entries()
+    }
+
+    fn validate_requested_entries(&self, requested: usize, name: &str) -> tower_mcp::Result<()> {
+        let limit = self.max_collection_entries();
+        if requested == 0 || requested > limit {
+            Err(tower_mcp::Error::tool(format!(
+                "{name} must be between 1 and the configured output limit of {limit} entries"
+            )))
+        } else {
+            Ok(())
+        }
+    }
+
+    fn output<T: Serialize>(&self, value: &T) -> tower_mcp::Result<CallToolResult> {
+        let result = CallToolResult::from_serialize(value)?;
+        let actual_bytes = serde_json::to_vec(&result)?.len();
+        let max_bytes = self.output_budget.max_bytes();
+        if actual_bytes > max_bytes {
+            Ok(output_limit_result(
+                "encoded_bytes",
+                actual_bytes,
+                max_bytes,
+                "Request a smaller page, a narrower value, or a more specific diagnostic section.",
+            ))
+        } else {
+            Ok(result)
+        }
+    }
+
+    fn output_collection<T: Serialize>(
+        &self,
+        value: &T,
+        entries: usize,
+        guidance: &str,
+    ) -> tower_mcp::Result<CallToolResult> {
+        let limit = self.max_collection_entries();
+        if entries > limit {
+            Ok(output_limit_result(
+                "collection_entries",
+                entries,
+                limit,
+                guidance,
+            ))
+        } else {
+            self.output(value)
         }
     }
 
@@ -95,6 +151,87 @@ impl ToolState {
                 "{tool} requires {required:?} access; this router is {:?}",
                 self.access
             )))
+        }
+    }
+}
+
+fn output_limit_result(
+    dimension: &'static str,
+    actual: usize,
+    limit: usize,
+    guidance: &str,
+) -> CallToolResult {
+    let message = format!(
+        "[{OUTPUT_LIMIT_CODE}] {dimension} result size {actual} exceeds configured limit {limit}. {guidance}"
+    );
+    let mut result = CallToolResult::error(message);
+    result.meta = Some(json!({
+        OUTPUT_LIMIT_META_KEY: {
+            "code": OUTPUT_LIMIT_CODE,
+            "dimension": dimension,
+            "actual": actual,
+            "limit": limit,
+            "retryable": true,
+            "guidance": guidance,
+        },
+    }));
+    result
+}
+
+#[derive(Debug, Serialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+struct PageContinuation {
+    cursor: Option<u64>,
+    start: Option<i64>,
+    offset: Option<u64>,
+}
+
+#[derive(Debug, Serialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+struct PageMetadata {
+    requested: usize,
+    returned: usize,
+    complete: bool,
+    continuation: Option<PageContinuation>,
+}
+
+impl PageMetadata {
+    fn cursor(requested: usize, returned: usize, cursor: u64) -> Self {
+        Self {
+            requested,
+            returned,
+            complete: cursor == 0,
+            continuation: (cursor != 0).then_some(PageContinuation {
+                cursor: Some(cursor),
+                start: None,
+                offset: None,
+            }),
+        }
+    }
+
+    fn range(requested: usize, returned: usize, next_start: Option<i64>) -> Self {
+        Self {
+            requested,
+            returned,
+            complete: next_start.is_none(),
+            continuation: next_start.map(|start| PageContinuation {
+                cursor: None,
+                start: Some(start),
+                offset: None,
+            }),
+        }
+    }
+
+    fn offset(requested: usize, returned: usize, next_offset: Option<u64>) -> Self {
+        Self {
+            requested,
+            returned,
+            complete: next_offset.is_none(),
+            continuation: next_offset.map(|offset| PageContinuation {
+                cursor: None,
+                start: None,
+                offset: Some(offset),
+            }),
         }
     }
 }
@@ -253,7 +390,7 @@ fn ping_tool(state: Arc<ToolState>) -> tower_mcp::Tool {
                     "PING failed",
                 )
                 .await?;
-            CallToolResult::from_serialize(&PingOutput {
+            state.output(&PingOutput {
                 response,
                 latency_ms: started.elapsed().as_secs_f64() * 1_000.0,
             })
@@ -299,11 +436,16 @@ fn info_tool(state: Arc<ToolState>) -> tower_mcp::Tool {
                     .filter_map(|line| line.split_once(':'))
                     .map(|(key, value)| (key.to_string(), value.to_string()))
                     .collect();
-                CallToolResult::from_serialize(&InfoOutput {
+                let output = InfoOutput {
                     section: input.section,
                     properties,
                     raw,
-                })
+                };
+                state.output_collection(
+                    &output,
+                    output.properties.len(),
+                    "Request one specific INFO section.",
+                )
             },
         )
         .build()
@@ -329,7 +471,7 @@ fn dbsize_tool(state: Arc<ToolState>) -> tower_mcp::Tool {
                     "DBSIZE failed",
                 )
                 .await?;
-            CallToolResult::from_serialize(&DbsizeOutput { key_count })
+            state.output(&DbsizeOutput { key_count })
         })
         .build()
 }
@@ -366,20 +508,21 @@ struct ScanOutput {
     cursor: u64,
     keys: Vec<String>,
     count: usize,
+    page: PageMetadata,
 }
 
 fn scan_tool(state: Arc<ToolState>) -> tower_mcp::Tool {
     ToolBuilder::new("redis_scan")
         .title("Scan Redis Keys")
-        .description("Read one non-blocking SCAN page. Pass the returned cursor to continue.")
+        .description(
+            "Read one bounded non-blocking SCAN page. Pass page.continuation.cursor as cursor until page.complete is true.",
+        )
         .output_schema(output_schema::<ScanOutput>())
         .annotations(read_annotations())
         .extractor_handler(
             state,
             |State(state): State<Arc<ToolState>>, Json(input): Json<ScanInput>| async move {
-                if !(1..=1000).contains(&input.count) {
-                    return Err(tower_mcp::Error::tool("count must be between 1 and 1000"));
-                }
+                state.validate_requested_entries(input.count, "count")?;
                 let mut command = command("redis_scan", AccessMode::ReadOnly, "SCAN");
                 command
                     .arg(input.cursor.to_string())
@@ -393,11 +536,17 @@ fn scan_tool(state: Arc<ToolState>) -> tower_mcp::Tool {
                 let (cursor, keys): (u64, Vec<Vec<u8>>) =
                     state.query(command, "SCAN failed").await?;
                 let keys = keys.into_iter().map(display_bytes).collect::<Vec<_>>();
-                CallToolResult::from_serialize(&ScanOutput {
+                let output = ScanOutput {
                     cursor,
                     count: keys.len(),
+                    page: PageMetadata::cursor(input.count, keys.len(), cursor),
                     keys,
-                })
+                };
+                state.output_collection(
+                    &output,
+                    output.count,
+                    "Retry SCAN with a smaller count and the same cursor.",
+                )
             },
         )
         .build()
@@ -445,7 +594,7 @@ fn get_tool(state: Arc<ToolState>) -> tower_mcp::Tool {
                     }
                     None => (None, None),
                 };
-                CallToolResult::from_serialize(&GetOutput {
+                state.output(&GetOutput {
                     key: input.key,
                     exists: value.is_some(),
                     value,
@@ -475,7 +624,7 @@ fn type_tool(state: Arc<ToolState>) -> tower_mcp::Tool {
                 let mut command = command("redis_type", AccessMode::ReadOnly, "TYPE");
                 command.arg(input.key.as_str());
                 let key_type = state.query(command, "TYPE failed").await?;
-                CallToolResult::from_serialize(&TypeOutput {
+                state.output(&TypeOutput {
                     key: input.key,
                     key_type,
                 })
@@ -505,7 +654,7 @@ fn ttl_tool(state: Arc<ToolState>) -> tower_mcp::Tool {
                 let mut command = command("redis_ttl", AccessMode::ReadOnly, "TTL");
                 command.arg(input.key.as_str());
                 let ttl_seconds = state.query(command, "TTL failed").await?;
-                CallToolResult::from_serialize(&TtlOutput {
+                state.output(&TtlOutput {
                     key: input.key,
                     ttl_seconds,
                     exists: ttl_seconds != -2,
@@ -552,7 +701,7 @@ fn set_tool(state: Arc<ToolState>) -> tower_mcp::Tool {
                     command.arg("EX").arg(seconds.to_string());
                 }
                 let response: String = state.query(command, "SET failed").await?;
-                CallToolResult::from_serialize(&SetOutput {
+                state.output(&SetOutput {
                     key: input.key,
                     stored: response == "OK",
                     expires_in_seconds: input.expires_in_seconds,
@@ -596,7 +745,7 @@ fn del_tool(state: Arc<ToolState>) -> tower_mcp::Tool {
                 let mut command = command("redis_del", AccessMode::Full, "DEL");
                 command.args(input.keys);
                 let deleted = state.query(command, "DEL failed").await?;
-                CallToolResult::from_serialize(&DelOutput { requested, deleted })
+                state.output(&DelOutput { requested, deleted })
             },
         )
         .build()
@@ -645,10 +794,16 @@ fn raw_tool(state: Arc<ToolState>) -> tower_mcp::Tool {
                 );
                 command.args(input.arguments);
                 let value = state.raw(command, "Redis command failed").await?;
-                CallToolResult::from_serialize(&RawCommandOutput {
+                let entries = redis_value_collection_entries(&value);
+                let output = RawCommandOutput {
                     command: command_name,
                     value: redis_value_to_json(value),
-                })
+                };
+                state.output_collection(
+                    &output,
+                    entries,
+                    "Use a bounded command form with LIMIT, COUNT, or a cursor.",
+                )
             },
         )
         .build()
@@ -666,6 +821,33 @@ fn display_bytes(bytes: Vec<u8>) -> String {
     match encoding {
         ValueEncoding::Utf8 => value,
         ValueEncoding::Base64 => format!("base64:{value}"),
+    }
+}
+
+fn redis_value_collection_entries(value: &RedisValue) -> usize {
+    match value {
+        RedisValue::Array(values) | RedisValue::Set(values) => {
+            values.iter().fold(values.len(), |count, value| {
+                count.saturating_add(redis_value_collection_entries(value))
+            })
+        }
+        RedisValue::Map(values) => values.iter().fold(values.len(), |count, (key, value)| {
+            count
+                .saturating_add(redis_value_collection_entries(key))
+                .saturating_add(redis_value_collection_entries(value))
+        }),
+        RedisValue::Attribute { data, attributes } => attributes.iter().fold(
+            redis_value_collection_entries(data).saturating_add(attributes.len()),
+            |count, (key, value)| {
+                count
+                    .saturating_add(redis_value_collection_entries(key))
+                    .saturating_add(redis_value_collection_entries(value))
+            },
+        ),
+        RedisValue::Push { data, .. } => data.iter().fold(data.len(), |count, value| {
+            count.saturating_add(redis_value_collection_entries(value))
+        }),
+        _ => 0,
     }
 }
 

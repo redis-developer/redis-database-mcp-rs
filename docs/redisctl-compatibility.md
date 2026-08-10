@@ -58,6 +58,11 @@ The expanded overlap also includes `redis_exists`, `redis_mget`,
 `redis_hget`, `redis_hgetall`, `redis_hset`, `redis_lrange`, `redis_lpush`,
 `redis_smembers`, `redis_sadd`, `redis_zrange`, and `redis_zadd`.
 
+The library additionally exposes `redis_hscan`, `redis_sscan`, and
+`redis_zscan`. They are command-surface improvements rather than redisctl name
+overlap: each returns one bounded Redis cursor page with typed continuation
+metadata.
+
 - Redis-domain input names remain compatible where practical (`keys`,
   `entries`, `fields`, `elements`, `members`, and the ZADD/ZRANGE flags).
 - Every collection input is bounded to 1–1000 items in both JSON Schema and
@@ -78,9 +83,10 @@ The optional module-backed overlap adds `redis_json_get`, `redis_json_type`,
   that double encoding.
 - JSON reads normalize enhanced JSONPath results into structured JSON and type
   arrays rather than prose.
-- Search pagination is bounded to 100 results per call. Search result payloads
-  retain their protocol sequence with explicit binary encodings while exposing
-  the total separately.
+- Search pagination is bounded to 100 results per call, always emits LIMIT, and
+  returns a typed continuation offset. Search result payloads retain their
+  protocol sequence with explicit binary encodings while exposing the total
+  separately.
 - The first `redis_ft_create` contract supports HASH and JSON indexes with
   TEXT, TAG, NUMERIC, and GEO fields. VECTOR configuration and redisctl's
   `if_exists=drop` shortcut remain out of scope because they need a richer

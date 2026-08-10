@@ -64,8 +64,14 @@ struct ManagedRedis {
 impl ManagedRedis {
     async fn start() -> Result<Self, RedisServerError> {
         let directory = tempfile::tempdir().expect("create Redis test directory");
-        let port = available_port();
-        let server = start_server(port, directory.path()).await?;
+        let server = RedisServer::new()
+            .auto_port()
+            .bind("127.0.0.1")
+            .dir(directory.path())
+            .no_stack_modules()
+            .start()
+            .await?;
+        let port = server.port();
         Ok(Self {
             _server: server,
             _directory: directory,
@@ -76,29 +82,6 @@ impl ManagedRedis {
     fn url(&self) -> String {
         format!("redis://127.0.0.1:{}/", self.port)
     }
-}
-
-#[cfg(unix)]
-fn available_port() -> u16 {
-    std::net::TcpListener::bind(("127.0.0.1", 0))
-        .expect("reserve an ephemeral Redis test port")
-        .local_addr()
-        .expect("read ephemeral Redis test port")
-        .port()
-}
-
-#[cfg(unix)]
-async fn start_server(
-    port: u16,
-    directory: &std::path::Path,
-) -> Result<RedisServerHandle, RedisServerError> {
-    RedisServer::new()
-        .port(port)
-        .bind("127.0.0.1")
-        .dir(directory)
-        .no_stack_modules()
-        .start()
-        .await
 }
 
 fn test_key(suffix: &str) -> String {

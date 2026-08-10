@@ -103,12 +103,19 @@ Tower-MCP boundary and fixed-target model, and the
 
 ## Compatibility and testing
 
+On Unix, `cargo test --all-features` starts isolated Redis processes through
+[`redis-server-wrapper`](https://github.com/joshrotenberg/redis-server-wrapper)
+when `REDIS_URL` is not set. `redis-server` and `redis-cli` must be on `PATH`;
+when either binary is unavailable, the live cases print an explicit skip reason.
+Set `REDIS_URL` to test an already-running target instead—the external target
+always takes precedence and is never stopped by the suite.
+
 CI runs the complete suite on Redis 8.8 and the live router/stdio contract on
 every currently supported Redis Open Source series: 6.2, 7.2, 7.4, 8.0, 8.2,
 8.4, 8.6, and 8.8. Live tests exercise both RESP2 and RESP3, the 29-tool curated
-catalog, binary and nil responses, and the real `redis-mcp-server` stdio process.
-The version list follows the
-[Redis Open Source version-management table](https://redis.io/docs/latest/operate/oss_and_stack/install/version-mgmt/).
+catalog, binary and nil responses, ACL failures, bounded connection loss and
+recovery, and the real `redis-mcp-server` stdio process. The version list
+follows the [Redis Open Source version-management table](https://redis.io/docs/latest/operate/oss_and_stack/install/version-mgmt/).
 
 ## Non-goals
 

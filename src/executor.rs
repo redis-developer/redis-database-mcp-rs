@@ -8,7 +8,7 @@ use redis::{
     aio::ConnectionManager,
 };
 
-use crate::AccessMode;
+use crate::{AccessMode, RedisModule};
 
 /// A Redis command prepared by one of this crate's tools.
 ///
@@ -21,6 +21,7 @@ use crate::AccessMode;
 pub struct RedisCommand {
     tool_name: &'static str,
     required_access: AccessMode,
+    required_module: Option<RedisModule>,
     name: String,
     arguments: Vec<Vec<u8>>,
 }
@@ -34,6 +35,7 @@ impl RedisCommand {
         Self {
             tool_name,
             required_access,
+            required_module: None,
             name: name.into(),
             arguments: Vec::new(),
         }
@@ -53,6 +55,11 @@ impl RedisCommand {
         self
     }
 
+    pub(crate) fn require_module(&mut self, module: RedisModule) -> &mut Self {
+        self.required_module = Some(module);
+        self
+    }
+
     /// Name of the MCP tool that produced this command.
     pub fn tool_name(&self) -> &'static str {
         self.tool_name
@@ -61,6 +68,11 @@ impl RedisCommand {
     /// Minimum library access mode required by the originating tool.
     pub fn required_access(&self) -> AccessMode {
         self.required_access
+    }
+
+    /// Optional Redis capability required to execute this command.
+    pub fn required_module(&self) -> Option<RedisModule> {
+        self.required_module
     }
 
     /// Uppercase Redis command name without arguments.
@@ -80,6 +92,7 @@ impl fmt::Debug for RedisCommand {
             .debug_struct("RedisCommand")
             .field("tool_name", &self.tool_name)
             .field("required_access", &self.required_access)
+            .field("required_module", &self.required_module)
             .field("name", &self.name)
             .field("argument_count", &self.arguments.len())
             .finish()
@@ -245,6 +258,7 @@ pub enum RedisErrorKind {
     Connection,
     InvalidRequest,
     InvalidResponse,
+    ModuleUnavailable,
     Server,
     Other,
 }
@@ -283,6 +297,32 @@ impl RedisError {
 
     pub fn code(&self) -> Option<&str> {
         self.code.as_deref()
+    }
+
+    pub(crate) fn classify_module_requirement(
+        self,
+        module: Option<RedisModule>,
+        command_name: &str,
+    ) -> Self {
+        let Some(module) = module else {
+            return self;
+        };
+        if self.kind != RedisErrorKind::Server
+            || !self
+                .message
+                .to_ascii_lowercase()
+                .contains("unknown command")
+        {
+            return self;
+        }
+        Self::new(
+            RedisErrorKind::ModuleUnavailable,
+            format!(
+                "{} is unavailable or does not support {command_name}",
+                module.display_name()
+            ),
+        )
+        .with_code("MODULE_UNAVAILABLE")
     }
 }
 
@@ -368,6 +408,8 @@ impl DirectRedis {
 #[async_trait]
 impl RedisExecutor for DirectRedis {
     async fn execute(&self, command: RedisCommand) -> Result<RedisValue, RedisError> {
+        let required_module = command.required_module();
+        let command_name = command.name().to_string();
         let mut redis_command = redis::cmd(command.name());
         for argument in command.arguments() {
             redis_command.arg(argument);
@@ -376,7 +418,10 @@ impl RedisExecutor for DirectRedis {
         let value: redis::Value = redis_command
             .query_async(&mut connection)
             .await
-            .map_err(RedisError::from)?;
+            .map_err(RedisError::from)
+            .map_err(|error| {
+                error.classify_module_requirement(required_module, command_name.as_str())
+            })?;
         Ok(RedisValue::from(value))
     }
 }
@@ -429,5 +474,18 @@ mod tests {
             RedisError::from(error).kind(),
             RedisErrorKind::Authentication
         );
+    }
+
+    #[test]
+    fn unknown_module_commands_have_a_stable_category() {
+        let error = RedisError::new(
+            RedisErrorKind::Server,
+            "ERR unknown command 'JSON.GET', with args beginning with: 'doc'",
+        )
+        .classify_module_requirement(Some(RedisModule::Json), "JSON.GET");
+        assert_eq!(error.kind(), RedisErrorKind::ModuleUnavailable);
+        assert_eq!(error.code(), Some("MODULE_UNAVAILABLE"));
+        assert!(error.message().contains("RedisJSON"));
+        assert!(!error.message().contains("doc"));
     }
 }

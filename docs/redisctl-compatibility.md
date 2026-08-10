@@ -30,9 +30,9 @@ Redis Stack behavior is covered primarily by `tests/redis_tools.rs` and
 
 ## Current overlap
 
-The curated library implements 30 names from the baseline: 29 default tools and
-the separately enabled raw tool. Matching a name does not imply an identical
-contract:
+The library implements 39 names from the baseline: 29 default tools, nine
+optional RedisJSON/Search tools, and the separately enabled raw tool. Matching
+a name does not imply an identical contract:
 
 | Tool | Input compatibility | Intentional library behavior |
 | --- | --- | --- |
@@ -63,11 +63,32 @@ The expanded overlap also includes `redis_exists`, `redis_mget`,
   where Redis itself is unordered (hash fields and set members).
 - Outputs are structured rather than preserving redisctl's prose rendering.
 
+The optional module-backed overlap adds `redis_json_get`, `redis_json_type`,
+`redis_json_set`, `redis_json_del`, `redis_ft_list`, `redis_ft_info`,
+`redis_ft_search`, `redis_ft_create`, and `redis_ft_dropindex`.
+
+- Tool names and Redis-domain field names remain aligned where practical.
+- `redis_json_set.value` accepts structured JSON directly. redisctl accepts a
+  string containing another layer of JSON; the library intentionally removes
+  that double encoding.
+- JSON reads normalize enhanced JSONPath results into structured JSON and type
+  arrays rather than prose.
+- Search pagination is bounded to 100 results per call. Search result payloads
+  retain their protocol sequence with explicit binary encodings while exposing
+  the total separately.
+- The first `redis_ft_create` contract supports HASH and JSON indexes with
+  TEXT, TAG, NUMERIC, and GEO fields. VECTOR configuration and redisctl's
+  `if_exists=drop` shortcut remain out of scope because they need a richer
+  schema and clearer destructive-access semantics.
+- Module requirements travel in catalog metadata and `RedisCommand`. Unknown
+  module commands become the stable `ModuleUnavailable` error category without
+  exposing command arguments.
+
 ## Bundle mapping direction
 
 - `essentials`: the broadly useful subset of redisctl `server` and `keys`
-- `data_structures`: hashes, lists, sets, sorted sets, streams, and selected
-  Redis JSON operations
+- `data_structures`: native hashes, lists, sets, sorted sets, and streams
+- `json`: explicitly selected RedisJSON operations
 - `search`: Redis Query Engine (`FT.*`) operations and module/version behavior
 - `diagnostics`: health, connection, latency, memory, and safe server inspection
 - `admin`: ACL/configuration and destructive server administration

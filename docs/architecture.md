@@ -82,11 +82,22 @@ the standalone schemas.
 Bundles answer which coherent capabilities a host wants; access mode answers
 which side effects that host permits. These decisions are orthogonal.
 
-The public taxonomy is `essentials`, `data_structures`, `search`,
+The public taxonomy is `essentials`, `data_structures`, `json`, `search`,
 `diagnostics`, `admin`, `bulk`, and `raw`. The curated default enables
-`essentials`, `data_structures`, and `diagnostics`, totaling 29 tools. Empty
-bundles are reserved for coherent catalog growth and do not expose placeholder
-tools.
+`essentials`, `data_structures`, and `diagnostics`, totaling 29 tools. The
+module-backed `json` and `search` bundles are explicitly selected so a default
+router never advertises capabilities that its Redis target may not provide.
+Empty bundles are reserved for coherent catalog growth and do not expose
+placeholder tools.
+
+Module requirements are part of both catalog metadata and each crate-owned
+`RedisCommand`. A host adapter can inspect the requirement for routing or
+telemetry. If Redis reports an unknown command for a module-backed tool, the
+library maps it to `RedisErrorKind::ModuleUnavailable` with the capability and
+command name, but without echoing command arguments. This covers both a missing
+module and an installed version too old to provide the command. Other module
+errors, such as a missing index or malformed query, remain ordinary server
+errors.
 
 Raw commands remain a separate opt-in even though their metadata belongs to the
 `raw` bundle. They require full access and one of two enabled policies:
@@ -105,6 +116,6 @@ contract layers; none is presented as a replacement for ACLs.
 ## Contract change discipline
 
 `tests/snapshots/curated_catalog.json` records each implemented tool's name,
-bundle, access tier, raw opt-in, description, input schema, output schema,
-annotations, and representative structured result. Any deliberate public
-contract change updates that snapshot in the same review.
+bundle, access tier, required module, raw opt-in, description, input schema,
+output schema, annotations, and representative structured result. Any
+deliberate public contract change updates that snapshot in the same review.

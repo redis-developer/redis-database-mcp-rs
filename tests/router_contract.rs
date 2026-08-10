@@ -4,7 +4,8 @@ use async_trait::async_trait;
 use pretty_assertions::assert_eq;
 use redis_mcp::{
     AccessMode, RawCommandPolicy, RedisCommand, RedisError, RedisExecutor, RedisMcp,
-    RedisMcpBuildError, RedisValue, ToolBundle, tool_catalog, tool_names, tool_names_for,
+    RedisMcpBuildError, RedisModule, RedisValue, ToolBundle, tool_catalog, tool_names,
+    tool_names_for,
 };
 use tower_mcp::client::{ChannelTransport, McpClient};
 
@@ -70,6 +71,26 @@ impl RedisExecutor for StubRedis {
             "HSET" | "SADD" | "ZADD" => RedisValue::Integer(1),
             "LPUSH" => RedisValue::Integer(2),
             "DEL" | "UNLINK" => RedisValue::Integer(1),
+            "JSON.GET" => RedisValue::BulkString(br#"[{"name":"Ada"}]"#.to_vec()),
+            "JSON.TYPE" => RedisValue::Array(vec![RedisValue::BulkString(b"object".to_vec())]),
+            "JSON.SET" => RedisValue::Okay,
+            "JSON.DEL" => RedisValue::Integer(1),
+            "FT._LIST" => RedisValue::Array(vec![RedisValue::BulkString(b"idx:docs".to_vec())]),
+            "FT.INFO" => RedisValue::Array(vec![
+                RedisValue::BulkString(b"index_name".to_vec()),
+                RedisValue::BulkString(b"idx:docs".to_vec()),
+                RedisValue::BulkString(b"num_docs".to_vec()),
+                RedisValue::Integer(1),
+            ]),
+            "FT.SEARCH" => RedisValue::Array(vec![
+                RedisValue::Integer(1),
+                RedisValue::BulkString(b"doc:1".to_vec()),
+                RedisValue::Array(vec![
+                    RedisValue::BulkString(b"title".to_vec()),
+                    RedisValue::BulkString(b"Redis guide".to_vec()),
+                ]),
+            ]),
+            "FT.CREATE" | "FT.DROPINDEX" => RedisValue::Okay,
             "ECHO" => RedisValue::BulkString(b"hello".to_vec()),
             _ => RedisValue::Nil,
         };
@@ -110,6 +131,15 @@ async fn client_for_bundles(
         .await
         .expect("initialize client");
     client
+}
+
+async fn full_catalog_client() -> McpClient {
+    client_for_bundles(
+        AccessMode::Full,
+        ToolBundle::ALL.iter().copied(),
+        RawCommandPolicy::Classified,
+    )
+    .await
 }
 
 fn structured_cases() -> Vec<(&'static str, serde_json::Value, &'static str)> {
@@ -180,6 +210,27 @@ fn structured_cases() -> Vec<(&'static str, serde_json::Value, &'static str)> {
             "members",
         ),
         (
+            "redis_json_get",
+            serde_json::json!({"key": "doc:1"}),
+            "value",
+        ),
+        (
+            "redis_json_type",
+            serde_json::json!({"key": "doc:1"}),
+            "types",
+        ),
+        ("redis_ft_list", serde_json::json!({}), "indexes"),
+        (
+            "redis_ft_info",
+            serde_json::json!({"index": "idx:docs"}),
+            "attributes",
+        ),
+        (
+            "redis_ft_search",
+            serde_json::json!({"index": "idx:docs", "query": "redis"}),
+            "response",
+        ),
+        (
             "redis_set",
             serde_json::json!({"key": "greeting", "value": "hello"}),
             "stored",
@@ -226,6 +277,21 @@ fn structured_cases() -> Vec<(&'static str, serde_json::Value, &'static str)> {
             "affected",
         ),
         (
+            "redis_json_set",
+            serde_json::json!({"key": "doc:1", "value": {"name": "Ada"}}),
+            "stored",
+        ),
+        (
+            "redis_ft_create",
+            serde_json::json!({
+                "index": "idx:docs",
+                "on": "JSON",
+                "prefixes": ["doc:"],
+                "schema": [{"name": "$.name", "alias": "name", "field_type": "TEXT"}]
+            }),
+            "created",
+        ),
+        (
             "redis_del",
             serde_json::json!({"keys": ["greeting"]}),
             "deleted",
@@ -234,6 +300,16 @@ fn structured_cases() -> Vec<(&'static str, serde_json::Value, &'static str)> {
             "redis_unlink",
             serde_json::json!({"keys": ["temporary"]}),
             "unlinked",
+        ),
+        (
+            "redis_json_del",
+            serde_json::json!({"key": "doc:1"}),
+            "deleted",
+        ),
+        (
+            "redis_ft_dropindex",
+            serde_json::json!({"index": "idx:docs"}),
+            "dropped",
         ),
         (
             "redis_command",
@@ -318,6 +394,45 @@ async fn bundles_are_composable_and_raw_remains_a_separate_opt_in() {
     );
     assert!(actual.iter().any(|name| name == "redis_command"));
     assert!(!actual.iter().any(|name| name == "redis_info"));
+
+    let json_read_only = client_for_bundles(
+        AccessMode::ReadOnly,
+        [ToolBundle::Json],
+        RawCommandPolicy::Disabled,
+    )
+    .await
+    .list_tools()
+    .await
+    .expect("list JSON read tools")
+    .tools
+    .into_iter()
+    .map(|tool| tool.name)
+    .collect::<Vec<_>>();
+    assert_eq!(json_read_only, vec!["redis_json_get", "redis_json_type"]);
+
+    let mut search_read_write = client_for_bundles(
+        AccessMode::ReadWrite,
+        [ToolBundle::Search],
+        RawCommandPolicy::Disabled,
+    )
+    .await
+    .list_tools()
+    .await
+    .expect("list Search read-write tools")
+    .tools
+    .into_iter()
+    .map(|tool| tool.name)
+    .collect::<Vec<_>>();
+    search_read_write.sort();
+    assert_eq!(
+        search_read_write,
+        vec![
+            "redis_ft_create",
+            "redis_ft_info",
+            "redis_ft_list",
+            "redis_ft_search",
+        ]
+    );
 }
 
 #[test]
@@ -336,7 +451,7 @@ fn invalid_builder_safety_configuration_is_rejected() {
 
 #[tokio::test]
 async fn tool_calls_return_structured_content() {
-    let client = client(AccessMode::Full, true).await;
+    let client = full_catalog_client().await;
     for (name, arguments, expected_field) in structured_cases() {
         let result = client
             .call_tool(name, arguments)
@@ -355,7 +470,7 @@ async fn tool_calls_return_structured_content() {
 
 #[tokio::test]
 async fn malformed_and_unbounded_inputs_fail_as_tool_results() {
-    let client = client(AccessMode::Full, true).await;
+    let client = full_catalog_client().await;
     let cases = [
         ("redis_exists", serde_json::json!({"keys": []})),
         ("redis_mset", serde_json::json!({"entries": []})),
@@ -387,6 +502,23 @@ async fn malformed_and_unbounded_inputs_fail_as_tool_results() {
         (
             "redis_get",
             serde_json::json!({"key": "greeting", "unknown": true}),
+        ),
+        (
+            "redis_json_set",
+            serde_json::json!({
+                "key": "doc:1",
+                "value": {},
+                "nx": true,
+                "xx": true
+            }),
+        ),
+        (
+            "redis_ft_search",
+            serde_json::json!({"index": "idx", "query": "*", "limit_num": 101}),
+        ),
+        (
+            "redis_ft_create",
+            serde_json::json!({"index": "idx", "schema": []}),
         ),
     ];
 
@@ -544,6 +676,44 @@ async fn unrestricted_raw_policy_allows_unknown_names_but_keeps_hard_blocks() {
 }
 
 #[derive(Clone, Copy)]
+struct MissingModulesRedis;
+
+#[async_trait]
+impl RedisExecutor for MissingModulesRedis {
+    async fn execute(&self, command: RedisCommand) -> Result<RedisValue, RedisError> {
+        assert_eq!(command.required_module(), Some(RedisModule::Json));
+        Err(RedisError::new(
+            redis_mcp::RedisErrorKind::Server,
+            "ERR unknown command 'JSON.GET', with args beginning with: 'secret-key'",
+        ))
+    }
+}
+
+#[tokio::test]
+async fn module_absence_is_stable_for_custom_executors() {
+    let router = RedisMcp::builder(MissingModulesRedis)
+        .bundles([ToolBundle::Json])
+        .build();
+    let client = McpClient::connect(ChannelTransport::new(router))
+        .await
+        .expect("connect missing-module client");
+    client
+        .initialize("redis-mcp-missing-module-test", "0")
+        .await
+        .expect("initialize missing-module client");
+
+    let result = client
+        .call_tool("redis_json_get", serde_json::json!({"key": "secret-key"}))
+        .await
+        .expect("module error is a tool result");
+    let text = serde_json::to_string(&result).expect("serialize module error");
+    assert!(result.is_error);
+    assert!(text.contains("ModuleUnavailable"));
+    assert!(text.contains("RedisJSON"));
+    assert!(!text.contains("secret-key"));
+}
+
+#[derive(Clone, Copy)]
 struct SlowRedis;
 
 #[async_trait]
@@ -581,7 +751,7 @@ async fn executor_futures_are_bounded_by_the_library_timeout() {
 
 #[tokio::test]
 async fn curated_catalog_matches_checked_in_contract_snapshot() {
-    let client = client(AccessMode::Full, true).await;
+    let client = full_catalog_client().await;
     let listed = client.list_tools().await.expect("list tools for snapshot");
     let mut contracts = listed
         .tools
@@ -595,6 +765,7 @@ async fn curated_catalog_matches_checked_in_contract_snapshot() {
                 "name": metadata.name,
                 "bundle": metadata.bundle.as_str(),
                 "required_access": metadata.required_access.as_str(),
+                "required_module": metadata.required_module().map(|module| module.as_str()),
                 "requires_raw_opt_in": metadata.requires_raw_opt_in,
                 "protocol": tool,
             })

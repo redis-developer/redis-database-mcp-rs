@@ -27,12 +27,13 @@ struct ProfileAwareExecutor {
 #[async_trait]
 impl RedisExecutor for ProfileAwareExecutor {
     async fn execute(&self, command: RedisCommand) -> Result<RedisValue, RedisError> {
-        // `tool_name` and `required_access` are available for host audit and
-        // policy records. Command arguments are intentionally not Debug-printed.
+        // Tool, access, and module requirements are available for host audit,
+        // routing, and policy records. Arguments are intentionally not logged.
         let _audit_context = (
             self.selected_profile.as_ref(),
             command.tool_name(),
             command.required_access(),
+            command.required_module(),
         );
         self.connection
             .send(command.name(), command.arguments())

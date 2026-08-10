@@ -1,6 +1,6 @@
 use std::time::Duration;
 
-use redis_mcp::{AccessMode, DirectRedis, RedisMcp, tool_names};
+use redis_mcp::{AccessMode, DirectRedis, RedisMcp, ToolBundle, tool_names};
 use tower_mcp::client::{ChannelTransport, McpClient, StdioClientTransport};
 
 #[cfg(unix)]
@@ -116,6 +116,51 @@ async fn router_client_with_timeout(
         .await
         .expect("initialize MCP client");
     client
+}
+
+async fn module_router_client(url: &str) -> McpClient {
+    let executor = DirectRedis::connect(url).await.expect("connect to Redis");
+    let router = RedisMcp::builder(executor)
+        .access(AccessMode::ReadOnly)
+        .bundles([ToolBundle::Json, ToolBundle::Search])
+        .build();
+    let client = McpClient::connect(ChannelTransport::new(router))
+        .await
+        .expect("connect module MCP client");
+    client
+        .initialize("redis-mcp-module-absence-test", "0")
+        .await
+        .expect("initialize module MCP client");
+    client
+}
+
+#[tokio::test]
+async fn missing_module_commands_return_actionable_errors() {
+    let Some(redis) = TestRedis::start().await else {
+        return;
+    };
+    let client = module_router_client(&redis.url).await;
+
+    for (tool, input, capability) in [
+        (
+            "redis_json_get",
+            serde_json::json!({"key": test_key("missing-json")}),
+            "RedisJSON",
+        ),
+        ("redis_ft_list", serde_json::json!({}), "Redis Query Engine"),
+    ] {
+        let result = client
+            .call_tool(tool, input)
+            .await
+            .unwrap_or_else(|error| panic!("{tool}: {error}"));
+        if !result.is_error {
+            eprintln!("{capability} is present on the configured Redis; absence assertion skipped");
+            continue;
+        }
+        let text = serde_json::to_string(&result).expect("serialize module error");
+        assert!(text.contains("ModuleUnavailable"), "{tool}: {text}");
+        assert!(text.contains(capability), "{tool}: {text}");
+    }
 }
 
 #[tokio::test]

@@ -1,7 +1,7 @@
 #![forbid(unsafe_code)]
 
 use clap::{Parser, ValueEnum};
-use redis_mcp::{AccessMode, DirectRedis, RedisMcp};
+use redis_mcp::{AccessMode, DirectRedis, RawCommandPolicy, RedisMcp};
 use tower_mcp::{ProtocolSupport, StdioTransport};
 use tracing::info;
 use tracing_subscriber::EnvFilter;
@@ -34,9 +34,13 @@ struct Args {
     #[arg(long, value_enum, default_value = "read-only")]
     access: CliAccessMode,
 
-    /// Expose redis_command. Requires --access full.
+    /// Expose classified redis_command operations. Requires --access full.
     #[arg(long)]
     raw: bool,
+
+    /// Expose unclassified request/response commands too. Requires --access full.
+    #[arg(long, conflicts_with = "raw")]
+    raw_unrestricted: bool,
 
     /// Explicit transport marker for MCP client configurations. Stdio is always used.
     #[arg(long)]
@@ -47,8 +51,15 @@ struct Args {
 async fn main() -> Result<(), tower_mcp::BoxError> {
     let args = Args::parse();
     let access = AccessMode::from(args.access);
-    if args.raw && access != AccessMode::Full {
-        return Err("--raw requires --access full".into());
+    let raw_command_policy = if args.raw_unrestricted {
+        RawCommandPolicy::Unrestricted
+    } else if args.raw {
+        RawCommandPolicy::Classified
+    } else {
+        RawCommandPolicy::Disabled
+    };
+    if raw_command_policy != RawCommandPolicy::Disabled && access != AccessMode::Full {
+        return Err("--raw and --raw-unrestricted require --access full".into());
     }
 
     let filter = EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("warn"));
@@ -60,11 +71,11 @@ async fn main() -> Result<(), tower_mcp::BoxError> {
     let executor = DirectRedis::connect(&args.url).await?;
     let router = RedisMcp::builder(executor)
         .access(access)
-        .raw_commands(args.raw)
+        .raw_command_policy(raw_command_policy)
         .server_info("redis-mcp-server", env!("CARGO_PKG_VERSION"))
         .build();
 
-    info!(?access, raw_commands = args.raw, "Redis MCP server ready");
+    info!(?access, ?raw_command_policy, "Redis MCP server ready");
     let protocols = ProtocolSupport::try_new(["2025-11-25", "2026-07-28"])?;
     StdioTransport::new(router)
         .protocol_support(protocols)

@@ -1,9 +1,13 @@
 //! Curated Redis database MCP tools.
 
-use std::{collections::BTreeMap, sync::Arc, time::Instant};
+use std::{
+    collections::{BTreeMap, BTreeSet},
+    sync::Arc,
+    time::{Duration, Instant},
+};
 
 use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64};
-use redis::{FromRedisValue, Value};
+use redis::FromRedisValue;
 use schemars::{JsonSchema, schema_for};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value as JsonValue, json};
@@ -12,51 +16,62 @@ use tower_mcp::{
     extract::{Json, State},
 };
 
-use crate::{AccessMode, RedisExecutor};
+use crate::{AccessMode, RawCommandPolicy, RedisCommand, RedisExecutor, RedisValue, ToolBundle};
 
-pub(crate) const READ_ONLY_TOOL_NAMES: &[&str] = &[
-    "redis_ping",
-    "redis_info",
-    "redis_dbsize",
-    "redis_scan",
-    "redis_get",
-    "redis_type",
-    "redis_ttl",
-];
-pub(crate) const WRITE_TOOL_NAMES: &[&str] = &["redis_set"];
-pub(crate) const DESTRUCTIVE_TOOL_NAMES: &[&str] = &["redis_del"];
 pub(crate) const RAW_TOOL_NAME: &str = "redis_command";
 
 #[derive(Clone)]
 pub(crate) struct ToolState {
     executor: Arc<dyn RedisExecutor>,
     access: AccessMode,
+    command_timeout: Duration,
+    raw_command_policy: RawCommandPolicy,
 }
 
 impl ToolState {
-    pub(crate) fn new(executor: Arc<dyn RedisExecutor>, access: AccessMode) -> Self {
-        Self { executor, access }
+    pub(crate) fn new(
+        executor: Arc<dyn RedisExecutor>,
+        access: AccessMode,
+        command_timeout: Duration,
+        raw_command_policy: RawCommandPolicy,
+    ) -> Self {
+        Self {
+            executor,
+            access,
+            command_timeout,
+            raw_command_policy,
+        }
     }
 
     async fn query<T: FromRedisValue>(
         &self,
-        command: redis::Cmd,
+        command: RedisCommand,
         context: &str,
     ) -> tower_mcp::Result<T> {
-        let value = self
-            .executor
-            .execute(command)
-            .await
+        let value = self.execute(command, context).await?;
+        let value = value
+            .into_redis_rs()
             .map_err(|error| tower_mcp::Error::tool(format!("{context}: {error}")))?;
         T::from_redis_value(value)
             .map_err(|error| tower_mcp::Error::tool(format!("{context}: {error}")))
     }
 
-    async fn raw(&self, command: redis::Cmd, context: &str) -> tower_mcp::Result<Value> {
-        self.executor
-            .execute(command)
-            .await
-            .map_err(|error| tower_mcp::Error::tool(format!("{context}: {error}")))
+    async fn raw(&self, command: RedisCommand, context: &str) -> tower_mcp::Result<RedisValue> {
+        self.execute(command, context).await
+    }
+
+    async fn execute(&self, command: RedisCommand, context: &str) -> tower_mcp::Result<RedisValue> {
+        match tokio::time::timeout(self.command_timeout, self.executor.execute(command)).await {
+            Ok(Ok(value)) => Ok(value),
+            Ok(Err(error)) => Err(tower_mcp::Error::tool(format!(
+                "{context} [{:?}]: {error}",
+                error.kind()
+            ))),
+            Err(_) => Err(tower_mcp::Error::tool(format!(
+                "{context}: Redis command timed out after {} ms",
+                self.command_timeout.as_millis()
+            ))),
+        }
     }
 
     fn require(&self, required: AccessMode, tool: &str) -> tower_mcp::Result<()> {
@@ -71,22 +86,55 @@ impl ToolState {
     }
 }
 
-pub(crate) fn add_read_only_tools(mut router: McpRouter, state: Arc<ToolState>) -> McpRouter {
-    router = router.tool(ping_tool(state.clone()));
-    router = router.tool(info_tool(state.clone()));
-    router = router.tool(dbsize_tool(state.clone()));
-    router = router.tool(scan_tool(state.clone()));
-    router = router.tool(get_tool(state.clone()));
-    router = router.tool(type_tool(state.clone()));
-    router.tool(ttl_tool(state))
+fn command(
+    tool_name: &'static str,
+    required_access: AccessMode,
+    command_name: &'static str,
+) -> RedisCommand {
+    RedisCommand::new(tool_name, required_access, command_name)
 }
 
-pub(crate) fn add_write_tools(router: McpRouter, state: Arc<ToolState>) -> McpRouter {
-    router.tool(set_tool(state))
+pub(crate) fn add_read_only_tools(
+    mut router: McpRouter,
+    state: Arc<ToolState>,
+    bundles: &BTreeSet<ToolBundle>,
+) -> McpRouter {
+    if bundles.contains(&ToolBundle::Essentials) {
+        router = router.tool(ping_tool(state.clone()));
+        router = router.tool(dbsize_tool(state.clone()));
+        router = router.tool(scan_tool(state.clone()));
+        router = router.tool(get_tool(state.clone()));
+        router = router.tool(type_tool(state.clone()));
+        router = router.tool(ttl_tool(state.clone()));
+    }
+    if bundles.contains(&ToolBundle::Diagnostics) {
+        router = router.tool(info_tool(state));
+    }
+    router
 }
 
-pub(crate) fn add_destructive_tools(router: McpRouter, state: Arc<ToolState>) -> McpRouter {
-    router.tool(del_tool(state))
+pub(crate) fn add_write_tools(
+    router: McpRouter,
+    state: Arc<ToolState>,
+    bundles: &BTreeSet<ToolBundle>,
+) -> McpRouter {
+    if bundles.contains(&ToolBundle::Essentials) {
+        router.tool(set_tool(state))
+    } else {
+        router
+    }
+}
+
+pub(crate) fn add_destructive_tools(
+    router: McpRouter,
+    state: Arc<ToolState>,
+    bundles: &BTreeSet<ToolBundle>,
+) -> McpRouter {
+    if bundles.contains(&ToolBundle::Essentials) {
+        router.tool(del_tool(state))
+    } else {
+        router
+    }
 }
 
 pub(crate) fn add_raw_tool(router: McpRouter, state: Arc<ToolState>) -> McpRouter {
@@ -150,7 +198,12 @@ fn ping_tool(state: Arc<ToolState>) -> tower_mcp::Tool {
         .annotations(read_annotations())
         .extractor_handler(state, |State(state): State<Arc<ToolState>>| async move {
             let started = Instant::now();
-            let response: String = state.query(redis::cmd("PING"), "PING failed").await?;
+            let response: String = state
+                .query(
+                    command("redis_ping", AccessMode::ReadOnly, "PING"),
+                    "PING failed",
+                )
+                .await?;
             CallToolResult::from_serialize(&PingOutput {
                 response,
                 latency_ms: started.elapsed().as_secs_f64() * 1_000.0,
@@ -186,9 +239,9 @@ fn info_tool(state: Arc<ToolState>) -> tower_mcp::Tool {
         .extractor_handler(
             state,
             |State(state): State<Arc<ToolState>>, Json(input): Json<InfoInput>| async move {
-                let mut command = redis::cmd("INFO");
+                let mut command = command("redis_info", AccessMode::ReadOnly, "INFO");
                 if let Some(section) = &input.section {
-                    command.arg(section);
+                    command.arg(section.as_str());
                 }
                 let raw: String = state.query(command, "INFO failed").await?;
                 let properties = raw
@@ -221,7 +274,12 @@ fn dbsize_tool(state: Arc<ToolState>) -> tower_mcp::Tool {
         .output_schema(output_schema::<DbsizeOutput>())
         .annotations(read_annotations())
         .extractor_handler(state, |State(state): State<Arc<ToolState>>| async move {
-            let key_count = state.query(redis::cmd("DBSIZE"), "DBSIZE failed").await?;
+            let key_count = state
+                .query(
+                    command("redis_dbsize", AccessMode::ReadOnly, "DBSIZE"),
+                    "DBSIZE failed",
+                )
+                .await?;
             CallToolResult::from_serialize(&DbsizeOutput { key_count })
         })
         .build()
@@ -273,15 +331,15 @@ fn scan_tool(state: Arc<ToolState>) -> tower_mcp::Tool {
                 if !(1..=1000).contains(&input.count) {
                     return Err(tower_mcp::Error::tool("count must be between 1 and 1000"));
                 }
-                let mut command = redis::cmd("SCAN");
+                let mut command = command("redis_scan", AccessMode::ReadOnly, "SCAN");
                 command
-                    .arg(input.cursor)
+                    .arg(input.cursor.to_string())
                     .arg("MATCH")
-                    .arg(&input.pattern)
+                    .arg(input.pattern.as_str())
                     .arg("COUNT")
-                    .arg(input.count);
+                    .arg(input.count.to_string());
                 if let Some(key_type) = &input.key_type {
-                    command.arg("TYPE").arg(key_type);
+                    command.arg("TYPE").arg(key_type.as_str());
                 }
                 let (cursor, keys): (u64, Vec<Vec<u8>>) =
                     state.query(command, "SCAN failed").await?;
@@ -328,8 +386,8 @@ fn get_tool(state: Arc<ToolState>) -> tower_mcp::Tool {
         .extractor_handler(
             state,
             |State(state): State<Arc<ToolState>>, Json(input): Json<KeyInput>| async move {
-                let mut command = redis::cmd("GET");
-                command.arg(&input.key);
+                let mut command = command("redis_get", AccessMode::ReadOnly, "GET");
+                command.arg(input.key.as_str());
                 let value: Option<Vec<u8>> = state.query(command, "GET failed").await?;
                 let (value, encoding) = match value {
                     Some(bytes) => {
@@ -365,8 +423,8 @@ fn type_tool(state: Arc<ToolState>) -> tower_mcp::Tool {
         .extractor_handler(
             state,
             |State(state): State<Arc<ToolState>>, Json(input): Json<KeyInput>| async move {
-                let mut command = redis::cmd("TYPE");
-                command.arg(&input.key);
+                let mut command = command("redis_type", AccessMode::ReadOnly, "TYPE");
+                command.arg(input.key.as_str());
                 let key_type = state.query(command, "TYPE failed").await?;
                 CallToolResult::from_serialize(&TypeOutput {
                     key: input.key,
@@ -395,8 +453,8 @@ fn ttl_tool(state: Arc<ToolState>) -> tower_mcp::Tool {
         .extractor_handler(
             state,
             |State(state): State<Arc<ToolState>>, Json(input): Json<KeyInput>| async move {
-                let mut command = redis::cmd("TTL");
-                command.arg(&input.key);
+                let mut command = command("redis_ttl", AccessMode::ReadOnly, "TTL");
+                command.arg(input.key.as_str());
                 let ttl_seconds = state.query(command, "TTL failed").await?;
                 CallToolResult::from_serialize(&TtlOutput {
                     key: input.key,
@@ -439,10 +497,10 @@ fn set_tool(state: Arc<ToolState>) -> tower_mcp::Tool {
             state,
             |State(state): State<Arc<ToolState>>, Json(input): Json<SetInput>| async move {
                 state.require(AccessMode::ReadWrite, "redis_set")?;
-                let mut command = redis::cmd("SET");
-                command.arg(&input.key).arg(&input.value);
+                let mut command = command("redis_set", AccessMode::ReadWrite, "SET");
+                command.arg(input.key.as_str()).arg(input.value.as_str());
                 if let Some(seconds) = input.expires_in_seconds {
-                    command.arg("EX").arg(seconds);
+                    command.arg("EX").arg(seconds.to_string());
                 }
                 let response: String = state.query(command, "SET failed").await?;
                 CallToolResult::from_serialize(&SetOutput {
@@ -486,8 +544,8 @@ fn del_tool(state: Arc<ToolState>) -> tower_mcp::Tool {
                     ));
                 }
                 let requested = input.keys.len();
-                let mut command = redis::cmd("DEL");
-                command.arg(input.keys);
+                let mut command = command("redis_del", AccessMode::Full, "DEL");
+                command.args(input.keys);
                 let deleted = state.query(command, "DEL failed").await?;
                 CallToolResult::from_serialize(&DelOutput { requested, deleted })
             },
@@ -516,7 +574,7 @@ fn raw_tool(state: Arc<ToolState>) -> tower_mcp::Tool {
     ToolBuilder::new(RAW_TOOL_NAME)
         .title("Run Redis Command")
         .description(
-            "Run an explicitly enabled Redis command. Connection-state, streaming, transaction, and blocking commands are rejected.",
+            "Run a classified or explicitly unrestricted Redis request/response command. Connection-state, streaming, transaction, script, and blocking forms are rejected.",
         )
         .output_schema(output_schema::<RawCommandOutput>())
         .annotations(destructive_annotations(false))
@@ -525,9 +583,18 @@ fn raw_tool(state: Arc<ToolState>) -> tower_mcp::Tool {
             |State(state): State<Arc<ToolState>>,
              Json(input): Json<RawCommandInput>| async move {
                 state.require(AccessMode::Full, RAW_TOOL_NAME)?;
-                let command_name = validate_raw_command(&input.command, &input.arguments)?;
-                let mut command = redis::cmd(&command_name);
-                command.arg(input.arguments);
+                let command_name = crate::raw::validate_command(
+                    &input.command,
+                    &input.arguments,
+                    state.raw_command_policy,
+                )
+                .map_err(tower_mcp::Error::tool)?;
+                let mut command = RedisCommand::new(
+                    RAW_TOOL_NAME,
+                    AccessMode::Full,
+                    command_name.clone(),
+                );
+                command.args(input.arguments);
                 let value = state.raw(command, "Redis command failed").await?;
                 CallToolResult::from_serialize(&RawCommandOutput {
                     command: command_name,
@@ -536,57 +603,6 @@ fn raw_tool(state: Arc<ToolState>) -> tower_mcp::Tool {
             },
         )
         .build()
-}
-
-fn validate_raw_command(command: &str, arguments: &[String]) -> tower_mcp::Result<String> {
-    let command = command.trim().to_ascii_uppercase();
-    if command.is_empty() || command.bytes().any(|byte| byte.is_ascii_whitespace()) {
-        return Err(tower_mcp::Error::tool(
-            "command must be one Redis command name without whitespace",
-        ));
-    }
-
-    const REJECTED: &[&str] = &[
-        "AUTH",
-        "BLMOVE",
-        "BLMPOP",
-        "BLPOP",
-        "BRPOP",
-        "BRPOPLPUSH",
-        "BZMPOP",
-        "BZPOPMAX",
-        "BZPOPMIN",
-        "CLIENT",
-        "EXEC",
-        "HELLO",
-        "MONITOR",
-        "MULTI",
-        "PSUBSCRIBE",
-        "PUNSUBSCRIBE",
-        "QUIT",
-        "SELECT",
-        "SSUBSCRIBE",
-        "SUBSCRIBE",
-        "SUNSUBSCRIBE",
-        "UNSUBSCRIBE",
-        "UNWATCH",
-        "WATCH",
-    ];
-    if REJECTED.contains(&command.as_str()) {
-        return Err(tower_mcp::Error::tool(format!(
-            "{command} is not supported by the request/response raw tool"
-        )));
-    }
-    if matches!(command.as_str(), "XREAD" | "XREADGROUP")
-        && arguments
-            .iter()
-            .any(|argument| argument.eq_ignore_ascii_case("BLOCK"))
-    {
-        return Err(tower_mcp::Error::tool(
-            "blocking XREAD/XREADGROUP is not supported by the raw tool",
-        ));
-    }
-    Ok(command)
 }
 
 fn encode_bytes(bytes: Vec<u8>) -> (String, ValueEncoding) {
@@ -604,20 +620,20 @@ fn display_bytes(bytes: Vec<u8>) -> String {
     }
 }
 
-fn redis_value_to_json(value: Value) -> JsonValue {
+fn redis_value_to_json(value: RedisValue) -> JsonValue {
     match value {
-        Value::Nil => JsonValue::Null,
-        Value::Int(value) => json!(value),
-        Value::BulkString(value) => {
+        RedisValue::Nil => JsonValue::Null,
+        RedisValue::Integer(value) => json!(value),
+        RedisValue::BulkString(value) => {
             let (value, encoding) = encode_bytes(value);
             json!({ "value": value, "encoding": encoding })
         }
-        Value::Array(values) | Value::Set(values) => {
+        RedisValue::Array(values) | RedisValue::Set(values) => {
             JsonValue::Array(values.into_iter().map(redis_value_to_json).collect())
         }
-        Value::SimpleString(value) => json!(value),
-        Value::Okay => json!("OK"),
-        Value::Map(values) => JsonValue::Array(
+        RedisValue::SimpleString(value) => json!(value),
+        RedisValue::Okay => json!("OK"),
+        RedisValue::Map(values) => JsonValue::Array(
             values
                 .into_iter()
                 .map(|(key, value)| {
@@ -628,7 +644,7 @@ fn redis_value_to_json(value: Value) -> JsonValue {
                 })
                 .collect(),
         ),
-        Value::Attribute { data, attributes } => json!({
+        RedisValue::Attribute { data, attributes } => json!({
             "data": redis_value_to_json(*data),
             "attributes": attributes
                 .into_iter()
@@ -638,18 +654,23 @@ fn redis_value_to_json(value: Value) -> JsonValue {
                 }))
                 .collect::<Vec<_>>(),
         }),
-        Value::Double(value) => json!(value),
-        Value::Boolean(value) => json!(value),
-        Value::VerbatimString { format, text } => {
-            json!({ "format": format!("{format:?}"), "text": text })
+        RedisValue::Double(value) => json!(value),
+        RedisValue::Boolean(value) => json!(value),
+        RedisValue::VerbatimString { format, text } => {
+            json!({ "format": format, "text": text })
         }
-        Value::BigNumber(value) => json!(format!("{value:?}")),
-        Value::Push { kind, data } => json!({
-            "kind": format!("{kind:?}"),
+        RedisValue::BigNumber(value) => {
+            let (value, encoding) = encode_bytes(value);
+            json!({ "value": value, "encoding": encoding })
+        }
+        RedisValue::Push { kind, data } => json!({
+            "kind": kind,
             "data": data.into_iter().map(redis_value_to_json).collect::<Vec<_>>(),
         }),
-        Value::ServerError(error) => json!({ "server_error": error.to_string() }),
-        other => json!({ "unsupported": format!("{other:?}") }),
+        RedisValue::ServerError { code, message } => {
+            json!({ "server_error": { "code": code, "message": message } })
+        }
+        RedisValue::Unsupported(value) => json!({ "unsupported": value }),
     }
 }
 
@@ -659,18 +680,8 @@ mod tests {
 
     #[test]
     fn binary_values_are_explicitly_encoded() {
-        let json = redis_value_to_json(Value::BulkString(vec![0xff, 0x00]));
+        let json = redis_value_to_json(RedisValue::BulkString(vec![0xff, 0x00]));
         assert_eq!(json["encoding"], "base64");
         assert_eq!(json["value"], "/wA=");
-    }
-
-    #[test]
-    fn raw_commands_reject_connection_state_and_blocking_reads() {
-        assert!(validate_raw_command("SELECT", &["1".into()]).is_err());
-        assert!(validate_raw_command("xread", &["BLOCK".into(), "0".into()]).is_err());
-        assert_eq!(
-            validate_raw_command("get", &["key".into()]).ok().as_deref(),
-            Some("GET")
-        );
     }
 }

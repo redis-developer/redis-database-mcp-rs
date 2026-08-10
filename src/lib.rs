@@ -8,14 +8,23 @@
 #![forbid(unsafe_code)]
 
 mod access;
+mod catalog;
 mod executor;
+mod raw;
 mod tools;
 
-use std::sync::Arc;
+use std::{collections::BTreeSet, sync::Arc, time::Duration};
 
 pub use access::AccessMode;
-pub use executor::{DirectRedis, RedisExecutor};
+pub use catalog::{ToolBundle, ToolMetadata, tool_catalog};
+pub use executor::{
+    DirectRedis, RedisCommand, RedisError, RedisErrorKind, RedisExecutor, RedisValue,
+};
+pub use raw::RawCommandPolicy;
 use tower_mcp::McpRouter;
+
+/// Default upper bound for one Redis command executed by a tool.
+pub const DEFAULT_COMMAND_TIMEOUT: Duration = Duration::from_secs(30);
 
 /// Entry point for building a composable Redis database MCP router.
 pub struct RedisMcp;
@@ -26,7 +35,9 @@ impl RedisMcp {
         RedisMcpBuilder {
             executor: Arc::new(executor),
             access: AccessMode::ReadOnly,
-            raw_commands: false,
+            bundles: ToolBundle::DEFAULTS.iter().copied().collect(),
+            raw_command_policy: RawCommandPolicy::Disabled,
+            command_timeout: DEFAULT_COMMAND_TIMEOUT,
             server_name: "redis-mcp".to_string(),
             server_version: env!("CARGO_PKG_VERSION").to_string(),
         }
@@ -37,7 +48,9 @@ impl RedisMcp {
 pub struct RedisMcpBuilder {
     executor: Arc<dyn RedisExecutor>,
     access: AccessMode,
-    raw_commands: bool,
+    bundles: BTreeSet<ToolBundle>,
+    raw_command_policy: RawCommandPolicy,
+    command_timeout: Duration,
     server_name: String,
     server_version: String,
 }
@@ -49,11 +62,49 @@ impl RedisMcpBuilder {
         self
     }
 
+    /// Replace the enabled non-raw tool bundles.
+    ///
+    /// Raw command execution remains governed by its separate opt-in even
+    /// though its catalog metadata belongs to [`ToolBundle::Raw`].
+    pub fn bundles(mut self, bundles: impl IntoIterator<Item = ToolBundle>) -> Self {
+        self.bundles = bundles.into_iter().collect();
+        self
+    }
+
+    /// Add one non-raw tool bundle to the current selection.
+    pub fn bundle(mut self, bundle: ToolBundle) -> Self {
+        self.bundles.insert(bundle);
+        self
+    }
+
     /// Enable the redis_command escape hatch.
     ///
-    /// The tool is only exposed when access is also AccessMode::Full.
+    /// `true` selects [`RawCommandPolicy::Classified`], which fails closed for
+    /// command names this library has not reviewed. Use
+    /// [`RedisMcpBuilder::raw_command_policy`] for the stronger unrestricted
+    /// opt-in.
     pub fn raw_commands(mut self, enabled: bool) -> Self {
-        self.raw_commands = enabled;
+        self.raw_command_policy = if enabled {
+            RawCommandPolicy::Classified
+        } else {
+            RawCommandPolicy::Disabled
+        };
+        self
+    }
+
+    /// Configure the raw Redis command escape hatch explicitly.
+    pub fn raw_command_policy(mut self, policy: RawCommandPolicy) -> Self {
+        self.raw_command_policy = policy;
+        self
+    }
+
+    /// Set the maximum time allowed for any one Redis command.
+    ///
+    /// The timeout is enforced around the host executor future and therefore
+    /// also applies to custom executors. A zero duration is rejected by
+    /// [`RedisMcpBuilder::try_build`].
+    pub fn command_timeout(mut self, timeout: Duration) -> Self {
+        self.command_timeout = timeout;
         self
     }
 
@@ -66,34 +117,76 @@ impl RedisMcpBuilder {
 
     /// Build a transport-independent Tower MCP router.
     pub fn build(self) -> McpRouter {
-        let state = Arc::new(tools::ToolState::new(self.executor, self.access));
+        self.try_build()
+            .expect("RedisMcp builder configuration should be valid")
+    }
+
+    /// Build a transport-independent Tower MCP router with validation.
+    pub fn try_build(self) -> Result<McpRouter, RedisMcpBuildError> {
+        if self.command_timeout.is_zero() {
+            return Err(RedisMcpBuildError::ZeroCommandTimeout);
+        }
+        if self.raw_command_policy.is_enabled() && self.access != AccessMode::Full {
+            return Err(RedisMcpBuildError::RawCommandsRequireFullAccess);
+        }
+        let state = Arc::new(tools::ToolState::new(
+            self.executor,
+            self.access,
+            self.command_timeout,
+            self.raw_command_policy,
+        ));
         let mut router = McpRouter::new().server_info(self.server_name, self.server_version);
-        router = tools::add_read_only_tools(router, state.clone());
+        router = tools::add_read_only_tools(router, state.clone(), &self.bundles);
         if self.access.permits(AccessMode::ReadWrite) {
-            router = tools::add_write_tools(router, state.clone());
+            router = tools::add_write_tools(router, state.clone(), &self.bundles);
         }
         if self.access.permits(AccessMode::Full) {
-            router = tools::add_destructive_tools(router, state.clone());
-            if self.raw_commands {
+            router = tools::add_destructive_tools(router, state.clone(), &self.bundles);
+            if self.raw_command_policy.is_enabled() {
                 router = tools::add_raw_tool(router, state);
             }
         }
-        router
+        Ok(router)
     }
 }
 
-/// Stable tool names in the initial curated surface.
-pub fn tool_names(access: AccessMode, raw_commands: bool) -> Vec<&'static str> {
-    let mut names = tools::READ_ONLY_TOOL_NAMES.to_vec();
-    if access.permits(AccessMode::ReadWrite) {
-        names.extend_from_slice(tools::WRITE_TOOL_NAMES);
-    }
-    if access.permits(AccessMode::Full) {
-        names.extend_from_slice(tools::DESTRUCTIVE_TOOL_NAMES);
-        if raw_commands {
-            names.push(tools::RAW_TOOL_NAME);
+/// Invalid Redis MCP router configuration.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[non_exhaustive]
+pub enum RedisMcpBuildError {
+    /// A zero timeout would make every command fail immediately.
+    ZeroCommandTimeout,
+    /// Raw commands are an escape hatch and require full access in addition to
+    /// their separate policy opt-in.
+    RawCommandsRequireFullAccess,
+}
+
+impl std::fmt::Display for RedisMcpBuildError {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::ZeroCommandTimeout => {
+                formatter.write_str("command timeout must be greater than zero")
+            }
+            Self::RawCommandsRequireFullAccess => {
+                formatter.write_str("raw command execution requires full access")
+            }
         }
     }
-    names.sort_unstable();
-    names
+}
+
+impl std::error::Error for RedisMcpBuildError {}
+
+/// Stable tool names in the initial curated surface.
+pub fn tool_names(access: AccessMode, raw_commands: bool) -> Vec<&'static str> {
+    tool_names_for(access, ToolBundle::DEFAULTS.iter().copied(), raw_commands)
+}
+
+/// Tool names exposed for an explicit access and bundle selection.
+pub fn tool_names_for(
+    access: AccessMode,
+    bundles: impl IntoIterator<Item = ToolBundle>,
+    raw_commands: bool,
+) -> Vec<&'static str> {
+    let bundles = bundles.into_iter().collect::<Vec<_>>();
+    catalog::selected_tool_names(access, &bundles, raw_commands)
 }

@@ -26,10 +26,50 @@ impl RedisExecutor for StubRedis {
                 ]),
             ]),
             "GET" => RedisValue::BulkString(b"hello".to_vec()),
+            "EXISTS" => RedisValue::Integer(1),
+            "MGET" => RedisValue::Array(vec![
+                RedisValue::BulkString(b"hello".to_vec()),
+                RedisValue::Nil,
+            ]),
+            "STRLEN" => RedisValue::Integer(5),
+            "MEMORY" => RedisValue::Integer(64),
+            "RANDOMKEY" => RedisValue::BulkString(b"alpha".to_vec()),
+            "HGET" => RedisValue::BulkString(b"Ada".to_vec()),
+            "HGETALL" => RedisValue::Map(vec![(
+                RedisValue::BulkString(b"name".to_vec()),
+                RedisValue::BulkString(b"Ada".to_vec()),
+            )]),
+            "LRANGE" => RedisValue::Array(vec![
+                RedisValue::BulkString(b"second".to_vec()),
+                RedisValue::BulkString(b"first".to_vec()),
+            ]),
+            "SMEMBERS" => RedisValue::Set(vec![
+                RedisValue::BulkString(b"beta".to_vec()),
+                RedisValue::BulkString(b"alpha".to_vec()),
+            ]),
+            "ZRANGE" => {
+                if command
+                    .arguments()
+                    .iter()
+                    .any(|argument| argument.eq_ignore_ascii_case(b"WITHSCORES"))
+                {
+                    RedisValue::Array(vec![
+                        RedisValue::BulkString(b"alice".to_vec()),
+                        RedisValue::BulkString(b"1.5".to_vec()),
+                    ])
+                } else {
+                    RedisValue::Array(vec![RedisValue::BulkString(b"alice".to_vec())])
+                }
+            }
             "TYPE" => RedisValue::SimpleString("string".into()),
             "TTL" => RedisValue::Integer(-1),
-            "SET" => RedisValue::Okay,
-            "DEL" => RedisValue::Integer(1),
+            "SET" | "MSET" => RedisValue::Okay,
+            "EXPIRE" | "PERSIST" => RedisValue::Integer(1),
+            "INCR" => RedisValue::Integer(2),
+            "APPEND" => RedisValue::Integer(5),
+            "HSET" | "SADD" | "ZADD" => RedisValue::Integer(1),
+            "LPUSH" => RedisValue::Integer(2),
+            "DEL" | "UNLINK" => RedisValue::Integer(1),
             "ECHO" => RedisValue::BulkString(b"hello".to_vec()),
             _ => RedisValue::Nil,
         };
@@ -72,8 +112,141 @@ async fn client_for_bundles(
     client
 }
 
+fn structured_cases() -> Vec<(&'static str, serde_json::Value, &'static str)> {
+    vec![
+        ("redis_ping", serde_json::json!({}), "response"),
+        ("redis_info", serde_json::json!({}), "properties"),
+        ("redis_dbsize", serde_json::json!({}), "key_count"),
+        (
+            "redis_scan",
+            serde_json::json!({"pattern": "*", "count": 10}),
+            "keys",
+        ),
+        ("redis_get", serde_json::json!({"key": "greeting"}), "value"),
+        (
+            "redis_type",
+            serde_json::json!({"key": "greeting"}),
+            "key_type",
+        ),
+        (
+            "redis_ttl",
+            serde_json::json!({"key": "greeting"}),
+            "ttl_seconds",
+        ),
+        (
+            "redis_exists",
+            serde_json::json!({"keys": ["greeting"]}),
+            "existing",
+        ),
+        (
+            "redis_mget",
+            serde_json::json!({"keys": ["greeting", "missing"]}),
+            "values",
+        ),
+        (
+            "redis_strlen",
+            serde_json::json!({"key": "greeting"}),
+            "length_bytes",
+        ),
+        (
+            "redis_memory_usage",
+            serde_json::json!({"key": "greeting"}),
+            "bytes",
+        ),
+        ("redis_randomkey", serde_json::json!({}), "key"),
+        (
+            "redis_hget",
+            serde_json::json!({"key": "user:1", "field": "name"}),
+            "value",
+        ),
+        (
+            "redis_hgetall",
+            serde_json::json!({"key": "user:1"}),
+            "entries",
+        ),
+        (
+            "redis_lrange",
+            serde_json::json!({"key": "queue", "start": 0, "stop": -1}),
+            "elements",
+        ),
+        (
+            "redis_smembers",
+            serde_json::json!({"key": "tags"}),
+            "members",
+        ),
+        (
+            "redis_zrange",
+            serde_json::json!({"key": "leaders", "start": 0, "stop": -1, "withscores": true}),
+            "members",
+        ),
+        (
+            "redis_set",
+            serde_json::json!({"key": "greeting", "value": "hello"}),
+            "stored",
+        ),
+        (
+            "redis_expire",
+            serde_json::json!({"key": "greeting", "seconds": 60}),
+            "applied",
+        ),
+        (
+            "redis_persist",
+            serde_json::json!({"key": "greeting"}),
+            "applied",
+        ),
+        (
+            "redis_mset",
+            serde_json::json!({"entries": [{"key": "a", "value": "1"}, {"key": "b", "value": "2"}]}),
+            "stored",
+        ),
+        ("redis_incr", serde_json::json!({"key": "counter"}), "value"),
+        (
+            "redis_append",
+            serde_json::json!({"key": "greeting", "value": "!"}),
+            "length_bytes",
+        ),
+        (
+            "redis_hset",
+            serde_json::json!({"key": "user:1", "fields": {"name": "Ada"}}),
+            "fields_added",
+        ),
+        (
+            "redis_lpush",
+            serde_json::json!({"key": "queue", "elements": ["first", "second"]}),
+            "length",
+        ),
+        (
+            "redis_sadd",
+            serde_json::json!({"key": "tags", "members": ["alpha", "beta"]}),
+            "added",
+        ),
+        (
+            "redis_zadd",
+            serde_json::json!({"key": "leaders", "members": [{"score": 1.5, "member": "alice"}]}),
+            "affected",
+        ),
+        (
+            "redis_del",
+            serde_json::json!({"keys": ["greeting"]}),
+            "deleted",
+        ),
+        (
+            "redis_unlink",
+            serde_json::json!({"keys": ["temporary"]}),
+            "unlinked",
+        ),
+        (
+            "redis_command",
+            serde_json::json!({"command": "ECHO", "arguments": ["hello"]}),
+            "value",
+        ),
+    ]
+}
+
 #[tokio::test]
 async fn access_modes_expose_exactly_the_expected_tools() {
+    assert_eq!(tool_names(AccessMode::Full, false).len(), 29);
+    assert_eq!(tool_names(AccessMode::Full, true).len(), 30);
     for (access, raw) in [
         (AccessMode::ReadOnly, false),
         (AccessMode::ReadWrite, false),
@@ -164,44 +337,7 @@ fn invalid_builder_safety_configuration_is_rejected() {
 #[tokio::test]
 async fn tool_calls_return_structured_content() {
     let client = client(AccessMode::Full, true).await;
-    let cases = [
-        ("redis_ping", serde_json::json!({}), "response"),
-        ("redis_info", serde_json::json!({}), "properties"),
-        ("redis_dbsize", serde_json::json!({}), "key_count"),
-        (
-            "redis_scan",
-            serde_json::json!({"pattern": "*", "count": 10}),
-            "keys",
-        ),
-        ("redis_get", serde_json::json!({"key": "greeting"}), "value"),
-        (
-            "redis_type",
-            serde_json::json!({"key": "greeting"}),
-            "key_type",
-        ),
-        (
-            "redis_ttl",
-            serde_json::json!({"key": "greeting"}),
-            "ttl_seconds",
-        ),
-        (
-            "redis_set",
-            serde_json::json!({"key": "greeting", "value": "hello"}),
-            "stored",
-        ),
-        (
-            "redis_del",
-            serde_json::json!({"keys": ["greeting"]}),
-            "deleted",
-        ),
-        (
-            "redis_command",
-            serde_json::json!({"command": "ECHO", "arguments": ["hello"]}),
-            "value",
-        ),
-    ];
-
-    for (name, arguments, expected_field) in cases {
+    for (name, arguments, expected_field) in structured_cases() {
         let result = client
             .call_tool(name, arguments)
             .await
@@ -214,6 +350,151 @@ async fn tool_calls_return_structured_content() {
                 .is_some_and(|value| value.get(expected_field).is_some()),
             "{name}"
         );
+    }
+}
+
+#[tokio::test]
+async fn malformed_and_unbounded_inputs_fail_as_tool_results() {
+    let client = client(AccessMode::Full, true).await;
+    let cases = [
+        ("redis_exists", serde_json::json!({"keys": []})),
+        ("redis_mset", serde_json::json!({"entries": []})),
+        (
+            "redis_lpush",
+            serde_json::json!({"key": "queue", "elements": []}),
+        ),
+        (
+            "redis_sadd",
+            serde_json::json!({"key": "tags", "members": []}),
+        ),
+        (
+            "redis_zadd",
+            serde_json::json!({
+                "key": "leaders",
+                "members": [{"score": 1.0, "member": "alice"}],
+                "nx": true,
+                "xx": true
+            }),
+        ),
+        (
+            "redis_expire",
+            serde_json::json!({"key": "greeting", "seconds": 0}),
+        ),
+        (
+            "redis_scan",
+            serde_json::json!({"pattern": "*", "count": 0}),
+        ),
+        (
+            "redis_get",
+            serde_json::json!({"key": "greeting", "unknown": true}),
+        ),
+    ];
+
+    for (name, arguments) in cases {
+        let result = client
+            .call_tool(name, arguments)
+            .await
+            .unwrap_or_else(|error| panic!("{name}: {error}"));
+        assert!(result.is_error, "{name}");
+    }
+}
+
+#[derive(Clone, Copy)]
+struct BinaryRedis;
+
+#[async_trait]
+impl RedisExecutor for BinaryRedis {
+    async fn execute(&self, command: RedisCommand) -> Result<RedisValue, RedisError> {
+        Ok(match command.name() {
+            "GET" | "HGET" => RedisValue::BulkString(vec![0xff, 0x00]),
+            "MGET" => RedisValue::Array(vec![
+                RedisValue::BulkString(vec![0xff, 0x00]),
+                RedisValue::Nil,
+            ]),
+            "HGETALL" => RedisValue::Map(vec![(
+                RedisValue::BulkString(vec![0xfe]),
+                RedisValue::BulkString(vec![0xff]),
+            )]),
+            "LRANGE" => RedisValue::Array(vec![RedisValue::BulkString(vec![0xff])]),
+            "SMEMBERS" => RedisValue::Set(vec![RedisValue::BulkString(vec![0xff])]),
+            "ZRANGE" => RedisValue::Array(vec![
+                RedisValue::BulkString(vec![0xff]),
+                RedisValue::BulkString(b"1.5".to_vec()),
+            ]),
+            _ => RedisValue::Nil,
+        })
+    }
+}
+
+#[tokio::test]
+async fn binary_and_nil_values_are_explicit_across_curated_reads() {
+    let router = RedisMcp::builder(BinaryRedis)
+        .access(AccessMode::ReadOnly)
+        .build();
+    let client = McpClient::connect(ChannelTransport::new(router))
+        .await
+        .expect("connect binary client");
+    client
+        .initialize("redis-mcp-binary-test", "0")
+        .await
+        .expect("initialize binary client");
+
+    let get = client
+        .call_tool("redis_get", serde_json::json!({"key": "binary"}))
+        .await
+        .expect("binary get")
+        .structured_content
+        .expect("structured get");
+    assert_eq!(get["encoding"], "base64");
+    assert_eq!(get["value"], "/wA=");
+
+    let mget = client
+        .call_tool(
+            "redis_mget",
+            serde_json::json!({"keys": ["binary", "missing"]}),
+        )
+        .await
+        .expect("binary mget")
+        .structured_content
+        .expect("structured mget");
+    assert_eq!(mget["values"][0]["encoding"], "base64");
+    assert_eq!(mget["values"][1]["exists"], false);
+    assert_eq!(mget["values"][1]["value"], serde_json::Value::Null);
+
+    for (name, arguments, path) in [
+        (
+            "redis_hget",
+            serde_json::json!({"key": "hash", "field": "field"}),
+            "/encoding",
+        ),
+        (
+            "redis_hgetall",
+            serde_json::json!({"key": "hash"}),
+            "/entries/0/field_encoding",
+        ),
+        (
+            "redis_lrange",
+            serde_json::json!({"key": "list"}),
+            "/elements/0/encoding",
+        ),
+        (
+            "redis_smembers",
+            serde_json::json!({"key": "set"}),
+            "/members/0/encoding",
+        ),
+        (
+            "redis_zrange",
+            serde_json::json!({"key": "zset", "withscores": true}),
+            "/members/0/encoding",
+        ),
+    ] {
+        let structured = client
+            .call_tool(name, arguments)
+            .await
+            .unwrap_or_else(|error| panic!("{name}: {error}"))
+            .structured_content
+            .unwrap_or_else(|| panic!("{name}: no structured content"));
+        assert_eq!(structured.pointer(path), Some(&serde_json::json!("base64")));
     }
 }
 
@@ -321,29 +602,8 @@ async fn curated_catalog_matches_checked_in_contract_snapshot() {
         .collect::<Vec<_>>();
     contracts.sort_by(|left, right| left["name"].as_str().cmp(&right["name"].as_str()));
 
-    let cases = [
-        ("redis_ping", serde_json::json!({})),
-        ("redis_info", serde_json::json!({})),
-        ("redis_dbsize", serde_json::json!({})),
-        (
-            "redis_scan",
-            serde_json::json!({"pattern": "*", "count": 10}),
-        ),
-        ("redis_get", serde_json::json!({"key": "greeting"})),
-        ("redis_type", serde_json::json!({"key": "greeting"})),
-        ("redis_ttl", serde_json::json!({"key": "greeting"})),
-        (
-            "redis_set",
-            serde_json::json!({"key": "greeting", "value": "hello"}),
-        ),
-        ("redis_del", serde_json::json!({"keys": ["greeting"]})),
-        (
-            "redis_command",
-            serde_json::json!({"command": "ECHO", "arguments": ["hello"]}),
-        ),
-    ];
     let mut structured_results = BTreeMap::new();
-    for (name, arguments) in cases {
+    for (name, arguments, _) in structured_cases() {
         let result = client
             .call_tool(name, arguments)
             .await

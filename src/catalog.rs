@@ -26,7 +26,8 @@ pub enum ToolBundle {
 
 impl ToolBundle {
     /// Bundles enabled by the curated standalone default.
-    pub const DEFAULTS: &'static [Self] = &[Self::Essentials, Self::Diagnostics];
+    pub const DEFAULTS: &'static [Self] =
+        &[Self::Essentials, Self::DataStructures, Self::Diagnostics];
 
     /// Every bundle understood by this library version.
     pub const ALL: &'static [Self] = &[
@@ -113,13 +114,133 @@ pub(crate) const CATALOG: &[ToolMetadata] = &[
         requires_raw_opt_in: false,
     },
     ToolMetadata {
+        name: "redis_exists",
+        bundle: ToolBundle::Essentials,
+        required_access: AccessMode::ReadOnly,
+        requires_raw_opt_in: false,
+    },
+    ToolMetadata {
+        name: "redis_mget",
+        bundle: ToolBundle::Essentials,
+        required_access: AccessMode::ReadOnly,
+        requires_raw_opt_in: false,
+    },
+    ToolMetadata {
+        name: "redis_strlen",
+        bundle: ToolBundle::Essentials,
+        required_access: AccessMode::ReadOnly,
+        requires_raw_opt_in: false,
+    },
+    ToolMetadata {
+        name: "redis_memory_usage",
+        bundle: ToolBundle::Essentials,
+        required_access: AccessMode::ReadOnly,
+        requires_raw_opt_in: false,
+    },
+    ToolMetadata {
+        name: "redis_randomkey",
+        bundle: ToolBundle::Essentials,
+        required_access: AccessMode::ReadOnly,
+        requires_raw_opt_in: false,
+    },
+    ToolMetadata {
+        name: "redis_hget",
+        bundle: ToolBundle::DataStructures,
+        required_access: AccessMode::ReadOnly,
+        requires_raw_opt_in: false,
+    },
+    ToolMetadata {
+        name: "redis_hgetall",
+        bundle: ToolBundle::DataStructures,
+        required_access: AccessMode::ReadOnly,
+        requires_raw_opt_in: false,
+    },
+    ToolMetadata {
+        name: "redis_lrange",
+        bundle: ToolBundle::DataStructures,
+        required_access: AccessMode::ReadOnly,
+        requires_raw_opt_in: false,
+    },
+    ToolMetadata {
+        name: "redis_smembers",
+        bundle: ToolBundle::DataStructures,
+        required_access: AccessMode::ReadOnly,
+        requires_raw_opt_in: false,
+    },
+    ToolMetadata {
+        name: "redis_zrange",
+        bundle: ToolBundle::DataStructures,
+        required_access: AccessMode::ReadOnly,
+        requires_raw_opt_in: false,
+    },
+    ToolMetadata {
         name: "redis_set",
         bundle: ToolBundle::Essentials,
         required_access: AccessMode::ReadWrite,
         requires_raw_opt_in: false,
     },
     ToolMetadata {
+        name: "redis_expire",
+        bundle: ToolBundle::Essentials,
+        required_access: AccessMode::ReadWrite,
+        requires_raw_opt_in: false,
+    },
+    ToolMetadata {
+        name: "redis_persist",
+        bundle: ToolBundle::Essentials,
+        required_access: AccessMode::ReadWrite,
+        requires_raw_opt_in: false,
+    },
+    ToolMetadata {
+        name: "redis_mset",
+        bundle: ToolBundle::Essentials,
+        required_access: AccessMode::ReadWrite,
+        requires_raw_opt_in: false,
+    },
+    ToolMetadata {
+        name: "redis_incr",
+        bundle: ToolBundle::Essentials,
+        required_access: AccessMode::ReadWrite,
+        requires_raw_opt_in: false,
+    },
+    ToolMetadata {
+        name: "redis_append",
+        bundle: ToolBundle::Essentials,
+        required_access: AccessMode::ReadWrite,
+        requires_raw_opt_in: false,
+    },
+    ToolMetadata {
+        name: "redis_hset",
+        bundle: ToolBundle::DataStructures,
+        required_access: AccessMode::ReadWrite,
+        requires_raw_opt_in: false,
+    },
+    ToolMetadata {
+        name: "redis_lpush",
+        bundle: ToolBundle::DataStructures,
+        required_access: AccessMode::ReadWrite,
+        requires_raw_opt_in: false,
+    },
+    ToolMetadata {
+        name: "redis_sadd",
+        bundle: ToolBundle::DataStructures,
+        required_access: AccessMode::ReadWrite,
+        requires_raw_opt_in: false,
+    },
+    ToolMetadata {
+        name: "redis_zadd",
+        bundle: ToolBundle::DataStructures,
+        required_access: AccessMode::ReadWrite,
+        requires_raw_opt_in: false,
+    },
+    ToolMetadata {
         name: "redis_del",
+        bundle: ToolBundle::Essentials,
+        required_access: AccessMode::Full,
+        requires_raw_opt_in: false,
+    },
+    ToolMetadata {
+        name: "redis_unlink",
         bundle: ToolBundle::Essentials,
         required_access: AccessMode::Full,
         requires_raw_opt_in: false,

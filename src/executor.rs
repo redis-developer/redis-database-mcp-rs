@@ -396,6 +396,20 @@ mod tests {
     }
 
     #[test]
+    fn command_arguments_are_encoded_as_single_binary_safe_arguments() {
+        let mut command = RedisCommand::new("redis_set", AccessMode::ReadWrite, "SET");
+        command.arg("key").arg(vec![0xff, 0x00]);
+        let mut redis_command = redis::cmd(command.name());
+        for argument in command.arguments() {
+            redis_command.arg(argument);
+        }
+        assert_eq!(
+            redis_command.get_packed_command(),
+            b"*3\r\n$3\r\nSET\r\n$3\r\nkey\r\n$2\r\n\xff\0\r\n"
+        );
+    }
+
+    #[test]
     fn resp_values_round_trip_without_public_redis_types() {
         let value = RedisValue::Map(vec![(
             RedisValue::BulkString(vec![0xff]),

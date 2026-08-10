@@ -8,6 +8,7 @@
 #![forbid(unsafe_code)]
 
 mod access;
+mod capabilities;
 mod catalog;
 mod executor;
 mod output;
@@ -17,14 +18,21 @@ mod tools;
 use std::{collections::BTreeSet, sync::Arc, time::Duration};
 
 pub use access::AccessMode;
-pub use catalog::{RedisModule, ToolBundle, ToolMetadata, ToolOutputPolicy, tool_catalog};
+pub use capabilities::{
+    CapabilityStatus, DEFAULT_CAPABILITY_DISCOVERY_TIMEOUT, RedisCapabilities, RedisDeployment,
+    RedisModuleCapability, RedisVersion, RedisVersionParseError, UnavailableToolPolicy,
+};
+pub use catalog::{
+    RedisModule, ToolBundle, ToolCapabilityRequirements, ToolDeploymentRequirement, ToolMetadata,
+    ToolOutputPolicy, tool_catalog,
+};
 pub use executor::{
     DirectRedis, DirectRedisCluster, RedisCommand, RedisError, RedisErrorKind, RedisExecutor,
     RedisValue,
 };
 pub use output::{DEFAULT_MAX_OUTPUT_BYTES, DEFAULT_MAX_OUTPUT_ENTRIES, OutputBudget};
 pub use raw::RawCommandPolicy;
-use tower_mcp::McpRouter;
+use tower_mcp::{CapabilityFilter, Filterable, McpRouter, Tool};
 
 /// Default upper bound for one Redis command executed by a tool.
 pub const DEFAULT_COMMAND_TIMEOUT: Duration = Duration::from_secs(30);
@@ -42,6 +50,8 @@ impl RedisMcp {
             raw_command_policy: RawCommandPolicy::Disabled,
             command_timeout: DEFAULT_COMMAND_TIMEOUT,
             output_budget: OutputBudget::default(),
+            capabilities: RedisCapabilities::unknown(),
+            unavailable_tool_policy: UnavailableToolPolicy::Advertise,
             server_name: "redis-mcp".to_string(),
             server_version: env!("CARGO_PKG_VERSION").to_string(),
         }
@@ -56,6 +66,8 @@ pub struct RedisMcpBuilder {
     raw_command_policy: RawCommandPolicy,
     command_timeout: Duration,
     output_budget: OutputBudget,
+    capabilities: RedisCapabilities,
+    unavailable_tool_policy: UnavailableToolPolicy,
     server_name: String,
     server_version: String,
 }
@@ -124,6 +136,23 @@ impl RedisMcpBuilder {
         self
     }
 
+    /// Supply a precomputed Redis capability snapshot.
+    ///
+    /// Custom executors can construct this snapshot without depending on
+    /// redis-rs. Capabilities omitted from the snapshot remain unknown and are
+    /// allowed through for backward compatibility.
+    pub fn capabilities(mut self, capabilities: RedisCapabilities) -> Self {
+        self.capabilities = capabilities;
+        self
+    }
+
+    /// Select whether known-unavailable tools remain visible with stable
+    /// errors or are omitted from the MCP command surface.
+    pub fn unavailable_tool_policy(mut self, policy: UnavailableToolPolicy) -> Self {
+        self.unavailable_tool_policy = policy;
+        self
+    }
+
     /// Override the server identity advertised during MCP initialization.
     pub fn server_info(mut self, name: impl Into<String>, version: impl Into<String>) -> Self {
         self.server_name = name.into();
@@ -151,12 +180,14 @@ impl RedisMcpBuilder {
         if self.raw_command_policy.is_enabled() && self.access != AccessMode::Full {
             return Err(RedisMcpBuildError::RawCommandsRequireFullAccess);
         }
+        let capabilities = Arc::new(self.capabilities);
         let state = Arc::new(tools::ToolState::new(
             self.executor,
             self.access,
             self.command_timeout,
             self.raw_command_policy,
             self.output_budget,
+            capabilities.clone(),
         ));
         let mut router = McpRouter::new().server_info(self.server_name, self.server_version);
         router = tools::add_read_only_tools(router, state.clone(), &self.bundles);
@@ -168,6 +199,16 @@ impl RedisMcpBuilder {
             if self.raw_command_policy.is_enabled() {
                 router = tools::add_raw_tool(router, state);
             }
+        }
+        if self.unavailable_tool_policy == UnavailableToolPolicy::Hide {
+            router = router.tool_filter(CapabilityFilter::new(move |_session, tool: &Tool| {
+                tool_catalog()
+                    .iter()
+                    .find(|metadata| metadata.name == tool.name())
+                    .is_none_or(|metadata| {
+                        capabilities.tool_status(*metadata) != CapabilityStatus::Unavailable
+                    })
+            }));
         }
         Ok(router)
     }
@@ -222,4 +263,27 @@ pub fn tool_names_for(
 ) -> Vec<&'static str> {
     let bundles = bundles.into_iter().collect::<Vec<_>>();
     catalog::selected_tool_names(access, &bundles, raw_commands)
+}
+
+/// Tool names exposed for a selection after applying known target
+/// capabilities and an availability policy.
+pub fn tool_names_for_capabilities(
+    access: AccessMode,
+    bundles: impl IntoIterator<Item = ToolBundle>,
+    raw_commands: bool,
+    capabilities: &RedisCapabilities,
+    policy: UnavailableToolPolicy,
+) -> Vec<&'static str> {
+    let mut names = tool_names_for(access, bundles, raw_commands);
+    if policy == UnavailableToolPolicy::Hide {
+        names.retain(|name| {
+            tool_catalog()
+                .iter()
+                .find(|metadata| metadata.name == *name)
+                .is_none_or(|metadata| {
+                    capabilities.tool_status(*metadata) != CapabilityStatus::Unavailable
+                })
+        });
+    }
+    names
 }

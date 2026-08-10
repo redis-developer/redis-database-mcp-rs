@@ -25,8 +25,8 @@ credentials, and target selection do not appear in the default tool schemas.
 - `RedisValue` represents RESP2 and RESP3 values without exposing redis-rs
   types. Binary strings remain bytes; maps and attributes retain entry order.
 - `RedisErrorKind` gives adapters and tool handlers stable authentication,
-  authorization, timeout, connection, request, response, server, and fallback
-  categories.
+  authorization, timeout, connection, request, response, capability, module,
+  server, and fallback categories.
 - `DirectRedis` is the standalone convenience adapter that converts these
   types to and from redis-rs 1.5 and uses its reconnecting connection manager.
 - `DirectRedisCluster` is the fixed-cluster convenience adapter. It discovers
@@ -103,14 +103,35 @@ router never advertises capabilities that its Redis target may not provide.
 Empty bundles are reserved for coherent catalog growth and do not expose
 placeholder tools.
 
-Module requirements are part of both catalog metadata and each crate-owned
-`RedisCommand`. A host adapter can inspect the requirement for routing or
-telemetry. If Redis reports an unknown command for a module-backed tool, the
-library maps it to `RedisErrorKind::ModuleUnavailable` with the capability and
-command name, but without echoing command arguments. This covers both a missing
-module and an installed version too old to provide the command. Other module
-errors, such as a missing index or malformed query, remain ordinary server
-errors.
+Every catalog entry has `ToolCapabilityRequirements`: required commands,
+optional minimum Redis and module versions, and the required module. Module
+requirements also travel on each crate-owned `RedisCommand` for host routing
+and telemetry.
+
+`RedisCapabilities` is a crate-owned, partially known snapshot. It records the
+Redis version, standalone or cluster deployment, module presence and versions,
+and command availability. Custom hosts can supply it directly without using
+redis-rs. Missing facts remain `Unknown`; this is deliberately permissive so
+existing custom executors continue to work. `DirectRedis` and
+`DirectRedisCluster` can discover a snapshot asynchronously under one bounded
+total timeout using INFO, MODULE LIST, and COMMAND INFO. Cluster INFO and module
+responses are reduced conservatively: the oldest node version and capabilities
+present on every reported node determine availability.
+
+Known incompatibilities are checked before executing a tool. The default
+`UnavailableToolPolicy::Advertise` keeps a stable command surface and returns
+`CapabilityUnavailable` or `ModuleUnavailable` with stable error codes.
+`UnavailableToolPolicy::Hide` applies the same catalog evaluation to MCP
+discovery and rejects direct calls to filtered tools. A Redis unknown-command
+response for a module-backed tool remains a redacted fallback classification
+when discovery was not available. Other module errors, such as a missing index
+or malformed query, remain ordinary server errors.
+
+Deployment requirements are catalog data too. `redis_info`, `redis_dbsize`,
+`redis_scan`, and `redis_randomkey` are currently standalone-only: the cluster
+adapter cannot yet aggregate their node-local or fan-out responses into the
+database-wide result those contracts promise. Known cluster snapshots make
+that limitation explicit instead of returning an arbitrary node's answer.
 
 Raw commands remain a separate opt-in even though their metadata belongs to the
 `raw` bundle. They require full access and one of two enabled policies:
@@ -154,6 +175,7 @@ contract layers; none is presented as a replacement for ACLs.
 ## Contract change discipline
 
 `tests/snapshots/curated_catalog.json` records each implemented tool's name,
-bundle, access tier, required module, raw opt-in, description, input schema,
-output schema, annotations, and representative structured result. Any
-deliberate public contract change updates that snapshot in the same review.
+bundle, access tier, deployment requirement, Redis/module version and command
+requirements, raw opt-in, description, input schema, output schema,
+annotations, and representative structured result. Any deliberate public
+contract change updates that snapshot in the same review.

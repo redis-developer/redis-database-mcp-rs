@@ -1,6 +1,6 @@
 //! Redis command execution abstractions.
 
-use std::{error::Error, fmt};
+use std::{error::Error, fmt, time::Duration};
 
 use async_trait::async_trait;
 use redis::{
@@ -10,7 +10,10 @@ use redis::{
     cluster_async::ClusterConnection,
 };
 
-use crate::{AccessMode, RedisModule};
+use crate::{
+    AccessMode, DEFAULT_CAPABILITY_DISCOVERY_TIMEOUT, RedisCapabilities, RedisDeployment,
+    RedisModule, capabilities::discover_capabilities,
+};
 
 /// A Redis command prepared by one of this crate's tools.
 ///
@@ -260,6 +263,7 @@ pub enum RedisErrorKind {
     Connection,
     InvalidRequest,
     InvalidResponse,
+    CapabilityUnavailable,
     ModuleUnavailable,
     Server,
     Other,
@@ -428,6 +432,21 @@ impl DirectRedis {
     pub fn from_connection_manager(connection: ConnectionManager) -> Self {
         Self { connection }
     }
+
+    /// Discover the target's Redis version, deployment mode, known modules,
+    /// and commands used by this library under a bounded total timeout.
+    pub async fn discover_capabilities(&self) -> Result<RedisCapabilities, RedisError> {
+        self.discover_capabilities_with_timeout(DEFAULT_CAPABILITY_DISCOVERY_TIMEOUT)
+            .await
+    }
+
+    /// Discover target capabilities with a caller-selected total timeout.
+    pub async fn discover_capabilities_with_timeout(
+        &self,
+        timeout: Duration,
+    ) -> Result<RedisCapabilities, RedisError> {
+        discover_capabilities(self, timeout, RedisDeployment::Standalone).await
+    }
 }
 
 #[async_trait]
@@ -485,6 +504,21 @@ impl DirectRedisCluster {
     /// redis-rs.
     pub fn from_cluster_connection(connection: ClusterConnection) -> Self {
         Self { connection }
+    }
+
+    /// Discover capabilities through the cluster adapter and mark the target
+    /// deployment as Redis Cluster.
+    pub async fn discover_capabilities(&self) -> Result<RedisCapabilities, RedisError> {
+        self.discover_capabilities_with_timeout(DEFAULT_CAPABILITY_DISCOVERY_TIMEOUT)
+            .await
+    }
+
+    /// Discover cluster capabilities with a caller-selected total timeout.
+    pub async fn discover_capabilities_with_timeout(
+        &self,
+        timeout: Duration,
+    ) -> Result<RedisCapabilities, RedisError> {
+        discover_capabilities(self, timeout, RedisDeployment::Cluster).await
     }
 }
 

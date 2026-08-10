@@ -1,6 +1,6 @@
 use std::time::Duration;
 
-use redis_mcp::{AccessMode, DirectRedis, RedisMcp, ToolBundle};
+use redis_mcp::{AccessMode, CapabilityStatus, DirectRedis, RedisMcp, RedisModule, ToolBundle};
 use tower_mcp::{
     CallToolResult,
     client::{ChannelTransport, McpClient},
@@ -106,6 +106,34 @@ async fn stack_client(url: &str) -> McpClient {
         .await
         .expect("initialize Stack MCP client");
     client
+}
+
+#[tokio::test]
+async fn direct_adapter_discovers_stack_modules_and_versions() {
+    let Some(redis) = TestRedisStack::start().await else {
+        return;
+    };
+    let executor = DirectRedis::connect(&redis.url)
+        .await
+        .expect("connect for Stack capability discovery");
+    let capabilities = executor
+        .discover_capabilities_with_timeout(Duration::from_secs(2))
+        .await
+        .expect("discover Stack capabilities");
+
+    for module in [RedisModule::Json, RedisModule::Search] {
+        let capability = capabilities.module(module);
+        assert_eq!(capability.status(), CapabilityStatus::Available);
+        assert!(capability.version().is_some(), "{module} version");
+    }
+    assert_eq!(
+        capabilities.command("JSON.GET"),
+        CapabilityStatus::Available
+    );
+    assert_eq!(
+        capabilities.command("FT.SEARCH"),
+        CapabilityStatus::Available
+    );
 }
 
 async fn call(client: &McpClient, tool: &str, input: serde_json::Value) -> CallToolResult {

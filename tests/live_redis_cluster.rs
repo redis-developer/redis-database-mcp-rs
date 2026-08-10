@@ -3,7 +3,8 @@
 use std::{collections::BTreeMap, io, net::TcpListener};
 
 use redis_mcp::{
-    AccessMode, DirectRedis, DirectRedisCluster, RawCommandPolicy, RedisExecutor, RedisMcp,
+    AccessMode, CapabilityStatus, DirectRedis, DirectRedisCluster, RawCommandPolicy,
+    RedisDeployment, RedisExecutor, RedisMcp,
 };
 use redis_server_wrapper::{Error as RedisServerError, RedisCluster, RedisClusterHandle};
 use tower_mcp::client::{ChannelTransport, McpClient, StdioClientTransport};
@@ -274,12 +275,17 @@ async fn cluster_routes_curated_and_raw_tools_across_three_masters() {
         let moved = serde_json::to_string(&moved).expect("serialize MOVED result");
         assert!(moved.contains("MOVED"), "{moved}");
 
-        let routed = router_client(
-            DirectRedisCluster::connect(&seed_urls)
-                .await
-                .expect("connect cluster-aware adapter"),
-        )
-        .await;
+        let cluster_executor = DirectRedisCluster::connect(&seed_urls)
+            .await
+            .expect("connect cluster-aware adapter");
+        let capabilities = cluster_executor
+            .discover_capabilities()
+            .await
+            .expect("discover cluster capabilities");
+        assert!(capabilities.redis_version().is_some());
+        assert_eq!(capabilities.deployment(), RedisDeployment::Cluster);
+        assert_eq!(capabilities.command("GET"), CapabilityStatus::Available);
+        let routed = router_client(cluster_executor).await;
         let entries = keys
             .iter()
             .enumerate()

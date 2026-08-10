@@ -2,7 +2,7 @@
 
 use std::fmt;
 
-use crate::AccessMode;
+use crate::{AccessMode, RedisVersion};
 
 /// Dominant strategy a tool uses to keep successful MCP output bounded.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -63,6 +63,58 @@ impl RedisModule {
 impl fmt::Display for RedisModule {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         formatter.write_str(self.display_name())
+    }
+}
+
+/// Redis capabilities that must be present for a catalog tool to work.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ToolCapabilityRequirements {
+    minimum_redis_version: Option<RedisVersion>,
+    required_module: Option<RedisModule>,
+    minimum_module_version: Option<RedisVersion>,
+    required_commands: &'static [&'static str],
+    deployment: ToolDeploymentRequirement,
+}
+
+impl ToolCapabilityRequirements {
+    pub const fn minimum_redis_version(self) -> Option<RedisVersion> {
+        self.minimum_redis_version
+    }
+
+    pub const fn required_module(self) -> Option<RedisModule> {
+        self.required_module
+    }
+
+    pub const fn minimum_module_version(self) -> Option<RedisVersion> {
+        self.minimum_module_version
+    }
+
+    pub const fn required_commands(self) -> &'static [&'static str] {
+        self.required_commands
+    }
+
+    pub const fn deployment(self) -> ToolDeploymentRequirement {
+        self.deployment
+    }
+}
+
+/// Target deployment modes on which a tool has correct library semantics.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+#[non_exhaustive]
+pub enum ToolDeploymentRequirement {
+    #[default]
+    Any,
+    Standalone,
+    Cluster,
+}
+
+impl ToolDeploymentRequirement {
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Any => "any",
+            Self::Standalone => "standalone",
+            Self::Cluster => "cluster",
+        }
     }
 }
 
@@ -143,6 +195,80 @@ impl ToolMetadata {
             ToolBundle::Json => Some(RedisModule::Json),
             ToolBundle::Search => Some(RedisModule::Search),
             _ => None,
+        }
+    }
+
+    /// Version, module, and command requirements used for discovery-aware
+    /// catalog filtering and stable preflight errors.
+    pub fn capability_requirements(self) -> ToolCapabilityRequirements {
+        let minimum_redis_version = match self.name {
+            "redis_memory_usage" | "redis_unlink" => Some(RedisVersion::new(4, 0, 0)),
+            _ => None,
+        };
+        let minimum_module_version = match self.name {
+            "redis_ft_list" => Some(RedisVersion::new(2, 0, 0)),
+            _ => None,
+        };
+        let required_commands = match self.name {
+            "redis_ping" => &["PING"] as &'static [&'static str],
+            "redis_info" => &["INFO"],
+            "redis_dbsize" => &["DBSIZE"],
+            "redis_scan" => &["SCAN"],
+            "redis_get" => &["GET"],
+            "redis_type" => &["TYPE"],
+            "redis_ttl" => &["TTL"],
+            "redis_exists" => &["EXISTS"],
+            "redis_mget" => &["MGET"],
+            "redis_strlen" => &["STRLEN"],
+            "redis_memory_usage" => &["MEMORY"],
+            "redis_randomkey" => &["RANDOMKEY"],
+            "redis_hget" => &["HGET"],
+            "redis_hgetall" => &["HGETALL"],
+            "redis_hscan" => &["HSCAN"],
+            "redis_lrange" => &["LRANGE"],
+            "redis_smembers" => &["SMEMBERS"],
+            "redis_sscan" => &["SSCAN"],
+            "redis_zrange" => &["ZRANGE"],
+            "redis_zscan" => &["ZSCAN"],
+            "redis_json_get" => &["JSON.GET"],
+            "redis_json_type" => &["JSON.TYPE"],
+            "redis_ft_list" => &["FT._LIST"],
+            "redis_ft_info" => &["FT.INFO"],
+            "redis_ft_search" => &["FT.SEARCH"],
+            "redis_set" => &["SET"],
+            "redis_expire" => &["EXPIRE"],
+            "redis_persist" => &["PERSIST"],
+            "redis_mset" => &["MSET"],
+            "redis_incr" => &["INCR"],
+            "redis_append" => &["APPEND"],
+            "redis_hset" => &["HSET"],
+            "redis_lpush" => &["LPUSH"],
+            "redis_sadd" => &["SADD"],
+            "redis_zadd" => &["ZADD"],
+            "redis_json_set" => &["JSON.SET"],
+            "redis_ft_create" => &["FT.CREATE"],
+            "redis_del" => &["DEL"],
+            "redis_unlink" => &["UNLINK"],
+            "redis_json_del" => &["JSON.DEL"],
+            "redis_ft_dropindex" => &["FT.DROPINDEX"],
+            "redis_command" => &[],
+            _ => &[],
+        };
+        let deployment = match self.name {
+            // redis-rs routes these no-key or cursor commands to one node, or
+            // returns a fan-out shape the tool does not aggregate. Advertising
+            // database-wide semantics on Cluster would therefore mislead.
+            "redis_info" | "redis_dbsize" | "redis_scan" | "redis_randomkey" => {
+                ToolDeploymentRequirement::Standalone
+            }
+            _ => ToolDeploymentRequirement::Any,
+        };
+        ToolCapabilityRequirements {
+            minimum_redis_version,
+            required_module: self.required_module(),
+            minimum_module_version,
+            required_commands,
+            deployment,
         }
     }
 

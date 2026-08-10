@@ -22,8 +22,8 @@ use tower_mcp::{
 };
 
 use crate::{
-    AccessMode, OutputBudget, RawCommandPolicy, RedisCommand, RedisExecutor, RedisModule,
-    RedisValue, ToolBundle,
+    AccessMode, OutputBudget, RawCommandPolicy, RedisCapabilities, RedisCommand, RedisExecutor,
+    RedisModule, RedisValue, ToolBundle, tool_catalog,
 };
 
 pub(crate) const RAW_TOOL_NAME: &str = "redis_command";
@@ -37,6 +37,7 @@ pub(crate) struct ToolState {
     command_timeout: Duration,
     raw_command_policy: RawCommandPolicy,
     output_budget: OutputBudget,
+    capabilities: Arc<RedisCapabilities>,
 }
 
 impl ToolState {
@@ -46,6 +47,7 @@ impl ToolState {
         command_timeout: Duration,
         raw_command_policy: RawCommandPolicy,
         output_budget: OutputBudget,
+        capabilities: Arc<RedisCapabilities>,
     ) -> Self {
         Self {
             executor,
@@ -53,6 +55,7 @@ impl ToolState {
             command_timeout,
             raw_command_policy,
             output_budget,
+            capabilities,
         }
     }
 
@@ -124,6 +127,16 @@ impl ToolState {
     }
 
     async fn execute(&self, command: RedisCommand, context: &str) -> tower_mcp::Result<RedisValue> {
+        if let Some(metadata) = tool_catalog()
+            .iter()
+            .find(|metadata| metadata.name == command.tool_name())
+            && let Err(error) = self.capabilities.check_tool(*metadata)
+        {
+            return Err(tower_mcp::Error::tool(format!(
+                "{context} [{:?}]: {error}",
+                error.kind()
+            )));
+        }
         let required_module = command.required_module();
         let command_name = command.name().to_string();
         match tokio::time::timeout(self.command_timeout, self.executor.execute(command)).await {

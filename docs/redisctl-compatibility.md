@@ -91,9 +91,10 @@ The optional module-backed overlap adds `redis_json_get`, `redis_json_type`,
   TEXT, TAG, NUMERIC, and GEO fields. VECTOR configuration and redisctl's
   `if_exists=drop` shortcut remain out of scope because they need a richer
   schema and clearer destructive-access semantics.
-- Module requirements travel in catalog metadata and `RedisCommand`. Unknown
-  module commands become the stable `ModuleUnavailable` error category without
-  exposing command arguments.
+- Redis and module minimum versions plus required commands travel in catalog
+  metadata. Module requirements also travel in `RedisCommand`. Hosts can supply
+  a crate-owned capability snapshot or use bounded direct-adapter discovery,
+  then choose stable advertised errors or hide known-incompatible tools.
 
 ## Bundle mapping direction
 

@@ -4,7 +4,8 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 use redis_mcp::{
-    AccessMode, RedisCommand, RedisError, RedisErrorKind, RedisExecutor, RedisMcp, RedisValue,
+    AccessMode, RedisCapabilities, RedisCommand, RedisDeployment, RedisError, RedisErrorKind,
+    RedisExecutor, RedisMcp, RedisValue, RedisVersion,
 };
 
 /// A host-owned connection abstraction. In redisctl this layer can resolve a
@@ -67,8 +68,15 @@ fn main() {
         selected_profile: Arc::from("production-readonly"),
         connection: Arc::new(ExampleConnection),
     };
+    // This authoritative information is host-owned and uses only redis-mcp
+    // types. Omitted facts remain unknown rather than unavailable.
+    let capabilities = RedisCapabilities::unknown()
+        .with_redis_version(RedisVersion::new(7, 4, 0))
+        .with_deployment(RedisDeployment::Standalone)
+        .with_command_inventory(["PING"]);
     let router = RedisMcp::builder(executor)
         .access(AccessMode::ReadOnly)
+        .capabilities(capabilities)
         .build();
 
     // A host can serve or merge the Tower-MCP router using its chosen transport.

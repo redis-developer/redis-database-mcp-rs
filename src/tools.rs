@@ -2,6 +2,8 @@
 
 mod data_structures;
 mod essentials;
+mod json_tools;
+mod search;
 
 use std::{
     collections::{BTreeMap, BTreeSet},
@@ -19,7 +21,9 @@ use tower_mcp::{
     extract::{Json, State},
 };
 
-use crate::{AccessMode, RawCommandPolicy, RedisCommand, RedisExecutor, RedisValue, ToolBundle};
+use crate::{
+    AccessMode, RawCommandPolicy, RedisCommand, RedisExecutor, RedisModule, RedisValue, ToolBundle,
+};
 
 pub(crate) const RAW_TOOL_NAME: &str = "redis_command";
 
@@ -64,12 +68,18 @@ impl ToolState {
     }
 
     async fn execute(&self, command: RedisCommand, context: &str) -> tower_mcp::Result<RedisValue> {
+        let required_module = command.required_module();
+        let command_name = command.name().to_string();
         match tokio::time::timeout(self.command_timeout, self.executor.execute(command)).await {
             Ok(Ok(value)) => Ok(value),
-            Ok(Err(error)) => Err(tower_mcp::Error::tool(format!(
-                "{context} [{:?}]: {error}",
-                error.kind()
-            ))),
+            Ok(Err(error)) => {
+                let error =
+                    error.classify_module_requirement(required_module, command_name.as_str());
+                Err(tower_mcp::Error::tool(format!(
+                    "{context} [{:?}]: {error}",
+                    error.kind()
+                )))
+            }
             Err(_) => Err(tower_mcp::Error::tool(format!(
                 "{context}: Redis command timed out after {} ms",
                 self.command_timeout.as_millis()
@@ -97,6 +107,17 @@ fn command(
     RedisCommand::new(tool_name, required_access, command_name)
 }
 
+fn module_command(
+    tool_name: &'static str,
+    required_access: AccessMode,
+    required_module: RedisModule,
+    command_name: &'static str,
+) -> RedisCommand {
+    let mut command = RedisCommand::new(tool_name, required_access, command_name);
+    command.require_module(required_module);
+    command
+}
+
 pub(crate) fn add_read_only_tools(
     mut router: McpRouter,
     state: Arc<ToolState>,
@@ -114,6 +135,12 @@ pub(crate) fn add_read_only_tools(
     if bundles.contains(&ToolBundle::DataStructures) {
         router = data_structures::add_read_tools(router, state.clone());
     }
+    if bundles.contains(&ToolBundle::Json) {
+        router = json_tools::add_read_tools(router, state.clone());
+    }
+    if bundles.contains(&ToolBundle::Search) {
+        router = search::add_read_tools(router, state.clone());
+    }
     if bundles.contains(&ToolBundle::Diagnostics) {
         router = router.tool(info_tool(state));
     }
@@ -130,21 +157,33 @@ pub(crate) fn add_write_tools(
         router = essentials::add_write_tools(router, state.clone());
     }
     if bundles.contains(&ToolBundle::DataStructures) {
-        router = data_structures::add_write_tools(router, state);
+        router = data_structures::add_write_tools(router, state.clone());
+    }
+    if bundles.contains(&ToolBundle::Json) {
+        router = json_tools::add_write_tools(router, state.clone());
+    }
+    if bundles.contains(&ToolBundle::Search) {
+        router = search::add_write_tools(router, state);
     }
     router
 }
 
 pub(crate) fn add_destructive_tools(
-    router: McpRouter,
+    mut router: McpRouter,
     state: Arc<ToolState>,
     bundles: &BTreeSet<ToolBundle>,
 ) -> McpRouter {
     if bundles.contains(&ToolBundle::Essentials) {
-        essentials::add_destructive_tools(router.tool(del_tool(state.clone())), state)
-    } else {
-        router
+        router =
+            essentials::add_destructive_tools(router.tool(del_tool(state.clone())), state.clone());
     }
+    if bundles.contains(&ToolBundle::Json) {
+        router = json_tools::add_destructive_tools(router, state.clone());
+    }
+    if bundles.contains(&ToolBundle::Search) {
+        router = search::add_destructive_tools(router, state);
+    }
+    router
 }
 
 pub(crate) fn add_raw_tool(router: McpRouter, state: Arc<ToolState>) -> McpRouter {

@@ -24,7 +24,11 @@ The standalone default exposes 29 broadly useful tools:
   `redis_lrange`, `redis_lpush`, `redis_smembers`, `redis_sadd`,
   `redis_zrange`, `redis_zadd`
 - diagnostics: `redis_info`
-- explicit full-access escape hatch: redis_command
+- optional RedisJSON lifecycle: `redis_json_get`, `redis_json_type`,
+  `redis_json_set`, `redis_json_del`
+- optional Search lifecycle: `redis_ft_list`, `redis_ft_info`,
+  `redis_ft_search`, `redis_ft_create`, `redis_ft_dropindex`
+- explicit full-access escape hatch: `redis_command`
 
 Every successful tool result includes MCP structuredContent and an output
 schema. A fixed Redis target is configured once by the server; arbitrary URLs
@@ -66,6 +70,14 @@ script, and indefinite-blocking forms:
 
     redis-mcp-server --access full --raw-unrestricted --stdio
 
+RedisJSON and Search are explicit additions to the curated defaults. The
+configured Redis target must provide the corresponding capability:
+
+    redis-mcp-server --access full \
+      --enable-bundle json \
+      --enable-bundle search \
+      --stdio
+
 ## Embed the router
 
     use std::time::Duration;
@@ -87,14 +99,15 @@ script, and indefinite-blocking forms:
 Hosts with their own connection lifecycle implement `RedisExecutor` using
 crate-owned `RedisCommand`, `RedisValue`, and `RedisError` types. They do not
 need to share this crate's redis-rs dependency line. Commands include the
-originating tool and required access level for host telemetry and audit
-records. See [the custom executor example](examples/custom_executor.rs).
+originating tool, required access level, and any required Redis module for host
+telemetry, capability routing, and audit records. See
+[the custom executor example](examples/custom_executor.rs).
 
 The curated default enables the `essentials`, `data_structures`, and
-`diagnostics` bundles. The public taxonomy also reserves `search`, `admin`,
-`bulk`, and `raw` for deliberate composition as the catalog grows. Raw
-execution is always controlled by its separate policy rather than bundle
-selection alone.
+`diagnostics` bundles. The module-backed `json` and `search` bundles are
+available only through deliberate composition; `admin`, `bulk`, and `raw` are
+reserved for further catalog growth. Raw execution is always controlled by its
+separate policy rather than bundle selection alone.
 
 See [the architecture decisions](docs/architecture.md) for the intentional
 Tower-MCP boundary and fixed-target model, and the
@@ -110,11 +123,18 @@ when either binary is unavailable, the live cases print an explicit skip reason.
 Set `REDIS_URL` to test an already-running target instead—the external target
 always takes precedence and is never stopped by the suite.
 
+The Redis Stack lifecycle test similarly uses `REDIS_STACK_URL` when supplied.
+Otherwise, the wrapper auto-detects a local Redis Stack installation and loads
+its Search and RedisJSON modules into an isolated server. A plain Redis target
+is also exercised to keep missing-module errors stable and actionable.
+
 CI runs the complete suite on Redis 8.8 and the live router/stdio contract on
 every currently supported Redis Open Source series: 6.2, 7.2, 7.4, 8.0, 8.2,
 8.4, 8.6, and 8.8. Live tests exercise both RESP2 and RESP3, the 29-tool curated
 catalog, binary and nil responses, ACL failures, bounded connection loss and
-recovery, and the real `redis-mcp-server` stdio process. The version list
+recovery, and the real `redis-mcp-server` stdio process. A separate job pins the
+official `redis/redis-stack-server:7.4.0-v8` image and runs the JSON/Search
+lifecycle. The version list
 follows the [Redis Open Source version-management table](https://redis.io/docs/latest/operate/oss_and_stack/install/version-mgmt/).
 
 ## Non-goals

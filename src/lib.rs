@@ -16,7 +16,7 @@ mod tools;
 use std::{collections::BTreeSet, sync::Arc, time::Duration};
 
 pub use access::AccessMode;
-pub use catalog::{ToolBundle, ToolMetadata, tool_catalog};
+pub use catalog::{RedisModule, ToolBundle, ToolMetadata, tool_catalog};
 pub use executor::{
     DirectRedis, RedisCommand, RedisError, RedisErrorKind, RedisExecutor, RedisValue,
 };

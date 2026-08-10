@@ -52,6 +52,7 @@
         "title": "Append Redis String"
       },
       "required_access": "read_write",
+      "required_module": null,
       "requires_raw_opt_in": false
     },
     {
@@ -103,6 +104,7 @@
         "title": "Run Redis Command"
       },
       "required_access": "full",
+      "required_module": null,
       "requires_raw_opt_in": true
     },
     {
@@ -139,6 +141,7 @@
         "title": "Redis Database Size"
       },
       "required_access": "read_only",
+      "required_module": null,
       "requires_raw_opt_in": false
     },
     {
@@ -195,6 +198,7 @@
         "title": "Delete Redis Keys"
       },
       "required_access": "full",
+      "required_module": null,
       "requires_raw_opt_in": false
     },
     {
@@ -257,6 +261,7 @@
         "title": "Check Redis Keys"
       },
       "required_access": "read_only",
+      "required_module": null,
       "requires_raw_opt_in": false
     },
     {
@@ -318,6 +323,414 @@
         "title": "Expire Redis Key"
       },
       "required_access": "read_write",
+      "required_module": null,
+      "requires_raw_opt_in": false
+    },
+    {
+      "bundle": "search",
+      "name": "redis_ft_create",
+      "protocol": {
+        "annotations": {
+          "destructiveHint": false
+        },
+        "description": "Create a HASH or JSON search index with TEXT, TAG, NUMERIC, or GEO fields.",
+        "inputSchema": {
+          "$defs": {
+            "SearchField": {
+              "additionalProperties": false,
+              "properties": {
+                "alias": {
+                  "default": null,
+                  "description": "Query-facing field alias, strongly recommended for JSON indexes.",
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "field_type": {
+                  "description": "TEXT, TAG, NUMERIC, or GEO.",
+                  "type": "string"
+                },
+                "name": {
+                  "description": "Hash field name or JSONPath expression.",
+                  "type": "string"
+                },
+                "noindex": {
+                  "default": false,
+                  "description": "Store the field without indexing it.",
+                  "type": "boolean"
+                },
+                "nostem": {
+                  "default": false,
+                  "description": "Disable stemming for a TEXT field.",
+                  "type": "boolean"
+                },
+                "sortable": {
+                  "default": false,
+                  "description": "Make the field available to SORTBY.",
+                  "type": "boolean"
+                }
+              },
+              "required": [
+                "name",
+                "field_type"
+              ],
+              "type": "object"
+            }
+          },
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "index": {
+              "description": "Search index name.",
+              "type": "string"
+            },
+            "on": {
+              "default": null,
+              "description": "Data model to index: HASH (default) or JSON.",
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "prefixes": {
+              "default": [],
+              "description": "Key prefixes to include. Empty means Redis's default prefix.",
+              "items": {
+                "type": "string"
+              },
+              "maxItems": 100,
+              "type": "array"
+            },
+            "schema": {
+              "description": "Index field definitions, bounded to 100 fields.",
+              "items": {
+                "$ref": "#/$defs/SearchField"
+              },
+              "maxItems": 100,
+              "minItems": 1,
+              "type": "array"
+            }
+          },
+          "required": [
+            "index",
+            "schema"
+          ],
+          "title": "FtCreateInput",
+          "type": "object"
+        },
+        "name": "redis_ft_create",
+        "outputSchema": {
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "created": {
+              "type": "boolean"
+            },
+            "fields": {
+              "format": "uint",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "index": {
+              "type": "string"
+            },
+            "on": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "index",
+            "on",
+            "fields",
+            "created"
+          ],
+          "title": "FtCreateOutput",
+          "type": "object"
+        },
+        "title": "Create Redis Search Index"
+      },
+      "required_access": "read_write",
+      "required_module": "search",
+      "requires_raw_opt_in": false
+    },
+    {
+      "bundle": "search",
+      "name": "redis_ft_dropindex",
+      "protocol": {
+        "annotations": {},
+        "description": "Drop a search index. Optionally delete indexed documents too; requires full access.",
+        "inputSchema": {
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "delete_docs": {
+              "default": false,
+              "description": "Also delete all documents indexed by this index.",
+              "type": "boolean"
+            },
+            "index": {
+              "description": "Search index name.",
+              "type": "string"
+            }
+          },
+          "required": [
+            "index"
+          ],
+          "title": "FtDropIndexInput",
+          "type": "object"
+        },
+        "name": "redis_ft_dropindex",
+        "outputSchema": {
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "documents_deleted": {
+              "type": "boolean"
+            },
+            "dropped": {
+              "type": "boolean"
+            },
+            "index": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "index",
+            "dropped",
+            "documents_deleted"
+          ],
+          "title": "FtDropIndexOutput",
+          "type": "object"
+        },
+        "title": "Drop Redis Search Index"
+      },
+      "required_access": "full",
+      "required_module": "search",
+      "requires_raw_opt_in": false
+    },
+    {
+      "bundle": "search",
+      "name": "redis_ft_info",
+      "protocol": {
+        "annotations": {
+          "destructiveHint": false,
+          "idempotentHint": true,
+          "readOnlyHint": true
+        },
+        "description": "Read index schema, document counts, and indexing status. Requires the Search capability.",
+        "inputSchema": {
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "index": {
+              "description": "Search index name.",
+              "type": "string"
+            }
+          },
+          "required": [
+            "index"
+          ],
+          "title": "IndexInput",
+          "type": "object"
+        },
+        "name": "redis_ft_info",
+        "outputSchema": {
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "attributes": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "index": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "index",
+            "attributes"
+          ],
+          "title": "FtInfoOutput",
+          "type": "object"
+        },
+        "title": "Inspect Redis Search Index"
+      },
+      "required_access": "read_only",
+      "required_module": "search",
+      "requires_raw_opt_in": false
+    },
+    {
+      "bundle": "search",
+      "name": "redis_ft_list",
+      "protocol": {
+        "annotations": {
+          "destructiveHint": false,
+          "idempotentHint": true,
+          "readOnlyHint": true
+        },
+        "description": "List Redis Query Engine indexes. Requires the Search capability.",
+        "inputSchema": {
+          "additionalProperties": false,
+          "type": "object"
+        },
+        "name": "redis_ft_list",
+        "outputSchema": {
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "count": {
+              "format": "uint",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "indexes": {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            }
+          },
+          "required": [
+            "count",
+            "indexes"
+          ],
+          "title": "FtListOutput",
+          "type": "object"
+        },
+        "title": "List Redis Search Indexes"
+      },
+      "required_access": "read_only",
+      "required_module": "search",
+      "requires_raw_opt_in": false
+    },
+    {
+      "bundle": "search",
+      "name": "redis_ft_search",
+      "protocol": {
+        "annotations": {
+          "destructiveHint": false,
+          "idempotentHint": true,
+          "readOnlyHint": true
+        },
+        "description": "Run a bounded Redis Query Engine search. Binary response values retain explicit encodings.",
+        "inputSchema": {
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "index": {
+              "description": "Search index name.",
+              "type": "string"
+            },
+            "limit_num": {
+              "default": null,
+              "description": "Maximum results to return, bounded to 100 per call.",
+              "format": "uint64",
+              "maximum": 100,
+              "minimum": 0,
+              "type": [
+                "integer",
+                "null"
+              ]
+            },
+            "limit_offset": {
+              "default": null,
+              "description": "Result offset. Supplying either limit field emits a LIMIT clause.",
+              "format": "uint64",
+              "minimum": 0,
+              "type": [
+                "integer",
+                "null"
+              ]
+            },
+            "nocontent": {
+              "default": false,
+              "description": "Return document identifiers without fields.",
+              "type": "boolean"
+            },
+            "query": {
+              "description": "Query expression. Use `*` to match all indexed documents.",
+              "type": "string"
+            },
+            "return_fields": {
+              "default": null,
+              "description": "Indexed fields to return.",
+              "items": {
+                "type": "string"
+              },
+              "maxItems": 100,
+              "type": [
+                "array",
+                "null"
+              ]
+            },
+            "sortby": {
+              "default": null,
+              "description": "Sortable field name.",
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "sortby_order": {
+              "default": null,
+              "description": "Sort order, ASC or DESC.",
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "verbatim": {
+              "default": false,
+              "description": "Disable stemming for this query.",
+              "type": "boolean"
+            },
+            "withscores": {
+              "default": false,
+              "description": "Include match scores in the raw response sequence.",
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "index",
+            "query"
+          ],
+          "title": "FtSearchInput",
+          "type": "object"
+        },
+        "name": "redis_ft_search",
+        "outputSchema": {
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "index": {
+              "type": "string"
+            },
+            "query": {
+              "type": "string"
+            },
+            "response": true,
+            "total": {
+              "format": "uint64",
+              "minimum": 0,
+              "type": [
+                "integer",
+                "null"
+              ]
+            }
+          },
+          "required": [
+            "index",
+            "query",
+            "response"
+          ],
+          "title": "FtSearchOutput",
+          "type": "object"
+        },
+        "title": "Search Redis Index"
+      },
+      "required_access": "read_only",
+      "required_module": "search",
       "requires_raw_opt_in": false
     },
     {
@@ -392,6 +805,7 @@
         "title": "Get Redis String"
       },
       "required_access": "read_only",
+      "required_module": null,
       "requires_raw_opt_in": false
     },
     {
@@ -475,6 +889,7 @@
         "title": "Get Redis Hash Field"
       },
       "required_access": "read_only",
+      "required_module": null,
       "requires_raw_opt_in": false
     },
     {
@@ -570,6 +985,7 @@
         "title": "Get Redis Hash"
       },
       "required_access": "read_only",
+      "required_module": null,
       "requires_raw_opt_in": false
     },
     {
@@ -634,6 +1050,7 @@
         "title": "Set Redis Hash Fields"
       },
       "required_access": "read_write",
+      "required_module": null,
       "requires_raw_opt_in": false
     },
     {
@@ -682,6 +1099,7 @@
         "title": "Increment Redis Integer"
       },
       "required_access": "read_write",
+      "required_module": null,
       "requires_raw_opt_in": false
     },
     {
@@ -741,6 +1159,264 @@
         "title": "Redis Server Info"
       },
       "required_access": "read_only",
+      "required_module": null,
+      "requires_raw_opt_in": false
+    },
+    {
+      "bundle": "json",
+      "name": "redis_json_del",
+      "protocol": {
+        "annotations": {
+          "idempotentHint": true
+        },
+        "description": "Delete JSON values at a path. Deleting the root removes the key and requires full access.",
+        "inputSchema": {
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "key": {
+              "description": "Redis key containing the JSON document.",
+              "type": "string"
+            },
+            "path": {
+              "default": "$",
+              "description": "JSONPath expression. Defaults to the document root.",
+              "type": "string"
+            }
+          },
+          "required": [
+            "key"
+          ],
+          "title": "JsonPathInput",
+          "type": "object"
+        },
+        "name": "redis_json_del",
+        "outputSchema": {
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "deleted": {
+              "format": "uint64",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "key": {
+              "type": "string"
+            },
+            "path": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "key",
+            "path",
+            "deleted"
+          ],
+          "title": "JsonDelOutput",
+          "type": "object"
+        },
+        "title": "Delete Redis JSON"
+      },
+      "required_access": "full",
+      "required_module": "redis_json",
+      "requires_raw_opt_in": false
+    },
+    {
+      "bundle": "json",
+      "name": "redis_json_get",
+      "protocol": {
+        "annotations": {
+          "destructiveHint": false,
+          "idempotentHint": true,
+          "readOnlyHint": true
+        },
+        "description": "Read the JSON value at a path. Requires RedisJSON; the default path is `$`.",
+        "inputSchema": {
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "key": {
+              "description": "Redis key containing the JSON document.",
+              "type": "string"
+            },
+            "path": {
+              "default": "$",
+              "description": "JSONPath expression. Defaults to the document root.",
+              "type": "string"
+            }
+          },
+          "required": [
+            "key"
+          ],
+          "title": "JsonPathInput",
+          "type": "object"
+        },
+        "name": "redis_json_get",
+        "outputSchema": {
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "exists": {
+              "type": "boolean"
+            },
+            "key": {
+              "type": "string"
+            },
+            "path": {
+              "type": "string"
+            },
+            "value": true
+          },
+          "required": [
+            "key",
+            "path",
+            "exists"
+          ],
+          "title": "JsonGetOutput",
+          "type": "object"
+        },
+        "title": "Get Redis JSON"
+      },
+      "required_access": "read_only",
+      "required_module": "redis_json",
+      "requires_raw_opt_in": false
+    },
+    {
+      "bundle": "json",
+      "name": "redis_json_set",
+      "protocol": {
+        "annotations": {
+          "destructiveHint": false,
+          "idempotentHint": true
+        },
+        "description": "Set a structured JSON value at a path. Requires RedisJSON; NX and XX are optional conditions.",
+        "inputSchema": {
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "key": {
+              "description": "Redis key to create or update.",
+              "type": "string"
+            },
+            "nx": {
+              "default": false,
+              "description": "Store only when the key or path does not exist.",
+              "type": "boolean"
+            },
+            "path": {
+              "default": "$",
+              "description": "JSONPath expression. Defaults to the document root.",
+              "type": "string"
+            },
+            "value": {
+              "description": "JSON value. Pass structured JSON directly rather than a JSON-encoded string."
+            },
+            "xx": {
+              "default": false,
+              "description": "Store only when the key or path already exists.",
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "key",
+            "value"
+          ],
+          "title": "JsonSetInput",
+          "type": "object"
+        },
+        "name": "redis_json_set",
+        "outputSchema": {
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "key": {
+              "type": "string"
+            },
+            "path": {
+              "type": "string"
+            },
+            "stored": {
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "key",
+            "path",
+            "stored"
+          ],
+          "title": "JsonSetOutput",
+          "type": "object"
+        },
+        "title": "Set Redis JSON"
+      },
+      "required_access": "read_write",
+      "required_module": "redis_json",
+      "requires_raw_opt_in": false
+    },
+    {
+      "bundle": "json",
+      "name": "redis_json_type",
+      "protocol": {
+        "annotations": {
+          "destructiveHint": false,
+          "idempotentHint": true,
+          "readOnlyHint": true
+        },
+        "description": "Read JSON value types at a path. Requires RedisJSON; JSONPath may match multiple values.",
+        "inputSchema": {
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "key": {
+              "description": "Redis key containing the JSON document.",
+              "type": "string"
+            },
+            "path": {
+              "default": "$",
+              "description": "JSONPath expression. Defaults to the document root.",
+              "type": "string"
+            }
+          },
+          "required": [
+            "key"
+          ],
+          "title": "JsonPathInput",
+          "type": "object"
+        },
+        "name": "redis_json_type",
+        "outputSchema": {
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "exists": {
+              "type": "boolean"
+            },
+            "key": {
+              "type": "string"
+            },
+            "path": {
+              "type": "string"
+            },
+            "types": {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            }
+          },
+          "required": [
+            "key",
+            "path",
+            "exists",
+            "types"
+          ],
+          "title": "JsonTypeOutput",
+          "type": "object"
+        },
+        "title": "Get Redis JSON Type"
+      },
+      "required_access": "read_only",
+      "required_module": "redis_json",
       "requires_raw_opt_in": false
     },
     {
@@ -806,6 +1482,7 @@
         "title": "Push Redis List Elements"
       },
       "required_access": "read_write",
+      "required_module": null,
       "requires_raw_opt_in": false
     },
     {
@@ -911,6 +1588,7 @@
         "title": "Read Redis List Range"
       },
       "required_access": "read_only",
+      "required_module": null,
       "requires_raw_opt_in": false
     },
     {
@@ -968,6 +1646,7 @@
         "title": "Redis Key Memory Usage"
       },
       "required_access": "read_only",
+      "required_module": null,
       "requires_raw_opt_in": false
     },
     {
@@ -1068,6 +1747,7 @@
         "title": "Get Multiple Redis Strings"
       },
       "required_access": "read_only",
+      "required_module": null,
       "requires_raw_opt_in": false
     },
     {
@@ -1139,6 +1819,7 @@
         "title": "Set Multiple Redis Strings"
       },
       "required_access": "read_write",
+      "required_module": null,
       "requires_raw_opt_in": false
     },
     {
@@ -1187,6 +1868,7 @@
         "title": "Persist Redis Key"
       },
       "required_access": "read_write",
+      "required_module": null,
       "requires_raw_opt_in": false
     },
     {
@@ -1226,6 +1908,7 @@
         "title": "Ping Redis"
       },
       "required_access": "read_only",
+      "required_module": null,
       "requires_raw_opt_in": false
     },
     {
@@ -1279,6 +1962,7 @@
         "title": "Random Redis Key"
       },
       "required_access": "read_only",
+      "required_module": null,
       "requires_raw_opt_in": false
     },
     {
@@ -1345,6 +2029,7 @@
         "title": "Add Redis Set Members"
       },
       "required_access": "read_write",
+      "required_module": null,
       "requires_raw_opt_in": false
     },
     {
@@ -1426,6 +2111,7 @@
         "title": "Scan Redis Keys"
       },
       "required_access": "read_only",
+      "required_module": null,
       "requires_raw_opt_in": false
     },
     {
@@ -1497,6 +2183,7 @@
         "title": "Set Redis String"
       },
       "required_access": "read_write",
+      "required_module": null,
       "requires_raw_opt_in": false
     },
     {
@@ -1584,6 +2271,7 @@
         "title": "Read Redis Set"
       },
       "required_access": "read_only",
+      "required_module": null,
       "requires_raw_opt_in": false
     },
     {
@@ -1635,6 +2323,7 @@
         "title": "Redis String Length"
       },
       "required_access": "read_only",
+      "required_module": null,
       "requires_raw_opt_in": false
     },
     {
@@ -1693,6 +2382,7 @@
         "title": "Redis Key TTL"
       },
       "required_access": "read_only",
+      "required_module": null,
       "requires_raw_opt_in": false
     },
     {
@@ -1742,6 +2432,7 @@
         "title": "Redis Key Type"
       },
       "required_access": "read_only",
+      "required_module": null,
       "requires_raw_opt_in": false
     },
     {
@@ -1798,6 +2489,7 @@
         "title": "Asynchronously Delete Redis Keys"
       },
       "required_access": "full",
+      "required_module": null,
       "requires_raw_opt_in": false
     },
     {
@@ -1914,6 +2606,7 @@
         "title": "Add Redis Sorted Set Members"
       },
       "required_access": "read_write",
+      "required_module": null,
       "requires_raw_opt_in": false
     },
     {
@@ -2040,6 +2733,7 @@
         "title": "Read Redis Sorted Set Range"
       },
       "required_access": "read_only",
+      "required_module": null,
       "requires_raw_opt_in": false
     }
   ],
@@ -2071,6 +2765,54 @@
       "applied": true,
       "key": "greeting",
       "seconds": 60
+    },
+    "redis_ft_create": {
+      "created": true,
+      "fields": 1,
+      "index": "idx:docs",
+      "on": "JSON"
+    },
+    "redis_ft_dropindex": {
+      "documents_deleted": false,
+      "dropped": true,
+      "index": "idx:docs"
+    },
+    "redis_ft_info": {
+      "attributes": {
+        "index_name": {
+          "encoding": "utf8",
+          "value": "idx:docs"
+        },
+        "num_docs": 1
+      },
+      "index": "idx:docs"
+    },
+    "redis_ft_list": {
+      "count": 1,
+      "indexes": [
+        "idx:docs"
+      ]
+    },
+    "redis_ft_search": {
+      "index": "idx:docs",
+      "query": "redis",
+      "response": [
+        {
+          "encoding": "utf8",
+          "value": "doc:1"
+        },
+        [
+          {
+            "encoding": "utf8",
+            "value": "title"
+          },
+          {
+            "encoding": "utf8",
+            "value": "Redis guide"
+          }
+        ]
+      ],
+      "total": 1
     },
     "redis_get": {
       "encoding": "utf8",
@@ -2113,6 +2855,34 @@
       },
       "raw": "# Server\r\nredis_version:8.2.0\r\n",
       "section": null
+    },
+    "redis_json_del": {
+      "deleted": 1,
+      "key": "doc:1",
+      "path": "$"
+    },
+    "redis_json_get": {
+      "exists": true,
+      "key": "doc:1",
+      "path": "$",
+      "value": [
+        {
+          "name": "Ada"
+        }
+      ]
+    },
+    "redis_json_set": {
+      "key": "doc:1",
+      "path": "$",
+      "stored": true
+    },
+    "redis_json_type": {
+      "exists": true,
+      "key": "doc:1",
+      "path": "$",
+      "types": [
+        "object"
+      ]
     },
     "redis_lpush": {
       "key": "queue",

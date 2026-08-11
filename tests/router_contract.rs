@@ -139,6 +139,183 @@ impl RedisExecutor for StubRedis {
                 RedisValue::BulkString(b"alice".to_vec()),
                 RedisValue::BulkString(b"1.5".to_vec()),
             ]),
+            "XLEN" => RedisValue::Integer(2),
+            "XRANGE" | "XREVRANGE" => RedisValue::Array(vec![RedisValue::Array(vec![
+                RedisValue::BulkString(b"1-0".to_vec()),
+                RedisValue::Array(vec![
+                    RedisValue::BulkString(b"event".to_vec()),
+                    RedisValue::BulkString(b"created".to_vec()),
+                ]),
+            ])]),
+            "XREAD" | "XREADGROUP" => RedisValue::Array(vec![RedisValue::Array(vec![
+                RedisValue::BulkString(b"events".to_vec()),
+                RedisValue::Array(vec![RedisValue::Array(vec![
+                    RedisValue::BulkString(b"1-0".to_vec()),
+                    RedisValue::Array(vec![
+                        RedisValue::BulkString(b"event".to_vec()),
+                        RedisValue::BulkString(b"created".to_vec()),
+                    ]),
+                ])]),
+            ])]),
+            "XINFO"
+                if command
+                    .arguments()
+                    .first()
+                    .is_some_and(|arg| arg == b"STREAM") =>
+            {
+                RedisValue::Map(vec![
+                    (
+                        RedisValue::BulkString(b"length".to_vec()),
+                        RedisValue::Integer(2),
+                    ),
+                    (
+                        RedisValue::BulkString(b"radix-tree-keys".to_vec()),
+                        RedisValue::Integer(1),
+                    ),
+                    (
+                        RedisValue::BulkString(b"radix-tree-nodes".to_vec()),
+                        RedisValue::Integer(2),
+                    ),
+                    (
+                        RedisValue::BulkString(b"last-generated-id".to_vec()),
+                        RedisValue::BulkString(b"2-0".to_vec()),
+                    ),
+                    (
+                        RedisValue::BulkString(b"max-deleted-entry-id".to_vec()),
+                        RedisValue::BulkString(b"0-0".to_vec()),
+                    ),
+                    (
+                        RedisValue::BulkString(b"entries-added".to_vec()),
+                        RedisValue::Integer(2),
+                    ),
+                    (
+                        RedisValue::BulkString(b"recorded-first-entry-id".to_vec()),
+                        RedisValue::BulkString(b"1-0".to_vec()),
+                    ),
+                    (
+                        RedisValue::BulkString(b"groups".to_vec()),
+                        RedisValue::Integer(1),
+                    ),
+                    (
+                        RedisValue::BulkString(b"first-entry".to_vec()),
+                        RedisValue::Array(vec![
+                            RedisValue::BulkString(b"1-0".to_vec()),
+                            RedisValue::Array(vec![
+                                RedisValue::BulkString(b"event".to_vec()),
+                                RedisValue::BulkString(b"created".to_vec()),
+                            ]),
+                        ]),
+                    ),
+                    (
+                        RedisValue::BulkString(b"last-entry".to_vec()),
+                        RedisValue::Array(vec![
+                            RedisValue::BulkString(b"2-0".to_vec()),
+                            RedisValue::Array(vec![
+                                RedisValue::BulkString(b"event".to_vec()),
+                                RedisValue::BulkString(b"updated".to_vec()),
+                            ]),
+                        ]),
+                    ),
+                ])
+            }
+            "XINFO"
+                if command
+                    .arguments()
+                    .first()
+                    .is_some_and(|arg| arg == b"GROUPS") =>
+            {
+                RedisValue::Array(vec![RedisValue::Map(vec![
+                    (
+                        RedisValue::BulkString(b"name".to_vec()),
+                        RedisValue::BulkString(b"workers".to_vec()),
+                    ),
+                    (
+                        RedisValue::BulkString(b"consumers".to_vec()),
+                        RedisValue::Integer(1),
+                    ),
+                    (
+                        RedisValue::BulkString(b"pending".to_vec()),
+                        RedisValue::Integer(1),
+                    ),
+                    (
+                        RedisValue::BulkString(b"last-delivered-id".to_vec()),
+                        RedisValue::BulkString(b"1-0".to_vec()),
+                    ),
+                    (
+                        RedisValue::BulkString(b"entries-read".to_vec()),
+                        RedisValue::Integer(1),
+                    ),
+                    (
+                        RedisValue::BulkString(b"lag".to_vec()),
+                        RedisValue::Integer(1),
+                    ),
+                ])])
+            }
+            "XINFO" => RedisValue::Array(vec![RedisValue::Map(vec![
+                (
+                    RedisValue::BulkString(b"name".to_vec()),
+                    RedisValue::BulkString(b"worker-1".to_vec()),
+                ),
+                (
+                    RedisValue::BulkString(b"pending".to_vec()),
+                    RedisValue::Integer(1),
+                ),
+                (
+                    RedisValue::BulkString(b"idle".to_vec()),
+                    RedisValue::Integer(25),
+                ),
+                (
+                    RedisValue::BulkString(b"inactive".to_vec()),
+                    RedisValue::Integer(10),
+                ),
+            ])]),
+            "XPENDING" if command.arguments().len() == 2 => RedisValue::Array(vec![
+                RedisValue::Integer(1),
+                RedisValue::BulkString(b"1-0".to_vec()),
+                RedisValue::BulkString(b"1-0".to_vec()),
+                RedisValue::Array(vec![RedisValue::Array(vec![
+                    RedisValue::BulkString(b"worker-1".to_vec()),
+                    RedisValue::BulkString(b"1".to_vec()),
+                ])]),
+            ]),
+            "XPENDING" => RedisValue::Array(vec![RedisValue::Array(vec![
+                RedisValue::BulkString(b"1-0".to_vec()),
+                RedisValue::BulkString(b"worker-1".to_vec()),
+                RedisValue::Integer(25),
+                RedisValue::Integer(1),
+            ])]),
+            "XADD" => RedisValue::BulkString(b"2-0".to_vec()),
+            "XGROUP"
+                if command
+                    .arguments()
+                    .first()
+                    .is_some_and(|arg| arg == b"CREATE" || arg == b"SETID") =>
+            {
+                RedisValue::Okay
+            }
+            "XGROUP" => RedisValue::Integer(1),
+            "XACK" | "XDEL" | "XTRIM" => RedisValue::Integer(1),
+            "XCLAIM" if command.arguments().iter().any(|arg| arg == b"JUSTID") => {
+                RedisValue::Array(vec![RedisValue::BulkString(b"1-0".to_vec())])
+            }
+            "XCLAIM" => RedisValue::Array(vec![RedisValue::Array(vec![
+                RedisValue::BulkString(b"1-0".to_vec()),
+                RedisValue::Array(vec![
+                    RedisValue::BulkString(b"event".to_vec()),
+                    RedisValue::BulkString(b"created".to_vec()),
+                ]),
+            ])]),
+            "XAUTOCLAIM" => RedisValue::Array(vec![
+                RedisValue::BulkString(b"0-0".to_vec()),
+                RedisValue::Array(vec![RedisValue::Array(vec![
+                    RedisValue::BulkString(b"1-0".to_vec()),
+                    RedisValue::Array(vec![
+                        RedisValue::BulkString(b"event".to_vec()),
+                        RedisValue::BulkString(b"created".to_vec()),
+                    ]),
+                ])]),
+                RedisValue::Array(Vec::new()),
+            ]),
             "TYPE" => RedisValue::SimpleString("string".into()),
             "TTL" => RedisValue::Integer(-1),
             "SET" | "MSET" | "RENAME" | "RESTORE" | "LSET" | "LTRIM" => RedisValue::Okay,
@@ -1036,6 +1213,48 @@ fn structured_cases() -> Vec<(&'static str, serde_json::Value, &'static str)> {
             serde_json::json!({"key": "leaders", "member": "alice"}),
             "score",
         ),
+        ("redis_xlen", serde_json::json!({"key": "events"}), "length"),
+        (
+            "redis_xrange",
+            serde_json::json!({"key": "events", "count": 10}),
+            "entries",
+        ),
+        (
+            "redis_xrevrange",
+            serde_json::json!({"key": "events", "count": 10}),
+            "entries",
+        ),
+        (
+            "redis_xread",
+            serde_json::json!({
+                "streams": [{
+                    "key": "events",
+                    "offset": {"type": "explicit", "id": {"milliseconds": 0, "sequence": 0}}
+                }],
+                "count": 10
+            }),
+            "streams",
+        ),
+        (
+            "redis_xinfo_stream",
+            serde_json::json!({"key": "events"}),
+            "last_generated_id",
+        ),
+        (
+            "redis_xinfo_groups",
+            serde_json::json!({"key": "events"}),
+            "groups",
+        ),
+        (
+            "redis_xinfo_consumers",
+            serde_json::json!({"key": "events", "group": {"value": "workers"}}),
+            "consumers",
+        ),
+        (
+            "redis_xpending",
+            serde_json::json!({"key": "events", "group": {"value": "workers"}}),
+            "summary",
+        ),
         (
             "redis_json_get",
             serde_json::json!({"key": "doc:1"}),
@@ -1218,6 +1437,71 @@ fn structured_cases() -> Vec<(&'static str, serde_json::Value, &'static str)> {
             "score",
         ),
         (
+            "redis_xadd",
+            serde_json::json!({
+                "key": "events",
+                "fields": [{"field": "event", "value": "created"}]
+            }),
+            "id",
+        ),
+        (
+            "redis_xgroup_create",
+            serde_json::json!({"key": "events", "group": {"value": "workers"}, "mkstream": true}),
+            "applied",
+        ),
+        (
+            "redis_xgroup_setid",
+            serde_json::json!({
+                "key": "events",
+                "group": {"value": "workers"},
+                "id": {"type": "beginning"}
+            }),
+            "applied",
+        ),
+        (
+            "redis_xgroup_createconsumer",
+            serde_json::json!({
+                "key": "events", "group": {"value": "workers"},
+                "consumer": {"value": "worker-1"}
+            }),
+            "created",
+        ),
+        (
+            "redis_xreadgroup",
+            serde_json::json!({
+                "group": {"value": "workers"}, "consumer": {"value": "worker-1"},
+                "streams": [{"key": "events", "offset": {"type": "new"}}],
+                "count": 10
+            }),
+            "streams",
+        ),
+        (
+            "redis_xack",
+            serde_json::json!({
+                "key": "events", "group": {"value": "workers"},
+                "ids": [{"milliseconds": 1, "sequence": 0}]
+            }),
+            "acknowledged",
+        ),
+        (
+            "redis_xclaim",
+            serde_json::json!({
+                "key": "events", "group": {"value": "workers"},
+                "consumer": {"value": "worker-2"}, "min_idle_time_ms": 0,
+                "ids": [{"milliseconds": 1, "sequence": 0}]
+            }),
+            "entries",
+        ),
+        (
+            "redis_xautoclaim",
+            serde_json::json!({
+                "key": "events", "group": {"value": "workers"},
+                "consumer": {"value": "worker-2"}, "min_idle_time_ms": 0,
+                "start": {"milliseconds": 0, "sequence": 0}, "count": 10
+            }),
+            "next_start_id",
+        ),
+        (
             "redis_json_set",
             serde_json::json!({"key": "doc:1", "value": {"name": "Ada"}}),
             "stored",
@@ -1317,6 +1601,32 @@ fn structured_cases() -> Vec<(&'static str, serde_json::Value, &'static str)> {
             "removed",
         ),
         (
+            "redis_xdel",
+            serde_json::json!({"key": "events", "ids": [{"milliseconds": 1, "sequence": 0}]}),
+            "deleted",
+        ),
+        (
+            "redis_xtrim",
+            serde_json::json!({
+                "key": "events",
+                "trim": {"type": "max_len", "threshold": 100, "approximate": true}
+            }),
+            "removed",
+        ),
+        (
+            "redis_xgroup_destroy",
+            serde_json::json!({"key": "events", "group": {"value": "workers"}}),
+            "applied",
+        ),
+        (
+            "redis_xgroup_delconsumer",
+            serde_json::json!({
+                "key": "events", "group": {"value": "workers"},
+                "consumer": {"value": "worker-1"}
+            }),
+            "pending_deleted",
+        ),
+        (
             "redis_getdel",
             serde_json::json!({"key": "greeting"}),
             "value",
@@ -1361,8 +1671,8 @@ fn structured_cases() -> Vec<(&'static str, serde_json::Value, &'static str)> {
 
 #[tokio::test]
 async fn access_modes_expose_exactly_the_expected_tools() {
-    assert_eq!(tool_names(AccessMode::Full, false).len(), 89);
-    assert_eq!(tool_names(AccessMode::Full, true).len(), 90);
+    assert_eq!(tool_names(AccessMode::Full, false).len(), 109);
+    assert_eq!(tool_names(AccessMode::Full, true).len(), 110);
     for (access, raw) in [
         (AccessMode::ReadOnly, false),
         (AccessMode::ReadWrite, false),
@@ -4106,6 +4416,264 @@ async fn executor_futures_are_bounded_by_the_library_timeout() {
             .expect("serialize result")
             .contains("timed out")
     );
+}
+
+#[tokio::test]
+async fn stream_commands_preserve_binary_argv_and_explicit_bounds() {
+    let capabilities = RedisCapabilities::unknown().with_redis_version(RedisVersion::new(8, 2, 0));
+
+    let executor = FixedRedis::new(RedisValue::BulkString(b"9-1".to_vec()));
+    let commands = executor.commands.clone();
+    let client = fixed_client(executor, capabilities.clone()).await;
+    let added = client
+        .call_tool(
+            "redis_xadd",
+            serde_json::json!({
+                "key": "/wA=", "key_encoding": "base64",
+                "id": {"type": "explicit", "id": {"milliseconds": 9, "sequence": 1}},
+                "no_mkstream": true,
+                "trim": {"type": "max_len", "threshold": 50, "approximate": true, "limit": 5},
+                "fields": [{
+                    "field": "/g==", "field_encoding": "base64",
+                    "value": "/Q==", "value_encoding": "base64"
+                }]
+            }),
+        )
+        .await
+        .expect("binary XADD");
+    assert!(!added.is_error, "{added:?}");
+    assert_eq!(
+        commands.lock().expect("XADD commands")[0].arguments(),
+        &[
+            vec![0xff, 0x00],
+            b"NOMKSTREAM".to_vec(),
+            b"MAXLEN".to_vec(),
+            b"~".to_vec(),
+            b"50".to_vec(),
+            b"LIMIT".to_vec(),
+            b"5".to_vec(),
+            b"9-1".to_vec(),
+            vec![0xfe],
+            vec![0xfd],
+        ]
+    );
+
+    let executor = FixedRedis::new(RedisValue::Nil);
+    let commands = executor.commands.clone();
+    let client = fixed_client(executor, capabilities.clone()).await;
+    let read = client
+        .call_tool(
+            "redis_xread",
+            serde_json::json!({
+                "streams": [
+                    {"key": "/w==", "key_encoding": "base64", "offset": {"type": "latest"}},
+                    {"key": "events{slot}", "offset": {"type": "explicit", "id": {"milliseconds": 3, "sequence": 2}}}
+                ],
+                "count": 7,
+                "block_ms": 25
+            }),
+        )
+        .await
+        .expect("bounded binary XREAD");
+    assert!(!read.is_error, "{read:?}");
+    assert_eq!(read.structured_content.unwrap()["timed_out"], true);
+    assert_eq!(
+        commands.lock().expect("XREAD commands")[0].arguments(),
+        &[
+            b"COUNT".to_vec(),
+            b"7".to_vec(),
+            b"BLOCK".to_vec(),
+            b"25".to_vec(),
+            b"STREAMS".to_vec(),
+            vec![0xff],
+            b"events{slot}".to_vec(),
+            b"$".to_vec(),
+            b"3-2".to_vec(),
+        ]
+    );
+
+    let executor = FixedRedis::new(RedisValue::Array(vec![RedisValue::BulkString(
+        b"1-0".to_vec(),
+    )]));
+    let commands = executor.commands.clone();
+    let client = fixed_client(executor, capabilities).await;
+    let claimed = client
+        .call_tool(
+            "redis_xclaim",
+            serde_json::json!({
+                "key": "events", "group": {"value": "/g==", "encoding": "base64"},
+                "consumer": {"value": "/Q==", "encoding": "base64"},
+                "min_idle_time_ms": 1000,
+                "ids": [{"milliseconds": 1, "sequence": 0}],
+                "idle_ms": 25,
+                "retry_count": 3,
+                "force": true,
+                "just_id": true
+            }),
+        )
+        .await
+        .expect("binary XCLAIM");
+    assert!(!claimed.is_error, "{claimed:?}");
+    assert_eq!(
+        commands.lock().expect("XCLAIM commands")[0].arguments(),
+        &[
+            b"events".to_vec(),
+            vec![0xfe],
+            vec![0xfd],
+            b"1000".to_vec(),
+            b"1-0".to_vec(),
+            b"IDLE".to_vec(),
+            b"25".to_vec(),
+            b"RETRYCOUNT".to_vec(),
+            b"3".to_vec(),
+            b"FORCE".to_vec(),
+            b"JUSTID".to_vec(),
+        ]
+    );
+}
+
+#[tokio::test]
+async fn stream_bounds_and_versioned_forms_fail_before_execution() {
+    let executor = FixedRedis::new(RedisValue::Nil);
+    let commands = executor.commands.clone();
+    let client = fixed_client(
+        executor,
+        RedisCapabilities::unknown().with_redis_version(RedisVersion::new(5, 0, 0)),
+    )
+    .await;
+    for (tool, arguments, expected) in [
+        (
+            "redis_xrange",
+            serde_json::json!({
+                "key": "events",
+                "min": {"type": "exclusive", "id": {"milliseconds": 1, "sequence": 0}}
+            }),
+            "Redis 6.2",
+        ),
+        (
+            "redis_xadd",
+            serde_json::json!({
+                "key": "events", "no_mkstream": true,
+                "fields": [{"field": "event", "value": "created"}]
+            }),
+            "Redis 6.2",
+        ),
+        (
+            "redis_xtrim",
+            serde_json::json!({
+                "key": "events",
+                "trim": {"type": "min_id", "threshold": {"milliseconds": 1, "sequence": 0}}
+            }),
+            "Redis 6.2",
+        ),
+    ] {
+        let result = client
+            .call_tool(tool, arguments)
+            .await
+            .unwrap_or_else(|error| panic!("{tool}: {error}"));
+        assert!(result.is_error, "{tool}: {result:?}");
+        assert!(
+            serde_json::to_string(&result).unwrap().contains(expected),
+            "{tool}: {result:?}"
+        );
+    }
+    assert!(commands.lock().expect("version-gated commands").is_empty());
+
+    let executor = FixedRedis::new(RedisValue::Nil);
+    let commands = executor.commands.clone();
+    let client = fixed_client(executor, RedisCapabilities::unknown()).await;
+    for (tool, arguments) in [
+        (
+            "redis_xread",
+            serde_json::json!({
+                "streams": [{"key": "events", "offset": {"type": "latest"}}],
+                "block_ms": 0
+            }),
+        ),
+        (
+            "redis_xreadgroup",
+            serde_json::json!({
+                "group": {"value": "workers"}, "consumer": {"value": "one"},
+                "streams": [{"key": "events", "offset": {"type": "new"}}],
+                "block_ms": 30000
+            }),
+        ),
+        (
+            "redis_xautoclaim",
+            serde_json::json!({
+                "key": "events", "group": {"value": "workers"},
+                "consumer": {"value": "one"}, "min_idle_time_ms": 0,
+                "start": {"milliseconds": 0, "sequence": 0}, "count": 101
+            }),
+        ),
+    ] {
+        let result = client
+            .call_tool(tool, arguments)
+            .await
+            .unwrap_or_else(|error| panic!("{tool}: {error}"));
+        assert!(result.is_error, "{tool}: {result:?}");
+    }
+    assert!(commands.lock().expect("bounded stream commands").is_empty());
+}
+
+#[tokio::test]
+async fn stream_annotations_match_access_and_destructive_semantics() {
+    let tools = full_catalog_client()
+        .await
+        .list_tools()
+        .await
+        .expect("list annotated stream tools")
+        .tools;
+    let annotations = |name: &str| {
+        tools
+            .iter()
+            .find(|tool| tool.name == name)
+            .unwrap_or_else(|| panic!("missing {name}"))
+            .annotations
+            .clone()
+            .unwrap_or_else(|| panic!("missing annotations for {name}"))
+    };
+    for name in [
+        "redis_xlen",
+        "redis_xrange",
+        "redis_xrevrange",
+        "redis_xread",
+        "redis_xinfo_stream",
+        "redis_xinfo_groups",
+        "redis_xinfo_consumers",
+        "redis_xpending",
+    ] {
+        let annotation = annotations(name);
+        assert!(annotation.read_only_hint, "{name}");
+        assert!(!annotation.destructive_hint, "{name}");
+        assert!(annotation.idempotent_hint, "{name}");
+    }
+    for (name, idempotent) in [
+        ("redis_xadd", false),
+        ("redis_xgroup_create", false),
+        ("redis_xgroup_setid", true),
+        ("redis_xgroup_createconsumer", true),
+        ("redis_xreadgroup", false),
+        ("redis_xack", true),
+        ("redis_xclaim", false),
+        ("redis_xautoclaim", false),
+    ] {
+        let annotation = annotations(name);
+        assert!(!annotation.read_only_hint, "{name}");
+        assert!(!annotation.destructive_hint, "{name}");
+        assert_eq!(annotation.idempotent_hint, idempotent, "{name}");
+    }
+    for name in [
+        "redis_xdel",
+        "redis_xtrim",
+        "redis_xgroup_destroy",
+        "redis_xgroup_delconsumer",
+    ] {
+        let annotation = annotations(name);
+        assert!(!annotation.read_only_hint, "{name}");
+        assert!(annotation.destructive_hint, "{name}");
+        assert!(annotation.idempotent_hint, "{name}");
+    }
 }
 
 #[tokio::test]

@@ -4,11 +4,12 @@ mod data_structures;
 mod essentials;
 mod json_tools;
 mod search;
+mod streams;
 
 use std::{
     collections::{BTreeMap, BTreeSet},
     sync::Arc,
-    time::Instant,
+    time::{Duration, Instant},
 };
 
 use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64};
@@ -62,6 +63,10 @@ impl ToolState {
 
     fn redis_version(&self) -> Option<RedisVersion> {
         self.invocation_engine.capabilities().redis_version()
+    }
+
+    fn command_timeout(&self) -> Duration {
+        self.invocation_engine.command_timeout()
     }
 
     fn validate_requested_entries(&self, requested: usize, name: &str) -> tower_mcp::Result<()> {
@@ -264,6 +269,7 @@ pub(crate) fn add_read_only_tools(
     }
     if bundles.contains(&ToolBundle::DataStructures) {
         router = data_structures::add_read_tools(router, state.clone());
+        router = streams::add_read_tools(router, state.clone());
     }
     if bundles.contains(&ToolBundle::Json) {
         router = json_tools::add_read_tools(router, state.clone());
@@ -288,6 +294,7 @@ pub(crate) fn add_write_tools(
     }
     if bundles.contains(&ToolBundle::DataStructures) {
         router = data_structures::add_write_tools(router, state.clone());
+        router = streams::add_write_tools(router, state.clone());
     }
     if bundles.contains(&ToolBundle::Json) {
         router = json_tools::add_write_tools(router, state.clone());
@@ -309,6 +316,7 @@ pub(crate) fn add_destructive_tools(
     }
     if bundles.contains(&ToolBundle::DataStructures) {
         router = data_structures::add_destructive_tools(router, state.clone());
+        router = streams::add_destructive_tools(router, state.clone());
     }
     if bundles.contains(&ToolBundle::Json) {
         router = json_tools::add_destructive_tools(router, state.clone());

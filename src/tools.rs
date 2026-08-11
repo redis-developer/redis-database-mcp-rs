@@ -8,7 +8,7 @@ mod search;
 use std::{
     collections::{BTreeMap, BTreeSet},
     sync::Arc,
-    time::{Duration, Instant},
+    time::Instant,
 };
 
 use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64};
@@ -22,8 +22,9 @@ use tower_mcp::{
 };
 
 use crate::{
-    AccessMode, OutputBudget, RawCommandPolicy, RedisCapabilities, RedisCommand, RedisExecutor,
-    RedisModule, RedisValue, ToolBundle, tool_catalog,
+    AccessMode, NativeRedisInvocation, OutputBudget, RedisCommand, RedisInvocationEngine,
+    RedisModule, RedisValue, ToolBundle,
+    invocation::{redis_value_collection_entries, redis_value_to_json},
 };
 
 pub(crate) const RAW_TOOL_NAME: &str = "redis_command";
@@ -32,30 +33,21 @@ const OUTPUT_LIMIT_META_KEY: &str = "io.redis.mcp/outputLimit";
 
 #[derive(Clone)]
 pub(crate) struct ToolState {
-    executor: Arc<dyn RedisExecutor>,
     access: AccessMode,
-    command_timeout: Duration,
-    raw_command_policy: RawCommandPolicy,
     output_budget: OutputBudget,
-    capabilities: Arc<RedisCapabilities>,
+    invocation_engine: RedisInvocationEngine,
 }
 
 impl ToolState {
     pub(crate) fn new(
-        executor: Arc<dyn RedisExecutor>,
         access: AccessMode,
-        command_timeout: Duration,
-        raw_command_policy: RawCommandPolicy,
         output_budget: OutputBudget,
-        capabilities: Arc<RedisCapabilities>,
+        invocation_engine: RedisInvocationEngine,
     ) -> Self {
         Self {
-            executor,
             access,
-            command_timeout,
-            raw_command_policy,
             output_budget,
-            capabilities,
+            invocation_engine,
         }
     }
 
@@ -127,33 +119,12 @@ impl ToolState {
     }
 
     async fn execute(&self, command: RedisCommand, context: &str) -> tower_mcp::Result<RedisValue> {
-        if let Some(metadata) = tool_catalog()
-            .iter()
-            .find(|metadata| metadata.name == command.tool_name())
-            && let Err(error) = self.capabilities.check_tool(*metadata)
-        {
-            return Err(tower_mcp::Error::tool(format!(
-                "{context} [{:?}]: {error}",
-                error.kind()
-            )));
-        }
-        let required_module = command.required_module();
-        let command_name = command.name().to_string();
-        match tokio::time::timeout(self.command_timeout, self.executor.execute(command)).await {
-            Ok(Ok(value)) => Ok(value),
-            Ok(Err(error)) => {
-                let error =
-                    error.classify_module_requirement(required_module, command_name.as_str());
-                Err(tower_mcp::Error::tool(format!(
-                    "{context} [{:?}]: {error}",
-                    error.kind()
-                )))
-            }
-            Err(_) => Err(tower_mcp::Error::tool(format!(
-                "{context}: Redis command timed out after {} ms",
-                self.command_timeout.as_millis()
-            ))),
-        }
+        self.invocation_engine
+            .execute_curated(command)
+            .await
+            .map_err(|error| {
+                tower_mcp::Error::tool(format!("{context} [{:?}]: {error}", error.kind()))
+            })
     }
 
     fn require(&self, required: AccessMode, tool: &str) -> tower_mcp::Result<()> {
@@ -794,23 +765,34 @@ fn raw_tool(state: Arc<ToolState>) -> tower_mcp::Tool {
             |State(state): State<Arc<ToolState>>,
              Json(input): Json<RawCommandInput>| async move {
                 state.require(AccessMode::Full, RAW_TOOL_NAME)?;
-                let command_name = crate::raw::validate_command(
-                    &input.command,
-                    &input.arguments,
-                    state.raw_command_policy,
-                )
-                .map_err(tower_mcp::Error::tool)?;
-                let mut command = RedisCommand::new(
-                    RAW_TOOL_NAME,
-                    AccessMode::Full,
-                    command_name.clone(),
-                );
-                command.args(input.arguments);
-                let value = state.raw(command, "Redis command failed").await?;
+                let invocation = NativeRedisInvocation::new(input.command.trim().as_bytes())
+                    .args(input.arguments.into_iter().map(String::into_bytes));
+                let response = match state
+                    .invocation_engine
+                    .invoke_with_metadata(invocation)
+                    .await
+                {
+                    Ok(response) => response,
+                    Err(error) => {
+                        if let Some(limit) = error.output_limit() {
+                            return Ok(output_limit_result(
+                                limit.dimension().as_str(),
+                                limit.actual(),
+                                limit.limit(),
+                                "Use a bounded command form with LIMIT, COUNT, or a cursor.",
+                            ));
+                        }
+                        return Err(tower_mcp::Error::tool(format!(
+                            "Redis command failed [{:?}]: {error}",
+                            error.kind()
+                        )));
+                    }
+                };
+                let (metadata, value) = response.into_parts();
                 let entries = redis_value_collection_entries(&value);
                 let output = RawCommandOutput {
-                    command: command_name,
-                    value: redis_value_to_json(value),
+                    command: metadata.name().to_string(),
+                    value: redis_value_to_json(&value),
                 };
                 state.output_collection(
                     &output,
@@ -837,94 +819,13 @@ fn display_bytes(bytes: Vec<u8>) -> String {
     }
 }
 
-fn redis_value_collection_entries(value: &RedisValue) -> usize {
-    match value {
-        RedisValue::Array(values) | RedisValue::Set(values) => {
-            values.iter().fold(values.len(), |count, value| {
-                count.saturating_add(redis_value_collection_entries(value))
-            })
-        }
-        RedisValue::Map(values) => values.iter().fold(values.len(), |count, (key, value)| {
-            count
-                .saturating_add(redis_value_collection_entries(key))
-                .saturating_add(redis_value_collection_entries(value))
-        }),
-        RedisValue::Attribute { data, attributes } => attributes.iter().fold(
-            redis_value_collection_entries(data).saturating_add(attributes.len()),
-            |count, (key, value)| {
-                count
-                    .saturating_add(redis_value_collection_entries(key))
-                    .saturating_add(redis_value_collection_entries(value))
-            },
-        ),
-        RedisValue::Push { data, .. } => data.iter().fold(data.len(), |count, value| {
-            count.saturating_add(redis_value_collection_entries(value))
-        }),
-        _ => 0,
-    }
-}
-
-fn redis_value_to_json(value: RedisValue) -> JsonValue {
-    match value {
-        RedisValue::Nil => JsonValue::Null,
-        RedisValue::Integer(value) => json!(value),
-        RedisValue::BulkString(value) => {
-            let (value, encoding) = encode_bytes(value);
-            json!({ "value": value, "encoding": encoding })
-        }
-        RedisValue::Array(values) | RedisValue::Set(values) => {
-            JsonValue::Array(values.into_iter().map(redis_value_to_json).collect())
-        }
-        RedisValue::SimpleString(value) => json!(value),
-        RedisValue::Okay => json!("OK"),
-        RedisValue::Map(values) => JsonValue::Array(
-            values
-                .into_iter()
-                .map(|(key, value)| {
-                    json!({
-                        "key": redis_value_to_json(key),
-                        "value": redis_value_to_json(value),
-                    })
-                })
-                .collect(),
-        ),
-        RedisValue::Attribute { data, attributes } => json!({
-            "data": redis_value_to_json(*data),
-            "attributes": attributes
-                .into_iter()
-                .map(|(key, value)| json!({
-                    "key": redis_value_to_json(key),
-                    "value": redis_value_to_json(value),
-                }))
-                .collect::<Vec<_>>(),
-        }),
-        RedisValue::Double(value) => json!(value),
-        RedisValue::Boolean(value) => json!(value),
-        RedisValue::VerbatimString { format, text } => {
-            json!({ "format": format, "text": text })
-        }
-        RedisValue::BigNumber(value) => {
-            let (value, encoding) = encode_bytes(value);
-            json!({ "value": value, "encoding": encoding })
-        }
-        RedisValue::Push { kind, data } => json!({
-            "kind": kind,
-            "data": data.into_iter().map(redis_value_to_json).collect::<Vec<_>>(),
-        }),
-        RedisValue::ServerError { code, message } => {
-            json!({ "server_error": { "code": code, "message": message } })
-        }
-        RedisValue::Unsupported(value) => json!({ "unsupported": value }),
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
 
     #[test]
     fn binary_values_are_explicitly_encoded() {
-        let json = redis_value_to_json(RedisValue::BulkString(vec![0xff, 0x00]));
+        let json = redis_value_to_json(&RedisValue::BulkString(vec![0xff, 0x00]));
         assert_eq!(json["encoding"], "base64");
         assert_eq!(json["value"], "/wA=");
     }

@@ -124,7 +124,7 @@ fn info_attributes(value: RedisValue) -> tower_mcp::Result<BTreeMap<String, Json
                     )));
                 }
             };
-            Ok((key, redis_value_to_json(value)))
+            Ok((key, redis_value_to_json(&value)))
         })
         .collect()
 }
@@ -253,10 +253,10 @@ fn search_response(value: RedisValue) -> (Option<u64>, JsonValue) {
             };
             (
                 total,
-                JsonValue::Array(values.into_iter().map(redis_value_to_json).collect()),
+                JsonValue::Array(values.iter().map(redis_value_to_json).collect()),
             )
         }
-        value => (None, redis_value_to_json(value)),
+        value => (None, redis_value_to_json(&value)),
     }
 }
 

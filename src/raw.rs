@@ -1,5 +1,9 @@
 //! Policy for the optional raw Redis command escape hatch.
 
+use crate::{
+    AccessMode, NativeCommandMetadata, RedisError, RedisErrorKind, RedisModule, RedisVersion,
+};
+
 /// How the `redis_command` tool handles command names.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 #[non_exhaustive]
@@ -21,294 +25,332 @@ impl RawCommandPolicy {
     }
 }
 
-pub(crate) fn validate_command(
-    command: &str,
-    arguments: &[String],
+pub(crate) fn classify_command(
+    command: &[u8],
+    arguments: &[Vec<u8>],
     policy: RawCommandPolicy,
-) -> Result<String, String> {
-    let command = command.trim().to_ascii_uppercase();
+) -> Result<NativeCommandMetadata, RedisError> {
+    let command = command
+        .iter()
+        .map(u8::to_ascii_uppercase)
+        .collect::<Vec<_>>();
     if command.is_empty()
         || command.len() > 128
         || !command
-            .bytes()
+            .iter()
+            .copied()
             .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'.' | b'-' | b'_'))
     {
-        return Err(
-            "command must be one Redis command name containing only letters, digits, '.', '-', or '_'"
-                .to_string(),
-        );
+        return Err(RedisError::new(
+            RedisErrorKind::InvalidRequest,
+            "command must be one Redis command name containing only letters, digits, '.', '-', or '_'",
+        )
+        .with_code("INVALID_COMMAND_NAME"));
     }
+    let command = String::from_utf8(command).expect("validated Redis command is ASCII");
 
     if policy == RawCommandPolicy::Disabled {
-        return Err("raw command execution is disabled".to_string());
+        return Err(RedisError::new(
+            RedisErrorKind::Authorization,
+            "native Redis command execution is disabled",
+        )
+        .with_code("RAW_COMMANDS_DISABLED"));
     }
 
-    const ALWAYS_REJECTED: &[&str] = &[
-        "AUTH",
-        "BGREWRITEAOF",
-        "BGSAVE",
-        "BLMOVE",
-        "BLMPOP",
-        "BLPOP",
-        "BRPOP",
-        "BRPOPLPUSH",
-        "BZMPOP",
-        "BZPOPMAX",
-        "BZPOPMIN",
-        "CLIENT",
-        "DEBUG",
-        "EVAL",
-        "EVALSHA",
-        "EVALSHA_RO",
-        "EVAL_RO",
-        "EXEC",
-        "FCALL",
-        "FCALL_RO",
-        "FAILOVER",
-        "HELLO",
-        "MIGRATE",
-        "MONITOR",
-        "MULTI",
-        "PSUBSCRIBE",
-        "PSYNC",
-        "PUNSUBSCRIBE",
-        "QUIT",
-        "READONLY",
-        "READWRITE",
-        "REPLICAOF",
-        "RESET",
-        "SAVE",
-        "SELECT",
-        "SHUTDOWN",
-        "SLAVEOF",
-        "SSUBSCRIBE",
-        "SUBSCRIBE",
-        "SUNSUBSCRIBE",
-        "SYNC",
-        "UNSUBSCRIBE",
-        "UNWATCH",
-        "WAIT",
-        "WAITAOF",
-        "WATCH",
-    ];
-    if ALWAYS_REJECTED.contains(&command.as_str()) {
-        return Err(format!(
-            "{command} is not supported by the request/response raw tool"
-        ));
+    if let Some((code, category)) = unsupported_boundary(&command) {
+        return unsupported(&command, category, code);
     }
 
     if matches!(command.as_str(), "XREAD" | "XREADGROUP")
         && arguments
             .iter()
-            .any(|argument| argument.eq_ignore_ascii_case("BLOCK"))
+            .any(|argument| eq_ascii_case(argument, b"BLOCK"))
     {
-        return Err("blocking XREAD/XREADGROUP is not supported by the raw tool".to_string());
+        return unsupported(
+            &command,
+            "blocking form requires a dedicated session API",
+            "BLOCKING_COMMAND_UNSUPPORTED",
+        );
     }
 
     if command == "SCRIPT"
         && arguments
             .first()
-            .is_some_and(|argument| argument.eq_ignore_ascii_case("DEBUG"))
+            .is_some_and(|argument| eq_ascii_case(argument, b"DEBUG"))
     {
-        return Err("SCRIPT DEBUG is not supported by the raw tool".to_string());
+        return unsupported(
+            &command,
+            "DEBUG requires a dedicated script session API",
+            "SCRIPT_COMMAND_UNSUPPORTED",
+        );
     }
 
     if command == "MODULE"
         && arguments.first().is_some_and(|argument| {
-            argument.eq_ignore_ascii_case("LOAD")
-                || argument.eq_ignore_ascii_case("LOADEX")
-                || argument.eq_ignore_ascii_case("UNLOAD")
+            eq_ascii_case(argument, b"LOAD")
+                || eq_ascii_case(argument, b"LOADEX")
+                || eq_ascii_case(argument, b"UNLOAD")
         })
     {
-        return Err(
-            "loading or unloading server modules is not supported by the raw tool".to_string(),
+        return unsupported(
+            &command,
+            "module lifecycle operations are outside native request/response invocation",
+            "MODULE_LIFECYCLE_COMMAND_UNSUPPORTED",
         );
     }
 
-    if policy == RawCommandPolicy::Classified && !CLASSIFIED_COMMANDS.contains(&command.as_str()) {
-        return Err(format!(
-            "{command} is not classified for raw execution; enable the unrestricted raw policy explicitly to allow unknown request/response commands"
-        ));
+    let classified_access = classified_access(&command, arguments);
+    let classified = classified_access.is_some();
+    if policy == RawCommandPolicy::Classified && !classified {
+        return Err(RedisError::new(
+            RedisErrorKind::InvalidRequest,
+            format!(
+                "{command} is not classified for native execution; enable the unrestricted raw policy explicitly to allow unknown request/response commands"
+            ),
+        )
+        .with_code("COMMAND_UNCLASSIFIED"));
     }
 
-    Ok(command)
+    let required_access = classified_access.unwrap_or(AccessMode::Full);
+    let (required_module, minimum_module_version) = module_requirement(&command);
+    Ok(NativeCommandMetadata::new(
+        command.clone(),
+        required_access,
+        classified,
+        minimum_redis_version(&command),
+        required_module,
+        minimum_module_version,
+    ))
 }
 
-// This is intentionally an allowlist rather than an attempted copy of Redis'
-// full command table. Additions are contract changes that should be reviewed
-// alongside command semantics and timeout/cancellation behavior.
-const CLASSIFIED_COMMANDS: &[&str] = &[
-    "ACL",
-    "APPEND",
-    "COMMAND",
-    "COPY",
-    "DBSIZE",
-    "DECR",
-    "DECRBY",
-    "DEL",
-    "DUMP",
-    "ECHO",
-    "EXISTS",
-    "EXPIRE",
-    "EXPIREAT",
-    "EXPIRETIME",
-    "GET",
-    "GETDEL",
-    "GETEX",
-    "GETRANGE",
-    "GETSET",
-    "HDEL",
-    "HEXISTS",
-    "HGET",
-    "HGETALL",
-    "HINCRBY",
-    "HLEN",
-    "HMGET",
-    "HMSET",
-    "HSCAN",
-    "HSET",
-    "HSETNX",
-    "HSTRLEN",
-    "INCR",
-    "INCRBY",
-    "INFO",
-    "JSON.ARRAPPEND",
-    "JSON.ARRINSERT",
-    "JSON.ARRLEN",
-    "JSON.ARRPOP",
-    "JSON.ARRTRIM",
-    "JSON.CLEAR",
-    "JSON.DEL",
-    "JSON.GET",
-    "JSON.MGET",
-    "JSON.NUMINCRBY",
-    "JSON.OBJKEYS",
-    "JSON.OBJLEN",
-    "JSON.SET",
-    "JSON.STRLEN",
-    "JSON.TOGGLE",
-    "JSON.TYPE",
-    "LCS",
-    "LINDEX",
-    "LINSERT",
-    "LLEN",
-    "LMOVE",
-    "LMPOP",
-    "LPOP",
-    "LPOS",
-    "LPUSH",
-    "LPUSHX",
-    "LRANGE",
-    "LREM",
-    "LSET",
-    "LTRIM",
-    "MEMORY",
-    "MGET",
-    "MSET",
-    "MSETNX",
-    "OBJECT",
-    "PERSIST",
-    "PEXPIRE",
-    "PEXPIREAT",
-    "PEXPIRETIME",
-    "PING",
-    "PTTL",
-    "RANDOMKEY",
-    "RENAME",
-    "RENAMENX",
-    "RESTORE",
-    "RPOP",
-    "RPOPLPUSH",
-    "RPUSH",
-    "RPUSHX",
-    "SADD",
-    "SCAN",
-    "SCARD",
-    "SDIFF",
-    "SINTER",
-    "SINTERCARD",
-    "SISMEMBER",
-    "SMEMBERS",
-    "SMISMEMBER",
-    "SMOVE",
-    "SPOP",
-    "SRANDMEMBER",
-    "SREM",
-    "SSCAN",
-    "STRLEN",
-    "SUNION",
-    "TOUCH",
-    "TTL",
-    "TYPE",
-    "UNLINK",
-    "XACK",
-    "XADD",
-    "XDEL",
-    "XINFO",
-    "XLEN",
-    "XPENDING",
-    "XRANGE",
-    "XREAD",
-    "XREADGROUP",
-    "XREVRANGE",
-    "XTRIM",
-    "ZADD",
-    "ZCARD",
-    "ZCOUNT",
-    "ZDIFF",
-    "ZINCRBY",
-    "ZINTER",
-    "ZLEXCOUNT",
-    "ZMPOP",
-    "ZMSCORE",
-    "ZPOPMAX",
-    "ZPOPMIN",
-    "ZRANDMEMBER",
-    "ZRANGE",
-    "ZRANK",
-    "ZREM",
-    "ZREMRANGEBYLEX",
-    "ZREMRANGEBYRANK",
-    "ZREMRANGEBYSCORE",
-    "ZREVRANK",
-    "ZSCAN",
-    "ZSCORE",
-    "ZUNION",
-];
+fn unsupported(
+    command: &str,
+    reason: &str,
+    code: &'static str,
+) -> Result<NativeCommandMetadata, RedisError> {
+    Err(RedisError::new(
+        RedisErrorKind::InvalidRequest,
+        format!("{command} {reason}"),
+    )
+    .with_code(code))
+}
+
+fn unsupported_boundary(command: &str) -> Option<(&'static str, &'static str)> {
+    match command {
+        "AUTH" | "CLIENT" | "HELLO" | "QUIT" | "READONLY" | "READWRITE" | "RESET" | "SELECT" => {
+            Some((
+                "SESSION_COMMAND_UNSUPPORTED",
+                "requires a dedicated connection-session API",
+            ))
+        }
+        "EXEC" | "MULTI" | "UNWATCH" | "WATCH" => Some((
+            "TRANSACTION_COMMAND_UNSUPPORTED",
+            "requires a dedicated transaction-session API",
+        )),
+        "PSUBSCRIBE" | "PUNSUBSCRIBE" | "SSUBSCRIBE" | "SUBSCRIBE" | "SUNSUBSCRIBE"
+        | "UNSUBSCRIBE" => Some((
+            "SUBSCRIPTION_COMMAND_UNSUPPORTED",
+            "requires a dedicated subscription-session API",
+        )),
+        "MONITOR" | "PSYNC" | "SYNC" => Some((
+            "STREAMING_COMMAND_UNSUPPORTED",
+            "requires a dedicated streaming API",
+        )),
+        "BLMOVE" | "BLMPOP" | "BLPOP" | "BRPOP" | "BRPOPLPUSH" | "BZMPOP" | "BZPOPMAX"
+        | "BZPOPMIN" | "WAIT" | "WAITAOF" => Some((
+            "BLOCKING_COMMAND_UNSUPPORTED",
+            "requires a dedicated blocking-operation API",
+        )),
+        "EVAL" | "EVALSHA" | "EVALSHA_RO" | "EVAL_RO" | "FCALL" | "FCALL_RO" => Some((
+            "SCRIPT_COMMAND_UNSUPPORTED",
+            "requires a dedicated script execution API",
+        )),
+        "BGREWRITEAOF" | "BGSAVE" | "DEBUG" | "FAILOVER" | "MIGRATE" | "REPLICAOF" | "SAVE"
+        | "SHUTDOWN" | "SLAVEOF" => Some((
+            "SERVER_LIFECYCLE_COMMAND_UNSUPPORTED",
+            "is outside native request/response invocation",
+        )),
+        _ => None,
+    }
+}
+
+fn eq_ascii_case(value: &[u8], expected: &[u8]) -> bool {
+    value.eq_ignore_ascii_case(expected)
+}
+
+// This is intentionally an explicit allowlist rather than an attempted copy
+// of Redis' full command table. There is no default read-only branch: every
+// addition must choose an access tier alongside its semantics.
+fn classified_access(command: &str, arguments: &[Vec<u8>]) -> Option<AccessMode> {
+    let access = match command {
+        "ACL" | "DEL" | "GETDEL" | "HDEL" | "JSON.ARRPOP" | "JSON.ARRTRIM" | "JSON.CLEAR"
+        | "JSON.DEL" | "LPOP" | "LMOVE" | "LMPOP" | "LREM" | "LSET" | "LTRIM" | "RENAME"
+        | "RENAMENX" | "RPOP" | "RPOPLPUSH" | "SMOVE" | "SPOP" | "SREM" | "UNLINK" | "XDEL"
+        | "XTRIM" | "ZMPOP" | "ZPOPMAX" | "ZPOPMIN" | "ZREM" | "ZREMRANGEBYLEX"
+        | "ZREMRANGEBYRANK" | "ZREMRANGEBYSCORE" => AccessMode::Full,
+        "COPY" | "RESTORE"
+            if arguments
+                .iter()
+                .any(|argument| eq_ascii_case(argument, b"REPLACE")) =>
+        {
+            AccessMode::Full
+        }
+        "MEMORY"
+            if arguments
+                .first()
+                .is_some_and(|argument| eq_ascii_case(argument, b"PURGE")) =>
+        {
+            AccessMode::Full
+        }
+        "APPEND" | "COPY" | "DECR" | "DECRBY" | "EXPIRE" | "EXPIREAT" | "GETEX" | "GETSET"
+        | "HINCRBY" | "HINCRBYFLOAT" | "HMSET" | "HSET" | "HSETNX" | "INCR" | "INCRBY"
+        | "INCRBYFLOAT" | "JSON.ARRAPPEND" | "JSON.ARRINSERT" | "JSON.NUMINCRBY" | "JSON.SET"
+        | "JSON.TOGGLE" | "LINSERT" | "LPUSH" | "LPUSHX" | "MSET" | "MSETNX" | "PERSIST"
+        | "PEXPIRE" | "PEXPIREAT" | "PSETEX" | "RESTORE" | "RPUSH" | "RPUSHX" | "SADD" | "SET"
+        | "SETEX" | "TOUCH" | "XACK" | "XADD" | "XREADGROUP" | "ZADD" | "ZINCRBY" => {
+            AccessMode::ReadWrite
+        }
+        "MODULE" => AccessMode::Full,
+        "COMMAND" | "DBSIZE" | "DUMP" | "ECHO" | "EXISTS" | "EXPIRETIME" | "GET" | "GETRANGE"
+        | "HEXISTS" | "HGET" | "HGETALL" | "HLEN" | "HMGET" | "HSCAN" | "HSTRLEN" | "INFO"
+        | "JSON.ARRLEN" | "JSON.GET" | "JSON.MGET" | "JSON.OBJKEYS" | "JSON.OBJLEN"
+        | "JSON.STRLEN" | "JSON.TYPE" | "LCS" | "LINDEX" | "LLEN" | "LPOS" | "LRANGE"
+        | "MEMORY" | "MGET" | "OBJECT" | "PEXPIRETIME" | "PING" | "PTTL" | "RANDOMKEY" | "SCAN"
+        | "SCARD" | "SDIFF" | "SINTER" | "SINTERCARD" | "SISMEMBER" | "SMEMBERS" | "SMISMEMBER"
+        | "SRANDMEMBER" | "SSCAN" | "STRLEN" | "SUNION" | "TTL" | "TYPE" | "XINFO" | "XLEN"
+        | "XPENDING" | "XRANGE" | "XREAD" | "XREVRANGE" | "ZCARD" | "ZCOUNT" | "ZDIFF"
+        | "ZINTER" | "ZLEXCOUNT" | "ZMSCORE" | "ZRANDMEMBER" | "ZRANGE" | "ZRANK" | "ZREVRANK"
+        | "ZSCAN" | "ZSCORE" | "ZUNION" => AccessMode::ReadOnly,
+        _ => return None,
+    };
+    Some(access)
+}
+
+fn minimum_redis_version(command: &str) -> Option<RedisVersion> {
+    let version = match command {
+        "SCAN" | "HSCAN" | "SSCAN" | "ZSCAN" => (2, 8),
+        "HSTRLEN" | "TOUCH" => (3, 2),
+        "MEMORY" | "UNLINK" => (4, 0),
+        "XACK" | "XADD" | "XDEL" | "XINFO" | "XLEN" | "XPENDING" | "XRANGE" | "XREAD"
+        | "XREADGROUP" | "XREVRANGE" | "XTRIM" => (5, 0),
+        "COPY" | "GETDEL" | "GETEX" | "LMOVE" | "SMISMEMBER" | "ZDIFF" | "ZINTER" | "ZMSCORE"
+        | "ZRANDMEMBER" | "ZUNION" => (6, 2),
+        "EXPIRETIME" | "LCS" | "LMPOP" | "PEXPIRETIME" | "SINTERCARD" | "ZMPOP" => (7, 0),
+        _ => return None,
+    };
+    Some(RedisVersion::new(version.0, version.1, 0))
+}
+
+fn module_requirement(command: &str) -> (Option<RedisModule>, Option<RedisVersion>) {
+    if command.starts_with("JSON.") {
+        (Some(RedisModule::Json), None)
+    } else {
+        (None, None)
+    }
+}
 
 #[cfg(test)]
 mod tests {
     use super::*;
 
+    fn invocation(command: &str, arguments: &[&str]) -> Result<NativeCommandMetadata, RedisError> {
+        classify_command(
+            command.as_bytes(),
+            &arguments
+                .iter()
+                .map(|argument| argument.as_bytes().to_vec())
+                .collect::<Vec<_>>(),
+            RawCommandPolicy::Classified,
+        )
+    }
+
     #[test]
     fn classified_policy_fails_closed_for_unknown_commands() {
-        let error = validate_command("NEW.MODULE.COMMAND", &[], RawCommandPolicy::Classified)
+        let error = classify_command(b"NEW.MODULE.COMMAND", &[], RawCommandPolicy::Classified)
             .expect_err("unknown command must fail closed");
-        assert!(error.contains("not classified"));
-        assert_eq!(
-            validate_command("NEW.MODULE.COMMAND", &[], RawCommandPolicy::Unrestricted).as_deref(),
-            Ok("NEW.MODULE.COMMAND")
-        );
+        assert!(error.message().contains("not classified"));
+        let metadata = classify_command(b"NEW.MODULE.COMMAND", &[], RawCommandPolicy::Unrestricted)
+            .expect("unrestricted unknown command");
+        assert_eq!(metadata.name(), "NEW.MODULE.COMMAND");
+        assert_eq!(metadata.required_access(), AccessMode::Full);
+        assert!(!metadata.is_classified());
     }
 
     #[test]
     fn hard_blocks_apply_to_unrestricted_policy() {
-        assert!(validate_command("AUTH", &[], RawCommandPolicy::Unrestricted).is_err());
+        for (command, code) in [
+            ("AUTH", "SESSION_COMMAND_UNSUPPORTED"),
+            ("MULTI", "TRANSACTION_COMMAND_UNSUPPORTED"),
+            ("SUBSCRIBE", "SUBSCRIPTION_COMMAND_UNSUPPORTED"),
+            ("MONITOR", "STREAMING_COMMAND_UNSUPPORTED"),
+            ("BLPOP", "BLOCKING_COMMAND_UNSUPPORTED"),
+            ("EVAL", "SCRIPT_COMMAND_UNSUPPORTED"),
+            ("BGSAVE", "SERVER_LIFECYCLE_COMMAND_UNSUPPORTED"),
+        ] {
+            let error = classify_command(command.as_bytes(), &[], RawCommandPolicy::Unrestricted)
+                .expect_err("hard boundary");
+            assert_eq!(error.code(), Some(code), "{command}");
+        }
         assert!(
-            validate_command(
-                "xread",
-                &["BLOCK".into(), "0".into()],
+            classify_command(
+                b"xread",
+                &[b"BLOCK".to_vec(), b"0".to_vec()],
                 RawCommandPolicy::Unrestricted,
             )
             .is_err()
         );
         assert!(
-            validate_command(
-                "script",
-                &["debug".into(), "yes".into()],
+            classify_command(
+                b"script",
+                &[b"debug".to_vec(), b"yes".to_vec()],
                 RawCommandPolicy::Unrestricted,
             )
             .is_err()
+        );
+    }
+
+    #[test]
+    fn classified_commands_report_access_and_capability_metadata() {
+        assert_eq!(
+            invocation("GET", &["key"])
+                .expect("GET metadata")
+                .required_access(),
+            AccessMode::ReadOnly
+        );
+        assert_eq!(
+            invocation("SET", &["key", "value"])
+                .expect("SET metadata")
+                .required_access(),
+            AccessMode::ReadWrite
+        );
+        assert_eq!(
+            invocation("DEL", &["key"])
+                .expect("DEL metadata")
+                .required_access(),
+            AccessMode::Full
+        );
+        let json = invocation("JSON.GET", &["doc"]).expect("JSON.GET metadata");
+        assert_eq!(json.required_module(), Some(RedisModule::Json));
+        let getdel = invocation("GETDEL", &["key"]).expect("GETDEL metadata");
+        assert_eq!(
+            getdel.minimum_redis_version(),
+            Some(RedisVersion::new(6, 2, 0))
+        );
+    }
+
+    #[test]
+    fn replace_forms_are_destructive() {
+        assert_eq!(
+            invocation("COPY", &["source", "target"])
+                .expect("COPY metadata")
+                .required_access(),
+            AccessMode::ReadWrite
+        );
+        assert_eq!(
+            invocation("COPY", &["source", "target", "REPLACE"])
+                .expect("COPY REPLACE metadata")
+                .required_access(),
+            AccessMode::Full
         );
     }
 }

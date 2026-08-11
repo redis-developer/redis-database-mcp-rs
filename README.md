@@ -151,6 +151,39 @@ originating tool, required access level, and any required Redis module for host
 telemetry, capability routing, and audit records. See
 [the custom executor example](examples/custom_executor.rs).
 
+## Embed Redis-style argv
+
+CLI and REPL frontends can use the same governed execution boundary without
+constructing MCP JSON arguments:
+
+    use redis_mcp::{
+        AccessMode, DirectRedis, NativeRedisInvocation, RawCommandPolicy,
+        RedisInvocationEngine,
+    };
+
+    # async fn native_example() -> Result<(), Box<dyn std::error::Error>> {
+    let redis = DirectRedis::connect("redis://127.0.0.1:6379").await?;
+    let engine = RedisInvocationEngine::builder(redis)
+        .access(AccessMode::ReadWrite)
+        .raw_command_policy(RawCommandPolicy::Classified)
+        .build();
+    let value = engine
+        .invoke(NativeRedisInvocation::from_argv([
+            b"SET".to_vec(),
+            b"greeting".to_vec(),
+            b"hello".to_vec(),
+        ])?)
+        .await?;
+    # let _ = value;
+    # Ok(())
+    # }
+
+The invocation stays binary-safe and shares command classification, access,
+capability checks, timeout, redaction, error categories, and result budgets
+with `redis_command`. Tokenization, quoting, history, completion, rendering,
+and session-oriented commands remain frontend concerns. See the complete
+[pre-tokenized argv example](examples/native_argv.rs).
+
 `RedisCapabilities` is crate-owned too. A host can supply an authoritative or
 partial snapshot containing Redis and module versions, deployment mode, and
 per-command availability without sharing the library's redis-rs dependency.
@@ -215,8 +248,8 @@ follows the [Redis Open Source version-management table](https://redis.io/docs/l
 - Cloud or Enterprise REST APIs
 - redisctl profiles or per-tool target URLs
 - transactions, Pub/Sub, MONITOR, or other streaming/session-oriented commands
-- recreating the complete redisctl database catalog before the REPL experience
-  is evaluated
+- terminal tokenization, history, completion, result rendering, or an
+  application-specific CLI/REPL frontend
 
 ## License
 

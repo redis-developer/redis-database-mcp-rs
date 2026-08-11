@@ -307,5 +307,10 @@ fn completion_gate_is_objective_and_self_consistent() {
         .copied()
         .collect::<BTreeSet<_>>();
     assert!(planned_issues.is_subset(&blockers));
-    assert!(BTreeSet::from([24]).is_subset(&blockers));
+    let quality_issues = scorecard
+        .capabilities
+        .iter()
+        .flat_map(|capability| capability.quality_issues.iter().copied())
+        .collect::<BTreeSet<_>>();
+    assert!(quality_issues.is_subset(&blockers));
 }

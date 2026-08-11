@@ -939,7 +939,7 @@ async fn unrestricted_raw_policy_allows_unknown_names_but_keeps_hard_blocks() {
     assert!(
         serde_json::to_string(&blocked)
             .expect("serialize blocked result")
-            .contains("not supported")
+            .contains("SESSION_COMMAND_UNSUPPORTED")
     );
 }
 

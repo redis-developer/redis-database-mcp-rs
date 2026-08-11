@@ -56,7 +56,6 @@ and `redis_zscan`.
 | sets | `srem` | #21 |
 | sorted sets | `zrem` | #22 |
 | Streams and consumer groups | `xack`, `xadd`, `xdel`, `xgroup_create`, `xgroup_destroy`, `xrange`, `xreadgroup` | #23 |
-| vector and hybrid search | `create_vector_index_hash`, vector read/write helpers, `vector_search_hash`, `hybrid_search` | #26 |
 | bounded Pub/Sub | `publish` | #29 |
 | subscription sessions | `subscribe`, `psubscribe`, `read_messages`, `unsubscribe` | #30 |
 | diagnostics | `client_list` | #31 |
@@ -66,6 +65,13 @@ library will not disguise a full keyspace materialization as a safe scan.
 `search_redis_documents` is deliberately excluded because external
 documentation search is useful but is neither a Redis database command nor a
 no-egress operation.
+
+Vector and hybrid search now lead the pinned competitor surface: one typed
+index schema covers HASH and JSON with FLAT or HNSW, numeric vectors are encoded
+without a process-global mode, HASH vectors have explicit binary-safe helpers,
+and focused KNN and hybrid tools return documents, distances, counts, and
+bounded continuation metadata. Hybrid callers use escaped text, tag, numeric,
+and geo clauses rather than interpolating a raw filter expression.
 
 ## Contract-quality comparison
 
@@ -112,9 +118,9 @@ also applied to collection results and raw RESP collections.
 | --- | --- |
 | cursor paginated | `redis_scan`, `redis_hscan`, `redis_sscan`, `redis_zscan` |
 | range paginated | `redis_lrange`, `redis_zrange` |
-| offset paginated | `redis_ft_search` |
-| budget guarded | `redis_info`, `redis_get`, `redis_mget`, `redis_randomkey`, `redis_hget`, `redis_hgetall`, `redis_smembers`, `redis_json_get`, `redis_json_type`, `redis_ft_list`, `redis_ft_info`, `redis_command` |
-| intrinsically bounded | `redis_ping`, `redis_dbsize`, `redis_type`, `redis_ttl`, `redis_exists`, `redis_strlen`, `redis_memory_usage`, `redis_set`, `redis_expire`, `redis_persist`, `redis_mset`, `redis_incr`, `redis_append`, `redis_hset`, `redis_lpush`, `redis_sadd`, `redis_zadd`, `redis_json_set`, `redis_ft_create`, `redis_del`, `redis_unlink`, `redis_json_del`, `redis_ft_dropindex` |
+| offset paginated | `redis_ft_search`, `redis_ft_vector_search`, `redis_ft_hybrid_search` |
+| budget guarded | `redis_info`, `redis_get`, `redis_mget`, `redis_randomkey`, `redis_hget`, `redis_hgetall`, `redis_smembers`, `redis_json_get`, `redis_json_type`, `redis_ft_list`, `redis_ft_info`, `redis_vector_get_hash`, `redis_command` |
+| intrinsically bounded | `redis_ping`, `redis_dbsize`, `redis_type`, `redis_ttl`, `redis_exists`, `redis_strlen`, `redis_memory_usage`, `redis_set`, `redis_expire`, `redis_persist`, `redis_mset`, `redis_incr`, `redis_append`, `redis_hset`, `redis_lpush`, `redis_sadd`, `redis_zadd`, `redis_json_set`, `redis_ft_create`, `redis_vector_set_hash`, `redis_del`, `redis_unlink`, `redis_json_del`, `redis_ft_dropindex` |
 
 Budget-guarded whole-collection reads fail with an `output_limit_exceeded`
 reason and machine-readable `io.redis.mcp/outputLimit` metadata instead of

@@ -1,4 +1,8 @@
-use std::{collections::BTreeMap, time::Duration};
+use std::{
+    collections::BTreeMap,
+    sync::{Arc, Mutex},
+    time::Duration,
+};
 
 use async_trait::async_trait;
 use pretty_assertions::assert_eq;
@@ -36,6 +40,12 @@ impl RedisExecutor for StubRedis {
             "STRLEN" => RedisValue::Integer(5),
             "MEMORY" => RedisValue::Integer(64),
             "RANDOMKEY" => RedisValue::BulkString(b"alpha".to_vec()),
+            "HGET" if command.tool_name() == "redis_vector_get_hash" => RedisValue::BulkString(
+                [1.0_f32, 2.0_f32]
+                    .into_iter()
+                    .flat_map(f32::to_le_bytes)
+                    .collect(),
+            ),
             "HGET" => RedisValue::BulkString(b"Ada".to_vec()),
             "HGETALL" => RedisValue::Map(vec![(
                 RedisValue::BulkString(b"name".to_vec()),
@@ -101,6 +111,23 @@ impl RedisExecutor for StubRedis {
                 RedisValue::BulkString(b"num_docs".to_vec()),
                 RedisValue::Integer(1),
             ]),
+            "FT.SEARCH"
+                if matches!(
+                    command.tool_name(),
+                    "redis_ft_vector_search" | "redis_ft_hybrid_search"
+                ) =>
+            {
+                RedisValue::Array(vec![
+                    RedisValue::Integer(1),
+                    RedisValue::BulkString(b"doc:1".to_vec()),
+                    RedisValue::Array(vec![
+                        RedisValue::BulkString(b"vector_distance".to_vec()),
+                        RedisValue::BulkString(b"0.125".to_vec()),
+                        RedisValue::BulkString(b"title".to_vec()),
+                        RedisValue::BulkString(b"Redis guide".to_vec()),
+                    ]),
+                ])
+            }
             "FT.SEARCH" => RedisValue::Array(vec![
                 RedisValue::Integer(1),
                 RedisValue::BulkString(b"doc:1".to_vec()),
@@ -170,6 +197,100 @@ async fn client_for_bundles(
         .await
         .expect("initialize client");
     client
+}
+
+#[derive(Clone, Default)]
+struct RecordingRedis {
+    commands: Arc<Mutex<Vec<RedisCommand>>>,
+}
+
+#[async_trait]
+impl RedisExecutor for RecordingRedis {
+    async fn execute(&self, command: RedisCommand) -> Result<RedisValue, RedisError> {
+        let response = match command.name() {
+            "HSET" => RedisValue::Integer(1),
+            "FT.SEARCH" => RedisValue::Array(vec![
+                RedisValue::Integer(1),
+                RedisValue::BulkString(b"doc:1".to_vec()),
+                RedisValue::Array(vec![
+                    RedisValue::BulkString(b"vector_distance".to_vec()),
+                    RedisValue::BulkString(b"0".to_vec()),
+                ]),
+            ]),
+            _ => RedisValue::Nil,
+        };
+        self.commands.lock().expect("recording lock").push(command);
+        Ok(response)
+    }
+}
+
+#[tokio::test]
+async fn vector_values_remain_binary_safe_in_curated_commands() {
+    let executor = RecordingRedis::default();
+    let commands = executor.commands.clone();
+    let router = RedisMcp::builder(executor)
+        .access(AccessMode::Full)
+        .bundles([ToolBundle::Search])
+        .build();
+    let client = McpClient::connect(ChannelTransport::new(router))
+        .await
+        .expect("connect recording client");
+    client
+        .initialize("redis-mcp-vector-recording-test", "0")
+        .await
+        .expect("initialize recording client");
+
+    let vector = [1.0_f64, -2.5_f64];
+    let mut expected = Vec::new();
+    for value in vector {
+        expected.extend_from_slice(&(value as f32).to_le_bytes());
+    }
+    let stored = client
+        .call_tool(
+            "redis_vector_set_hash",
+            serde_json::json!({
+                "key": "doc:1",
+                "field": "embedding",
+                "data_type": "FLOAT32",
+                "vector": vector
+            }),
+        )
+        .await
+        .expect("store vector");
+    assert!(!stored.is_error, "{stored:?}");
+
+    let searched = client
+        .call_tool(
+            "redis_ft_vector_search",
+            serde_json::json!({
+                "index": "idx:docs",
+                "vector_field": "embedding",
+                "data_type": "FLOAT32",
+                "vector": vector,
+                "top_k": 1,
+                "limit_num": 1
+            }),
+        )
+        .await
+        .expect("search vector");
+    assert!(!searched.is_error, "{searched:?}");
+
+    let commands = commands.lock().expect("recorded commands");
+    let hset = commands
+        .iter()
+        .find(|command| command.tool_name() == "redis_vector_set_hash")
+        .expect("recorded vector HSET");
+    assert_eq!(hset.arguments()[2], expected);
+    let search = commands
+        .iter()
+        .find(|command| command.tool_name() == "redis_ft_vector_search")
+        .expect("recorded vector FT.SEARCH");
+    let blob_position = search
+        .arguments()
+        .iter()
+        .position(|argument| argument == b"BLOB")
+        .expect("BLOB parameter");
+    assert_eq!(search.arguments()[blob_position + 1], expected);
 }
 
 async fn full_catalog_client() -> McpClient {
@@ -305,6 +426,34 @@ fn structured_cases() -> Vec<(&'static str, serde_json::Value, &'static str)> {
             "response",
         ),
         (
+            "redis_vector_get_hash",
+            serde_json::json!({"key": "doc:1", "field": "embedding", "data_type": "FLOAT32"}),
+            "vector",
+        ),
+        (
+            "redis_ft_vector_search",
+            serde_json::json!({
+                "index": "idx:docs",
+                "vector_field": "embedding",
+                "data_type": "FLOAT32",
+                "vector": [1.0, 2.0],
+                "return_fields": ["title"]
+            }),
+            "results",
+        ),
+        (
+            "redis_ft_hybrid_search",
+            serde_json::json!({
+                "index": "idx:docs",
+                "vector_field": "embedding",
+                "data_type": "FLOAT32",
+                "vector": [1.0, 2.0],
+                "return_fields": ["title"],
+                "filters": [{"type": "text", "field": "title", "value": "Redis"}]
+            }),
+            "results",
+        ),
+        (
             "redis_set",
             serde_json::json!({"key": "greeting", "value": "hello"}),
             "stored",
@@ -364,6 +513,16 @@ fn structured_cases() -> Vec<(&'static str, serde_json::Value, &'static str)> {
                 "schema": [{"name": "$.name", "alias": "name", "field_type": "TEXT"}]
             }),
             "created",
+        ),
+        (
+            "redis_vector_set_hash",
+            serde_json::json!({
+                "key": "doc:1",
+                "field": "embedding",
+                "data_type": "FLOAT32",
+                "vector": [1.0, 2.0]
+            }),
+            "stored",
         ),
         (
             "redis_del",
@@ -484,6 +643,40 @@ async fn bundles_are_composable_and_raw_remains_a_separate_opt_in() {
     .collect::<Vec<_>>();
     assert_eq!(json_read_only, vec!["redis_json_get", "redis_json_type"]);
 
+    let search_read_only = client_for_bundles(
+        AccessMode::ReadOnly,
+        [ToolBundle::Search],
+        RawCommandPolicy::Disabled,
+    )
+    .await
+    .list_tools()
+    .await
+    .expect("list Search read tools")
+    .tools
+    .into_iter()
+    .map(|tool| tool.name)
+    .collect::<Vec<_>>();
+    assert!(
+        search_read_only
+            .iter()
+            .any(|name| name == "redis_ft_vector_search")
+    );
+    assert!(
+        search_read_only
+            .iter()
+            .any(|name| name == "redis_ft_hybrid_search")
+    );
+    assert!(
+        !search_read_only
+            .iter()
+            .any(|name| name == "redis_ft_create")
+    );
+    assert!(
+        !search_read_only
+            .iter()
+            .any(|name| name == "redis_vector_set_hash")
+    );
+
     let mut search_read_write = client_for_bundles(
         AccessMode::ReadWrite,
         [ToolBundle::Search],
@@ -502,9 +695,13 @@ async fn bundles_are_composable_and_raw_remains_a_separate_opt_in() {
         search_read_write,
         vec![
             "redis_ft_create",
+            "redis_ft_hybrid_search",
             "redis_ft_info",
             "redis_ft_list",
             "redis_ft_search",
+            "redis_ft_vector_search",
+            "redis_vector_get_hash",
+            "redis_vector_set_hash",
         ]
     );
 }
@@ -746,6 +943,43 @@ async fn malformed_and_unbounded_inputs_fail_as_tool_results() {
         (
             "redis_ft_create",
             serde_json::json!({"index": "idx", "schema": []}),
+        ),
+        (
+            "redis_vector_set_hash",
+            serde_json::json!({
+                "key": "doc:1",
+                "field": "embedding",
+                "data_type": "FLOAT32",
+                "vector": []
+            }),
+        ),
+        (
+            "redis_ft_vector_search",
+            serde_json::json!({
+                "index": "idx",
+                "vector_field": "embedding",
+                "data_type": "FLOAT32",
+                "vector": [1.0],
+                "top_k": 101
+            }),
+        ),
+        (
+            "redis_ft_create",
+            serde_json::json!({
+                "index": "idx",
+                "schema": [{"name": "embedding", "field_type": "VECTOR"}]
+            }),
+        ),
+        (
+            "redis_ft_hybrid_search",
+            serde_json::json!({
+                "index": "idx",
+                "vector_field": "embedding",
+                "data_type": "FLOAT32",
+                "vector": [1.0],
+                "top_k": 1,
+                "filters": [{"type": "text", "field": "bad-field", "value": "x"}]
+            }),
         ),
     ];
 
@@ -1053,6 +1287,7 @@ async fn known_missing_modules_commands_and_module_versions_filter_precisely() {
         .collect::<Vec<_>>();
     assert!(!names.iter().any(|name| name.starts_with("redis_json_")));
     assert!(!names.iter().any(|name| name.starts_with("redis_ft_")));
+    assert!(!names.iter().any(|name| name.starts_with("redis_vector_")));
 
     let missing_get = RedisCapabilities::unknown().with_command_inventory(["MGET"]);
     let client = capability_client(missing_get, UnavailableToolPolicy::Hide).await;
@@ -1082,6 +1317,27 @@ async fn known_missing_modules_commands_and_module_versions_filter_precisely() {
         .collect::<Vec<_>>();
     assert!(!names.iter().any(|name| name == "redis_ft_list"));
     assert!(names.iter().any(|name| name == "redis_ft_search"));
+    assert!(!names.iter().any(|name| name == "redis_ft_vector_search"));
+    assert!(!names.iter().any(|name| name == "redis_ft_hybrid_search"));
+    assert!(!names.iter().any(|name| name == "redis_vector_get_hash"));
+    assert!(!names.iter().any(|name| name == "redis_vector_set_hash"));
+
+    let pre_vector_search = RedisCapabilities::unknown().with_module(
+        RedisModule::Search,
+        RedisModuleCapability::available(Some(RedisVersion::new(2, 2, 0))),
+    );
+    let client = capability_client(pre_vector_search, UnavailableToolPolicy::Hide).await;
+    let names = client
+        .list_tools()
+        .await
+        .expect("list pre-vector Search tools")
+        .tools
+        .into_iter()
+        .map(|tool| tool.name)
+        .collect::<Vec<_>>();
+    assert!(names.iter().any(|name| name == "redis_ft_list"));
+    assert!(names.iter().any(|name| name == "redis_ft_search"));
+    assert!(!names.iter().any(|name| name == "redis_ft_vector_search"));
 }
 
 #[tokio::test]
@@ -1106,6 +1362,8 @@ async fn known_cluster_mode_hides_tools_with_unimplemented_cluster_wide_semantic
     }
     assert!(names.iter().any(|name| name == "redis_get"));
     assert!(names.iter().any(|name| name == "redis_mget"));
+    assert!(names.iter().any(|name| name == "redis_ft_vector_search"));
+    assert!(names.iter().any(|name| name == "redis_ft_hybrid_search"));
 }
 
 #[tokio::test]
@@ -1148,6 +1406,29 @@ async fn advertised_capability_failures_have_stable_categories_and_codes() {
     let text = serde_json::to_string(&result).expect("serialize module version failure");
     assert!(result.is_error);
     assert!(text.contains("ModuleUnavailable"));
+    assert!(text.contains("MODULE_VERSION_UNAVAILABLE"));
+
+    let pre_vector_search = RedisCapabilities::unknown().with_module(
+        RedisModule::Search,
+        RedisModuleCapability::available(Some(RedisVersion::new(2, 2, 0))),
+    );
+    let client = capability_client(pre_vector_search, UnavailableToolPolicy::Advertise).await;
+    let result = client
+        .call_tool(
+            "redis_ft_vector_search",
+            serde_json::json!({
+                "index": "idx",
+                "vector_field": "embedding",
+                "data_type": "FLOAT32",
+                "vector": [1.0],
+                "top_k": 1,
+                "limit_num": 1
+            }),
+        )
+        .await
+        .expect("vector module version failure is a tool result");
+    let text = serde_json::to_string(&result).expect("serialize vector version failure");
+    assert!(result.is_error);
     assert!(text.contains("MODULE_VERSION_UNAVAILABLE"));
 
     let missing_command =

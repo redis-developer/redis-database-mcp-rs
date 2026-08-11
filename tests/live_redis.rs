@@ -3,7 +3,7 @@ use std::time::Duration;
 use redis_mcp::{
     AccessMode, CapabilityStatus, DirectRedis, NativeRedisInvocation, OutputBudget,
     RawCommandPolicy, RedisDeployment, RedisInvocationEngine, RedisMcp, RedisModule, RedisValue,
-    RedisVersion, ToolBundle, tool_names,
+    RedisVersion, ToolBundle, UnavailableToolPolicy, tool_names,
 };
 use tower_mcp::client::{ChannelTransport, McpClient, StdioClientTransport};
 
@@ -156,6 +156,7 @@ async fn capability_router_client(
         .access(access)
         .raw_commands(access == AccessMode::Full)
         .capabilities(capabilities.clone())
+        .unavailable_tool_policy(UnavailableToolPolicy::Hide)
         .build();
     let client = McpClient::connect(ChannelTransport::new(router))
         .await

@@ -208,9 +208,9 @@ impl ToolMetadata {
                 Some(RedisVersion::new(4, 0, 0))
             }
             "redis_restore" | "redis_restore_replace" => Some(RedisVersion::new(5, 0, 0)),
-            "redis_copy" | "redis_copy_replace" | "redis_getdel" | "redis_getex" => {
-                Some(RedisVersion::new(6, 2, 0))
-            }
+            "redis_lpos" => Some(RedisVersion::new(6, 0, 0)),
+            "redis_copy" | "redis_copy_replace" | "redis_getdel" | "redis_getex"
+            | "redis_lmove" | "redis_lpop" | "redis_rpop" => Some(RedisVersion::new(6, 2, 0)),
             "redis_hexpire" | "redis_hpersist" | "redis_httl" => Some(RedisVersion::new(7, 4, 0)),
             _ => None,
         };
@@ -248,7 +248,10 @@ impl ToolMetadata {
             "redis_hstrlen" => &["HSTRLEN", "HEXISTS", "EXISTS"],
             "redis_httl" => &["HTTL", "EXISTS"],
             "redis_hvals" => &["HVALS"],
-            "redis_lrange" => &["LRANGE"],
+            "redis_lindex" => &["LINDEX", "EXISTS"],
+            "redis_llen" => &["LLEN"],
+            "redis_lpos" => &["LPOS", "EXISTS"],
+            "redis_lrange" => &["LRANGE", "EXISTS"],
             "redis_smembers" => &["SMEMBERS"],
             "redis_sscan" => &["SSCAN"],
             "redis_zrange" => &["ZRANGE"],
@@ -281,6 +284,7 @@ impl ToolMetadata {
             "redis_hincrbyfloat" => &["HINCRBYFLOAT"],
             "redis_hpersist" => &["HPERSIST"],
             "redis_lpush" => &["LPUSH"],
+            "redis_rpush" => &["RPUSH"],
             "redis_sadd" => &["SADD"],
             "redis_zadd" => &["ZADD"],
             "redis_json_set" => &["JSON.SET"],
@@ -288,6 +292,12 @@ impl ToolMetadata {
             "redis_vector_set_hash" => &["HSET"],
             "redis_del" => &["DEL"],
             "redis_hdel" => &["HDEL"],
+            "redis_lpop" => &["LPOP"],
+            "redis_lmove" => &["LMOVE"],
+            "redis_lrem" => &["LREM"],
+            "redis_lset" => &["LSET"],
+            "redis_ltrim" => &["LTRIM", "EXISTS"],
+            "redis_rpop" => &["RPOP"],
             "redis_unlink" => &["UNLINK"],
             "redis_getdel" => &["GETDEL"],
             "redis_rename" => &["RENAME"],
@@ -503,6 +513,24 @@ pub(crate) const CATALOG: &[ToolMetadata] = &[
         requires_raw_opt_in: false,
     },
     ToolMetadata {
+        name: "redis_lindex",
+        bundle: ToolBundle::DataStructures,
+        required_access: AccessMode::ReadOnly,
+        requires_raw_opt_in: false,
+    },
+    ToolMetadata {
+        name: "redis_llen",
+        bundle: ToolBundle::DataStructures,
+        required_access: AccessMode::ReadOnly,
+        requires_raw_opt_in: false,
+    },
+    ToolMetadata {
+        name: "redis_lpos",
+        bundle: ToolBundle::DataStructures,
+        required_access: AccessMode::ReadOnly,
+        requires_raw_opt_in: false,
+    },
+    ToolMetadata {
         name: "redis_lrange",
         bundle: ToolBundle::DataStructures,
         required_access: AccessMode::ReadOnly,
@@ -707,6 +735,12 @@ pub(crate) const CATALOG: &[ToolMetadata] = &[
         requires_raw_opt_in: false,
     },
     ToolMetadata {
+        name: "redis_rpush",
+        bundle: ToolBundle::DataStructures,
+        required_access: AccessMode::ReadWrite,
+        requires_raw_opt_in: false,
+    },
+    ToolMetadata {
         name: "redis_sadd",
         bundle: ToolBundle::DataStructures,
         required_access: AccessMode::ReadWrite,
@@ -750,6 +784,42 @@ pub(crate) const CATALOG: &[ToolMetadata] = &[
     },
     ToolMetadata {
         name: "redis_hdel",
+        bundle: ToolBundle::DataStructures,
+        required_access: AccessMode::Full,
+        requires_raw_opt_in: false,
+    },
+    ToolMetadata {
+        name: "redis_lpop",
+        bundle: ToolBundle::DataStructures,
+        required_access: AccessMode::Full,
+        requires_raw_opt_in: false,
+    },
+    ToolMetadata {
+        name: "redis_lmove",
+        bundle: ToolBundle::DataStructures,
+        required_access: AccessMode::Full,
+        requires_raw_opt_in: false,
+    },
+    ToolMetadata {
+        name: "redis_lrem",
+        bundle: ToolBundle::DataStructures,
+        required_access: AccessMode::Full,
+        requires_raw_opt_in: false,
+    },
+    ToolMetadata {
+        name: "redis_lset",
+        bundle: ToolBundle::DataStructures,
+        required_access: AccessMode::Full,
+        requires_raw_opt_in: false,
+    },
+    ToolMetadata {
+        name: "redis_ltrim",
+        bundle: ToolBundle::DataStructures,
+        required_access: AccessMode::Full,
+        requires_raw_opt_in: false,
+    },
+    ToolMetadata {
+        name: "redis_rpop",
         bundle: ToolBundle::DataStructures,
         required_access: AccessMode::Full,
         requires_raw_opt_in: false,

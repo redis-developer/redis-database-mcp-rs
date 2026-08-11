@@ -117,7 +117,7 @@ pub(crate) fn classify_command(
         command.clone(),
         required_access,
         classified,
-        minimum_redis_version(&command),
+        minimum_redis_version(&command, arguments),
         required_module,
         minimum_module_version,
     ))
@@ -237,13 +237,15 @@ fn classified_access(command: &str, arguments: &[Vec<u8>]) -> Option<AccessMode>
     Some(access)
 }
 
-fn minimum_redis_version(command: &str) -> Option<RedisVersion> {
+fn minimum_redis_version(command: &str, arguments: &[Vec<u8>]) -> Option<RedisVersion> {
     let version = match command {
         "SCAN" | "HSCAN" | "SSCAN" | "ZSCAN" => (2, 8),
         "HSTRLEN" | "TOUCH" => (3, 2),
         "MEMORY" | "UNLINK" => (4, 0),
         "XACK" | "XADD" | "XDEL" | "XINFO" | "XLEN" | "XPENDING" | "XRANGE" | "XREAD"
         | "XREADGROUP" | "XREVRANGE" | "XTRIM" => (5, 0),
+        "LPOS" => (6, 0),
+        "LPOP" | "RPOP" if arguments.len() > 1 => (6, 2),
         "COPY" | "GETDEL" | "GETEX" | "LMOVE" | "SMISMEMBER" | "ZDIFF" | "ZINTER" | "ZMSCORE"
         | "ZRANDMEMBER" | "ZUNION" => (6, 2),
         "EXPIRETIME" | "LCS" | "LMPOP" | "PEXPIRETIME" | "SINTERCARD" | "ZMPOP" => (7, 0),
@@ -352,6 +354,24 @@ mod tests {
         assert_eq!(
             httl.minimum_redis_version(),
             Some(RedisVersion::new(7, 4, 0))
+        );
+        assert_eq!(
+            invocation("LPOS", &["key", "value"])
+                .expect("LPOS metadata")
+                .minimum_redis_version(),
+            Some(RedisVersion::new(6, 0, 0))
+        );
+        assert_eq!(
+            invocation("LPOP", &["key"])
+                .expect("single LPOP metadata")
+                .minimum_redis_version(),
+            None
+        );
+        assert_eq!(
+            invocation("LPOP", &["key", "2"])
+                .expect("counted LPOP metadata")
+                .minimum_redis_version(),
+            Some(RedisVersion::new(6, 2, 0))
         );
     }
 

@@ -12,7 +12,7 @@ Redis Cloud and Redis Enterprise APIs. The Rust package is simply redis-mcp.
 
 ## Curated default
 
-The standalone default exposes 61 broadly useful tools:
+The standalone default exposes 71 broadly useful tools:
 
 - read-only essentials: `redis_ping`, `redis_dbsize`, `redis_scan`,
   `redis_get`, `redis_type`, `redis_ttl`, `redis_exists`, `redis_mget`,
@@ -29,7 +29,9 @@ The standalone default exposes 61 broadly useful tools:
   `redis_hkeys`, `redis_hlen`, `redis_hmget`, `redis_hstrlen`, `redis_httl`,
   `redis_hvals`, `redis_hscan`, `redis_hset`, `redis_hincrby`,
   `redis_hincrbyfloat`, `redis_hexpire`, `redis_hpersist`, `redis_hdel`,
-  `redis_lrange`, `redis_lpush`, `redis_smembers`, `redis_sscan`, `redis_sadd`,
+  `redis_lindex`, `redis_llen`, `redis_lpos`, `redis_lrange`, `redis_lpush`,
+  `redis_rpush`, `redis_lpop`, `redis_rpop`, `redis_lmove`, `redis_lrem`,
+  `redis_lset`, `redis_ltrim`, `redis_smembers`, `redis_sscan`, `redis_sadd`,
   `redis_zrange`, `redis_zscan`, `redis_zadd`
 - diagnostics: `redis_info`
 - optional RedisJSON lifecycle: `redis_json_get`, `redis_json_type`,
@@ -47,9 +49,9 @@ result and 1,000 collection entries. Oversized results return a stable
 `io.redis.mcp/outputLimit` metadata; hashes, sets, sorted sets, ranges, and
 Search also expose typed continuation metadata. A fixed Redis target is
 configured once by the server; arbitrary URLs are not accepted in tool calls.
-Side-effectful value-returning commands (`SET GET`, `GETEX`, and `GETDEL`)
-accept explicit byte caps and report oversized prior values as omitted while
-preserving the mutation outcome.
+Side-effectful value-returning commands (`SET GET`, `GETEX`, `GETDEL`, counted
+list pops, and `LMOVE`) accept explicit byte caps and report oversized returned
+values as omitted while preserving the mutation outcome.
 
 See [the spike decision record](docs/spike.md) for the tested architecture,
 REPL findings, and redisctl migration sequence.
@@ -91,7 +93,7 @@ conflicts with the standalone `REDIS_URL`. The target remains fixed for the
 life of the server and is never exposed in tool inputs. Normal Redis Cluster
 slot rules still apply: supported multi-key commands such as `MGET`, `MSET`,
 and `DEL` are split across slots by the adapter, while commands that require
-all keys in one slot (for example `RENAME`) return a stable `CROSSSLOT`
+all keys in one slot (for example `RENAME` and `LMOVE`) return a stable `CROSSSLOT`
 invalid-request error.
 
 Classified raw commands require full access plus their own opt-in. Unknown
@@ -250,15 +252,16 @@ hybrid filters.
 
 CI runs the complete suite on Redis 8.8 and the live router/stdio contract on
 every currently supported Redis Open Source series: 6.2, 7.2, 7.4, 8.0, 8.2,
-8.4, 8.6, and 8.8. Live tests exercise both RESP2 and RESP3, the 61-tool curated
+8.4, 8.6, and 8.8. Live tests exercise both RESP2 and RESP3, the 71-tool curated
 catalog, binary and nil responses, conditional and absolute expiration,
-bounded serialization/restore, typed hash-field expiration, ACL failures,
+bounded serialization/restore, complete bounded list semantics, typed
+hash-field expiration, ACL failures,
 bounded connection loss and recovery, and the real `redis-mcp-server` stdio
 process. A separate job pins the official
 `redis/redis-stack-server:7.4.0-v8` image and runs the JSON/Search lifecycle.
 Dedicated three-master cluster jobs run on Redis 6.2 and 8.8 and exercise
-redirection, multi-slot aggregation, same-slot copy/rename, stable cross-slot
-failures, and the cluster-configured stdio server. The version list follows the
+redirection, multi-slot aggregation, same-slot copy/rename/list movement,
+stable cross-slot failures, and the cluster-configured stdio server. The version list follows the
 [Redis Open Source version-management table](https://redis.io/docs/latest/operate/oss_and_stack/install/version-mgmt/).
 
 ## Non-goals

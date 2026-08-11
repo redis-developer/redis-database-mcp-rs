@@ -382,6 +382,16 @@ async fn cluster_routes_curated_and_raw_tools_across_three_masters() {
             "redis-mcp:test:{}:{{issue18-{protocol}}}:renamed",
             std::process::id()
         );
+        let same_list_source = format!(
+            "redis-mcp:test:{}:{{issue20-{protocol}}}:list-source",
+            std::process::id()
+        );
+        let same_list_destination = format!(
+            "redis-mcp:test:{}:{{issue20-{protocol}}}:list-destination",
+            std::process::id()
+        );
+        let cross_list_source = format!("{}:list-source", keys[0]);
+        let cross_list_destination = format!("{}:list-destination", keys[1]);
         routed
             .call_tool(
                 "redis_set",
@@ -409,6 +419,54 @@ async fn cluster_routes_curated_and_raw_tools_across_three_masters() {
             .structured_content
             .expect("structured same-slot RENAME");
         assert_eq!(renamed["renamed"], true);
+
+        routed
+            .call_tool(
+                "redis_rpush",
+                serde_json::json!({"key": same_list_source, "elements": ["same-slot"]}),
+            )
+            .await
+            .expect("same-slot RPUSH");
+        let list_moved = routed
+            .call_tool(
+                "redis_lmove",
+                serde_json::json!({
+                    "source": same_list_source,
+                    "destination": same_list_destination,
+                    "from": "left",
+                    "to": "right"
+                }),
+            )
+            .await
+            .expect("same-slot LMOVE")
+            .structured_content
+            .expect("structured same-slot LMOVE");
+        assert_eq!(list_moved["moved"], true);
+        assert_eq!(list_moved["value"], "same-slot");
+
+        routed
+            .call_tool(
+                "redis_rpush",
+                serde_json::json!({"key": cross_list_source, "elements": ["cross-slot"]}),
+            )
+            .await
+            .expect("cross-slot source RPUSH");
+        let cross_list_move = routed
+            .call_tool(
+                "redis_lmove",
+                serde_json::json!({
+                    "source": cross_list_source,
+                    "destination": cross_list_destination,
+                    "from": "left",
+                    "to": "right"
+                }),
+            )
+            .await
+            .expect("cross-slot LMOVE is represented as a tool result");
+        assert!(cross_list_move.is_error);
+        let cross_list_move =
+            serde_json::to_string(&cross_list_move).expect("serialize LMOVE CROSSSLOT");
+        assert!(cross_list_move.contains("CROSSSLOT"), "{cross_list_move}");
 
         for tool in ["redis_copy", "redis_rename", "redis_renamenx"] {
             let cross_slot = routed
@@ -447,13 +505,22 @@ async fn cluster_routes_curated_and_raw_tools_across_three_masters() {
         let same_slot_deleted = routed
             .call_tool(
                 "redis_del",
-                serde_json::json!({"keys": [same_source, same_renamed]}),
+                serde_json::json!({
+                    "keys": [
+                        same_source,
+                        same_renamed,
+                        same_list_source,
+                        same_list_destination,
+                        cross_list_source,
+                        cross_list_destination
+                    ]
+                }),
             )
             .await
             .expect("delete same-slot keys")
             .structured_content
             .expect("structured same-slot DEL");
-        assert_eq!(same_slot_deleted["deleted"], 2);
+        assert_eq!(same_slot_deleted["deleted"], 4);
     }
 
     let binary = env!("CARGO_BIN_EXE_redis-mcp-server");

@@ -19,6 +19,7 @@ use super::{
 use crate::AccessMode;
 
 const MAX_ITEMS: usize = 1_000;
+const DEFAULT_LIST_RETURNED_BYTES: usize = 64 * 1024;
 type BinaryPair = (Vec<u8>, Vec<u8>);
 
 fn validate_items(items: &[impl Sized], name: &str) -> tower_mcp::Result<()> {
@@ -980,6 +981,9 @@ fn validate_range(start: i64, stop: i64, limit: usize) -> tower_mcp::Result<usiz
 struct RangeInput {
     /// Redis key.
     key: String,
+    /// Encoding of `key`.
+    #[serde(default)]
+    key_encoding: InputEncoding,
     /// Zero-based inclusive start index.
     #[serde(default)]
     start: i64,
@@ -992,6 +996,8 @@ struct RangeInput {
 #[serde(deny_unknown_fields)]
 struct LrangeOutput {
     key: String,
+    key_encoding: InputEncoding,
+    exists: bool,
     start: i64,
     stop: i64,
     count: usize,
@@ -1003,7 +1009,7 @@ fn lrange_tool(state: Arc<ToolState>) -> Tool {
     ToolBuilder::new("redis_lrange")
         .title("Read Redis List Range")
         .description(
-            "Read a bounded inclusive range from a Redis list. Defaults to ranks 0 through 99. Follow page.continuation.start until page.complete is true. Binary elements are base64.",
+            "Read a bounded inclusive range from a Redis list. Negative indexes count from the tail; mixed-sign ranges are rejected because they can be unbounded. Defaults to indexes 0 through 99. Follow page.continuation.start until page.complete is true. Missing lists return exists=false and no elements. Binary keys and elements are supported.",
         )
         .output_schema(output_schema::<LrangeOutput>())
         .annotations(read_annotations())
@@ -1022,7 +1028,7 @@ fn lrange_tool(state: Arc<ToolState>) -> Tool {
                 };
                 let mut command = command("redis_lrange", AccessMode::ReadOnly, "LRANGE");
                 command
-                    .arg(input.key.as_str())
+                    .arg(decode_input(&input.key, input.key_encoding, "key")?)
                     .arg(input.start.to_string())
                     .arg(fetch_stop.to_string());
                 let mut values: Vec<Vec<u8>> = state.query(command, "LRANGE failed").await?;
@@ -1032,9 +1038,22 @@ fn lrange_tool(state: Arc<ToolState>) -> Tool {
                     .into_iter()
                     .map(EncodedValue::from)
                     .collect::<Vec<_>>();
+                let exists = if elements.is_empty() {
+                    key_exists(
+                        &state,
+                        "redis_lrange",
+                        AccessMode::ReadOnly,
+                        decode_input(&input.key, input.key_encoding, "key")?,
+                    )
+                    .await?
+                } else {
+                    true
+                };
                 let next_start = has_more.then(|| input.stop.saturating_add(1));
                 let output = LrangeOutput {
                     key: input.key,
+                    key_encoding: input.key_encoding,
+                    exists,
                     start: input.start,
                     stop: input.stop,
                     count: elements.len(),
@@ -1792,43 +1811,715 @@ fn hdel_tool(state: Arc<ToolState>) -> Tool {
         .build()
 }
 
+#[derive(Debug, Clone, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+struct EncodedListElementInput {
+    /// List element.
+    value: String,
+    /// Encoding of `value`.
+    #[serde(default)]
+    value_encoding: InputEncoding,
+}
+
+#[derive(Debug, Clone, Deserialize, JsonSchema)]
+#[serde(untagged)]
+enum ListElementSelector {
+    /// UTF-8 list element shorthand.
+    Utf8(String),
+    /// Explicitly encoded list element.
+    Encoded(EncodedListElementInput),
+}
+
+impl ListElementSelector {
+    fn decode(self, index: usize) -> tower_mcp::Result<Vec<u8>> {
+        match self {
+            Self::Utf8(value) => Ok(value.into_bytes()),
+            Self::Encoded(value) => decode_input(
+                &value.value,
+                value.value_encoding,
+                &format!("elements[{index}].value"),
+            ),
+        }
+    }
+}
+
+fn decode_list_elements(elements: Vec<ListElementSelector>) -> tower_mcp::Result<Vec<Vec<u8>>> {
+    validate_items(&elements, "elements")?;
+    elements
+        .into_iter()
+        .enumerate()
+        .map(|(index, element)| element.decode(index))
+        .collect()
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+struct ListKeyInput {
+    /// Redis list key.
+    key: String,
+    /// Encoding of `key`.
+    #[serde(default)]
+    key_encoding: InputEncoding,
+}
+
 #[derive(Debug, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 struct ListPushInput {
     /// Redis list key.
     key: String,
-    /// UTF-8 elements to push to the head in argument order.
+    /// Encoding of `key`.
+    #[serde(default)]
+    key_encoding: InputEncoding,
+    /// UTF-8 shorthand or explicitly encoded elements to push in argument order.
     #[schemars(length(min = 1, max = 1000))]
-    elements: Vec<String>,
+    elements: Vec<ListElementSelector>,
 }
 
 #[derive(Debug, Serialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
-struct LpushOutput {
+struct ListPushOutput {
     key: String,
+    key_encoding: InputEncoding,
     pushed: usize,
     length: u64,
 }
 
-fn lpush_tool(state: Arc<ToolState>) -> Tool {
-    ToolBuilder::new("redis_lpush")
-        .title("Push Redis List Elements")
-        .description("Push between 1 and 1000 UTF-8 elements to the head of a Redis list.")
-        .output_schema(output_schema::<LpushOutput>())
+fn list_push_tool(state: Arc<ToolState>, left: bool) -> Tool {
+    let (tool_name, command_name, title, description) = if left {
+        (
+            "redis_lpush",
+            "LPUSH",
+            "Push Redis List Head",
+            "Push between 1 and 1000 binary-safe elements to a Redis list head. Redis processes elements in argument order, so the last argument becomes the new head.",
+        )
+    } else {
+        (
+            "redis_rpush",
+            "RPUSH",
+            "Push Redis List Tail",
+            "Push between 1 and 1000 binary-safe elements to a Redis list tail. The first argument is closest to the prior tail and the last argument becomes the new tail.",
+        )
+    };
+    ToolBuilder::new(tool_name)
+        .title(title)
+        .description(description)
+        .output_schema(output_schema::<ListPushOutput>())
         .annotations(write_annotations(false))
         .extractor_handler(
             state,
-            |State(state): State<Arc<ToolState>>, Json(input): Json<ListPushInput>| async move {
-                state.require(AccessMode::ReadWrite, "redis_lpush")?;
-                validate_items(&input.elements, "elements")?;
-                let pushed = input.elements.len();
-                let mut command = command("redis_lpush", AccessMode::ReadWrite, "LPUSH");
-                command.arg(input.key.as_str()).args(input.elements);
-                let length = state.query(command, "LPUSH failed").await?;
-                state.output(&LpushOutput {
+            move |State(state): State<Arc<ToolState>>, Json(input): Json<ListPushInput>| async move {
+                state.require(AccessMode::ReadWrite, tool_name)?;
+                let elements = decode_list_elements(input.elements)?;
+                let pushed = elements.len();
+                let mut command = command(tool_name, AccessMode::ReadWrite, command_name);
+                command
+                    .arg(decode_input(&input.key, input.key_encoding, "key")?)
+                    .args(elements);
+                let length = state
+                    .query(command, &format!("{command_name} failed"))
+                    .await?;
+                state.output(&ListPushOutput {
                     key: input.key,
+                    key_encoding: input.key_encoding,
                     pushed,
                     length,
+                })
+            },
+        )
+        .build()
+}
+
+#[derive(Debug, Serialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+struct LlenOutput {
+    key: String,
+    key_encoding: InputEncoding,
+    exists: bool,
+    length: u64,
+}
+
+fn llen_tool(state: Arc<ToolState>) -> Tool {
+    ToolBuilder::new("redis_llen")
+        .title("Read Redis List Length")
+        .description(
+            "Read a Redis list length. Because Redis removes empty lists, length zero means the key does not exist.",
+        )
+        .output_schema(output_schema::<LlenOutput>())
+        .annotations(read_annotations())
+        .extractor_handler(
+            state,
+            |State(state): State<Arc<ToolState>>, Json(input): Json<ListKeyInput>| async move {
+                let mut command = command("redis_llen", AccessMode::ReadOnly, "LLEN");
+                command.arg(decode_input(&input.key, input.key_encoding, "key")?);
+                let length = state.query(command, "LLEN failed").await?;
+                state.output(&LlenOutput {
+                    key: input.key,
+                    key_encoding: input.key_encoding,
+                    exists: length != 0,
+                    length,
+                })
+            },
+        )
+        .build()
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+struct LindexInput {
+    /// Redis list key.
+    key: String,
+    /// Encoding of `key`.
+    #[serde(default)]
+    key_encoding: InputEncoding,
+    /// Zero-based index. Negative indexes count from the tail, with -1 selecting the last element.
+    index: i64,
+}
+
+#[derive(Debug, Serialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+struct LindexOutput {
+    key: String,
+    key_encoding: InputEncoding,
+    list_exists: bool,
+    element_exists: bool,
+    index: i64,
+    value: Option<String>,
+    encoding: Option<ValueEncoding>,
+}
+
+fn lindex_tool(state: Arc<ToolState>) -> Tool {
+    ToolBuilder::new("redis_lindex")
+        .title("Read Redis List Element")
+        .description(
+            "Read one binary-safe list element by zero-based index. Negative indexes count from the tail. Missing lists and out-of-range indexes are distinguished in the result.",
+        )
+        .output_schema(output_schema::<LindexOutput>())
+        .annotations(read_annotations())
+        .extractor_handler(
+            state,
+            |State(state): State<Arc<ToolState>>, Json(input): Json<LindexInput>| async move {
+                let key = decode_input(&input.key, input.key_encoding, "key")?;
+                let mut command = command("redis_lindex", AccessMode::ReadOnly, "LINDEX");
+                command.arg(key.clone()).arg(input.index.to_string());
+                let value: Option<Vec<u8>> = state.query(command, "LINDEX failed").await?;
+                let element_exists = value.is_some();
+                let list_exists = if element_exists {
+                    true
+                } else {
+                    key_exists(&state, "redis_lindex", AccessMode::ReadOnly, key).await?
+                };
+                let (value, encoding) = match value {
+                    Some(value) => {
+                        let value = EncodedValue::from(value);
+                        (Some(value.value), Some(value.encoding))
+                    }
+                    None => (None, None),
+                };
+                state.output(&LindexOutput {
+                    key: input.key,
+                    key_encoding: input.key_encoding,
+                    list_exists,
+                    element_exists,
+                    index: input.index,
+                    value,
+                    encoding,
+                })
+            },
+        )
+        .build()
+}
+
+fn default_one() -> usize {
+    1
+}
+
+fn default_list_returned_bytes() -> usize {
+    DEFAULT_LIST_RETURNED_BYTES
+}
+
+fn default_rank() -> i64 {
+    1
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+struct LposInput {
+    /// Redis list key.
+    key: String,
+    /// Encoding of `key`.
+    #[serde(default)]
+    key_encoding: InputEncoding,
+    /// List element to find.
+    value: String,
+    /// Encoding of `value`.
+    #[serde(default)]
+    value_encoding: InputEncoding,
+    /// Match rank. Positive ranks search from the head and negative ranks from the tail; zero is invalid.
+    #[serde(default = "default_rank")]
+    rank: i64,
+    /// Maximum number of matching positions to return.
+    #[serde(default = "default_one")]
+    #[schemars(range(min = 1, max = 1000))]
+    count: usize,
+    /// Maximum number of list elements to scan. Zero or omission means no scan limit.
+    max_len: Option<u64>,
+}
+
+#[derive(Debug, Serialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+struct LposOutput {
+    key: String,
+    key_encoding: InputEncoding,
+    exists: bool,
+    rank: i64,
+    requested: usize,
+    count: usize,
+    positions: Vec<i64>,
+}
+
+fn lpos_tool(state: Arc<ToolState>) -> Tool {
+    ToolBuilder::new("redis_lpos")
+        .title("Find Redis List Elements")
+        .description(
+            "Find a bounded number of matching list-element positions. Positive ranks search from the head, negative ranks from the tail, and zero is invalid. COUNT is always sent so the response is an explicit array; missing lists return exists=false and no positions.",
+        )
+        .output_schema(output_schema::<LposOutput>())
+        .annotations(read_annotations())
+        .extractor_handler(
+            state,
+            |State(state): State<Arc<ToolState>>, Json(input): Json<LposInput>| async move {
+                state.validate_requested_entries(input.count, "count")?;
+                if input.rank == 0 {
+                    return Err(tower_mcp::Error::tool("rank must not be zero"));
+                }
+                let key = decode_input(&input.key, input.key_encoding, "key")?;
+                let mut command = command("redis_lpos", AccessMode::ReadOnly, "LPOS");
+                command
+                    .arg(key.clone())
+                    .arg(decode_input(
+                        &input.value,
+                        input.value_encoding,
+                        "value",
+                    )?)
+                    .arg("RANK")
+                    .arg(input.rank.to_string())
+                    .arg("COUNT")
+                    .arg(input.count.to_string());
+                if let Some(max_len) = input.max_len {
+                    command.arg("MAXLEN").arg(max_len.to_string());
+                }
+                let positions: Vec<i64> = state.query(command, "LPOS failed").await?;
+                let exists = if positions.is_empty() {
+                    key_exists(&state, "redis_lpos", AccessMode::ReadOnly, key).await?
+                } else {
+                    true
+                };
+                let output = LposOutput {
+                    key: input.key,
+                    key_encoding: input.key_encoding,
+                    exists,
+                    rank: input.rank,
+                    requested: input.count,
+                    count: positions.len(),
+                    positions,
+                };
+                state.output_collection(
+                    &output,
+                    output.count,
+                    "Retry LPOS with a smaller count.",
+                )
+            },
+        )
+        .build()
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+struct ListPopInput {
+    /// Redis list key.
+    key: String,
+    /// Encoding of `key`.
+    #[serde(default)]
+    key_encoding: InputEncoding,
+    /// Maximum number of elements to remove and return.
+    #[serde(default = "default_one")]
+    #[schemars(range(min = 1, max = 1000))]
+    count: usize,
+    /// Maximum aggregate bytes of popped elements to include. Larger results are reported as omitted so the mutation remains observable.
+    #[serde(default = "default_list_returned_bytes")]
+    #[schemars(range(min = 1))]
+    max_returned_bytes: usize,
+}
+
+#[derive(Debug, Serialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+struct ListPopOutput {
+    key: String,
+    key_encoding: InputEncoding,
+    requested: usize,
+    popped: usize,
+    found: bool,
+    element_bytes: usize,
+    elements_omitted: bool,
+    elements: Vec<EncodedValue>,
+}
+
+fn list_pop_tool(state: Arc<ToolState>, left: bool) -> Tool {
+    let (tool_name, command_name, title, edge) = if left {
+        ("redis_lpop", "LPOP", "Pop Redis List Head", "head")
+    } else {
+        ("redis_rpop", "RPOP", "Pop Redis List Tail", "tail")
+    };
+    ToolBuilder::new(tool_name)
+        .title(title)
+        .description(format!(
+            "Remove and return between 1 and 1000 binary-safe elements from the list {edge}. This is non-blocking; a missing or exhausted list returns found=false and no elements. Oversized returned values are explicitly omitted after the mutation. Requires full access and Redis 6.2 or newer."
+        ))
+        .output_schema(output_schema::<ListPopOutput>())
+        .annotations(destructive_annotations(false))
+        .extractor_handler(
+            state,
+            move |State(state): State<Arc<ToolState>>, Json(input): Json<ListPopInput>| async move {
+                state.require(AccessMode::Full, tool_name)?;
+                state.validate_requested_entries(input.count, "count")?;
+                if input.max_returned_bytes == 0 {
+                    return Err(tower_mcp::Error::tool(
+                        "max_returned_bytes must be greater than zero",
+                    ));
+                }
+                let max_returned_bytes =
+                    input.max_returned_bytes.min(state.max_output_bytes());
+                let mut command = command(tool_name, AccessMode::Full, command_name);
+                command
+                    .arg(decode_input(&input.key, input.key_encoding, "key")?)
+                    .arg(input.count.to_string());
+                let elements: Option<Vec<Vec<u8>>> = state
+                    .query(command, &format!("{command_name} failed"))
+                    .await?;
+                let elements = elements.unwrap_or_default();
+                let popped = elements.len();
+                let element_bytes = elements.iter().try_fold(0_usize, |total, element| {
+                    total.checked_add(element.len()).ok_or_else(|| {
+                        tower_mcp::Error::tool("popped element byte count overflowed")
+                    })
+                })?;
+                let elements_omitted = element_bytes > max_returned_bytes;
+                let elements = if elements_omitted {
+                    Vec::new()
+                } else {
+                    elements
+                        .into_iter()
+                        .map(EncodedValue::from)
+                        .collect::<Vec<_>>()
+                };
+                let output = ListPopOutput {
+                    key: input.key,
+                    key_encoding: input.key_encoding,
+                    requested: input.count,
+                    popped,
+                    found: popped != 0,
+                    element_bytes,
+                    elements_omitted,
+                    elements,
+                };
+                state.output_collection(
+                    &output,
+                    output.elements.len(),
+                    "Retry the pop with a smaller count.",
+                )
+            },
+        )
+        .build()
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+struct LremInput {
+    /// Redis list key.
+    key: String,
+    /// Encoding of `key`.
+    #[serde(default)]
+    key_encoding: InputEncoding,
+    /// Occurrences to remove: positive from the head, negative from the tail, or zero for all matches.
+    count: i64,
+    /// List element to remove.
+    value: String,
+    /// Encoding of `value`.
+    #[serde(default)]
+    value_encoding: InputEncoding,
+}
+
+#[derive(Debug, Serialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+struct LremOutput {
+    key: String,
+    key_encoding: InputEncoding,
+    requested: i64,
+    removed: u64,
+}
+
+fn lrem_tool(state: Arc<ToolState>) -> Tool {
+    ToolBuilder::new("redis_lrem")
+        .title("Remove Redis List Elements")
+        .description(
+            "Remove matching binary-safe list elements. Positive counts remove from the head, negative counts from the tail, and zero removes every match. Requires full access.",
+        )
+        .output_schema(output_schema::<LremOutput>())
+        .annotations(destructive_annotations(false))
+        .extractor_handler(
+            state,
+            |State(state): State<Arc<ToolState>>, Json(input): Json<LremInput>| async move {
+                state.require(AccessMode::Full, "redis_lrem")?;
+                let mut command = command("redis_lrem", AccessMode::Full, "LREM");
+                command
+                    .arg(decode_input(&input.key, input.key_encoding, "key")?)
+                    .arg(input.count.to_string())
+                    .arg(decode_input(
+                        &input.value,
+                        input.value_encoding,
+                        "value",
+                    )?);
+                let removed = state.query(command, "LREM failed").await?;
+                state.output(&LremOutput {
+                    key: input.key,
+                    key_encoding: input.key_encoding,
+                    requested: input.count,
+                    removed,
+                })
+            },
+        )
+        .build()
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+struct LsetInput {
+    /// Redis list key.
+    key: String,
+    /// Encoding of `key`.
+    #[serde(default)]
+    key_encoding: InputEncoding,
+    /// Zero-based index to replace. Negative indexes count from the tail.
+    index: i64,
+    /// Replacement value.
+    value: String,
+    /// Encoding of `value`.
+    #[serde(default)]
+    value_encoding: InputEncoding,
+}
+
+#[derive(Debug, Serialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+struct LsetOutput {
+    key: String,
+    key_encoding: InputEncoding,
+    index: i64,
+    replaced: bool,
+}
+
+fn lset_tool(state: Arc<ToolState>) -> Tool {
+    ToolBuilder::new("redis_lset")
+        .title("Replace Redis List Element")
+        .description(
+            "Replace one list element by index. Negative indexes count from the tail. Missing lists and out-of-range indexes are Redis errors. Requires full access.",
+        )
+        .output_schema(output_schema::<LsetOutput>())
+        .annotations(destructive_annotations(true))
+        .extractor_handler(
+            state,
+            |State(state): State<Arc<ToolState>>, Json(input): Json<LsetInput>| async move {
+                state.require(AccessMode::Full, "redis_lset")?;
+                let mut command = command("redis_lset", AccessMode::Full, "LSET");
+                command
+                    .arg(decode_input(&input.key, input.key_encoding, "key")?)
+                    .arg(input.index.to_string())
+                    .arg(decode_input(
+                        &input.value,
+                        input.value_encoding,
+                        "value",
+                    )?);
+                let _: String = state.query(command, "LSET failed").await?;
+                state.output(&LsetOutput {
+                    key: input.key,
+                    key_encoding: input.key_encoding,
+                    index: input.index,
+                    replaced: true,
+                })
+            },
+        )
+        .build()
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+struct LtrimInput {
+    /// Redis list key.
+    key: String,
+    /// Encoding of `key`.
+    #[serde(default)]
+    key_encoding: InputEncoding,
+    /// Inclusive start index. Negative indexes count from the tail.
+    start: i64,
+    /// Inclusive stop index. Negative indexes count from the tail.
+    stop: i64,
+}
+
+#[derive(Debug, Serialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+struct LtrimOutput {
+    key: String,
+    key_encoding: InputEncoding,
+    start: i64,
+    stop: i64,
+    exists: bool,
+    trimmed: bool,
+}
+
+fn ltrim_tool(state: Arc<ToolState>) -> Tool {
+    ToolBuilder::new("redis_ltrim")
+        .title("Trim Redis List")
+        .description(
+            "Keep only the inclusive list range from start through stop. Negative indexes count from the tail. If the range is empty, Redis deletes the key. Requires full access.",
+        )
+        .output_schema(output_schema::<LtrimOutput>())
+        .annotations(destructive_annotations(false))
+        .extractor_handler(
+            state,
+            |State(state): State<Arc<ToolState>>, Json(input): Json<LtrimInput>| async move {
+                state.require(AccessMode::Full, "redis_ltrim")?;
+                let key = decode_input(&input.key, input.key_encoding, "key")?;
+                let mut command = command("redis_ltrim", AccessMode::Full, "LTRIM");
+                command
+                    .arg(key.clone())
+                    .arg(input.start.to_string())
+                    .arg(input.stop.to_string());
+                let _: String = state.query(command, "LTRIM failed").await?;
+                let exists = key_exists(&state, "redis_ltrim", AccessMode::Full, key).await?;
+                state.output(&LtrimOutput {
+                    key: input.key,
+                    key_encoding: input.key_encoding,
+                    start: input.start,
+                    stop: input.stop,
+                    exists,
+                    trimmed: true,
+                })
+            },
+        )
+        .build()
+}
+
+#[derive(Debug, Clone, Copy, Deserialize, Serialize, JsonSchema)]
+#[serde(rename_all = "lowercase")]
+enum ListSide {
+    Left,
+    Right,
+}
+
+impl ListSide {
+    const fn as_str(self) -> &'static str {
+        match self {
+            Self::Left => "LEFT",
+            Self::Right => "RIGHT",
+        }
+    }
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+struct LmoveInput {
+    /// Source Redis list key.
+    source: String,
+    /// Encoding of `source`.
+    #[serde(default)]
+    source_encoding: InputEncoding,
+    /// Destination Redis list key.
+    destination: String,
+    /// Encoding of `destination`.
+    #[serde(default)]
+    destination_encoding: InputEncoding,
+    /// Source edge from which to remove the element.
+    from: ListSide,
+    /// Destination edge at which to insert the element.
+    to: ListSide,
+    /// Maximum moved-value bytes to include. Larger values are reported as omitted so the move remains observable.
+    #[serde(default = "default_list_returned_bytes")]
+    #[schemars(range(min = 1))]
+    max_value_bytes: usize,
+}
+
+#[derive(Debug, Serialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+struct LmoveOutput {
+    source: String,
+    source_encoding: InputEncoding,
+    destination: String,
+    destination_encoding: InputEncoding,
+    from: ListSide,
+    to: ListSide,
+    moved: bool,
+    value: Option<String>,
+    encoding: Option<ValueEncoding>,
+    value_bytes: Option<usize>,
+    value_omitted: bool,
+}
+
+fn lmove_tool(state: Arc<ToolState>) -> Tool {
+    ToolBuilder::new("redis_lmove")
+        .title("Move Redis List Element")
+        .description(
+            "Atomically move one binary-safe element between list edges without blocking. A missing or exhausted source returns moved=false. Oversized returned values are explicitly omitted after the move. On Redis Cluster, source and destination must share a hash slot. Requires full access and Redis 6.2 or newer.",
+        )
+        .output_schema(output_schema::<LmoveOutput>())
+        .annotations(destructive_annotations(false))
+        .extractor_handler(
+            state,
+            |State(state): State<Arc<ToolState>>, Json(input): Json<LmoveInput>| async move {
+                state.require(AccessMode::Full, "redis_lmove")?;
+                if input.max_value_bytes == 0 {
+                    return Err(tower_mcp::Error::tool(
+                        "max_value_bytes must be greater than zero",
+                    ));
+                }
+                let max_value_bytes = input.max_value_bytes.min(state.max_output_bytes());
+                let mut command = command("redis_lmove", AccessMode::Full, "LMOVE");
+                command
+                    .arg(decode_input(
+                        &input.source,
+                        input.source_encoding,
+                        "source",
+                    )?)
+                    .arg(decode_input(
+                        &input.destination,
+                        input.destination_encoding,
+                        "destination",
+                    )?)
+                    .arg(input.from.as_str())
+                    .arg(input.to.as_str());
+                let value: Option<Vec<u8>> = state.query(command, "LMOVE failed").await?;
+                let moved = value.is_some();
+                let value_bytes = value.as_ref().map(Vec::len);
+                let value_omitted = value
+                    .as_ref()
+                    .is_some_and(|value| value.len() > max_value_bytes);
+                let (value, encoding) = match value {
+                    Some(value) if !value_omitted => {
+                        let value = EncodedValue::from(value);
+                        (Some(value.value), Some(value.encoding))
+                    }
+                    _ => (None, None),
+                };
+                state.output(&LmoveOutput {
+                    source: input.source,
+                    source_encoding: input.source_encoding,
+                    destination: input.destination,
+                    destination_encoding: input.destination_encoding,
+                    from: input.from,
+                    to: input.to,
+                    moved,
+                    value,
+                    encoding,
+                    value_bytes,
+                    value_omitted,
                 })
             },
         )
@@ -1997,6 +2688,9 @@ pub(super) fn add_read_tools(mut router: McpRouter, state: Arc<ToolState>) -> Mc
     router = router.tool(hstrlen_tool(state.clone()));
     router = router.tool(httl_tool(state.clone()));
     router = router.tool(hvals_tool(state.clone()));
+    router = router.tool(lindex_tool(state.clone()));
+    router = router.tool(llen_tool(state.clone()));
+    router = router.tool(lpos_tool(state.clone()));
     router = router.tool(lrange_tool(state.clone()));
     router = router.tool(smembers_tool(state.clone()));
     router = router.tool(sscan_tool(state.clone()));
@@ -2010,13 +2704,20 @@ pub(super) fn add_write_tools(mut router: McpRouter, state: Arc<ToolState>) -> M
     router = router.tool(hincrby_tool(state.clone()));
     router = router.tool(hincrbyfloat_tool(state.clone()));
     router = router.tool(hpersist_tool(state.clone()));
-    router = router.tool(lpush_tool(state.clone()));
+    router = router.tool(list_push_tool(state.clone(), true));
+    router = router.tool(list_push_tool(state.clone(), false));
     router = router.tool(sadd_tool(state.clone()));
     router.tool(zadd_tool(state))
 }
 
-pub(super) fn add_destructive_tools(router: McpRouter, state: Arc<ToolState>) -> McpRouter {
-    router.tool(hdel_tool(state))
+pub(super) fn add_destructive_tools(mut router: McpRouter, state: Arc<ToolState>) -> McpRouter {
+    router = router.tool(hdel_tool(state.clone()));
+    router = router.tool(list_pop_tool(state.clone(), true));
+    router = router.tool(lmove_tool(state.clone()));
+    router = router.tool(lrem_tool(state.clone()));
+    router = router.tool(lset_tool(state.clone()));
+    router = router.tool(ltrim_tool(state.clone()));
+    router.tool(list_pop_tool(state, false))
 }
 
 #[cfg(test)]

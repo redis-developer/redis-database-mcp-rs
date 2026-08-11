@@ -225,7 +225,7 @@
   },
   "current_gate": {
     "met": false,
-    "blockers": [18, 19, 20, 21, 22, 23, 27, 28, 29, 30, 31, 32, 33]
+    "blockers": [19, 20, 21, 22, 23, 27, 28, 29, 30, 31, 32, 33]
   },
   "contract_scorecard": {
     "scale": {
@@ -429,8 +429,7 @@
       "redisctl_tools": ["redis_set"],
       "library_tools": ["redis_set"],
       "disposition": "implemented",
-      "quality_issues": [18],
-      "reason": "The current atomic SET supports expiration; issue #18 completes conditional and absolute-expiry semantics."
+      "reason": "Binary-safe SET exposes NX/XX, GET, EX/PX/EXAT/PXAT/KEEPTTL as mutually valid typed choices and distinguishes applied, no-op, nil, and bounded prior-value results."
     },
     {
       "id": "key.expire",
@@ -462,8 +461,7 @@
       "redisctl_tools": ["redis_incr"],
       "library_tools": ["redis_incr"],
       "disposition": "implemented",
-      "quality_issues": [18],
-      "reason": "INCR is implemented; issue #18 adds the remaining numeric variants."
+      "reason": "INCR returns the resulting signed integer; the remaining numeric variants are part of the implemented key/string expansion."
     },
     {
       "id": "string.append",
@@ -686,10 +684,27 @@
         "redis_setrange",
         "redis_touch"
       ],
-      "library_tools": [],
-      "disposition": "planned",
-      "issue": 18,
-      "reason": "Issue #18 completes conditional writes, ranges, copy/rename, numeric variants, restore, and safe object inspection."
+      "library_tools": [
+        "redis_copy",
+        "redis_copy_replace",
+        "redis_decr",
+        "redis_decrby",
+        "redis_dump",
+        "redis_getdel",
+        "redis_getex",
+        "redis_getrange",
+        "redis_incrby",
+        "redis_incrbyfloat",
+        "redis_object_inspect",
+        "redis_rename",
+        "redis_renamenx",
+        "redis_restore",
+        "redis_restore_replace",
+        "redis_setrange",
+        "redis_touch"
+      ],
+      "disposition": "implemented",
+      "reason": "The expanded surface covers bounded binary-safe ranges and serialized payloads, typed conditional and expiration semantics, numeric mutations, safe OBJECT inspection without HELP, and access-tiered copy/rename/restore operations with explicit Cluster slot behavior."
     },
     {
       "id": "hash.expansion",

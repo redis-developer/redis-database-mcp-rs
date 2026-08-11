@@ -314,6 +314,60 @@ async fn cluster_routes_curated_and_raw_tools_across_three_masters() {
             assert_eq!(value["value"], format!("value-{index}"));
         }
 
+        let same_source = format!(
+            "redis-mcp:test:{}:{{issue18-{protocol}}}:source",
+            std::process::id()
+        );
+        let same_copy = format!(
+            "redis-mcp:test:{}:{{issue18-{protocol}}}:copy",
+            std::process::id()
+        );
+        let same_renamed = format!(
+            "redis-mcp:test:{}:{{issue18-{protocol}}}:renamed",
+            std::process::id()
+        );
+        routed
+            .call_tool(
+                "redis_set",
+                serde_json::json!({"key": same_source, "value": "same-slot"}),
+            )
+            .await
+            .expect("same-slot SET");
+        let copied = routed
+            .call_tool(
+                "redis_copy",
+                serde_json::json!({"source": same_source, "destination": same_copy}),
+            )
+            .await
+            .expect("same-slot COPY")
+            .structured_content
+            .expect("structured same-slot COPY");
+        assert_eq!(copied["copied"], true);
+        let renamed = routed
+            .call_tool(
+                "redis_rename",
+                serde_json::json!({"source": same_copy, "destination": same_renamed}),
+            )
+            .await
+            .expect("same-slot RENAME")
+            .structured_content
+            .expect("structured same-slot RENAME");
+        assert_eq!(renamed["renamed"], true);
+
+        for tool in ["redis_copy", "redis_rename", "redis_renamenx"] {
+            let cross_slot = routed
+                .call_tool(
+                    tool,
+                    serde_json::json!({"source": &keys[0], "destination": &keys[1]}),
+                )
+                .await
+                .unwrap_or_else(|error| panic!("{tool}: {error}"));
+            assert!(cross_slot.is_error, "{tool}: {cross_slot:?}");
+            let cross_slot = serde_json::to_string(&cross_slot)
+                .unwrap_or_else(|error| panic!("serialize {tool} CROSSSLOT: {error}"));
+            assert!(cross_slot.contains("CROSSSLOT"), "{tool}: {cross_slot}");
+        }
+
         let cross_slot = routed
             .call_tool(
                 "redis_command",
@@ -334,6 +388,16 @@ async fn cluster_routes_curated_and_raw_tools_across_three_masters() {
             .structured_content
             .expect("structured DEL result");
         assert_eq!(deleted["deleted"], keys.len());
+        let same_slot_deleted = routed
+            .call_tool(
+                "redis_del",
+                serde_json::json!({"keys": [same_source, same_renamed]}),
+            )
+            .await
+            .expect("delete same-slot keys")
+            .structured_content
+            .expect("structured same-slot DEL");
+        assert_eq!(same_slot_deleted["deleted"], 2);
     }
 
     let binary = env!("CARGO_BIN_EXE_redis-mcp-server");
@@ -364,7 +428,7 @@ async fn cluster_routes_curated_and_raw_tools_across_three_masters() {
             serde_json::json!({
                 "key": remote_key,
                 "value": "over-cluster-stdio",
-                "expires_in_seconds": 60
+                "expiration": {"type": "seconds", "value": 60}
             }),
         )
         .await

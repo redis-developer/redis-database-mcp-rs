@@ -19,7 +19,7 @@ matrix.
 | --- | --- | ---: | ---: |
 | [`redis/mcp-redis`](https://github.com/redis/mcp-redis) | `5945b0b5b098c9a1882075a161a6a58f23de81ed` | 0.5.1 | 53 |
 | [`redisctl`](https://github.com/redis/redisctl) | `955f4b18f4266c332bc640cada67d125d23edde8` | read-only inventory | 132 |
-| `redis-mcp` | current catalog | 0.1 development line | 42 |
+| `redis-mcp` | current catalog | 0.1 development line | 63 |
 
 The redisctl baseline is a compatibility and breadth reference, not a promise
 to copy application-specific profile fields, aliases, or weak contracts.
@@ -28,8 +28,8 @@ to copy application-specific profile fields, aliases, or weak contracts.
 
 | Baseline | Implemented | Planned | Superseded | Excluded |
 | --- | ---: | ---: | ---: | ---: |
-| `redis/mcp-redis` | 23 | 28 | 1 | 1 |
-| redisctl | 39 | 87 | 1 | 5 |
+| `redis/mcp-redis` | 29 | 22 | 1 | 1 |
+| redisctl | 51 | 75 | 1 | 5 |
 
 The dispositions mean:
 
@@ -50,7 +50,6 @@ and `redis_zscan`.
 
 | Capability | Competitor tools | Library issue |
 | --- | --- | ---: |
-| keys and strings | `rename` | #18 |
 | hashes | `hdel`, `hexists` | #19 |
 | lists | `llen`, `lpop`, `lrem`, `rpop`, `rpush` | #20 |
 | sets | `srem` | #21 |
@@ -107,6 +106,14 @@ timeout, redaction, error taxonomy, and response budgets as the MCP
 `redis_command` path. Terminal parsing and presentation remain outside the
 database library.
 
+Keys and strings also lead the pinned surface. Binary-safe SET models NX/XX,
+GET, and exactly one of EX/PX/EXAT/PXAT/KEEPTTL; ranges and serialized payloads
+are bounded; side-effectful returned values can be omitted with their byte
+length and outcome preserved; and copy, rename, and restore expose separate
+overwrite-capable tools at full access. Safe OBJECT inspection is a typed
+choice and intentionally provides no unbounded HELP form. Same-slot Cluster
+operations are live-tested alongside stable CROSSSLOT failures.
+
 ### Output-policy audit
 
 Every successful result is measured as a complete encoded MCP
@@ -119,15 +126,17 @@ also applied to collection results and raw RESP collections.
 | cursor paginated | `redis_scan`, `redis_hscan`, `redis_sscan`, `redis_zscan` |
 | range paginated | `redis_lrange`, `redis_zrange` |
 | offset paginated | `redis_ft_search`, `redis_ft_vector_search`, `redis_ft_hybrid_search` |
-| budget guarded | `redis_info`, `redis_get`, `redis_mget`, `redis_randomkey`, `redis_hget`, `redis_hgetall`, `redis_smembers`, `redis_json_get`, `redis_json_type`, `redis_ft_list`, `redis_ft_info`, `redis_vector_get_hash`, `redis_command` |
-| intrinsically bounded | `redis_ping`, `redis_dbsize`, `redis_type`, `redis_ttl`, `redis_exists`, `redis_strlen`, `redis_memory_usage`, `redis_set`, `redis_expire`, `redis_persist`, `redis_mset`, `redis_incr`, `redis_append`, `redis_hset`, `redis_lpush`, `redis_sadd`, `redis_zadd`, `redis_json_set`, `redis_ft_create`, `redis_vector_set_hash`, `redis_del`, `redis_unlink`, `redis_json_del`, `redis_ft_dropindex` |
+| budget guarded | `redis_info`, `redis_get`, `redis_getdel`, `redis_getex`, `redis_getrange`, `redis_dump`, `redis_set`, `redis_mget`, `redis_randomkey`, `redis_hget`, `redis_hgetall`, `redis_smembers`, `redis_json_get`, `redis_json_type`, `redis_ft_list`, `redis_ft_info`, `redis_vector_get_hash`, `redis_command` |
+| intrinsically bounded | `redis_ping`, `redis_dbsize`, `redis_type`, `redis_ttl`, `redis_exists`, `redis_strlen`, `redis_memory_usage`, `redis_object_inspect`, `redis_expire`, `redis_persist`, `redis_mset`, `redis_incr`, `redis_append`, `redis_setrange`, `redis_decr`, `redis_decrby`, `redis_incrby`, `redis_incrbyfloat`, `redis_copy`, `redis_touch`, `redis_restore`, `redis_hset`, `redis_lpush`, `redis_sadd`, `redis_zadd`, `redis_json_set`, `redis_ft_create`, `redis_vector_set_hash`, `redis_del`, `redis_unlink`, `redis_copy_replace`, `redis_rename`, `redis_renamenx`, `redis_restore_replace`, `redis_json_del`, `redis_ft_dropindex` |
 
 Budget-guarded whole-collection reads fail with an `output_limit_exceeded`
 reason and machine-readable `io.redis.mcp/outputLimit` metadata instead of
 emitting partial JSON. `redis_hgetall` and `redis_smembers` point callers to
 their cursor alternatives. INFO can be narrowed by section, Search continues
 by offset, ranges continue by start, and cursor tools continue using the
-returned Redis cursor.
+returned Redis cursor. `SET GET`, `GETEX`, and `GETDEL` additionally accept
+per-call byte caps so a committed side effect can return an explicit omitted
+value and byte count instead of losing the mutation outcome to an output error.
 
 ## Objective completion gate
 

@@ -10,12 +10,17 @@ use tower_mcp::{
 };
 
 use super::{
-    ToolState, ValueEncoding, command, destructive_annotations, output_schema, read_annotations,
-    write_annotations,
+    InputEncoding, ToolState, ValueEncoding, command, decode_input, destructive_annotations,
+    encode_bytes, optional_bytes, output_schema, read_annotations, write_annotations,
 };
-use crate::AccessMode;
+use crate::{AccessMode, RedisCommand, RedisValue};
 
 const MAX_ITEMS: usize = 1_000;
+const MAX_RANGE_BYTES: u64 = 64 * 1024;
+const MAX_STRING_EXTENT_BYTES: u64 = 16 * 1024 * 1024;
+const MAX_RESTORE_PAYLOAD_BYTES: usize = 256 * 1024;
+const DEFAULT_DUMP_MAX_BYTES: usize = 64 * 1024;
+const DEFAULT_RETURNED_VALUE_MAX_BYTES: usize = 64 * 1024;
 
 #[derive(Debug, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
@@ -32,6 +37,30 @@ fn validate_items(items: &[impl Sized], name: &str) -> tower_mcp::Result<()> {
         )))
     } else {
         Ok(())
+    }
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+struct BinaryKeyInput {
+    /// Redis key.
+    key: String,
+    /// Encoding of `key`.
+    #[serde(default)]
+    key_encoding: InputEncoding,
+}
+
+fn binary_key(input: &BinaryKeyInput) -> tower_mcp::Result<Vec<u8>> {
+    decode_input(&input.key, input.key_encoding, "key")
+}
+
+fn require_ok(value: RedisValue, context: &str) -> tower_mcp::Result<()> {
+    match value {
+        RedisValue::Okay => Ok(()),
+        RedisValue::SimpleString(value) if value.eq_ignore_ascii_case("OK") => Ok(()),
+        other => Err(tower_mcp::Error::tool(format!(
+            "{context} returned an unexpected reply: {other:?}"
+        ))),
     }
 }
 
@@ -262,7 +291,7 @@ fn expire_tool(state: Arc<ToolState>) -> Tool {
             "Set a positive key expiration in seconds. Missing keys are reported without error.",
         )
         .output_schema(output_schema::<ExpireOutput>())
-        .annotations(write_annotations(true))
+        .annotations(write_annotations(false))
         .extractor_handler(
             state,
             |State(state): State<Arc<ToolState>>, Json(input): Json<ExpireInput>| async move {
@@ -364,6 +393,7 @@ fn mset_tool(state: Arc<ToolState>) -> Tool {
 #[serde(deny_unknown_fields)]
 struct IncrOutput {
     key: String,
+    key_encoding: InputEncoding,
     value: i64,
 }
 
@@ -375,13 +405,14 @@ fn incr_tool(state: Arc<ToolState>) -> Tool {
         .annotations(write_annotations(false))
         .extractor_handler(
             state,
-            |State(state): State<Arc<ToolState>>, Json(input): Json<KeyInput>| async move {
+            |State(state): State<Arc<ToolState>>, Json(input): Json<BinaryKeyInput>| async move {
                 state.require(AccessMode::ReadWrite, "redis_incr")?;
                 let mut command = command("redis_incr", AccessMode::ReadWrite, "INCR");
-                command.arg(input.key.as_str());
+                command.arg(binary_key(&input)?);
                 let value = state.query(command, "INCR failed").await?;
                 state.output(&IncrOutput {
                     key: input.key,
+                    key_encoding: input.key_encoding,
                     value,
                 })
             },
@@ -429,6 +460,964 @@ fn append_tool(state: Arc<ToolState>) -> Tool {
 
 #[derive(Debug, Serialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
+struct BoundedStringValueOutput {
+    key: String,
+    key_encoding: InputEncoding,
+    exists: bool,
+    value: Option<String>,
+    encoding: Option<ValueEncoding>,
+    value_bytes: Option<usize>,
+    value_omitted: bool,
+}
+
+fn default_returned_value_max_bytes() -> usize {
+    DEFAULT_RETURNED_VALUE_MAX_BYTES
+}
+
+fn validate_returned_value_limit(
+    state: &ToolState,
+    requested: usize,
+    name: &str,
+) -> tower_mcp::Result<usize> {
+    if requested == 0 {
+        Err(tower_mcp::Error::tool(format!(
+            "{name} must be greater than zero"
+        )))
+    } else {
+        Ok(requested.min(state.max_output_bytes()))
+    }
+}
+
+fn bounded_encoded_optional(
+    value: Option<Vec<u8>>,
+    max_bytes: usize,
+) -> (
+    bool,
+    Option<String>,
+    Option<ValueEncoding>,
+    Option<usize>,
+    bool,
+) {
+    let exists = value.is_some();
+    let value_bytes = value.as_ref().map(Vec::len);
+    let value_omitted = value.as_ref().is_some_and(|value| value.len() > max_bytes);
+    let (value, encoding) = match value {
+        Some(value) if !value_omitted => {
+            let (value, encoding) = encode_bytes(value);
+            (Some(value), Some(encoding))
+        }
+        _ => (None, None),
+    };
+    (exists, value, encoding, value_bytes, value_omitted)
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+struct GetDelInput {
+    /// Redis key.
+    key: String,
+    /// Encoding of `key`.
+    #[serde(default)]
+    key_encoding: InputEncoding,
+    /// Maximum deleted-value bytes to include in the result. Larger values are reported as
+    /// omitted so deletion remains observable.
+    #[serde(default = "default_returned_value_max_bytes")]
+    #[schemars(range(min = 1))]
+    max_value_bytes: usize,
+}
+
+fn getdel_tool(state: Arc<ToolState>) -> Tool {
+    ToolBuilder::new("redis_getdel")
+        .title("Get and Delete Redis String")
+        .description(
+            "Atomically return and delete a binary-safe Redis string. Requires full access.",
+        )
+        .output_schema(output_schema::<BoundedStringValueOutput>())
+        .annotations(destructive_annotations(true))
+        .extractor_handler(
+            state,
+            |State(state): State<Arc<ToolState>>, Json(input): Json<GetDelInput>| async move {
+                state.require(AccessMode::Full, "redis_getdel")?;
+                let max_value_bytes = validate_returned_value_limit(
+                    &state,
+                    input.max_value_bytes,
+                    "max_value_bytes",
+                )?;
+                let mut command = command("redis_getdel", AccessMode::Full, "GETDEL");
+                command.arg(decode_input(&input.key, input.key_encoding, "key")?);
+                let value = optional_bytes(state.raw(command, "GETDEL failed").await?, "GETDEL")?;
+                let (exists, value, encoding, value_bytes, value_omitted) =
+                    bounded_encoded_optional(value, max_value_bytes);
+                state.output(&BoundedStringValueOutput {
+                    key: input.key,
+                    key_encoding: input.key_encoding,
+                    exists,
+                    value,
+                    encoding,
+                    value_bytes,
+                    value_omitted,
+                })
+            },
+        )
+        .build()
+}
+
+#[derive(Debug, Clone, Copy, Deserialize, Serialize, JsonSchema)]
+#[serde(
+    tag = "type",
+    content = "value",
+    rename_all = "snake_case",
+    deny_unknown_fields
+)]
+enum GetExExpiration {
+    Seconds(#[schemars(range(min = 1))] u64),
+    Milliseconds(#[schemars(range(min = 1))] u64),
+    UnixSeconds(#[schemars(range(min = 1))] u64),
+    UnixMilliseconds(#[schemars(range(min = 1))] u64),
+    Persist,
+}
+
+impl GetExExpiration {
+    fn append_to(self, command: &mut RedisCommand) -> tower_mcp::Result<()> {
+        let (token, value) = match self {
+            Self::Seconds(value) => ("EX", Some(value)),
+            Self::Milliseconds(value) => ("PX", Some(value)),
+            Self::UnixSeconds(value) => ("EXAT", Some(value)),
+            Self::UnixMilliseconds(value) => ("PXAT", Some(value)),
+            Self::Persist => ("PERSIST", None),
+        };
+        if value == Some(0) {
+            return Err(tower_mcp::Error::tool(
+                "expiration value must be greater than zero",
+            ));
+        }
+        command.arg(token);
+        if let Some(value) = value {
+            command.arg(value.to_string());
+        }
+        Ok(())
+    }
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+struct GetExInput {
+    /// Redis key.
+    key: String,
+    /// Encoding of `key`.
+    #[serde(default)]
+    key_encoding: InputEncoding,
+    /// Expiration change to apply atomically with the read.
+    expiration: GetExExpiration,
+    /// Maximum value bytes to include in the result. Larger values are reported as omitted so
+    /// the expiration change remains observable.
+    #[serde(default = "default_returned_value_max_bytes")]
+    #[schemars(range(min = 1))]
+    max_value_bytes: usize,
+}
+
+#[derive(Debug, Serialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+struct GetExOutput {
+    key: String,
+    key_encoding: InputEncoding,
+    exists: bool,
+    value: Option<String>,
+    encoding: Option<ValueEncoding>,
+    value_bytes: Option<usize>,
+    value_omitted: bool,
+    expiration: GetExExpiration,
+}
+
+fn getex_tool(state: Arc<ToolState>) -> Tool {
+    ToolBuilder::new("redis_getex")
+        .title("Get Redis String and Change Expiration")
+        .description(
+            "Atomically read a binary-safe Redis string and apply exactly one expiration behavior.",
+        )
+        .output_schema(output_schema::<GetExOutput>())
+        .annotations(write_annotations(false))
+        .extractor_handler(
+            state,
+            |State(state): State<Arc<ToolState>>, Json(input): Json<GetExInput>| async move {
+                state.require(AccessMode::ReadWrite, "redis_getex")?;
+                let max_value_bytes = validate_returned_value_limit(
+                    &state,
+                    input.max_value_bytes,
+                    "max_value_bytes",
+                )?;
+                let key = decode_input(&input.key, input.key_encoding, "key")?;
+                let mut command = command("redis_getex", AccessMode::ReadWrite, "GETEX");
+                command.arg(key);
+                input.expiration.append_to(&mut command)?;
+                let value = optional_bytes(state.raw(command, "GETEX failed").await?, "GETEX")?;
+                let (exists, value, encoding, value_bytes, value_omitted) =
+                    bounded_encoded_optional(value, max_value_bytes);
+                state.output(&GetExOutput {
+                    key: input.key,
+                    key_encoding: input.key_encoding,
+                    exists,
+                    value,
+                    encoding,
+                    value_bytes,
+                    value_omitted,
+                    expiration: input.expiration,
+                })
+            },
+        )
+        .build()
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+struct GetRangeInput {
+    /// Redis key.
+    key: String,
+    /// Encoding of `key`.
+    #[serde(default)]
+    key_encoding: InputEncoding,
+    /// Inclusive non-negative byte offset.
+    start: u64,
+    /// Inclusive non-negative byte offset, at most 65536 bytes after `start`.
+    end: u64,
+}
+
+#[derive(Debug, Serialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+struct GetRangeOutput {
+    key: String,
+    key_encoding: InputEncoding,
+    start: u64,
+    end: u64,
+    bytes: usize,
+    value: String,
+    encoding: ValueEncoding,
+}
+
+fn getrange_tool(state: Arc<ToolState>) -> Tool {
+    ToolBuilder::new("redis_getrange")
+        .title("Get Redis String Byte Range")
+        .description(
+            "Read an inclusive, non-negative Redis string byte range of at most 65536 bytes. Binary data is returned as base64.",
+        )
+        .output_schema(output_schema::<GetRangeOutput>())
+        .annotations(read_annotations())
+        .extractor_handler(
+            state,
+            |State(state): State<Arc<ToolState>>, Json(input): Json<GetRangeInput>| async move {
+                if input.end < input.start {
+                    return Err(tower_mcp::Error::tool(
+                        "end must be greater than or equal to start",
+                    ));
+                }
+                let requested = input
+                    .end
+                    .checked_sub(input.start)
+                    .and_then(|span| span.checked_add(1))
+                    .ok_or_else(|| tower_mcp::Error::tool("range length overflow"))?;
+                if requested > MAX_RANGE_BYTES {
+                    return Err(tower_mcp::Error::tool(format!(
+                        "range must contain at most {MAX_RANGE_BYTES} bytes"
+                    )));
+                }
+                let mut command = command("redis_getrange", AccessMode::ReadOnly, "GETRANGE");
+                command
+                    .arg(decode_input(&input.key, input.key_encoding, "key")?)
+                    .arg(input.start.to_string())
+                    .arg(input.end.to_string());
+                let bytes: Vec<u8> = state.query(command, "GETRANGE failed").await?;
+                let byte_count = bytes.len();
+                let (value, encoding) = encode_bytes(bytes);
+                state.output(&GetRangeOutput {
+                    key: input.key,
+                    key_encoding: input.key_encoding,
+                    start: input.start,
+                    end: input.end,
+                    bytes: byte_count,
+                    value,
+                    encoding,
+                })
+            },
+        )
+        .build()
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+struct SetRangeInput {
+    /// Redis key.
+    key: String,
+    /// Encoding of `key`.
+    #[serde(default)]
+    key_encoding: InputEncoding,
+    /// Non-negative byte offset, with the resulting string capped at 16 MiB.
+    offset: u64,
+    /// Bytes to write.
+    value: String,
+    /// Encoding of `value`.
+    #[serde(default)]
+    value_encoding: InputEncoding,
+}
+
+#[derive(Debug, Serialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+struct SetRangeOutput {
+    key: String,
+    key_encoding: InputEncoding,
+    offset: u64,
+    written_bytes: usize,
+    length_bytes: u64,
+}
+
+fn setrange_tool(state: Arc<ToolState>) -> Tool {
+    ToolBuilder::new("redis_setrange")
+        .title("Set Redis String Byte Range")
+        .description(
+            "Write at most 65536 binary-safe bytes at a bounded offset, with a 16 MiB maximum resulting extent.",
+        )
+        .output_schema(output_schema::<SetRangeOutput>())
+        .annotations(write_annotations(true))
+        .extractor_handler(
+            state,
+            |State(state): State<Arc<ToolState>>, Json(input): Json<SetRangeInput>| async move {
+                state.require(AccessMode::ReadWrite, "redis_setrange")?;
+                let value = decode_input(&input.value, input.value_encoding, "value")?;
+                if value.len() > MAX_RANGE_BYTES as usize {
+                    return Err(tower_mcp::Error::tool(format!(
+                        "value must contain at most {MAX_RANGE_BYTES} decoded bytes"
+                    )));
+                }
+                let extent = input
+                    .offset
+                    .checked_add(value.len() as u64)
+                    .ok_or_else(|| tower_mcp::Error::tool("offset and value length overflow"))?;
+                if extent > MAX_STRING_EXTENT_BYTES {
+                    return Err(tower_mcp::Error::tool(format!(
+                        "offset plus decoded value length must not exceed {MAX_STRING_EXTENT_BYTES} bytes"
+                    )));
+                }
+                let written_bytes = value.len();
+                let mut command = command("redis_setrange", AccessMode::ReadWrite, "SETRANGE");
+                command
+                    .arg(decode_input(&input.key, input.key_encoding, "key")?)
+                    .arg(input.offset.to_string())
+                    .arg(value);
+                let length_bytes = state.query(command, "SETRANGE failed").await?;
+                state.output(&SetRangeOutput {
+                    key: input.key,
+                    key_encoding: input.key_encoding,
+                    offset: input.offset,
+                    written_bytes,
+                    length_bytes,
+                })
+            },
+        )
+        .build()
+}
+
+fn integer_mutation_tool(
+    state: Arc<ToolState>,
+    tool_name: &'static str,
+    title: &'static str,
+    description: &'static str,
+    command_name: &'static str,
+) -> Tool {
+    ToolBuilder::new(tool_name)
+        .title(title)
+        .description(description)
+        .output_schema(output_schema::<IncrOutput>())
+        .annotations(write_annotations(false))
+        .extractor_handler(
+            state,
+            move |State(state): State<Arc<ToolState>>, Json(input): Json<BinaryKeyInput>| async move {
+                state.require(AccessMode::ReadWrite, tool_name)?;
+                let mut command = command(tool_name, AccessMode::ReadWrite, command_name);
+                command.arg(binary_key(&input)?);
+                let value = state.query(command, &format!("{command_name} failed")).await?;
+                state.output(&IncrOutput {
+                    key: input.key,
+                    key_encoding: input.key_encoding,
+                    value,
+                })
+            },
+        )
+        .build()
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+struct IntegerByInput {
+    /// Redis key.
+    key: String,
+    /// Encoding of `key`.
+    #[serde(default)]
+    key_encoding: InputEncoding,
+    /// Signed amount accepted by Redis.
+    amount: i64,
+}
+
+fn integer_by_tool(
+    state: Arc<ToolState>,
+    tool_name: &'static str,
+    title: &'static str,
+    description: &'static str,
+    command_name: &'static str,
+) -> Tool {
+    ToolBuilder::new(tool_name)
+        .title(title)
+        .description(description)
+        .output_schema(output_schema::<IncrOutput>())
+        .annotations(write_annotations(false))
+        .extractor_handler(
+            state,
+            move |State(state): State<Arc<ToolState>>, Json(input): Json<IntegerByInput>| async move {
+                state.require(AccessMode::ReadWrite, tool_name)?;
+                let mut command = command(tool_name, AccessMode::ReadWrite, command_name);
+                command
+                    .arg(decode_input(&input.key, input.key_encoding, "key")?)
+                    .arg(input.amount.to_string());
+                let value = state.query(command, &format!("{command_name} failed")).await?;
+                state.output(&IncrOutput {
+                    key: input.key,
+                    key_encoding: input.key_encoding,
+                    value,
+                })
+            },
+        )
+        .build()
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+struct IncrByFloatInput {
+    /// Redis key.
+    key: String,
+    /// Encoding of `key`.
+    #[serde(default)]
+    key_encoding: InputEncoding,
+    /// Finite increment.
+    amount: f64,
+}
+
+#[derive(Debug, Serialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+struct IncrByFloatOutput {
+    key: String,
+    key_encoding: InputEncoding,
+    value: String,
+}
+
+fn incrbyfloat_tool(state: Arc<ToolState>) -> Tool {
+    ToolBuilder::new("redis_incrbyfloat")
+        .title("Increment Redis Float")
+        .description(
+            "Increment a Redis numeric string by a finite float and return Redis's canonical decimal string.",
+        )
+        .output_schema(output_schema::<IncrByFloatOutput>())
+        .annotations(write_annotations(false))
+        .extractor_handler(
+            state,
+            |State(state): State<Arc<ToolState>>, Json(input): Json<IncrByFloatInput>| async move {
+                state.require(AccessMode::ReadWrite, "redis_incrbyfloat")?;
+                if !input.amount.is_finite() {
+                    return Err(tower_mcp::Error::tool("amount must be finite"));
+                }
+                let mut command = command(
+                    "redis_incrbyfloat",
+                    AccessMode::ReadWrite,
+                    "INCRBYFLOAT",
+                );
+                command
+                    .arg(decode_input(&input.key, input.key_encoding, "key")?)
+                    .arg(input.amount.to_string());
+                let value: Vec<u8> = state.query(command, "INCRBYFLOAT failed").await?;
+                let value = String::from_utf8(value).map_err(|_| {
+                    tower_mcp::Error::tool("INCRBYFLOAT returned a non-UTF-8 decimal")
+                })?;
+                state.output(&IncrByFloatOutput {
+                    key: input.key,
+                    key_encoding: input.key_encoding,
+                    value,
+                })
+            },
+        )
+        .build()
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+struct TwoKeysInput {
+    /// Source Redis key.
+    source: String,
+    /// Encoding of `source`.
+    #[serde(default)]
+    source_encoding: InputEncoding,
+    /// Destination Redis key.
+    destination: String,
+    /// Encoding of `destination`.
+    #[serde(default)]
+    destination_encoding: InputEncoding,
+}
+
+#[derive(Debug, Serialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+struct CopyOutput {
+    source: String,
+    source_encoding: InputEncoding,
+    destination: String,
+    destination_encoding: InputEncoding,
+    copied: bool,
+    overwrite_allowed: bool,
+}
+
+fn copy_tool(state: Arc<ToolState>, replace: bool) -> Tool {
+    let (tool_name, title, description, required_access, annotations) = if replace {
+        (
+            "redis_copy_replace",
+            "Copy and Replace Redis Key",
+            "Copy a key in the selected database, overwriting the destination. Requires full access; Cluster keys must share a slot.",
+            AccessMode::Full,
+            destructive_annotations(true),
+        )
+    } else {
+        (
+            "redis_copy",
+            "Copy Redis Key",
+            "Copy a key in the selected database only when the destination is absent. Cluster keys must share a slot.",
+            AccessMode::ReadWrite,
+            write_annotations(true),
+        )
+    };
+    ToolBuilder::new(tool_name)
+        .title(title)
+        .description(description)
+        .output_schema(output_schema::<CopyOutput>())
+        .annotations(annotations)
+        .extractor_handler(
+            state,
+            move |State(state): State<Arc<ToolState>>, Json(input): Json<TwoKeysInput>| async move {
+                state.require(required_access, tool_name)?;
+                let mut command = command(tool_name, required_access, "COPY");
+                command
+                    .arg(decode_input(
+                        &input.source,
+                        input.source_encoding,
+                        "source",
+                    )?)
+                    .arg(decode_input(
+                        &input.destination,
+                        input.destination_encoding,
+                        "destination",
+                    )?);
+                if replace {
+                    command.arg("REPLACE");
+                }
+                let copied = state.query(command, "COPY failed").await?;
+                state.output(&CopyOutput {
+                    source: input.source,
+                    source_encoding: input.source_encoding,
+                    destination: input.destination,
+                    destination_encoding: input.destination_encoding,
+                    copied,
+                    overwrite_allowed: replace,
+                })
+            },
+        )
+        .build()
+}
+
+#[derive(Debug, Serialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+struct TouchOutput {
+    requested: usize,
+    touched: u64,
+}
+
+fn touch_tool(state: Arc<ToolState>) -> Tool {
+    ToolBuilder::new("redis_touch")
+        .title("Touch Redis Keys")
+        .description("Update the last-access time for between 1 and 1000 Redis keys.")
+        .output_schema(output_schema::<TouchOutput>())
+        .annotations(write_annotations(false))
+        .extractor_handler(
+            state,
+            |State(state): State<Arc<ToolState>>, Json(input): Json<KeysInput>| async move {
+                state.require(AccessMode::ReadWrite, "redis_touch")?;
+                validate_items(&input.keys, "keys")?;
+                let requested = input.keys.len();
+                let mut command = command("redis_touch", AccessMode::ReadWrite, "TOUCH");
+                command.args(input.keys);
+                let touched = state.query(command, "TOUCH failed").await?;
+                state.output(&TouchOutput { requested, touched })
+            },
+        )
+        .build()
+}
+
+#[derive(Debug, Serialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+struct RenameOutput {
+    source: String,
+    source_encoding: InputEncoding,
+    destination: String,
+    destination_encoding: InputEncoding,
+    renamed: bool,
+    overwrite_allowed: bool,
+}
+
+fn rename_tool(state: Arc<ToolState>, only_if_absent: bool) -> Tool {
+    let (tool_name, title, description, command_name, idempotent) = if only_if_absent {
+        (
+            "redis_renamenx",
+            "Rename Redis Key If Destination Is Absent",
+            "Rename a key only when the destination is absent. Requires full access; Cluster keys must share a slot.",
+            "RENAMENX",
+            true,
+        )
+    } else {
+        (
+            "redis_rename",
+            "Rename Redis Key",
+            "Rename a key and overwrite an existing destination. Requires full access; Cluster keys must share a slot.",
+            "RENAME",
+            false,
+        )
+    };
+    ToolBuilder::new(tool_name)
+        .title(title)
+        .description(description)
+        .output_schema(output_schema::<RenameOutput>())
+        .annotations(destructive_annotations(idempotent))
+        .extractor_handler(
+            state,
+            move |State(state): State<Arc<ToolState>>, Json(input): Json<TwoKeysInput>| async move {
+                state.require(AccessMode::Full, tool_name)?;
+                let mut command = command(tool_name, AccessMode::Full, command_name);
+                command
+                    .arg(decode_input(
+                        &input.source,
+                        input.source_encoding,
+                        "source",
+                    )?)
+                    .arg(decode_input(
+                        &input.destination,
+                        input.destination_encoding,
+                        "destination",
+                    )?);
+                let response = state
+                    .raw(command, &format!("{command_name} failed"))
+                    .await?;
+                let renamed = if only_if_absent {
+                    match response {
+                        RedisValue::Integer(value) => value == 1,
+                        RedisValue::Boolean(value) => value,
+                        other => {
+                            return Err(tower_mcp::Error::tool(format!(
+                                "RENAMENX returned an unexpected reply: {other:?}"
+                            )));
+                        }
+                    }
+                } else {
+                    require_ok(response, "RENAME")?;
+                    true
+                };
+                state.output(&RenameOutput {
+                    source: input.source,
+                    source_encoding: input.source_encoding,
+                    destination: input.destination,
+                    destination_encoding: input.destination_encoding,
+                    renamed,
+                    overwrite_allowed: !only_if_absent,
+                })
+            },
+        )
+        .build()
+}
+
+fn default_dump_max_bytes() -> usize {
+    DEFAULT_DUMP_MAX_BYTES
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+struct DumpInput {
+    /// Redis key.
+    key: String,
+    /// Encoding of `key`.
+    #[serde(default)]
+    key_encoding: InputEncoding,
+    /// Maximum serialized payload bytes accepted by this call.
+    #[serde(default = "default_dump_max_bytes")]
+    #[schemars(range(min = 1))]
+    max_bytes: usize,
+}
+
+#[derive(Debug, Serialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+struct DumpOutput {
+    key: String,
+    key_encoding: InputEncoding,
+    exists: bool,
+    payload_base64: Option<String>,
+    payload_bytes: usize,
+}
+
+fn dump_tool(state: Arc<ToolState>) -> Tool {
+    ToolBuilder::new("redis_dump")
+        .title("Dump Redis Key")
+        .description(
+            "Return a Redis serialized payload as base64 only when it fits both the requested and configured output budgets.",
+        )
+        .output_schema(output_schema::<DumpOutput>())
+        .annotations(read_annotations())
+        .extractor_handler(
+            state,
+            |State(state): State<Arc<ToolState>>, Json(input): Json<DumpInput>| async move {
+                if input.max_bytes == 0 {
+                    return Err(tower_mcp::Error::tool(
+                        "max_bytes must be greater than zero",
+                    ));
+                }
+                let max_bytes = input.max_bytes.min(state.max_output_bytes());
+                let mut command = command("redis_dump", AccessMode::ReadOnly, "DUMP");
+                command.arg(decode_input(&input.key, input.key_encoding, "key")?);
+                let payload = optional_bytes(state.raw(command, "DUMP failed").await?, "DUMP")?;
+                if payload
+                    .as_ref()
+                    .is_some_and(|payload| payload.len() > max_bytes)
+                {
+                    return Err(tower_mcp::Error::tool(format!(
+                        "DUMP payload exceeds requested max_bytes of {}",
+                        max_bytes
+                    )));
+                }
+                let payload_bytes = payload.as_ref().map_or(0, Vec::len);
+                state.output(&DumpOutput {
+                    key: input.key,
+                    key_encoding: input.key_encoding,
+                    exists: payload.is_some(),
+                    payload_base64: payload.map(|payload| {
+                        base64::Engine::encode(
+                            &base64::engine::general_purpose::STANDARD,
+                            payload,
+                        )
+                    }),
+                    payload_bytes,
+                })
+            },
+        )
+        .build()
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+struct RestoreInput {
+    /// Destination Redis key.
+    key: String,
+    /// Encoding of `key`.
+    #[serde(default)]
+    key_encoding: InputEncoding,
+    /// Base64-encoded payload produced by DUMP.
+    #[schemars(length(max = 349528))]
+    payload_base64: String,
+    /// TTL in milliseconds; zero creates a persistent key.
+    #[serde(default)]
+    ttl_milliseconds: u64,
+    /// Interpret `ttl_milliseconds` as an absolute Unix timestamp.
+    #[serde(default)]
+    absolute_ttl: bool,
+    /// Optional idle time in positive seconds.
+    #[serde(default)]
+    #[schemars(range(min = 1))]
+    idle_time_seconds: Option<u64>,
+    /// Optional LFU frequency from 0 through 255.
+    #[serde(default)]
+    frequency: Option<u8>,
+}
+
+#[derive(Debug, Serialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+struct RestoreOutput {
+    key: String,
+    key_encoding: InputEncoding,
+    restored: bool,
+    overwrite_allowed: bool,
+    payload_bytes: usize,
+    ttl_milliseconds: u64,
+    absolute_ttl: bool,
+}
+
+fn restore_tool(state: Arc<ToolState>, replace: bool) -> Tool {
+    let (tool_name, title, description, required_access, annotations) = if replace {
+        (
+            "redis_restore_replace",
+            "Restore and Replace Redis Key",
+            "Restore a bounded DUMP payload and overwrite an existing destination. Requires full access.",
+            AccessMode::Full,
+            destructive_annotations(false),
+        )
+    } else {
+        (
+            "redis_restore",
+            "Restore Redis Key",
+            "Restore a bounded DUMP payload only when the destination key is absent.",
+            AccessMode::ReadWrite,
+            write_annotations(true),
+        )
+    };
+    ToolBuilder::new(tool_name)
+        .title(title)
+        .description(description)
+        .output_schema(output_schema::<RestoreOutput>())
+        .annotations(annotations)
+        .extractor_handler(
+            state,
+            move |State(state): State<Arc<ToolState>>, Json(input): Json<RestoreInput>| async move {
+                state.require(required_access, tool_name)?;
+                if input.idle_time_seconds == Some(0) {
+                    return Err(tower_mcp::Error::tool(
+                        "idle_time_seconds must be greater than zero when provided",
+                    ));
+                }
+                let payload = base64::Engine::decode(
+                    &base64::engine::general_purpose::STANDARD,
+                    &input.payload_base64,
+                )
+                .map_err(|_| {
+                    tower_mcp::Error::tool("payload_base64 is not valid standard base64")
+                })?;
+                if payload.len() > MAX_RESTORE_PAYLOAD_BYTES {
+                    return Err(tower_mcp::Error::tool(format!(
+                        "decoded payload must not exceed {MAX_RESTORE_PAYLOAD_BYTES} bytes"
+                    )));
+                }
+                let payload_bytes = payload.len();
+                let mut command = command(tool_name, required_access, "RESTORE");
+                command
+                    .arg(decode_input(&input.key, input.key_encoding, "key")?)
+                    .arg(input.ttl_milliseconds.to_string())
+                    .arg(payload);
+                if replace {
+                    command.arg("REPLACE");
+                }
+                if input.absolute_ttl {
+                    command.arg("ABSTTL");
+                }
+                if let Some(idle_time_seconds) = input.idle_time_seconds {
+                    command.arg("IDLETIME").arg(idle_time_seconds.to_string());
+                }
+                if let Some(frequency) = input.frequency {
+                    command.arg("FREQ").arg(frequency.to_string());
+                }
+                require_ok(state.raw(command, "RESTORE failed").await?, "RESTORE")?;
+                state.output(&RestoreOutput {
+                    key: input.key,
+                    key_encoding: input.key_encoding,
+                    restored: true,
+                    overwrite_allowed: replace,
+                    payload_bytes,
+                    ttl_milliseconds: input.ttl_milliseconds,
+                    absolute_ttl: input.absolute_ttl,
+                })
+            },
+        )
+        .build()
+}
+
+#[derive(Debug, Clone, Copy, Deserialize, Serialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+enum ObjectOperation {
+    Encoding,
+    Frequency,
+    IdleTime,
+    Refcount,
+}
+
+impl ObjectOperation {
+    fn redis_token(self) -> &'static str {
+        match self {
+            Self::Encoding => "ENCODING",
+            Self::Frequency => "FREQ",
+            Self::IdleTime => "IDLETIME",
+            Self::Refcount => "REFCOUNT",
+        }
+    }
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+struct ObjectInspectInput {
+    /// Redis key.
+    key: String,
+    /// Encoding of `key`.
+    #[serde(default)]
+    key_encoding: InputEncoding,
+    /// One bounded OBJECT inspection; HELP is intentionally unavailable.
+    operation: ObjectOperation,
+}
+
+#[derive(Debug, Serialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+struct ObjectInspectOutput {
+    key: String,
+    key_encoding: InputEncoding,
+    operation: ObjectOperation,
+    exists: bool,
+    encoding: Option<String>,
+    value: Option<u64>,
+}
+
+fn object_inspect_tool(state: Arc<ToolState>) -> Tool {
+    ToolBuilder::new("redis_object_inspect")
+        .title("Inspect Redis Object")
+        .description(
+            "Read one safe OBJECT property: encoding, frequency, idle time, or reference count. OBJECT HELP is excluded.",
+        )
+        .output_schema(output_schema::<ObjectInspectOutput>())
+        .annotations(read_annotations())
+        .extractor_handler(
+            state,
+            |State(state): State<Arc<ToolState>>, Json(input): Json<ObjectInspectInput>| async move {
+                let mut command = command("redis_object_inspect", AccessMode::ReadOnly, "OBJECT");
+                command
+                    .arg(input.operation.redis_token())
+                    .arg(decode_input(&input.key, input.key_encoding, "key")?);
+                let response = state.raw(command, "OBJECT inspection failed").await?;
+                let (exists, encoding, value) = match (input.operation, response) {
+                    (_, RedisValue::Nil) => (false, None, None),
+                    (ObjectOperation::Encoding, RedisValue::BulkString(value)) => {
+                        let encoding = String::from_utf8(value).map_err(|_| {
+                            tower_mcp::Error::tool("OBJECT ENCODING returned non-UTF-8 data")
+                        })?;
+                        (true, Some(encoding), None)
+                    }
+                    (ObjectOperation::Encoding, RedisValue::SimpleString(value)) => {
+                        (true, Some(value), None)
+                    }
+                    (_, RedisValue::Integer(value)) if value >= 0 => {
+                        (true, None, Some(value as u64))
+                    }
+                    (operation, other) => {
+                        return Err(tower_mcp::Error::tool(format!(
+                            "OBJECT {operation:?} returned an unexpected reply: {other:?}"
+                        )));
+                    }
+                };
+                state.output(&ObjectInspectOutput {
+                    key: input.key,
+                    key_encoding: input.key_encoding,
+                    operation: input.operation,
+                    exists,
+                    encoding,
+                    value,
+                })
+            },
+        )
+        .build()
+}
+
+#[derive(Debug, Serialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
 struct UnlinkOutput {
     requested: usize,
     unlinked: u64,
@@ -463,7 +1452,10 @@ pub(super) fn add_read_tools(mut router: McpRouter, state: Arc<ToolState>) -> Mc
     router = router.tool(mget_tool(state.clone()));
     router = router.tool(strlen_tool(state.clone()));
     router = router.tool(memory_usage_tool(state.clone()));
-    router.tool(randomkey_tool(state))
+    router = router.tool(randomkey_tool(state.clone()));
+    router = router.tool(getrange_tool(state.clone()));
+    router = router.tool(dump_tool(state.clone()));
+    router.tool(object_inspect_tool(state))
 }
 
 pub(super) fn add_write_tools(mut router: McpRouter, state: Arc<ToolState>) -> McpRouter {
@@ -471,11 +1463,43 @@ pub(super) fn add_write_tools(mut router: McpRouter, state: Arc<ToolState>) -> M
     router = router.tool(persist_tool(state.clone()));
     router = router.tool(mset_tool(state.clone()));
     router = router.tool(incr_tool(state.clone()));
-    router.tool(append_tool(state))
+    router = router.tool(append_tool(state.clone()));
+    router = router.tool(getex_tool(state.clone()));
+    router = router.tool(setrange_tool(state.clone()));
+    router = router.tool(integer_mutation_tool(
+        state.clone(),
+        "redis_decr",
+        "Decrement Redis Integer",
+        "Decrement a Redis integer string by one and return the new value.",
+        "DECR",
+    ));
+    router = router.tool(integer_by_tool(
+        state.clone(),
+        "redis_decrby",
+        "Decrement Redis Integer by Amount",
+        "Decrement a Redis integer string by a signed amount and return the new value.",
+        "DECRBY",
+    ));
+    router = router.tool(integer_by_tool(
+        state.clone(),
+        "redis_incrby",
+        "Increment Redis Integer by Amount",
+        "Increment a Redis integer string by a signed amount and return the new value.",
+        "INCRBY",
+    ));
+    router = router.tool(incrbyfloat_tool(state.clone()));
+    router = router.tool(copy_tool(state.clone(), false));
+    router = router.tool(touch_tool(state.clone()));
+    router.tool(restore_tool(state, false))
 }
 
-pub(super) fn add_destructive_tools(router: McpRouter, state: Arc<ToolState>) -> McpRouter {
-    router.tool(unlink_tool(state))
+pub(super) fn add_destructive_tools(mut router: McpRouter, state: Arc<ToolState>) -> McpRouter {
+    router = router.tool(unlink_tool(state.clone()));
+    router = router.tool(getdel_tool(state.clone()));
+    router = router.tool(copy_tool(state.clone(), true));
+    router = router.tool(rename_tool(state.clone(), false));
+    router = router.tool(rename_tool(state.clone(), true));
+    router.tool(restore_tool(state, true))
 }
 
 #[cfg(test)]

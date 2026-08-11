@@ -128,6 +128,221 @@
     {
       "bundle": "essentials",
       "capability_requirements": {
+        "deployment": "any",
+        "minimum_module_version": null,
+        "minimum_redis_version": "6.2.0",
+        "required_commands": [
+          "COPY"
+        ],
+        "required_module": null
+      },
+      "name": "redis_copy",
+      "output_policy": "intrinsically_bounded",
+      "protocol": {
+        "annotations": {
+          "destructiveHint": false,
+          "idempotentHint": true
+        },
+        "description": "Copy a key in the selected database only when the destination is absent. Cluster keys must share a slot.",
+        "inputSchema": {
+          "$defs": {
+            "InputEncoding": {
+              "enum": [
+                "utf8",
+                "base64"
+              ],
+              "type": "string"
+            }
+          },
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "destination": {
+              "description": "Destination Redis key.",
+              "type": "string"
+            },
+            "destination_encoding": {
+              "$ref": "#/$defs/InputEncoding",
+              "default": "utf8",
+              "description": "Encoding of `destination`."
+            },
+            "source": {
+              "description": "Source Redis key.",
+              "type": "string"
+            },
+            "source_encoding": {
+              "$ref": "#/$defs/InputEncoding",
+              "default": "utf8",
+              "description": "Encoding of `source`."
+            }
+          },
+          "required": [
+            "source",
+            "destination"
+          ],
+          "title": "TwoKeysInput",
+          "type": "object"
+        },
+        "name": "redis_copy",
+        "outputSchema": {
+          "$defs": {
+            "InputEncoding": {
+              "enum": [
+                "utf8",
+                "base64"
+              ],
+              "type": "string"
+            }
+          },
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "copied": {
+              "type": "boolean"
+            },
+            "destination": {
+              "type": "string"
+            },
+            "destination_encoding": {
+              "$ref": "#/$defs/InputEncoding"
+            },
+            "overwrite_allowed": {
+              "type": "boolean"
+            },
+            "source": {
+              "type": "string"
+            },
+            "source_encoding": {
+              "$ref": "#/$defs/InputEncoding"
+            }
+          },
+          "required": [
+            "source",
+            "source_encoding",
+            "destination",
+            "destination_encoding",
+            "copied",
+            "overwrite_allowed"
+          ],
+          "title": "CopyOutput",
+          "type": "object"
+        },
+        "title": "Copy Redis Key"
+      },
+      "required_access": "read_write",
+      "required_module": null,
+      "requires_raw_opt_in": false
+    },
+    {
+      "bundle": "essentials",
+      "capability_requirements": {
+        "deployment": "any",
+        "minimum_module_version": null,
+        "minimum_redis_version": "6.2.0",
+        "required_commands": [
+          "COPY"
+        ],
+        "required_module": null
+      },
+      "name": "redis_copy_replace",
+      "output_policy": "intrinsically_bounded",
+      "protocol": {
+        "annotations": {
+          "idempotentHint": true
+        },
+        "description": "Copy a key in the selected database, overwriting the destination. Requires full access; Cluster keys must share a slot.",
+        "inputSchema": {
+          "$defs": {
+            "InputEncoding": {
+              "enum": [
+                "utf8",
+                "base64"
+              ],
+              "type": "string"
+            }
+          },
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "destination": {
+              "description": "Destination Redis key.",
+              "type": "string"
+            },
+            "destination_encoding": {
+              "$ref": "#/$defs/InputEncoding",
+              "default": "utf8",
+              "description": "Encoding of `destination`."
+            },
+            "source": {
+              "description": "Source Redis key.",
+              "type": "string"
+            },
+            "source_encoding": {
+              "$ref": "#/$defs/InputEncoding",
+              "default": "utf8",
+              "description": "Encoding of `source`."
+            }
+          },
+          "required": [
+            "source",
+            "destination"
+          ],
+          "title": "TwoKeysInput",
+          "type": "object"
+        },
+        "name": "redis_copy_replace",
+        "outputSchema": {
+          "$defs": {
+            "InputEncoding": {
+              "enum": [
+                "utf8",
+                "base64"
+              ],
+              "type": "string"
+            }
+          },
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "copied": {
+              "type": "boolean"
+            },
+            "destination": {
+              "type": "string"
+            },
+            "destination_encoding": {
+              "$ref": "#/$defs/InputEncoding"
+            },
+            "overwrite_allowed": {
+              "type": "boolean"
+            },
+            "source": {
+              "type": "string"
+            },
+            "source_encoding": {
+              "$ref": "#/$defs/InputEncoding"
+            }
+          },
+          "required": [
+            "source",
+            "source_encoding",
+            "destination",
+            "destination_encoding",
+            "copied",
+            "overwrite_allowed"
+          ],
+          "title": "CopyOutput",
+          "type": "object"
+        },
+        "title": "Copy and Replace Redis Key"
+      },
+      "required_access": "full",
+      "required_module": null,
+      "requires_raw_opt_in": false
+    },
+    {
+      "bundle": "essentials",
+      "capability_requirements": {
         "deployment": "standalone",
         "minimum_module_version": null,
         "minimum_redis_version": null,
@@ -169,6 +384,184 @@
         "title": "Redis Database Size"
       },
       "required_access": "read_only",
+      "required_module": null,
+      "requires_raw_opt_in": false
+    },
+    {
+      "bundle": "essentials",
+      "capability_requirements": {
+        "deployment": "any",
+        "minimum_module_version": null,
+        "minimum_redis_version": null,
+        "required_commands": [
+          "DECR"
+        ],
+        "required_module": null
+      },
+      "name": "redis_decr",
+      "output_policy": "intrinsically_bounded",
+      "protocol": {
+        "annotations": {
+          "destructiveHint": false
+        },
+        "description": "Decrement a Redis integer string by one and return the new value.",
+        "inputSchema": {
+          "$defs": {
+            "InputEncoding": {
+              "enum": [
+                "utf8",
+                "base64"
+              ],
+              "type": "string"
+            }
+          },
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "key": {
+              "description": "Redis key.",
+              "type": "string"
+            },
+            "key_encoding": {
+              "$ref": "#/$defs/InputEncoding",
+              "default": "utf8",
+              "description": "Encoding of `key`."
+            }
+          },
+          "required": [
+            "key"
+          ],
+          "title": "BinaryKeyInput",
+          "type": "object"
+        },
+        "name": "redis_decr",
+        "outputSchema": {
+          "$defs": {
+            "InputEncoding": {
+              "enum": [
+                "utf8",
+                "base64"
+              ],
+              "type": "string"
+            }
+          },
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "key": {
+              "type": "string"
+            },
+            "key_encoding": {
+              "$ref": "#/$defs/InputEncoding"
+            },
+            "value": {
+              "format": "int64",
+              "type": "integer"
+            }
+          },
+          "required": [
+            "key",
+            "key_encoding",
+            "value"
+          ],
+          "title": "IncrOutput",
+          "type": "object"
+        },
+        "title": "Decrement Redis Integer"
+      },
+      "required_access": "read_write",
+      "required_module": null,
+      "requires_raw_opt_in": false
+    },
+    {
+      "bundle": "essentials",
+      "capability_requirements": {
+        "deployment": "any",
+        "minimum_module_version": null,
+        "minimum_redis_version": null,
+        "required_commands": [
+          "DECRBY"
+        ],
+        "required_module": null
+      },
+      "name": "redis_decrby",
+      "output_policy": "intrinsically_bounded",
+      "protocol": {
+        "annotations": {
+          "destructiveHint": false
+        },
+        "description": "Decrement a Redis integer string by a signed amount and return the new value.",
+        "inputSchema": {
+          "$defs": {
+            "InputEncoding": {
+              "enum": [
+                "utf8",
+                "base64"
+              ],
+              "type": "string"
+            }
+          },
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "amount": {
+              "description": "Signed amount accepted by Redis.",
+              "format": "int64",
+              "type": "integer"
+            },
+            "key": {
+              "description": "Redis key.",
+              "type": "string"
+            },
+            "key_encoding": {
+              "$ref": "#/$defs/InputEncoding",
+              "default": "utf8",
+              "description": "Encoding of `key`."
+            }
+          },
+          "required": [
+            "key",
+            "amount"
+          ],
+          "title": "IntegerByInput",
+          "type": "object"
+        },
+        "name": "redis_decrby",
+        "outputSchema": {
+          "$defs": {
+            "InputEncoding": {
+              "enum": [
+                "utf8",
+                "base64"
+              ],
+              "type": "string"
+            }
+          },
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "key": {
+              "type": "string"
+            },
+            "key_encoding": {
+              "$ref": "#/$defs/InputEncoding"
+            },
+            "value": {
+              "format": "int64",
+              "type": "integer"
+            }
+          },
+          "required": [
+            "key",
+            "key_encoding",
+            "value"
+          ],
+          "title": "IncrOutput",
+          "type": "object"
+        },
+        "title": "Decrement Redis Integer by Amount"
+      },
+      "required_access": "read_write",
       "required_module": null,
       "requires_raw_opt_in": false
     },
@@ -236,6 +629,112 @@
         "title": "Delete Redis Keys"
       },
       "required_access": "full",
+      "required_module": null,
+      "requires_raw_opt_in": false
+    },
+    {
+      "bundle": "essentials",
+      "capability_requirements": {
+        "deployment": "any",
+        "minimum_module_version": null,
+        "minimum_redis_version": "2.6.0",
+        "required_commands": [
+          "DUMP"
+        ],
+        "required_module": null
+      },
+      "name": "redis_dump",
+      "output_policy": "budget_guarded",
+      "protocol": {
+        "annotations": {
+          "destructiveHint": false,
+          "idempotentHint": true,
+          "readOnlyHint": true
+        },
+        "description": "Return a Redis serialized payload as base64 only when it fits both the requested and configured output budgets.",
+        "inputSchema": {
+          "$defs": {
+            "InputEncoding": {
+              "enum": [
+                "utf8",
+                "base64"
+              ],
+              "type": "string"
+            }
+          },
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "key": {
+              "description": "Redis key.",
+              "type": "string"
+            },
+            "key_encoding": {
+              "$ref": "#/$defs/InputEncoding",
+              "default": "utf8",
+              "description": "Encoding of `key`."
+            },
+            "max_bytes": {
+              "default": 65536,
+              "description": "Maximum serialized payload bytes accepted by this call.",
+              "format": "uint",
+              "minimum": 1,
+              "type": "integer"
+            }
+          },
+          "required": [
+            "key"
+          ],
+          "title": "DumpInput",
+          "type": "object"
+        },
+        "name": "redis_dump",
+        "outputSchema": {
+          "$defs": {
+            "InputEncoding": {
+              "enum": [
+                "utf8",
+                "base64"
+              ],
+              "type": "string"
+            }
+          },
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "exists": {
+              "type": "boolean"
+            },
+            "key": {
+              "type": "string"
+            },
+            "key_encoding": {
+              "$ref": "#/$defs/InputEncoding"
+            },
+            "payload_base64": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "payload_bytes": {
+              "format": "uint",
+              "minimum": 0,
+              "type": "integer"
+            }
+          },
+          "required": [
+            "key",
+            "key_encoding",
+            "exists",
+            "payload_bytes"
+          ],
+          "title": "DumpOutput",
+          "type": "object"
+        },
+        "title": "Dump Redis Key"
+      },
+      "required_access": "read_only",
       "required_module": null,
       "requires_raw_opt_in": false
     },
@@ -327,8 +826,7 @@
       "output_policy": "intrinsically_bounded",
       "protocol": {
         "annotations": {
-          "destructiveHint": false,
-          "idempotentHint": true
+          "destructiveHint": false
         },
         "description": "Set a positive key expiration in seconds. Missing keys are reported without error.",
         "inputSchema": {
@@ -1927,12 +2425,26 @@
         },
         "description": "Read a Redis string value. Binary data is returned as base64.",
         "inputSchema": {
+          "$defs": {
+            "InputEncoding": {
+              "enum": [
+                "utf8",
+                "base64"
+              ],
+              "type": "string"
+            }
+          },
           "$schema": "https://json-schema.org/draft/2020-12/schema",
           "additionalProperties": false,
           "properties": {
             "key": {
               "description": "Redis key.",
               "type": "string"
+            },
+            "key_encoding": {
+              "$ref": "#/$defs/InputEncoding",
+              "default": "utf8",
+              "description": "Encoding of `key`."
             }
           },
           "required": [
@@ -1944,6 +2456,13 @@
         "name": "redis_get",
         "outputSchema": {
           "$defs": {
+            "InputEncoding": {
+              "enum": [
+                "utf8",
+                "base64"
+              ],
+              "type": "string"
+            },
             "ValueEncoding": {
               "enum": [
                 "utf8",
@@ -1971,6 +2490,9 @@
             "key": {
               "type": "string"
             },
+            "key_encoding": {
+              "$ref": "#/$defs/InputEncoding"
+            },
             "value": {
               "type": [
                 "string",
@@ -1980,12 +2502,592 @@
           },
           "required": [
             "key",
+            "key_encoding",
             "exists"
           ],
           "title": "GetOutput",
           "type": "object"
         },
         "title": "Get Redis String"
+      },
+      "required_access": "read_only",
+      "required_module": null,
+      "requires_raw_opt_in": false
+    },
+    {
+      "bundle": "essentials",
+      "capability_requirements": {
+        "deployment": "any",
+        "minimum_module_version": null,
+        "minimum_redis_version": "6.2.0",
+        "required_commands": [
+          "GETDEL"
+        ],
+        "required_module": null
+      },
+      "name": "redis_getdel",
+      "output_policy": "budget_guarded",
+      "protocol": {
+        "annotations": {
+          "idempotentHint": true
+        },
+        "description": "Atomically return and delete a binary-safe Redis string. Requires full access.",
+        "inputSchema": {
+          "$defs": {
+            "InputEncoding": {
+              "enum": [
+                "utf8",
+                "base64"
+              ],
+              "type": "string"
+            }
+          },
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "key": {
+              "description": "Redis key.",
+              "type": "string"
+            },
+            "key_encoding": {
+              "$ref": "#/$defs/InputEncoding",
+              "default": "utf8",
+              "description": "Encoding of `key`."
+            },
+            "max_value_bytes": {
+              "default": 65536,
+              "description": "Maximum deleted-value bytes to include in the result. Larger values are reported as\nomitted so deletion remains observable.",
+              "format": "uint",
+              "minimum": 1,
+              "type": "integer"
+            }
+          },
+          "required": [
+            "key"
+          ],
+          "title": "GetDelInput",
+          "type": "object"
+        },
+        "name": "redis_getdel",
+        "outputSchema": {
+          "$defs": {
+            "InputEncoding": {
+              "enum": [
+                "utf8",
+                "base64"
+              ],
+              "type": "string"
+            },
+            "ValueEncoding": {
+              "enum": [
+                "utf8",
+                "base64"
+              ],
+              "type": "string"
+            }
+          },
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "encoding": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/ValueEncoding"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "exists": {
+              "type": "boolean"
+            },
+            "key": {
+              "type": "string"
+            },
+            "key_encoding": {
+              "$ref": "#/$defs/InputEncoding"
+            },
+            "value": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "value_bytes": {
+              "format": "uint",
+              "minimum": 0,
+              "type": [
+                "integer",
+                "null"
+              ]
+            },
+            "value_omitted": {
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "key",
+            "key_encoding",
+            "exists",
+            "value_omitted"
+          ],
+          "title": "BoundedStringValueOutput",
+          "type": "object"
+        },
+        "title": "Get and Delete Redis String"
+      },
+      "required_access": "full",
+      "required_module": null,
+      "requires_raw_opt_in": false
+    },
+    {
+      "bundle": "essentials",
+      "capability_requirements": {
+        "deployment": "any",
+        "minimum_module_version": null,
+        "minimum_redis_version": "6.2.0",
+        "required_commands": [
+          "GETEX"
+        ],
+        "required_module": null
+      },
+      "name": "redis_getex",
+      "output_policy": "budget_guarded",
+      "protocol": {
+        "annotations": {
+          "destructiveHint": false
+        },
+        "description": "Atomically read a binary-safe Redis string and apply exactly one expiration behavior.",
+        "inputSchema": {
+          "$defs": {
+            "GetExExpiration": {
+              "oneOf": [
+                {
+                  "additionalProperties": false,
+                  "properties": {
+                    "type": {
+                      "const": "seconds",
+                      "type": "string"
+                    },
+                    "value": {
+                      "format": "uint64",
+                      "minimum": 1,
+                      "type": "integer"
+                    }
+                  },
+                  "required": [
+                    "type",
+                    "value"
+                  ],
+                  "type": "object"
+                },
+                {
+                  "additionalProperties": false,
+                  "properties": {
+                    "type": {
+                      "const": "milliseconds",
+                      "type": "string"
+                    },
+                    "value": {
+                      "format": "uint64",
+                      "minimum": 1,
+                      "type": "integer"
+                    }
+                  },
+                  "required": [
+                    "type",
+                    "value"
+                  ],
+                  "type": "object"
+                },
+                {
+                  "additionalProperties": false,
+                  "properties": {
+                    "type": {
+                      "const": "unix_seconds",
+                      "type": "string"
+                    },
+                    "value": {
+                      "format": "uint64",
+                      "minimum": 1,
+                      "type": "integer"
+                    }
+                  },
+                  "required": [
+                    "type",
+                    "value"
+                  ],
+                  "type": "object"
+                },
+                {
+                  "additionalProperties": false,
+                  "properties": {
+                    "type": {
+                      "const": "unix_milliseconds",
+                      "type": "string"
+                    },
+                    "value": {
+                      "format": "uint64",
+                      "minimum": 1,
+                      "type": "integer"
+                    }
+                  },
+                  "required": [
+                    "type",
+                    "value"
+                  ],
+                  "type": "object"
+                },
+                {
+                  "additionalProperties": false,
+                  "properties": {
+                    "type": {
+                      "const": "persist",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "type"
+                  ],
+                  "type": "object"
+                }
+              ]
+            },
+            "InputEncoding": {
+              "enum": [
+                "utf8",
+                "base64"
+              ],
+              "type": "string"
+            }
+          },
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "expiration": {
+              "$ref": "#/$defs/GetExExpiration",
+              "description": "Expiration change to apply atomically with the read."
+            },
+            "key": {
+              "description": "Redis key.",
+              "type": "string"
+            },
+            "key_encoding": {
+              "$ref": "#/$defs/InputEncoding",
+              "default": "utf8",
+              "description": "Encoding of `key`."
+            },
+            "max_value_bytes": {
+              "default": 65536,
+              "description": "Maximum value bytes to include in the result. Larger values are reported as omitted so\nthe expiration change remains observable.",
+              "format": "uint",
+              "minimum": 1,
+              "type": "integer"
+            }
+          },
+          "required": [
+            "key",
+            "expiration"
+          ],
+          "title": "GetExInput",
+          "type": "object"
+        },
+        "name": "redis_getex",
+        "outputSchema": {
+          "$defs": {
+            "GetExExpiration": {
+              "oneOf": [
+                {
+                  "additionalProperties": false,
+                  "properties": {
+                    "type": {
+                      "const": "seconds",
+                      "type": "string"
+                    },
+                    "value": {
+                      "format": "uint64",
+                      "minimum": 1,
+                      "type": "integer"
+                    }
+                  },
+                  "required": [
+                    "type",
+                    "value"
+                  ],
+                  "type": "object"
+                },
+                {
+                  "additionalProperties": false,
+                  "properties": {
+                    "type": {
+                      "const": "milliseconds",
+                      "type": "string"
+                    },
+                    "value": {
+                      "format": "uint64",
+                      "minimum": 1,
+                      "type": "integer"
+                    }
+                  },
+                  "required": [
+                    "type",
+                    "value"
+                  ],
+                  "type": "object"
+                },
+                {
+                  "additionalProperties": false,
+                  "properties": {
+                    "type": {
+                      "const": "unix_seconds",
+                      "type": "string"
+                    },
+                    "value": {
+                      "format": "uint64",
+                      "minimum": 1,
+                      "type": "integer"
+                    }
+                  },
+                  "required": [
+                    "type",
+                    "value"
+                  ],
+                  "type": "object"
+                },
+                {
+                  "additionalProperties": false,
+                  "properties": {
+                    "type": {
+                      "const": "unix_milliseconds",
+                      "type": "string"
+                    },
+                    "value": {
+                      "format": "uint64",
+                      "minimum": 1,
+                      "type": "integer"
+                    }
+                  },
+                  "required": [
+                    "type",
+                    "value"
+                  ],
+                  "type": "object"
+                },
+                {
+                  "additionalProperties": false,
+                  "properties": {
+                    "type": {
+                      "const": "persist",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "type"
+                  ],
+                  "type": "object"
+                }
+              ]
+            },
+            "InputEncoding": {
+              "enum": [
+                "utf8",
+                "base64"
+              ],
+              "type": "string"
+            },
+            "ValueEncoding": {
+              "enum": [
+                "utf8",
+                "base64"
+              ],
+              "type": "string"
+            }
+          },
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "encoding": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/ValueEncoding"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "exists": {
+              "type": "boolean"
+            },
+            "expiration": {
+              "$ref": "#/$defs/GetExExpiration"
+            },
+            "key": {
+              "type": "string"
+            },
+            "key_encoding": {
+              "$ref": "#/$defs/InputEncoding"
+            },
+            "value": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "value_bytes": {
+              "format": "uint",
+              "minimum": 0,
+              "type": [
+                "integer",
+                "null"
+              ]
+            },
+            "value_omitted": {
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "key",
+            "key_encoding",
+            "exists",
+            "value_omitted",
+            "expiration"
+          ],
+          "title": "GetExOutput",
+          "type": "object"
+        },
+        "title": "Get Redis String and Change Expiration"
+      },
+      "required_access": "read_write",
+      "required_module": null,
+      "requires_raw_opt_in": false
+    },
+    {
+      "bundle": "essentials",
+      "capability_requirements": {
+        "deployment": "any",
+        "minimum_module_version": null,
+        "minimum_redis_version": null,
+        "required_commands": [
+          "GETRANGE"
+        ],
+        "required_module": null
+      },
+      "name": "redis_getrange",
+      "output_policy": "budget_guarded",
+      "protocol": {
+        "annotations": {
+          "destructiveHint": false,
+          "idempotentHint": true,
+          "readOnlyHint": true
+        },
+        "description": "Read an inclusive, non-negative Redis string byte range of at most 65536 bytes. Binary data is returned as base64.",
+        "inputSchema": {
+          "$defs": {
+            "InputEncoding": {
+              "enum": [
+                "utf8",
+                "base64"
+              ],
+              "type": "string"
+            }
+          },
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "end": {
+              "description": "Inclusive non-negative byte offset, at most 65536 bytes after `start`.",
+              "format": "uint64",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "key": {
+              "description": "Redis key.",
+              "type": "string"
+            },
+            "key_encoding": {
+              "$ref": "#/$defs/InputEncoding",
+              "default": "utf8",
+              "description": "Encoding of `key`."
+            },
+            "start": {
+              "description": "Inclusive non-negative byte offset.",
+              "format": "uint64",
+              "minimum": 0,
+              "type": "integer"
+            }
+          },
+          "required": [
+            "key",
+            "start",
+            "end"
+          ],
+          "title": "GetRangeInput",
+          "type": "object"
+        },
+        "name": "redis_getrange",
+        "outputSchema": {
+          "$defs": {
+            "InputEncoding": {
+              "enum": [
+                "utf8",
+                "base64"
+              ],
+              "type": "string"
+            },
+            "ValueEncoding": {
+              "enum": [
+                "utf8",
+                "base64"
+              ],
+              "type": "string"
+            }
+          },
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "bytes": {
+              "format": "uint",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "encoding": {
+              "$ref": "#/$defs/ValueEncoding"
+            },
+            "end": {
+              "format": "uint64",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "key": {
+              "type": "string"
+            },
+            "key_encoding": {
+              "$ref": "#/$defs/InputEncoding"
+            },
+            "start": {
+              "format": "uint64",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "value": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "key",
+            "key_encoding",
+            "start",
+            "end",
+            "bytes",
+            "value",
+            "encoding"
+          ],
+          "title": "GetRangeOutput",
+          "type": "object"
+        },
+        "title": "Get Redis String Byte Range"
       },
       "required_access": "read_only",
       "required_module": null,
@@ -2480,27 +3582,53 @@
         },
         "description": "Increment a Redis integer string by one and return the new value.",
         "inputSchema": {
+          "$defs": {
+            "InputEncoding": {
+              "enum": [
+                "utf8",
+                "base64"
+              ],
+              "type": "string"
+            }
+          },
           "$schema": "https://json-schema.org/draft/2020-12/schema",
           "additionalProperties": false,
           "properties": {
             "key": {
               "description": "Redis key.",
               "type": "string"
+            },
+            "key_encoding": {
+              "$ref": "#/$defs/InputEncoding",
+              "default": "utf8",
+              "description": "Encoding of `key`."
             }
           },
           "required": [
             "key"
           ],
-          "title": "KeyInput",
+          "title": "BinaryKeyInput",
           "type": "object"
         },
         "name": "redis_incr",
         "outputSchema": {
+          "$defs": {
+            "InputEncoding": {
+              "enum": [
+                "utf8",
+                "base64"
+              ],
+              "type": "string"
+            }
+          },
           "$schema": "https://json-schema.org/draft/2020-12/schema",
           "additionalProperties": false,
           "properties": {
             "key": {
               "type": "string"
+            },
+            "key_encoding": {
+              "$ref": "#/$defs/InputEncoding"
             },
             "value": {
               "format": "int64",
@@ -2509,12 +3637,196 @@
           },
           "required": [
             "key",
+            "key_encoding",
             "value"
           ],
           "title": "IncrOutput",
           "type": "object"
         },
         "title": "Increment Redis Integer"
+      },
+      "required_access": "read_write",
+      "required_module": null,
+      "requires_raw_opt_in": false
+    },
+    {
+      "bundle": "essentials",
+      "capability_requirements": {
+        "deployment": "any",
+        "minimum_module_version": null,
+        "minimum_redis_version": null,
+        "required_commands": [
+          "INCRBY"
+        ],
+        "required_module": null
+      },
+      "name": "redis_incrby",
+      "output_policy": "intrinsically_bounded",
+      "protocol": {
+        "annotations": {
+          "destructiveHint": false
+        },
+        "description": "Increment a Redis integer string by a signed amount and return the new value.",
+        "inputSchema": {
+          "$defs": {
+            "InputEncoding": {
+              "enum": [
+                "utf8",
+                "base64"
+              ],
+              "type": "string"
+            }
+          },
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "amount": {
+              "description": "Signed amount accepted by Redis.",
+              "format": "int64",
+              "type": "integer"
+            },
+            "key": {
+              "description": "Redis key.",
+              "type": "string"
+            },
+            "key_encoding": {
+              "$ref": "#/$defs/InputEncoding",
+              "default": "utf8",
+              "description": "Encoding of `key`."
+            }
+          },
+          "required": [
+            "key",
+            "amount"
+          ],
+          "title": "IntegerByInput",
+          "type": "object"
+        },
+        "name": "redis_incrby",
+        "outputSchema": {
+          "$defs": {
+            "InputEncoding": {
+              "enum": [
+                "utf8",
+                "base64"
+              ],
+              "type": "string"
+            }
+          },
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "key": {
+              "type": "string"
+            },
+            "key_encoding": {
+              "$ref": "#/$defs/InputEncoding"
+            },
+            "value": {
+              "format": "int64",
+              "type": "integer"
+            }
+          },
+          "required": [
+            "key",
+            "key_encoding",
+            "value"
+          ],
+          "title": "IncrOutput",
+          "type": "object"
+        },
+        "title": "Increment Redis Integer by Amount"
+      },
+      "required_access": "read_write",
+      "required_module": null,
+      "requires_raw_opt_in": false
+    },
+    {
+      "bundle": "essentials",
+      "capability_requirements": {
+        "deployment": "any",
+        "minimum_module_version": null,
+        "minimum_redis_version": null,
+        "required_commands": [
+          "INCRBYFLOAT"
+        ],
+        "required_module": null
+      },
+      "name": "redis_incrbyfloat",
+      "output_policy": "intrinsically_bounded",
+      "protocol": {
+        "annotations": {
+          "destructiveHint": false
+        },
+        "description": "Increment a Redis numeric string by a finite float and return Redis's canonical decimal string.",
+        "inputSchema": {
+          "$defs": {
+            "InputEncoding": {
+              "enum": [
+                "utf8",
+                "base64"
+              ],
+              "type": "string"
+            }
+          },
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "amount": {
+              "description": "Finite increment.",
+              "format": "double",
+              "type": "number"
+            },
+            "key": {
+              "description": "Redis key.",
+              "type": "string"
+            },
+            "key_encoding": {
+              "$ref": "#/$defs/InputEncoding",
+              "default": "utf8",
+              "description": "Encoding of `key`."
+            }
+          },
+          "required": [
+            "key",
+            "amount"
+          ],
+          "title": "IncrByFloatInput",
+          "type": "object"
+        },
+        "name": "redis_incrbyfloat",
+        "outputSchema": {
+          "$defs": {
+            "InputEncoding": {
+              "enum": [
+                "utf8",
+                "base64"
+              ],
+              "type": "string"
+            }
+          },
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "key": {
+              "type": "string"
+            },
+            "key_encoding": {
+              "$ref": "#/$defs/InputEncoding"
+            },
+            "value": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "key",
+            "key_encoding",
+            "value"
+          ],
+          "title": "IncrByFloatOutput",
+          "type": "object"
+        },
+        "title": "Increment Redis Float"
       },
       "required_access": "read_write",
       "required_module": null,
@@ -3412,6 +4724,134 @@
       "capability_requirements": {
         "deployment": "any",
         "minimum_module_version": null,
+        "minimum_redis_version": "4.0.0",
+        "required_commands": [
+          "OBJECT"
+        ],
+        "required_module": null
+      },
+      "name": "redis_object_inspect",
+      "output_policy": "intrinsically_bounded",
+      "protocol": {
+        "annotations": {
+          "destructiveHint": false,
+          "idempotentHint": true,
+          "readOnlyHint": true
+        },
+        "description": "Read one safe OBJECT property: encoding, frequency, idle time, or reference count. OBJECT HELP is excluded.",
+        "inputSchema": {
+          "$defs": {
+            "InputEncoding": {
+              "enum": [
+                "utf8",
+                "base64"
+              ],
+              "type": "string"
+            },
+            "ObjectOperation": {
+              "enum": [
+                "encoding",
+                "frequency",
+                "idle_time",
+                "refcount"
+              ],
+              "type": "string"
+            }
+          },
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "key": {
+              "description": "Redis key.",
+              "type": "string"
+            },
+            "key_encoding": {
+              "$ref": "#/$defs/InputEncoding",
+              "default": "utf8",
+              "description": "Encoding of `key`."
+            },
+            "operation": {
+              "$ref": "#/$defs/ObjectOperation",
+              "description": "One bounded OBJECT inspection; HELP is intentionally unavailable."
+            }
+          },
+          "required": [
+            "key",
+            "operation"
+          ],
+          "title": "ObjectInspectInput",
+          "type": "object"
+        },
+        "name": "redis_object_inspect",
+        "outputSchema": {
+          "$defs": {
+            "InputEncoding": {
+              "enum": [
+                "utf8",
+                "base64"
+              ],
+              "type": "string"
+            },
+            "ObjectOperation": {
+              "enum": [
+                "encoding",
+                "frequency",
+                "idle_time",
+                "refcount"
+              ],
+              "type": "string"
+            }
+          },
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "encoding": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "exists": {
+              "type": "boolean"
+            },
+            "key": {
+              "type": "string"
+            },
+            "key_encoding": {
+              "$ref": "#/$defs/InputEncoding"
+            },
+            "operation": {
+              "$ref": "#/$defs/ObjectOperation"
+            },
+            "value": {
+              "format": "uint64",
+              "minimum": 0,
+              "type": [
+                "integer",
+                "null"
+              ]
+            }
+          },
+          "required": [
+            "key",
+            "key_encoding",
+            "operation",
+            "exists"
+          ],
+          "title": "ObjectInspectOutput",
+          "type": "object"
+        },
+        "title": "Inspect Redis Object"
+      },
+      "required_access": "read_only",
+      "required_module": null,
+      "requires_raw_opt_in": false
+    },
+    {
+      "bundle": "essentials",
+      "capability_requirements": {
+        "deployment": "any",
+        "minimum_module_version": null,
         "minimum_redis_version": null,
         "required_commands": [
           "PERSIST"
@@ -3577,6 +5017,505 @@
         "title": "Random Redis Key"
       },
       "required_access": "read_only",
+      "required_module": null,
+      "requires_raw_opt_in": false
+    },
+    {
+      "bundle": "essentials",
+      "capability_requirements": {
+        "deployment": "any",
+        "minimum_module_version": null,
+        "minimum_redis_version": null,
+        "required_commands": [
+          "RENAME"
+        ],
+        "required_module": null
+      },
+      "name": "redis_rename",
+      "output_policy": "intrinsically_bounded",
+      "protocol": {
+        "annotations": {},
+        "description": "Rename a key and overwrite an existing destination. Requires full access; Cluster keys must share a slot.",
+        "inputSchema": {
+          "$defs": {
+            "InputEncoding": {
+              "enum": [
+                "utf8",
+                "base64"
+              ],
+              "type": "string"
+            }
+          },
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "destination": {
+              "description": "Destination Redis key.",
+              "type": "string"
+            },
+            "destination_encoding": {
+              "$ref": "#/$defs/InputEncoding",
+              "default": "utf8",
+              "description": "Encoding of `destination`."
+            },
+            "source": {
+              "description": "Source Redis key.",
+              "type": "string"
+            },
+            "source_encoding": {
+              "$ref": "#/$defs/InputEncoding",
+              "default": "utf8",
+              "description": "Encoding of `source`."
+            }
+          },
+          "required": [
+            "source",
+            "destination"
+          ],
+          "title": "TwoKeysInput",
+          "type": "object"
+        },
+        "name": "redis_rename",
+        "outputSchema": {
+          "$defs": {
+            "InputEncoding": {
+              "enum": [
+                "utf8",
+                "base64"
+              ],
+              "type": "string"
+            }
+          },
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "destination": {
+              "type": "string"
+            },
+            "destination_encoding": {
+              "$ref": "#/$defs/InputEncoding"
+            },
+            "overwrite_allowed": {
+              "type": "boolean"
+            },
+            "renamed": {
+              "type": "boolean"
+            },
+            "source": {
+              "type": "string"
+            },
+            "source_encoding": {
+              "$ref": "#/$defs/InputEncoding"
+            }
+          },
+          "required": [
+            "source",
+            "source_encoding",
+            "destination",
+            "destination_encoding",
+            "renamed",
+            "overwrite_allowed"
+          ],
+          "title": "RenameOutput",
+          "type": "object"
+        },
+        "title": "Rename Redis Key"
+      },
+      "required_access": "full",
+      "required_module": null,
+      "requires_raw_opt_in": false
+    },
+    {
+      "bundle": "essentials",
+      "capability_requirements": {
+        "deployment": "any",
+        "minimum_module_version": null,
+        "minimum_redis_version": null,
+        "required_commands": [
+          "RENAMENX"
+        ],
+        "required_module": null
+      },
+      "name": "redis_renamenx",
+      "output_policy": "intrinsically_bounded",
+      "protocol": {
+        "annotations": {
+          "idempotentHint": true
+        },
+        "description": "Rename a key only when the destination is absent. Requires full access; Cluster keys must share a slot.",
+        "inputSchema": {
+          "$defs": {
+            "InputEncoding": {
+              "enum": [
+                "utf8",
+                "base64"
+              ],
+              "type": "string"
+            }
+          },
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "destination": {
+              "description": "Destination Redis key.",
+              "type": "string"
+            },
+            "destination_encoding": {
+              "$ref": "#/$defs/InputEncoding",
+              "default": "utf8",
+              "description": "Encoding of `destination`."
+            },
+            "source": {
+              "description": "Source Redis key.",
+              "type": "string"
+            },
+            "source_encoding": {
+              "$ref": "#/$defs/InputEncoding",
+              "default": "utf8",
+              "description": "Encoding of `source`."
+            }
+          },
+          "required": [
+            "source",
+            "destination"
+          ],
+          "title": "TwoKeysInput",
+          "type": "object"
+        },
+        "name": "redis_renamenx",
+        "outputSchema": {
+          "$defs": {
+            "InputEncoding": {
+              "enum": [
+                "utf8",
+                "base64"
+              ],
+              "type": "string"
+            }
+          },
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "destination": {
+              "type": "string"
+            },
+            "destination_encoding": {
+              "$ref": "#/$defs/InputEncoding"
+            },
+            "overwrite_allowed": {
+              "type": "boolean"
+            },
+            "renamed": {
+              "type": "boolean"
+            },
+            "source": {
+              "type": "string"
+            },
+            "source_encoding": {
+              "$ref": "#/$defs/InputEncoding"
+            }
+          },
+          "required": [
+            "source",
+            "source_encoding",
+            "destination",
+            "destination_encoding",
+            "renamed",
+            "overwrite_allowed"
+          ],
+          "title": "RenameOutput",
+          "type": "object"
+        },
+        "title": "Rename Redis Key If Destination Is Absent"
+      },
+      "required_access": "full",
+      "required_module": null,
+      "requires_raw_opt_in": false
+    },
+    {
+      "bundle": "essentials",
+      "capability_requirements": {
+        "deployment": "any",
+        "minimum_module_version": null,
+        "minimum_redis_version": "5.0.0",
+        "required_commands": [
+          "RESTORE"
+        ],
+        "required_module": null
+      },
+      "name": "redis_restore",
+      "output_policy": "intrinsically_bounded",
+      "protocol": {
+        "annotations": {
+          "destructiveHint": false,
+          "idempotentHint": true
+        },
+        "description": "Restore a bounded DUMP payload only when the destination key is absent.",
+        "inputSchema": {
+          "$defs": {
+            "InputEncoding": {
+              "enum": [
+                "utf8",
+                "base64"
+              ],
+              "type": "string"
+            }
+          },
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "absolute_ttl": {
+              "default": false,
+              "description": "Interpret `ttl_milliseconds` as an absolute Unix timestamp.",
+              "type": "boolean"
+            },
+            "frequency": {
+              "default": null,
+              "description": "Optional LFU frequency from 0 through 255.",
+              "format": "uint8",
+              "maximum": 255,
+              "minimum": 0,
+              "type": [
+                "integer",
+                "null"
+              ]
+            },
+            "idle_time_seconds": {
+              "default": null,
+              "description": "Optional idle time in positive seconds.",
+              "format": "uint64",
+              "minimum": 1,
+              "type": [
+                "integer",
+                "null"
+              ]
+            },
+            "key": {
+              "description": "Destination Redis key.",
+              "type": "string"
+            },
+            "key_encoding": {
+              "$ref": "#/$defs/InputEncoding",
+              "default": "utf8",
+              "description": "Encoding of `key`."
+            },
+            "payload_base64": {
+              "description": "Base64-encoded payload produced by DUMP.",
+              "maxLength": 349528,
+              "type": "string"
+            },
+            "ttl_milliseconds": {
+              "default": 0,
+              "description": "TTL in milliseconds; zero creates a persistent key.",
+              "format": "uint64",
+              "minimum": 0,
+              "type": "integer"
+            }
+          },
+          "required": [
+            "key",
+            "payload_base64"
+          ],
+          "title": "RestoreInput",
+          "type": "object"
+        },
+        "name": "redis_restore",
+        "outputSchema": {
+          "$defs": {
+            "InputEncoding": {
+              "enum": [
+                "utf8",
+                "base64"
+              ],
+              "type": "string"
+            }
+          },
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "absolute_ttl": {
+              "type": "boolean"
+            },
+            "key": {
+              "type": "string"
+            },
+            "key_encoding": {
+              "$ref": "#/$defs/InputEncoding"
+            },
+            "overwrite_allowed": {
+              "type": "boolean"
+            },
+            "payload_bytes": {
+              "format": "uint",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "restored": {
+              "type": "boolean"
+            },
+            "ttl_milliseconds": {
+              "format": "uint64",
+              "minimum": 0,
+              "type": "integer"
+            }
+          },
+          "required": [
+            "key",
+            "key_encoding",
+            "restored",
+            "overwrite_allowed",
+            "payload_bytes",
+            "ttl_milliseconds",
+            "absolute_ttl"
+          ],
+          "title": "RestoreOutput",
+          "type": "object"
+        },
+        "title": "Restore Redis Key"
+      },
+      "required_access": "read_write",
+      "required_module": null,
+      "requires_raw_opt_in": false
+    },
+    {
+      "bundle": "essentials",
+      "capability_requirements": {
+        "deployment": "any",
+        "minimum_module_version": null,
+        "minimum_redis_version": "5.0.0",
+        "required_commands": [
+          "RESTORE"
+        ],
+        "required_module": null
+      },
+      "name": "redis_restore_replace",
+      "output_policy": "intrinsically_bounded",
+      "protocol": {
+        "annotations": {},
+        "description": "Restore a bounded DUMP payload and overwrite an existing destination. Requires full access.",
+        "inputSchema": {
+          "$defs": {
+            "InputEncoding": {
+              "enum": [
+                "utf8",
+                "base64"
+              ],
+              "type": "string"
+            }
+          },
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "absolute_ttl": {
+              "default": false,
+              "description": "Interpret `ttl_milliseconds` as an absolute Unix timestamp.",
+              "type": "boolean"
+            },
+            "frequency": {
+              "default": null,
+              "description": "Optional LFU frequency from 0 through 255.",
+              "format": "uint8",
+              "maximum": 255,
+              "minimum": 0,
+              "type": [
+                "integer",
+                "null"
+              ]
+            },
+            "idle_time_seconds": {
+              "default": null,
+              "description": "Optional idle time in positive seconds.",
+              "format": "uint64",
+              "minimum": 1,
+              "type": [
+                "integer",
+                "null"
+              ]
+            },
+            "key": {
+              "description": "Destination Redis key.",
+              "type": "string"
+            },
+            "key_encoding": {
+              "$ref": "#/$defs/InputEncoding",
+              "default": "utf8",
+              "description": "Encoding of `key`."
+            },
+            "payload_base64": {
+              "description": "Base64-encoded payload produced by DUMP.",
+              "maxLength": 349528,
+              "type": "string"
+            },
+            "ttl_milliseconds": {
+              "default": 0,
+              "description": "TTL in milliseconds; zero creates a persistent key.",
+              "format": "uint64",
+              "minimum": 0,
+              "type": "integer"
+            }
+          },
+          "required": [
+            "key",
+            "payload_base64"
+          ],
+          "title": "RestoreInput",
+          "type": "object"
+        },
+        "name": "redis_restore_replace",
+        "outputSchema": {
+          "$defs": {
+            "InputEncoding": {
+              "enum": [
+                "utf8",
+                "base64"
+              ],
+              "type": "string"
+            }
+          },
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "absolute_ttl": {
+              "type": "boolean"
+            },
+            "key": {
+              "type": "string"
+            },
+            "key_encoding": {
+              "$ref": "#/$defs/InputEncoding"
+            },
+            "overwrite_allowed": {
+              "type": "boolean"
+            },
+            "payload_bytes": {
+              "format": "uint",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "restored": {
+              "type": "boolean"
+            },
+            "ttl_milliseconds": {
+              "format": "uint64",
+              "minimum": 0,
+              "type": "integer"
+            }
+          },
+          "required": [
+            "key",
+            "key_encoding",
+            "restored",
+            "overwrite_allowed",
+            "payload_bytes",
+            "ttl_milliseconds",
+            "absolute_ttl"
+          ],
+          "title": "RestoreOutput",
+          "type": "object"
+        },
+        "title": "Restore and Replace Redis Key"
+      },
+      "required_access": "full",
       "required_module": null,
       "requires_raw_opt_in": false
     },
@@ -3830,34 +5769,178 @@
         "required_module": null
       },
       "name": "redis_set",
-      "output_policy": "intrinsically_bounded",
+      "output_policy": "budget_guarded",
       "protocol": {
         "annotations": {
-          "destructiveHint": false,
-          "idempotentHint": true
+          "destructiveHint": false
         },
-        "description": "Set a UTF-8 Redis string, optionally with an expiration.",
+        "description": "Set a binary-safe Redis string with optional NX/XX, previous-value, and one typed expiration behavior.",
         "inputSchema": {
+          "$defs": {
+            "InputEncoding": {
+              "enum": [
+                "utf8",
+                "base64"
+              ],
+              "type": "string"
+            },
+            "SetCondition": {
+              "enum": [
+                "nx",
+                "xx"
+              ],
+              "type": "string"
+            },
+            "SetExpiration": {
+              "oneOf": [
+                {
+                  "additionalProperties": false,
+                  "properties": {
+                    "type": {
+                      "const": "seconds",
+                      "type": "string"
+                    },
+                    "value": {
+                      "format": "uint64",
+                      "minimum": 1,
+                      "type": "integer"
+                    }
+                  },
+                  "required": [
+                    "type",
+                    "value"
+                  ],
+                  "type": "object"
+                },
+                {
+                  "additionalProperties": false,
+                  "properties": {
+                    "type": {
+                      "const": "milliseconds",
+                      "type": "string"
+                    },
+                    "value": {
+                      "format": "uint64",
+                      "minimum": 1,
+                      "type": "integer"
+                    }
+                  },
+                  "required": [
+                    "type",
+                    "value"
+                  ],
+                  "type": "object"
+                },
+                {
+                  "additionalProperties": false,
+                  "properties": {
+                    "type": {
+                      "const": "unix_seconds",
+                      "type": "string"
+                    },
+                    "value": {
+                      "format": "uint64",
+                      "minimum": 1,
+                      "type": "integer"
+                    }
+                  },
+                  "required": [
+                    "type",
+                    "value"
+                  ],
+                  "type": "object"
+                },
+                {
+                  "additionalProperties": false,
+                  "properties": {
+                    "type": {
+                      "const": "unix_milliseconds",
+                      "type": "string"
+                    },
+                    "value": {
+                      "format": "uint64",
+                      "minimum": 1,
+                      "type": "integer"
+                    }
+                  },
+                  "required": [
+                    "type",
+                    "value"
+                  ],
+                  "type": "object"
+                },
+                {
+                  "additionalProperties": false,
+                  "properties": {
+                    "type": {
+                      "const": "keep_ttl",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "type"
+                  ],
+                  "type": "object"
+                }
+              ]
+            }
+          },
           "$schema": "https://json-schema.org/draft/2020-12/schema",
           "additionalProperties": false,
           "properties": {
-            "expires_in_seconds": {
+            "condition": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/SetCondition"
+                },
+                {
+                  "type": "null"
+                }
+              ],
               "default": null,
-              "description": "Optional expiration in seconds.",
-              "format": "uint64",
-              "minimum": 0,
-              "type": [
-                "integer",
-                "null"
-              ]
+              "description": "Optional existence condition."
+            },
+            "expiration": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/SetExpiration"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "description": "Optional, mutually exclusive expiration behavior."
+            },
+            "get": {
+              "default": false,
+              "description": "Return the previous value. `GET` with `NX` requires Redis 7.0 or newer.",
+              "type": "boolean"
             },
             "key": {
               "description": "Redis key.",
               "type": "string"
             },
+            "key_encoding": {
+              "$ref": "#/$defs/InputEncoding",
+              "default": "utf8",
+              "description": "Encoding of `key`."
+            },
+            "max_previous_bytes": {
+              "default": 65536,
+              "description": "Maximum previous-value bytes to return when `get` is true. Larger prior values are\nreported as omitted so the write result remains observable.",
+              "format": "uint",
+              "minimum": 1,
+              "type": "integer"
+            },
             "value": {
-              "description": "UTF-8 value to store.",
+              "description": "Value to store.",
               "type": "string"
+            },
+            "value_encoding": {
+              "$ref": "#/$defs/InputEncoding",
+              "default": "utf8",
+              "description": "Encoding of `value`."
             }
           },
           "required": [
@@ -3869,32 +5952,319 @@
         },
         "name": "redis_set",
         "outputSchema": {
+          "$defs": {
+            "InputEncoding": {
+              "enum": [
+                "utf8",
+                "base64"
+              ],
+              "type": "string"
+            },
+            "SetCondition": {
+              "enum": [
+                "nx",
+                "xx"
+              ],
+              "type": "string"
+            },
+            "SetExpiration": {
+              "oneOf": [
+                {
+                  "additionalProperties": false,
+                  "properties": {
+                    "type": {
+                      "const": "seconds",
+                      "type": "string"
+                    },
+                    "value": {
+                      "format": "uint64",
+                      "minimum": 1,
+                      "type": "integer"
+                    }
+                  },
+                  "required": [
+                    "type",
+                    "value"
+                  ],
+                  "type": "object"
+                },
+                {
+                  "additionalProperties": false,
+                  "properties": {
+                    "type": {
+                      "const": "milliseconds",
+                      "type": "string"
+                    },
+                    "value": {
+                      "format": "uint64",
+                      "minimum": 1,
+                      "type": "integer"
+                    }
+                  },
+                  "required": [
+                    "type",
+                    "value"
+                  ],
+                  "type": "object"
+                },
+                {
+                  "additionalProperties": false,
+                  "properties": {
+                    "type": {
+                      "const": "unix_seconds",
+                      "type": "string"
+                    },
+                    "value": {
+                      "format": "uint64",
+                      "minimum": 1,
+                      "type": "integer"
+                    }
+                  },
+                  "required": [
+                    "type",
+                    "value"
+                  ],
+                  "type": "object"
+                },
+                {
+                  "additionalProperties": false,
+                  "properties": {
+                    "type": {
+                      "const": "unix_milliseconds",
+                      "type": "string"
+                    },
+                    "value": {
+                      "format": "uint64",
+                      "minimum": 1,
+                      "type": "integer"
+                    }
+                  },
+                  "required": [
+                    "type",
+                    "value"
+                  ],
+                  "type": "object"
+                },
+                {
+                  "additionalProperties": false,
+                  "properties": {
+                    "type": {
+                      "const": "keep_ttl",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "type"
+                  ],
+                  "type": "object"
+                }
+              ]
+            },
+            "ValueEncoding": {
+              "enum": [
+                "utf8",
+                "base64"
+              ],
+              "type": "string"
+            }
+          },
           "$schema": "https://json-schema.org/draft/2020-12/schema",
           "additionalProperties": false,
           "properties": {
-            "expires_in_seconds": {
-              "format": "uint64",
+            "applied": {
+              "type": "boolean"
+            },
+            "condition": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/SetCondition"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "expiration": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/SetExpiration"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "key": {
+              "type": "string"
+            },
+            "key_encoding": {
+              "$ref": "#/$defs/InputEncoding"
+            },
+            "previous_exists": {
+              "type": [
+                "boolean",
+                "null"
+              ]
+            },
+            "previous_value": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "previous_value_bytes": {
+              "format": "uint",
               "minimum": 0,
               "type": [
                 "integer",
                 "null"
               ]
             },
-            "key": {
-              "type": "string"
+            "previous_value_encoding": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/ValueEncoding"
+                },
+                {
+                  "type": "null"
+                }
+              ]
             },
-            "stored": {
+            "previous_value_omitted": {
+              "type": "boolean"
+            },
+            "previous_value_requested": {
               "type": "boolean"
             }
           },
           "required": [
             "key",
-            "stored"
+            "key_encoding",
+            "applied",
+            "previous_value_requested",
+            "previous_value_omitted"
           ],
           "title": "SetOutput",
           "type": "object"
         },
         "title": "Set Redis String"
+      },
+      "required_access": "read_write",
+      "required_module": null,
+      "requires_raw_opt_in": false
+    },
+    {
+      "bundle": "essentials",
+      "capability_requirements": {
+        "deployment": "any",
+        "minimum_module_version": null,
+        "minimum_redis_version": null,
+        "required_commands": [
+          "SETRANGE"
+        ],
+        "required_module": null
+      },
+      "name": "redis_setrange",
+      "output_policy": "intrinsically_bounded",
+      "protocol": {
+        "annotations": {
+          "destructiveHint": false,
+          "idempotentHint": true
+        },
+        "description": "Write at most 65536 binary-safe bytes at a bounded offset, with a 16 MiB maximum resulting extent.",
+        "inputSchema": {
+          "$defs": {
+            "InputEncoding": {
+              "enum": [
+                "utf8",
+                "base64"
+              ],
+              "type": "string"
+            }
+          },
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "key": {
+              "description": "Redis key.",
+              "type": "string"
+            },
+            "key_encoding": {
+              "$ref": "#/$defs/InputEncoding",
+              "default": "utf8",
+              "description": "Encoding of `key`."
+            },
+            "offset": {
+              "description": "Non-negative byte offset, with the resulting string capped at 16 MiB.",
+              "format": "uint64",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "value": {
+              "description": "Bytes to write.",
+              "type": "string"
+            },
+            "value_encoding": {
+              "$ref": "#/$defs/InputEncoding",
+              "default": "utf8",
+              "description": "Encoding of `value`."
+            }
+          },
+          "required": [
+            "key",
+            "offset",
+            "value"
+          ],
+          "title": "SetRangeInput",
+          "type": "object"
+        },
+        "name": "redis_setrange",
+        "outputSchema": {
+          "$defs": {
+            "InputEncoding": {
+              "enum": [
+                "utf8",
+                "base64"
+              ],
+              "type": "string"
+            }
+          },
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "key": {
+              "type": "string"
+            },
+            "key_encoding": {
+              "$ref": "#/$defs/InputEncoding"
+            },
+            "length_bytes": {
+              "format": "uint64",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "offset": {
+              "format": "uint64",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "written_bytes": {
+              "format": "uint",
+              "minimum": 0,
+              "type": "integer"
+            }
+          },
+          "required": [
+            "key",
+            "key_encoding",
+            "offset",
+            "written_bytes",
+            "length_bytes"
+          ],
+          "title": "SetRangeOutput",
+          "type": "object"
+        },
+        "title": "Set Redis String Byte Range"
       },
       "required_access": "read_write",
       "required_module": null,
@@ -4252,6 +6622,73 @@
       "capability_requirements": {
         "deployment": "any",
         "minimum_module_version": null,
+        "minimum_redis_version": "3.2.0",
+        "required_commands": [
+          "TOUCH"
+        ],
+        "required_module": null
+      },
+      "name": "redis_touch",
+      "output_policy": "intrinsically_bounded",
+      "protocol": {
+        "annotations": {
+          "destructiveHint": false
+        },
+        "description": "Update the last-access time for between 1 and 1000 Redis keys.",
+        "inputSchema": {
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "keys": {
+              "description": "Redis keys. Between 1 and 1000 keys are accepted per call.",
+              "items": {
+                "type": "string"
+              },
+              "maxItems": 1000,
+              "minItems": 1,
+              "type": "array"
+            }
+          },
+          "required": [
+            "keys"
+          ],
+          "title": "KeysInput",
+          "type": "object"
+        },
+        "name": "redis_touch",
+        "outputSchema": {
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "requested": {
+              "format": "uint",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "touched": {
+              "format": "uint64",
+              "minimum": 0,
+              "type": "integer"
+            }
+          },
+          "required": [
+            "requested",
+            "touched"
+          ],
+          "title": "TouchOutput",
+          "type": "object"
+        },
+        "title": "Touch Redis Keys"
+      },
+      "required_access": "read_write",
+      "required_module": null,
+      "requires_raw_opt_in": false
+    },
+    {
+      "bundle": "essentials",
+      "capability_requirements": {
+        "deployment": "any",
+        "minimum_module_version": null,
         "minimum_redis_version": null,
         "required_commands": [
           "TTL"
@@ -4268,12 +6705,26 @@
         },
         "description": "Read a key TTL in seconds, including whether it is missing or persistent.",
         "inputSchema": {
+          "$defs": {
+            "InputEncoding": {
+              "enum": [
+                "utf8",
+                "base64"
+              ],
+              "type": "string"
+            }
+          },
           "$schema": "https://json-schema.org/draft/2020-12/schema",
           "additionalProperties": false,
           "properties": {
             "key": {
               "description": "Redis key.",
               "type": "string"
+            },
+            "key_encoding": {
+              "$ref": "#/$defs/InputEncoding",
+              "default": "utf8",
+              "description": "Encoding of `key`."
             }
           },
           "required": [
@@ -4284,6 +6735,15 @@
         },
         "name": "redis_ttl",
         "outputSchema": {
+          "$defs": {
+            "InputEncoding": {
+              "enum": [
+                "utf8",
+                "base64"
+              ],
+              "type": "string"
+            }
+          },
           "$schema": "https://json-schema.org/draft/2020-12/schema",
           "additionalProperties": false,
           "properties": {
@@ -4292,6 +6752,9 @@
             },
             "key": {
               "type": "string"
+            },
+            "key_encoding": {
+              "$ref": "#/$defs/InputEncoding"
             },
             "persistent": {
               "type": "boolean"
@@ -4303,6 +6766,7 @@
           },
           "required": [
             "key",
+            "key_encoding",
             "ttl_seconds",
             "exists",
             "persistent"
@@ -4337,12 +6801,26 @@
         },
         "description": "Read the Redis data type of a key.",
         "inputSchema": {
+          "$defs": {
+            "InputEncoding": {
+              "enum": [
+                "utf8",
+                "base64"
+              ],
+              "type": "string"
+            }
+          },
           "$schema": "https://json-schema.org/draft/2020-12/schema",
           "additionalProperties": false,
           "properties": {
             "key": {
               "description": "Redis key.",
               "type": "string"
+            },
+            "key_encoding": {
+              "$ref": "#/$defs/InputEncoding",
+              "default": "utf8",
+              "description": "Encoding of `key`."
             }
           },
           "required": [
@@ -4353,11 +6831,23 @@
         },
         "name": "redis_type",
         "outputSchema": {
+          "$defs": {
+            "InputEncoding": {
+              "enum": [
+                "utf8",
+                "base64"
+              ],
+              "type": "string"
+            }
+          },
           "$schema": "https://json-schema.org/draft/2020-12/schema",
           "additionalProperties": false,
           "properties": {
             "key": {
               "type": "string"
+            },
+            "key_encoding": {
+              "$ref": "#/$defs/InputEncoding"
             },
             "key_type": {
               "type": "string"
@@ -4365,6 +6855,7 @@
           },
           "required": [
             "key",
+            "key_encoding",
             "key_type"
           ],
           "title": "TypeOutput",
@@ -5226,12 +7717,45 @@
         "value": "hello"
       }
     },
+    "redis_copy": {
+      "copied": true,
+      "destination": "greeting-copy",
+      "destination_encoding": "utf8",
+      "overwrite_allowed": false,
+      "source": "greeting",
+      "source_encoding": "utf8"
+    },
+    "redis_copy_replace": {
+      "copied": true,
+      "destination": "greeting-copy",
+      "destination_encoding": "utf8",
+      "overwrite_allowed": true,
+      "source": "greeting",
+      "source_encoding": "utf8"
+    },
     "redis_dbsize": {
       "key_count": 2
+    },
+    "redis_decr": {
+      "key": "counter",
+      "key_encoding": "utf8",
+      "value": 2
+    },
+    "redis_decrby": {
+      "key": "counter",
+      "key_encoding": "utf8",
+      "value": 2
     },
     "redis_del": {
       "deleted": 1,
       "requested": 1
+    },
+    "redis_dump": {
+      "exists": true,
+      "key": "greeting",
+      "key_encoding": "utf8",
+      "payload_base64": "AAEC",
+      "payload_bytes": 3
     },
     "redis_exists": {
       "all_exist": true,
@@ -5376,7 +7900,39 @@
       "encoding": "utf8",
       "exists": true,
       "key": "greeting",
+      "key_encoding": "utf8",
       "value": "hello"
+    },
+    "redis_getdel": {
+      "encoding": "utf8",
+      "exists": true,
+      "key": "greeting",
+      "key_encoding": "utf8",
+      "value": "hello",
+      "value_bytes": 5,
+      "value_omitted": false
+    },
+    "redis_getex": {
+      "encoding": "utf8",
+      "exists": true,
+      "expiration": {
+        "type": "seconds",
+        "value": 60
+      },
+      "key": "greeting",
+      "key_encoding": "utf8",
+      "value": "hello",
+      "value_bytes": 5,
+      "value_omitted": false
+    },
+    "redis_getrange": {
+      "bytes": 3,
+      "encoding": "utf8",
+      "end": 3,
+      "key": "greeting",
+      "key_encoding": "utf8",
+      "start": 1,
+      "value": "ell"
     },
     "redis_hget": {
       "encoding": "utf8",
@@ -5428,7 +7984,18 @@
     },
     "redis_incr": {
       "key": "counter",
+      "key_encoding": "utf8",
       "value": 2
+    },
+    "redis_incrby": {
+      "key": "counter",
+      "key_encoding": "utf8",
+      "value": 2
+    },
+    "redis_incrbyfloat": {
+      "key": "counter",
+      "key_encoding": "utf8",
+      "value": "2.5"
     },
     "redis_info": {
       "properties": {
@@ -5517,6 +8084,14 @@
     "redis_mset": {
       "stored": 2
     },
+    "redis_object_inspect": {
+      "encoding": "embstr",
+      "exists": true,
+      "key": "greeting",
+      "key_encoding": "utf8",
+      "operation": "encoding",
+      "value": null
+    },
     "redis_persist": {
       "applied": true,
       "key": "greeting"
@@ -5528,6 +8103,40 @@
     "redis_randomkey": {
       "encoding": "utf8",
       "key": "alpha"
+    },
+    "redis_rename": {
+      "destination": "renamed",
+      "destination_encoding": "utf8",
+      "overwrite_allowed": true,
+      "renamed": true,
+      "source": "greeting",
+      "source_encoding": "utf8"
+    },
+    "redis_renamenx": {
+      "destination": "renamed",
+      "destination_encoding": "utf8",
+      "overwrite_allowed": false,
+      "renamed": true,
+      "source": "greeting",
+      "source_encoding": "utf8"
+    },
+    "redis_restore": {
+      "absolute_ttl": false,
+      "key": "restored",
+      "key_encoding": "utf8",
+      "overwrite_allowed": false,
+      "payload_bytes": 1,
+      "restored": true,
+      "ttl_milliseconds": 0
+    },
+    "redis_restore_replace": {
+      "absolute_ttl": false,
+      "key": "restored",
+      "key_encoding": "utf8",
+      "overwrite_allowed": true,
+      "payload_bytes": 1,
+      "restored": true,
+      "ttl_milliseconds": 0
     },
     "redis_sadd": {
       "added": 1,
@@ -5549,9 +8158,24 @@
       }
     },
     "redis_set": {
-      "expires_in_seconds": null,
+      "applied": true,
+      "condition": null,
+      "expiration": null,
       "key": "greeting",
-      "stored": true
+      "key_encoding": "utf8",
+      "previous_exists": null,
+      "previous_value": null,
+      "previous_value_bytes": null,
+      "previous_value_encoding": null,
+      "previous_value_omitted": false,
+      "previous_value_requested": false
+    },
+    "redis_setrange": {
+      "key": "greeting",
+      "key_encoding": "utf8",
+      "length_bytes": 5,
+      "offset": 1,
+      "written_bytes": 3
     },
     "redis_smembers": {
       "count": 2,
@@ -5589,14 +8213,20 @@
       "key": "greeting",
       "length_bytes": 5
     },
+    "redis_touch": {
+      "requested": 1,
+      "touched": 1
+    },
     "redis_ttl": {
       "exists": true,
       "key": "greeting",
+      "key_encoding": "utf8",
       "persistent": true,
       "ttl_seconds": -1
     },
     "redis_type": {
       "key": "greeting",
+      "key_encoding": "utf8",
       "key_type": "string"
     },
     "redis_unlink": {

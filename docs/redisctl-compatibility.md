@@ -35,9 +35,10 @@ Redis Stack behavior is covered primarily by `tests/redis_tools.rs` and
 
 ## Current overlap
 
-The library implements 39 names from the baseline: 29 default tools, nine
-optional RedisJSON/Search tools, and the separately enabled raw tool. Matching
-a name does not imply an identical contract:
+The library implements 47 names from the baseline: 37 default tools, nine
+optional RedisJSON/Search tools, and the separately enabled raw tool. One typed
+`redis_object_inspect` additionally covers three redisctl OBJECT tools without
+copying their names. Matching a name does not imply an identical contract:
 
 | Tool | Input compatibility | Intentional library behavior |
 | --- | --- | --- |
@@ -48,13 +49,15 @@ a name does not imply an identical contract:
 | `redis_get` | `key` matches; redisctl also injects target fields. | Nil is explicit and binary values are base64 rather than lossy UTF-8/prose. |
 | `redis_type` | `key` matches; redisctl also injects target fields. | Structured key/type result. |
 | `redis_ttl` | `key` matches; redisctl also injects target fields. | Structured TTL plus `exists` and `persistent` flags. |
-| `redis_set` | `key` and `value` match. redisctl uses `ex`, `px`, `nx`, and `xx`; the initial library only has `expires_in_seconds`. | Structured result. Full conditional/expiry compatibility must be decided before catalog migration. |
+| `redis_set` | `key` and `value` match; binary encodings and typed `condition`/`expiration` objects are intentional schema extensions. | NX/XX, GET, EX/PX/EXAT/PXAT/KEEPTTL are mutually valid choices. Results distinguish applied/no-op, prior existence, nil, binary encoding, and explicitly omitted oversized prior values. |
 | `redis_del` | `keys` matches; redisctl also injects target fields. | Enforces 1–1000 keys and returns requested/deleted counts. |
 | `redis_command` | redisctl uses `args`, `dry_run`, `url`, and `profile`; the library uses `arguments` and fixed-target configuration. | Structured RESP output delegates to the public binary-safe `RedisInvocationEngine`, which centralizes access classification, raw policy, timeout, capabilities, redaction, and output budgets. This is intentionally not wire-compatible today. |
 
 The expanded overlap also includes `redis_exists`, `redis_mget`,
 `redis_strlen`, `redis_memory_usage`, `redis_randomkey`, `redis_expire`,
 `redis_persist`, `redis_mset`, `redis_incr`, `redis_append`, `redis_unlink`,
+`redis_copy`, `redis_decr`, `redis_dump`, `redis_getrange`, `redis_rename`,
+`redis_restore`, `redis_setrange`, `redis_touch`,
 `redis_hget`, `redis_hgetall`, `redis_hset`, `redis_lrange`, `redis_lpush`,
 `redis_smembers`, `redis_sadd`, `redis_zrange`, and `redis_zadd`.
 
@@ -69,6 +72,14 @@ metadata.
   handler validation.
 - `redis_expire` accepts only positive seconds at the read-write tier; Redis's
   delete-on-nonpositive behavior belongs behind full access instead.
+- `redis_copy` and `redis_restore` never overwrite. Their overwrite-capable
+  forms are separate full-access tools; rename operations are full access
+  because they remove the source and may overwrite the destination.
+- `redis_dump` and `redis_restore` cap serialized payloads; OBJECT inspection
+  is one typed operation over encoding, frequency, idle time, or reference
+  count, and intentionally omits `OBJECT HELP`.
+- `GETRANGE` accepts only bounded non-negative ranges, and `SETRANGE` limits
+  both write size and resulting sparse extent.
 - Collection reads use explicit UTF-8/base64 encodings and deterministic order
   where Redis itself is unordered (hash fields and set members).
 - Outputs are structured rather than preserving redisctl's prose rendering.

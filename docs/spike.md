@@ -41,7 +41,7 @@ The router was exercised through:
 Representative REPL commands:
 
     redis_ping
-    redis_set key=greeting value=hello expires_in_seconds=60
+    redis_set key=greeting value=hello expiration='{"type":"seconds","value":60}'
     redis_get key=greeting
     redis_scan pattern=gre* count=20
 

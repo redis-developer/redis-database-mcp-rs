@@ -1396,7 +1396,14 @@ async fn live_sorted_set_family_preserves_exact_scores_ranges_binary_and_nil_sem
         let exact = exact_result.structured_content.expect("structured ZSCORE");
         assert_eq!(exact["zset_exists"], true);
         assert_eq!(exact["member_exists"], true);
-        assert_eq!(exact["score"], "0.1");
+        let canonical_edge_score = exact["score"]
+            .as_str()
+            .expect("ZSCORE string score")
+            .to_owned();
+        assert!(
+            matches!(canonical_edge_score.as_str(), "0.1" | "0.10000000000000001"),
+            "unexpected Redis score spelling: {canonical_edge_score}"
+        );
 
         let scores = client
             .call_tool(
@@ -1419,6 +1426,7 @@ async fn live_sorted_set_family_preserves_exact_scores_ranges_binary_and_nil_sem
         assert_eq!(scores["members"][1]["member_exists"], false);
         assert_eq!(scores["members"][1]["score"], serde_json::Value::Null);
         assert_eq!(scores["members"][2]["member_encoding"], "base64");
+        assert_eq!(scores["members"][2]["score"], canonical_edge_score);
 
         let rank = client
             .call_tool(
@@ -1560,9 +1568,9 @@ async fn live_sorted_set_family_preserves_exact_scores_ranges_binary_and_nil_sem
         assert_eq!(scan["exists"], true);
         assert_eq!(scan["page"]["complete"], true);
         assert!(scan["members"].as_array().is_some_and(|members| {
-            members
-                .iter()
-                .any(|member| member["encoding"] == "base64" && member["score"] == "0.1")
+            members.iter().any(|member| {
+                member["encoding"] == "base64" && member["score"] == canonical_edge_score
+            })
         }));
 
         let increment = client
@@ -1614,7 +1622,7 @@ async fn live_sorted_set_family_preserves_exact_scores_ranges_binary_and_nil_sem
             .structured_content
             .expect("structured ZPOPMIN");
         assert_eq!(popped_min["members"][0]["encoding"], "base64");
-        assert_eq!(popped_min["members"][0]["score"], "0.1");
+        assert_eq!(popped_min["members"][0]["score"], canonical_edge_score);
         let popped_max = client
             .call_tool(
                 "redis_zpopmax",

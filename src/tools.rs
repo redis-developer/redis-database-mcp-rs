@@ -23,13 +23,14 @@ use tower_mcp::{
 
 use crate::{
     AccessMode, NativeRedisInvocation, OutputBudget, RedisCommand, RedisInvocationEngine,
-    RedisModule, RedisValue, ToolBundle,
+    RedisModule, RedisValue, RedisVersion, ToolBundle,
     invocation::{redis_value_collection_entries, redis_value_to_json},
 };
 
 pub(crate) const RAW_TOOL_NAME: &str = "redis_command";
 const OUTPUT_LIMIT_CODE: &str = "output_limit_exceeded";
 const OUTPUT_LIMIT_META_KEY: &str = "io.redis.mcp/outputLimit";
+const DEFAULT_RETURNED_VALUE_MAX_BYTES: usize = 64 * 1024;
 
 #[derive(Clone)]
 pub(crate) struct ToolState {
@@ -53,6 +54,14 @@ impl ToolState {
 
     fn max_collection_entries(&self) -> usize {
         self.output_budget.max_collection_entries()
+    }
+
+    fn max_output_bytes(&self) -> usize {
+        self.output_budget.max_bytes()
+    }
+
+    fn redis_version(&self) -> Option<RedisVersion> {
+        self.invocation_engine.capabilities().redis_version()
     }
 
     fn validate_requested_entries(&self, requested: usize, name: &str) -> tower_mcp::Result<()> {
@@ -538,14 +547,25 @@ fn scan_tool(state: Arc<ToolState>) -> tower_mcp::Tool {
 
 #[derive(Debug, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
-struct KeyInput {
+pub(super) struct KeyInput {
     /// Redis key.
-    key: String,
+    pub(super) key: String,
+    /// Encoding of `key`.
+    #[serde(default)]
+    pub(super) key_encoding: InputEncoding,
 }
 
 #[derive(Debug, Clone, Copy, Serialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
-enum ValueEncoding {
+pub(super) enum ValueEncoding {
+    Utf8,
+    Base64,
+}
+
+#[derive(Debug, Clone, Copy, Default, Deserialize, Serialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub(super) enum InputEncoding {
+    #[default]
     Utf8,
     Base64,
 }
@@ -554,6 +574,7 @@ enum ValueEncoding {
 #[serde(deny_unknown_fields)]
 struct GetOutput {
     key: String,
+    key_encoding: InputEncoding,
     exists: bool,
     value: Option<String>,
     encoding: Option<ValueEncoding>,
@@ -568,8 +589,9 @@ fn get_tool(state: Arc<ToolState>) -> tower_mcp::Tool {
         .extractor_handler(
             state,
             |State(state): State<Arc<ToolState>>, Json(input): Json<KeyInput>| async move {
+                let key = decode_input(&input.key, input.key_encoding, "key")?;
                 let mut command = command("redis_get", AccessMode::ReadOnly, "GET");
-                command.arg(input.key.as_str());
+                command.arg(key);
                 let value: Option<Vec<u8>> = state.query(command, "GET failed").await?;
                 let (value, encoding) = match value {
                     Some(bytes) => {
@@ -580,6 +602,7 @@ fn get_tool(state: Arc<ToolState>) -> tower_mcp::Tool {
                 };
                 state.output(&GetOutput {
                     key: input.key,
+                    key_encoding: input.key_encoding,
                     exists: value.is_some(),
                     value,
                     encoding,
@@ -593,6 +616,7 @@ fn get_tool(state: Arc<ToolState>) -> tower_mcp::Tool {
 #[serde(deny_unknown_fields)]
 struct TypeOutput {
     key: String,
+    key_encoding: InputEncoding,
     key_type: String,
 }
 
@@ -605,11 +629,13 @@ fn type_tool(state: Arc<ToolState>) -> tower_mcp::Tool {
         .extractor_handler(
             state,
             |State(state): State<Arc<ToolState>>, Json(input): Json<KeyInput>| async move {
+                let key = decode_input(&input.key, input.key_encoding, "key")?;
                 let mut command = command("redis_type", AccessMode::ReadOnly, "TYPE");
-                command.arg(input.key.as_str());
+                command.arg(key);
                 let key_type = state.query(command, "TYPE failed").await?;
                 state.output(&TypeOutput {
                     key: input.key,
+                    key_encoding: input.key_encoding,
                     key_type,
                 })
             },
@@ -621,6 +647,7 @@ fn type_tool(state: Arc<ToolState>) -> tower_mcp::Tool {
 #[serde(deny_unknown_fields)]
 struct TtlOutput {
     key: String,
+    key_encoding: InputEncoding,
     ttl_seconds: i64,
     exists: bool,
     persistent: bool,
@@ -635,11 +662,13 @@ fn ttl_tool(state: Arc<ToolState>) -> tower_mcp::Tool {
         .extractor_handler(
             state,
             |State(state): State<Arc<ToolState>>, Json(input): Json<KeyInput>| async move {
+                let key = decode_input(&input.key, input.key_encoding, "key")?;
                 let mut command = command("redis_ttl", AccessMode::ReadOnly, "TTL");
-                command.arg(input.key.as_str());
+                command.arg(key);
                 let ttl_seconds = state.query(command, "TTL failed").await?;
                 state.output(&TtlOutput {
                     key: input.key,
+                    key_encoding: input.key_encoding,
                     ttl_seconds,
                     exists: ttl_seconds != -2,
                     persistent: ttl_seconds == -1,
@@ -654,41 +683,230 @@ fn ttl_tool(state: Arc<ToolState>) -> tower_mcp::Tool {
 struct SetInput {
     /// Redis key.
     key: String,
-    /// UTF-8 value to store.
-    value: String,
-    /// Optional expiration in seconds.
+    /// Encoding of `key`.
     #[serde(default)]
-    expires_in_seconds: Option<u64>,
+    key_encoding: InputEncoding,
+    /// Value to store.
+    value: String,
+    /// Encoding of `value`.
+    #[serde(default)]
+    value_encoding: InputEncoding,
+    /// Optional existence condition.
+    #[serde(default)]
+    condition: Option<SetCondition>,
+    /// Return the previous value. `GET` with `NX` requires Redis 7.0 or newer.
+    #[serde(default)]
+    get: bool,
+    /// Maximum previous-value bytes to return when `get` is true. Larger prior values are
+    /// reported as omitted so the write result remains observable.
+    #[serde(default = "default_returned_value_max_bytes")]
+    #[schemars(range(min = 1))]
+    max_previous_bytes: usize,
+    /// Optional, mutually exclusive expiration behavior.
+    #[serde(default)]
+    expiration: Option<SetExpiration>,
+}
+
+#[derive(Debug, Clone, Copy, Deserialize, Serialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+enum SetCondition {
+    Nx,
+    Xx,
+}
+
+impl SetCondition {
+    fn redis_token(self) -> &'static str {
+        match self {
+            Self::Nx => "NX",
+            Self::Xx => "XX",
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, Deserialize, Serialize, JsonSchema)]
+#[serde(
+    tag = "type",
+    content = "value",
+    rename_all = "snake_case",
+    deny_unknown_fields
+)]
+enum SetExpiration {
+    Seconds(#[schemars(range(min = 1))] u64),
+    Milliseconds(#[schemars(range(min = 1))] u64),
+    UnixSeconds(#[schemars(range(min = 1))] u64),
+    UnixMilliseconds(#[schemars(range(min = 1))] u64),
+    KeepTtl,
+}
+
+impl SetExpiration {
+    fn append_to(self, command: &mut RedisCommand) -> tower_mcp::Result<()> {
+        let (token, value) = match self {
+            Self::Seconds(value) => ("EX", Some(value)),
+            Self::Milliseconds(value) => ("PX", Some(value)),
+            Self::UnixSeconds(value) => ("EXAT", Some(value)),
+            Self::UnixMilliseconds(value) => ("PXAT", Some(value)),
+            Self::KeepTtl => ("KEEPTTL", None),
+        };
+        if value == Some(0) {
+            return Err(tower_mcp::Error::tool(
+                "expiration value must be greater than zero",
+            ));
+        }
+        command.arg(token);
+        if let Some(value) = value {
+            command.arg(value.to_string());
+        }
+        Ok(())
+    }
 }
 
 #[derive(Debug, Serialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 struct SetOutput {
     key: String,
-    stored: bool,
-    expires_in_seconds: Option<u64>,
+    key_encoding: InputEncoding,
+    applied: bool,
+    condition: Option<SetCondition>,
+    expiration: Option<SetExpiration>,
+    previous_value_requested: bool,
+    previous_exists: Option<bool>,
+    previous_value: Option<String>,
+    previous_value_encoding: Option<ValueEncoding>,
+    previous_value_bytes: Option<usize>,
+    previous_value_omitted: bool,
+}
+
+fn default_returned_value_max_bytes() -> usize {
+    DEFAULT_RETURNED_VALUE_MAX_BYTES
 }
 
 fn set_tool(state: Arc<ToolState>) -> tower_mcp::Tool {
     ToolBuilder::new("redis_set")
         .title("Set Redis String")
-        .description("Set a UTF-8 Redis string, optionally with an expiration.")
+        .description(
+            "Set a binary-safe Redis string with optional NX/XX, previous-value, and one typed expiration behavior.",
+        )
         .output_schema(output_schema::<SetOutput>())
-        .annotations(write_annotations(true))
+        .annotations(write_annotations(false))
         .extractor_handler(
             state,
             |State(state): State<Arc<ToolState>>, Json(input): Json<SetInput>| async move {
                 state.require(AccessMode::ReadWrite, "redis_set")?;
-                let mut command = command("redis_set", AccessMode::ReadWrite, "SET");
-                command.arg(input.key.as_str()).arg(input.value.as_str());
-                if let Some(seconds) = input.expires_in_seconds {
-                    command.arg("EX").arg(seconds.to_string());
+                if state.redis_version().is_some_and(|version| {
+                    version < RedisVersion::new(6, 0, 0)
+                        && matches!(input.expiration, Some(SetExpiration::KeepTtl))
+                }) {
+                    return Err(tower_mcp::Error::tool(
+                        "SET with KEEPTTL requires Redis 6.0 or newer",
+                    ));
                 }
-                let response: String = state.query(command, "SET failed").await?;
+                if state.redis_version().is_some_and(|version| {
+                    version < RedisVersion::new(6, 2, 0)
+                        && (input.get
+                            || matches!(
+                                input.expiration,
+                                Some(
+                                    SetExpiration::UnixSeconds(_)
+                                        | SetExpiration::UnixMilliseconds(_)
+                                )
+                            ))
+                }) {
+                    return Err(tower_mcp::Error::tool(
+                        "SET with GET, EXAT, or PXAT requires Redis 6.2 or newer",
+                    ));
+                }
+                if input.get
+                    && matches!(input.condition, Some(SetCondition::Nx))
+                    && state
+                        .redis_version()
+                        .is_some_and(|version| version < RedisVersion::new(7, 0, 0))
+                {
+                    return Err(tower_mcp::Error::tool(
+                        "SET with GET and NX requires Redis 7.0 or newer",
+                    ));
+                }
+                if input.get && input.max_previous_bytes == 0 {
+                    return Err(tower_mcp::Error::tool(
+                        "max_previous_bytes must be greater than zero",
+                    ));
+                }
+                let max_previous_bytes =
+                    input.max_previous_bytes.min(state.max_output_bytes());
+                let key = decode_input(&input.key, input.key_encoding, "key")?;
+                let value = decode_input(&input.value, input.value_encoding, "value")?;
+                let mut command = command("redis_set", AccessMode::ReadWrite, "SET");
+                command.arg(key).arg(value);
+                if let Some(condition) = input.condition {
+                    command.arg(condition.redis_token());
+                }
+                if input.get {
+                    command.arg("GET");
+                }
+                if let Some(expiration) = input.expiration {
+                    expiration.append_to(&mut command)?;
+                }
+                let response = state.raw(command, "SET failed").await?;
+                let (
+                    applied,
+                    previous_exists,
+                    previous_value,
+                    previous_value_encoding,
+                    previous_value_bytes,
+                    previous_value_omitted,
+                ) = if input.get {
+                        let previous = optional_bytes(response, "SET GET")?;
+                        let applied = match input.condition {
+                            None => true,
+                            Some(SetCondition::Nx) => previous.is_none(),
+                            Some(SetCondition::Xx) => previous.is_some(),
+                        };
+                        let previous_exists = Some(previous.is_some());
+                        let previous_value_bytes = previous.as_ref().map(Vec::len);
+                        let previous_value_omitted = previous
+                            .as_ref()
+                            .is_some_and(|bytes| bytes.len() > max_previous_bytes);
+                        let (previous_value, previous_value_encoding) = match previous {
+                            Some(bytes) if !previous_value_omitted => {
+                                let (value, encoding) = encode_bytes(bytes);
+                                (Some(value), Some(encoding))
+                            }
+                            _ => (None, None),
+                        };
+                        (
+                            applied,
+                            previous_exists,
+                            previous_value,
+                            previous_value_encoding,
+                            previous_value_bytes,
+                            previous_value_omitted,
+                        )
+                    } else {
+                        let applied = match response {
+                            RedisValue::Okay => true,
+                            RedisValue::SimpleString(value) if value.eq_ignore_ascii_case("OK") => {
+                                true
+                            }
+                            RedisValue::Nil => false,
+                            other => {
+                                return Err(tower_mcp::Error::tool(format!(
+                                    "SET returned an unexpected reply: {other:?}"
+                                )));
+                            }
+                        };
+                        (applied, None, None, None, None, false)
+                    };
                 state.output(&SetOutput {
                     key: input.key,
-                    stored: response == "OK",
-                    expires_in_seconds: input.expires_in_seconds,
+                    key_encoding: input.key_encoding,
+                    applied,
+                    condition: input.condition,
+                    expiration: input.expiration,
+                    previous_value_requested: input.get,
+                    previous_exists,
+                    previous_value,
+                    previous_value_encoding,
+                    previous_value_bytes,
+                    previous_value_omitted,
                 })
             },
         )
@@ -804,7 +1022,34 @@ fn raw_tool(state: Arc<ToolState>) -> tower_mcp::Tool {
         .build()
 }
 
-fn encode_bytes(bytes: Vec<u8>) -> (String, ValueEncoding) {
+pub(super) fn decode_input(
+    value: &str,
+    encoding: InputEncoding,
+    name: &str,
+) -> tower_mcp::Result<Vec<u8>> {
+    match encoding {
+        InputEncoding::Utf8 => Ok(value.as_bytes().to_vec()),
+        InputEncoding::Base64 => BASE64
+            .decode(value)
+            .map_err(|_| tower_mcp::Error::tool(format!("{name} is not valid standard base64"))),
+    }
+}
+
+pub(super) fn optional_bytes(
+    value: RedisValue,
+    context: &str,
+) -> tower_mcp::Result<Option<Vec<u8>>> {
+    match value {
+        RedisValue::Nil => Ok(None),
+        RedisValue::BulkString(value) => Ok(Some(value)),
+        RedisValue::SimpleString(value) => Ok(Some(value.into_bytes())),
+        other => Err(tower_mcp::Error::tool(format!(
+            "{context} returned an unexpected reply: {other:?}"
+        ))),
+    }
+}
+
+pub(super) fn encode_bytes(bytes: Vec<u8>) -> (String, ValueEncoding) {
     match String::from_utf8(bytes) {
         Ok(value) => (value, ValueEncoding::Utf8),
         Err(error) => (BASE64.encode(error.into_bytes()), ValueEncoding::Base64),

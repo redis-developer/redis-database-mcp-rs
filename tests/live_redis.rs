@@ -230,11 +230,15 @@ async fn live_redis_round_trip_through_router() {
         let set = client
             .call_tool(
                 "redis_set",
-                serde_json::json!({"key": key, "value": "hello", "expires_in_seconds": 60}),
+                serde_json::json!({
+                    "key": key,
+                    "value": "hello",
+                    "expiration": {"type": "seconds", "value": 60}
+                }),
             )
             .await
             .expect("set key");
-        assert_eq!(set.structured_content.as_ref().unwrap()["stored"], true);
+        assert_eq!(set.structured_content.as_ref().unwrap()["applied"], true);
 
         let get = client
             .call_tool("redis_get", serde_json::json!({"key": key}))
@@ -250,6 +254,309 @@ async fn live_redis_round_trip_through_router() {
             .await
             .expect("delete key");
         assert_eq!(delete.structured_content.as_ref().unwrap()["deleted"], 1);
+    }
+}
+
+#[tokio::test]
+async fn live_key_string_semantics_in_resp2_and_resp3() {
+    let Some(redis) = TestRedis::start().await else {
+        return;
+    };
+
+    for protocol in ["resp2", "resp3"] {
+        let client = router_client(&with_protocol(&redis.url, protocol), AccessMode::Full).await;
+        let prefix = test_key(&format!("key-string:{protocol}"));
+        let key = format!("{prefix}:value");
+        let copy = format!("{prefix}:copy");
+        let renamed = format!("{prefix}:renamed");
+        let occupied = format!("{prefix}:occupied");
+        let restored = format!("{prefix}:restored");
+        let counter = format!("{prefix}:counter");
+
+        let initial = client
+            .call_tool(
+                "redis_set",
+                serde_json::json!({
+                    "key": key,
+                    "value": "old",
+                    "expiration": {"type": "seconds", "value": 60}
+                }),
+            )
+            .await
+            .expect("initial SET")
+            .structured_content
+            .expect("structured initial SET");
+        assert_eq!(initial["applied"], true);
+
+        let replaced = client
+            .call_tool(
+                "redis_set",
+                serde_json::json!({
+                    "key": key,
+                    "value": "hello",
+                    "condition": "xx",
+                    "get": true,
+                    "expiration": {"type": "keep_ttl"}
+                }),
+            )
+            .await
+            .expect("SET XX GET")
+            .structured_content
+            .expect("structured SET XX GET");
+        assert_eq!(replaced["applied"], true);
+        assert_eq!(replaced["previous_exists"], true);
+        assert_eq!(replaced["previous_value"], "old");
+
+        let no_op = client
+            .call_tool(
+                "redis_set",
+                serde_json::json!({
+                    "key": key,
+                    "value": "ignored",
+                    "condition": "nx"
+                }),
+            )
+            .await
+            .expect("SET NX no-op")
+            .structured_content
+            .expect("structured SET NX no-op");
+        assert_eq!(no_op["applied"], false);
+
+        let range = client
+            .call_tool(
+                "redis_getrange",
+                serde_json::json!({"key": key, "start": 1, "end": 3}),
+            )
+            .await
+            .expect("GETRANGE")
+            .structured_content
+            .expect("structured GETRANGE");
+        assert_eq!(range["value"], "ell");
+
+        let setrange = client
+            .call_tool(
+                "redis_setrange",
+                serde_json::json!({"key": key, "offset": 1, "value": "ipp"}),
+            )
+            .await
+            .expect("SETRANGE")
+            .structured_content
+            .expect("structured SETRANGE");
+        assert_eq!(setrange["length_bytes"], 5);
+
+        let getex = client
+            .call_tool(
+                "redis_getex",
+                serde_json::json!({
+                    "key": key,
+                    "expiration": {"type": "milliseconds", "value": 60000}
+                }),
+            )
+            .await
+            .expect("GETEX")
+            .structured_content
+            .expect("structured GETEX");
+        assert_eq!(getex["value"], "hippo");
+
+        let incremented = client
+            .call_tool(
+                "redis_incrby",
+                serde_json::json!({"key": counter, "amount": 10}),
+            )
+            .await
+            .expect("INCRBY")
+            .structured_content
+            .expect("structured INCRBY");
+        assert_eq!(incremented["value"], 10);
+        let decremented = client
+            .call_tool("redis_decr", serde_json::json!({"key": counter}))
+            .await
+            .expect("DECR")
+            .structured_content
+            .expect("structured DECR");
+        assert_eq!(decremented["value"], 9);
+        let decremented = client
+            .call_tool(
+                "redis_decrby",
+                serde_json::json!({"key": counter, "amount": 4}),
+            )
+            .await
+            .expect("DECRBY")
+            .structured_content
+            .expect("structured DECRBY");
+        assert_eq!(decremented["value"], 5);
+        let float = client
+            .call_tool(
+                "redis_incrbyfloat",
+                serde_json::json!({"key": counter, "amount": 0.5}),
+            )
+            .await
+            .expect("INCRBYFLOAT")
+            .structured_content
+            .expect("structured INCRBYFLOAT");
+        assert_eq!(float["value"], "5.5");
+
+        let touched = client
+            .call_tool("redis_touch", serde_json::json!({"keys": [key]}))
+            .await
+            .expect("TOUCH")
+            .structured_content
+            .expect("structured TOUCH");
+        assert_eq!(touched["touched"], 1);
+
+        let copied = client
+            .call_tool(
+                "redis_copy",
+                serde_json::json!({"source": key, "destination": copy}),
+            )
+            .await
+            .expect("COPY")
+            .structured_content
+            .expect("structured COPY");
+        assert_eq!(copied["copied"], true);
+        let copy_no_op = client
+            .call_tool(
+                "redis_copy",
+                serde_json::json!({"source": key, "destination": copy}),
+            )
+            .await
+            .expect("COPY no-op")
+            .structured_content
+            .expect("structured COPY no-op");
+        assert_eq!(copy_no_op["copied"], false);
+
+        let renamed_result = client
+            .call_tool(
+                "redis_rename",
+                serde_json::json!({"source": copy, "destination": renamed}),
+            )
+            .await
+            .expect("RENAME")
+            .structured_content
+            .expect("structured RENAME");
+        assert_eq!(renamed_result["renamed"], true);
+        client
+            .call_tool(
+                "redis_set",
+                serde_json::json!({"key": occupied, "value": "occupied"}),
+            )
+            .await
+            .expect("set occupied destination");
+        let rename_no_op = client
+            .call_tool(
+                "redis_renamenx",
+                serde_json::json!({"source": renamed, "destination": occupied}),
+            )
+            .await
+            .expect("RENAMENX no-op")
+            .structured_content
+            .expect("structured RENAMENX no-op");
+        assert_eq!(rename_no_op["renamed"], false);
+
+        let object = client
+            .call_tool(
+                "redis_object_inspect",
+                serde_json::json!({"key": key, "operation": "encoding"}),
+            )
+            .await
+            .expect("OBJECT ENCODING")
+            .structured_content
+            .expect("structured OBJECT ENCODING");
+        assert_eq!(object["exists"], true);
+        assert!(object["encoding"].as_str().is_some());
+
+        let dump = client
+            .call_tool("redis_dump", serde_json::json!({"key": key}))
+            .await
+            .expect("DUMP")
+            .structured_content
+            .expect("structured DUMP");
+        let payload = dump["payload_base64"]
+            .as_str()
+            .expect("base64 DUMP payload");
+        let restore = client
+            .call_tool(
+                "redis_restore",
+                serde_json::json!({"key": restored, "payload_base64": payload}),
+            )
+            .await
+            .expect("RESTORE")
+            .structured_content
+            .expect("structured RESTORE");
+        assert_eq!(restore["restored"], true);
+        let restored_value = client
+            .call_tool("redis_get", serde_json::json!({"key": restored}))
+            .await
+            .expect("GET restored")
+            .structured_content
+            .expect("structured GET restored");
+        assert_eq!(restored_value["value"], "hippo");
+        let busy_restore = client
+            .call_tool(
+                "redis_restore",
+                serde_json::json!({"key": restored, "payload_base64": payload}),
+            )
+            .await
+            .expect("RESTORE busy-key result");
+        assert!(busy_restore.is_error);
+        let replace_restore = client
+            .call_tool(
+                "redis_restore_replace",
+                serde_json::json!({"key": restored, "payload_base64": payload}),
+            )
+            .await
+            .expect("RESTORE REPLACE")
+            .structured_content
+            .expect("structured RESTORE REPLACE");
+        assert_eq!(replace_restore["overwrite_allowed"], true);
+
+        let binary_key = format!("/w{}=", if protocol == "resp2" { "A" } else { "E" });
+        client
+            .call_tool(
+                "redis_set",
+                serde_json::json!({
+                    "key": binary_key,
+                    "key_encoding": "base64",
+                    "value": "/wA=",
+                    "value_encoding": "base64"
+                }),
+            )
+            .await
+            .expect("binary SET");
+        let binary = client
+            .call_tool(
+                "redis_get",
+                serde_json::json!({"key": binary_key, "key_encoding": "base64"}),
+            )
+            .await
+            .expect("binary GET")
+            .structured_content
+            .expect("structured binary GET");
+        assert_eq!(binary["encoding"], "base64");
+        assert_eq!(binary["value"], "/wA=");
+        let deleted_binary = client
+            .call_tool(
+                "redis_getdel",
+                serde_json::json!({"key": binary_key, "key_encoding": "base64"}),
+            )
+            .await
+            .expect("binary GETDEL")
+            .structured_content
+            .expect("structured binary GETDEL");
+        assert_eq!(deleted_binary["value"], "/wA=");
+
+        let deleted = client
+            .call_tool(
+                "redis_del",
+                serde_json::json!({
+                    "keys": [key, renamed, occupied, restored, counter]
+                }),
+            )
+            .await
+            .expect("clean up key/string live test")
+            .structured_content
+            .expect("structured cleanup");
+        assert_eq!(deleted["deleted"], 5);
     }
 }
 
@@ -733,7 +1040,11 @@ async fn live_redis_round_trip_through_stdio_server() {
     client
         .call_tool(
             "redis_set",
-            serde_json::json!({"key": key, "value": "over-stdio", "expires_in_seconds": 60}),
+            serde_json::json!({
+                "key": key,
+                "value": "over-stdio",
+                "expiration": {"type": "seconds", "value": 60}
+            }),
         )
         .await
         .expect("set key over stdio");
@@ -803,6 +1114,7 @@ async fn live_acl_failures_are_classified_without_leaking_credentials() {
         .arg("~*")
         .arg("+ping")
         .arg("+get")
+        .arg("+getrange")
         .query_async::<()>(&mut connection)
         .await
         .expect("create restricted ACL user");
@@ -858,6 +1170,18 @@ async fn live_acl_failures_are_classified_without_leaking_credentials() {
         .await
         .expect("ACL-allowed GET");
     assert!(!allowed.is_error);
+    let allowed_range = client
+        .call_tool(
+            "redis_getrange",
+            serde_json::json!({
+                "key": test_key("acl-readable-range"),
+                "start": 0,
+                "end": 7
+            }),
+        )
+        .await
+        .expect("ACL-allowed GETRANGE");
+    assert!(!allowed_range.is_error);
 
     let denied = client
         .call_tool(
@@ -870,6 +1194,21 @@ async fn live_acl_failures_are_classified_without_leaking_credentials() {
     let denied = serde_json::to_string(&denied).expect("serialize ACL denial");
     assert!(denied.contains("[Authorization]"), "{denied}");
     assert!(!denied.contains(password));
+
+    let denied_getex = client
+        .call_tool(
+            "redis_getex",
+            serde_json::json!({
+                "key": test_key("acl-denied-getex"),
+                "expiration": {"type": "seconds", "value": 60}
+            }),
+        )
+        .await
+        .expect("ACL-denied GETEX is represented as a tool result");
+    assert!(denied_getex.is_error);
+    let denied_getex = serde_json::to_string(&denied_getex).expect("serialize GETEX ACL denial");
+    assert!(denied_getex.contains("[Authorization]"), "{denied_getex}");
+    assert!(!denied_getex.contains(password));
 
     redis::cmd("ACL")
         .arg("DELUSER")

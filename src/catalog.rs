@@ -202,7 +202,15 @@ impl ToolMetadata {
     /// catalog filtering and stable preflight errors.
     pub fn capability_requirements(self) -> ToolCapabilityRequirements {
         let minimum_redis_version = match self.name {
-            "redis_memory_usage" | "redis_unlink" => Some(RedisVersion::new(4, 0, 0)),
+            "redis_dump" => Some(RedisVersion::new(2, 6, 0)),
+            "redis_touch" => Some(RedisVersion::new(3, 2, 0)),
+            "redis_memory_usage" | "redis_object_inspect" | "redis_unlink" => {
+                Some(RedisVersion::new(4, 0, 0))
+            }
+            "redis_restore" | "redis_restore_replace" => Some(RedisVersion::new(5, 0, 0)),
+            "redis_copy" | "redis_copy_replace" | "redis_getdel" | "redis_getex" => {
+                Some(RedisVersion::new(6, 2, 0))
+            }
             _ => None,
         };
         let minimum_module_version = match self.name {
@@ -226,6 +234,9 @@ impl ToolMetadata {
             "redis_strlen" => &["STRLEN"],
             "redis_memory_usage" => &["MEMORY"],
             "redis_randomkey" => &["RANDOMKEY"],
+            "redis_getrange" => &["GETRANGE"],
+            "redis_dump" => &["DUMP"],
+            "redis_object_inspect" => &["OBJECT"],
             "redis_hget" => &["HGET"],
             "redis_hgetall" => &["HGETALL"],
             "redis_hscan" => &["HSCAN"],
@@ -247,6 +258,15 @@ impl ToolMetadata {
             "redis_mset" => &["MSET"],
             "redis_incr" => &["INCR"],
             "redis_append" => &["APPEND"],
+            "redis_getex" => &["GETEX"],
+            "redis_setrange" => &["SETRANGE"],
+            "redis_decr" => &["DECR"],
+            "redis_decrby" => &["DECRBY"],
+            "redis_incrby" => &["INCRBY"],
+            "redis_incrbyfloat" => &["INCRBYFLOAT"],
+            "redis_copy" | "redis_copy_replace" => &["COPY"],
+            "redis_touch" => &["TOUCH"],
+            "redis_restore" | "redis_restore_replace" => &["RESTORE"],
             "redis_hset" => &["HSET"],
             "redis_lpush" => &["LPUSH"],
             "redis_sadd" => &["SADD"],
@@ -256,6 +276,9 @@ impl ToolMetadata {
             "redis_vector_set_hash" => &["HSET"],
             "redis_del" => &["DEL"],
             "redis_unlink" => &["UNLINK"],
+            "redis_getdel" => &["GETDEL"],
+            "redis_rename" => &["RENAME"],
+            "redis_renamenx" => &["RENAMENX"],
             "redis_json_del" => &["JSON.DEL"],
             "redis_ft_dropindex" => &["FT.DROPINDEX"],
             "redis_command" => &[],
@@ -291,6 +314,11 @@ impl ToolMetadata {
             }
             "redis_info"
             | "redis_get"
+            | "redis_getdel"
+            | "redis_getex"
+            | "redis_getrange"
+            | "redis_dump"
+            | "redis_set"
             | "redis_mget"
             | "redis_randomkey"
             | "redis_hget"
@@ -376,6 +404,24 @@ pub(crate) const CATALOG: &[ToolMetadata] = &[
     },
     ToolMetadata {
         name: "redis_randomkey",
+        bundle: ToolBundle::Essentials,
+        required_access: AccessMode::ReadOnly,
+        requires_raw_opt_in: false,
+    },
+    ToolMetadata {
+        name: "redis_getrange",
+        bundle: ToolBundle::Essentials,
+        required_access: AccessMode::ReadOnly,
+        requires_raw_opt_in: false,
+    },
+    ToolMetadata {
+        name: "redis_dump",
+        bundle: ToolBundle::Essentials,
+        required_access: AccessMode::ReadOnly,
+        requires_raw_opt_in: false,
+    },
+    ToolMetadata {
+        name: "redis_object_inspect",
         bundle: ToolBundle::Essentials,
         required_access: AccessMode::ReadOnly,
         requires_raw_opt_in: false,
@@ -513,6 +559,60 @@ pub(crate) const CATALOG: &[ToolMetadata] = &[
         requires_raw_opt_in: false,
     },
     ToolMetadata {
+        name: "redis_getex",
+        bundle: ToolBundle::Essentials,
+        required_access: AccessMode::ReadWrite,
+        requires_raw_opt_in: false,
+    },
+    ToolMetadata {
+        name: "redis_setrange",
+        bundle: ToolBundle::Essentials,
+        required_access: AccessMode::ReadWrite,
+        requires_raw_opt_in: false,
+    },
+    ToolMetadata {
+        name: "redis_decr",
+        bundle: ToolBundle::Essentials,
+        required_access: AccessMode::ReadWrite,
+        requires_raw_opt_in: false,
+    },
+    ToolMetadata {
+        name: "redis_decrby",
+        bundle: ToolBundle::Essentials,
+        required_access: AccessMode::ReadWrite,
+        requires_raw_opt_in: false,
+    },
+    ToolMetadata {
+        name: "redis_incrby",
+        bundle: ToolBundle::Essentials,
+        required_access: AccessMode::ReadWrite,
+        requires_raw_opt_in: false,
+    },
+    ToolMetadata {
+        name: "redis_incrbyfloat",
+        bundle: ToolBundle::Essentials,
+        required_access: AccessMode::ReadWrite,
+        requires_raw_opt_in: false,
+    },
+    ToolMetadata {
+        name: "redis_copy",
+        bundle: ToolBundle::Essentials,
+        required_access: AccessMode::ReadWrite,
+        requires_raw_opt_in: false,
+    },
+    ToolMetadata {
+        name: "redis_touch",
+        bundle: ToolBundle::Essentials,
+        required_access: AccessMode::ReadWrite,
+        requires_raw_opt_in: false,
+    },
+    ToolMetadata {
+        name: "redis_restore",
+        bundle: ToolBundle::Essentials,
+        required_access: AccessMode::ReadWrite,
+        requires_raw_opt_in: false,
+    },
+    ToolMetadata {
         name: "redis_hset",
         bundle: ToolBundle::DataStructures,
         required_access: AccessMode::ReadWrite,
@@ -562,6 +662,36 @@ pub(crate) const CATALOG: &[ToolMetadata] = &[
     },
     ToolMetadata {
         name: "redis_unlink",
+        bundle: ToolBundle::Essentials,
+        required_access: AccessMode::Full,
+        requires_raw_opt_in: false,
+    },
+    ToolMetadata {
+        name: "redis_getdel",
+        bundle: ToolBundle::Essentials,
+        required_access: AccessMode::Full,
+        requires_raw_opt_in: false,
+    },
+    ToolMetadata {
+        name: "redis_copy_replace",
+        bundle: ToolBundle::Essentials,
+        required_access: AccessMode::Full,
+        requires_raw_opt_in: false,
+    },
+    ToolMetadata {
+        name: "redis_rename",
+        bundle: ToolBundle::Essentials,
+        required_access: AccessMode::Full,
+        requires_raw_opt_in: false,
+    },
+    ToolMetadata {
+        name: "redis_renamenx",
+        bundle: ToolBundle::Essentials,
+        required_access: AccessMode::Full,
+        requires_raw_opt_in: false,
+    },
+    ToolMetadata {
+        name: "redis_restore_replace",
         bundle: ToolBundle::Essentials,
         required_access: AccessMode::Full,
         requires_raw_opt_in: false,

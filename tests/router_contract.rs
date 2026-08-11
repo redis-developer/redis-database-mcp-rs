@@ -31,7 +31,20 @@ impl RedisExecutor for StubRedis {
                     RedisValue::BulkString(b"beta".to_vec()),
                 ]),
             ]),
-            "GET" => RedisValue::BulkString(b"hello".to_vec()),
+            "GET" | "GETEX" | "GETDEL" => RedisValue::BulkString(b"hello".to_vec()),
+            "GETRANGE" => RedisValue::BulkString(b"ell".to_vec()),
+            "DUMP" => RedisValue::BulkString(vec![0, 1, 2]),
+            "OBJECT" => {
+                if command
+                    .arguments()
+                    .first()
+                    .is_some_and(|value| value == b"ENCODING")
+                {
+                    RedisValue::BulkString(b"embstr".to_vec())
+                } else {
+                    RedisValue::Integer(1)
+                }
+            }
             "EXISTS" => RedisValue::Integer(1),
             "MGET" => RedisValue::Array(vec![
                 RedisValue::BulkString(b"hello".to_vec()),
@@ -93,9 +106,11 @@ impl RedisExecutor for StubRedis {
             ]),
             "TYPE" => RedisValue::SimpleString("string".into()),
             "TTL" => RedisValue::Integer(-1),
-            "SET" | "MSET" => RedisValue::Okay,
-            "EXPIRE" | "PERSIST" => RedisValue::Integer(1),
-            "INCR" => RedisValue::Integer(2),
+            "SET" | "MSET" | "RENAME" | "RESTORE" => RedisValue::Okay,
+            "EXPIRE" | "PERSIST" | "COPY" | "TOUCH" | "RENAMENX" => RedisValue::Integer(1),
+            "INCR" | "DECR" | "DECRBY" | "INCRBY" => RedisValue::Integer(2),
+            "INCRBYFLOAT" => RedisValue::BulkString(b"2.5".to_vec()),
+            "SETRANGE" => RedisValue::Integer(5),
             "APPEND" => RedisValue::Integer(5),
             "HSET" | "SADD" | "ZADD" => RedisValue::Integer(1),
             "LPUSH" => RedisValue::Integer(2),
@@ -202,6 +217,321 @@ async fn client_for_bundles(
 #[derive(Clone, Default)]
 struct RecordingRedis {
     commands: Arc<Mutex<Vec<RedisCommand>>>,
+}
+
+#[derive(Clone)]
+struct FixedRedis {
+    response: RedisValue,
+    commands: Arc<Mutex<Vec<RedisCommand>>>,
+}
+
+impl FixedRedis {
+    fn new(response: RedisValue) -> Self {
+        Self {
+            response,
+            commands: Arc::new(Mutex::new(Vec::new())),
+        }
+    }
+}
+
+#[async_trait]
+impl RedisExecutor for FixedRedis {
+    async fn execute(&self, command: RedisCommand) -> Result<RedisValue, RedisError> {
+        self.commands.lock().expect("fixed lock").push(command);
+        Ok(self.response.clone())
+    }
+}
+
+async fn fixed_client(executor: FixedRedis, capabilities: RedisCapabilities) -> McpClient {
+    let router = RedisMcp::builder(executor)
+        .access(AccessMode::Full)
+        .capabilities(capabilities)
+        .build();
+    let client = McpClient::connect(ChannelTransport::new(router))
+        .await
+        .expect("connect fixed client");
+    client
+        .initialize("redis-mcp-fixed-test", "0")
+        .await
+        .expect("initialize fixed client");
+    client
+}
+
+#[tokio::test]
+async fn set_is_binary_safe_and_reports_prior_conditional_semantics() {
+    let executor = FixedRedis::new(RedisValue::BulkString(vec![0xfd]));
+    let commands = executor.commands.clone();
+    let client = fixed_client(
+        executor,
+        RedisCapabilities::unknown().with_redis_version(RedisVersion::new(7, 0, 0)),
+    )
+    .await;
+
+    let result = client
+        .call_tool(
+            "redis_set",
+            serde_json::json!({
+                "key": "/wA=",
+                "key_encoding": "base64",
+                "value": "/gE=",
+                "value_encoding": "base64",
+                "condition": "xx",
+                "get": true,
+                "expiration": {"type": "unix_milliseconds", "value": 123}
+            }),
+        )
+        .await
+        .expect("binary SET")
+        .structured_content
+        .expect("structured binary SET");
+    assert_eq!(result["applied"], true);
+    assert_eq!(result["previous_exists"], true);
+    assert_eq!(result["previous_value"], "/Q==");
+    assert_eq!(result["previous_value_encoding"], "base64");
+
+    let commands = commands.lock().expect("recorded binary SET");
+    assert_eq!(commands.len(), 1);
+    assert_eq!(commands[0].arguments()[0], [0xff, 0x00]);
+    assert_eq!(commands[0].arguments()[1], [0xfe, 0x01]);
+    assert_eq!(
+        &commands[0].arguments()[2..],
+        [
+            b"XX".to_vec(),
+            b"GET".to_vec(),
+            b"PXAT".to_vec(),
+            b"123".to_vec()
+        ]
+    );
+}
+
+#[tokio::test]
+async fn set_distinguishes_applied_noop_and_nil_across_conditions() {
+    for (response, condition, get, applied, previous_exists) in [
+        (RedisValue::Okay, "nx", false, true, None),
+        (RedisValue::Nil, "xx", false, false, None),
+        (RedisValue::Nil, "nx", true, true, Some(false)),
+        (
+            RedisValue::BulkString(b"old".to_vec()),
+            "nx",
+            true,
+            false,
+            Some(true),
+        ),
+        (
+            RedisValue::BulkString(b"old".to_vec()),
+            "xx",
+            true,
+            true,
+            Some(true),
+        ),
+        (RedisValue::Nil, "xx", true, false, Some(false)),
+    ] {
+        let client = fixed_client(
+            FixedRedis::new(response),
+            RedisCapabilities::unknown().with_redis_version(RedisVersion::new(7, 0, 0)),
+        )
+        .await;
+        let result = client
+            .call_tool(
+                "redis_set",
+                serde_json::json!({
+                    "key": "condition",
+                    "value": "new",
+                    "condition": condition,
+                    "get": get
+                }),
+            )
+            .await
+            .expect("conditional SET")
+            .structured_content
+            .expect("structured conditional SET");
+        assert_eq!(result["applied"], applied, "{condition} get={get}");
+        assert_eq!(
+            result["previous_exists"],
+            previous_exists.map_or(serde_json::Value::Null, serde_json::Value::Bool),
+            "{condition} get={get}"
+        );
+    }
+}
+
+#[tokio::test]
+async fn known_redis_six_rejects_set_nx_get_without_execution() {
+    let executor = FixedRedis::new(RedisValue::Nil);
+    let commands = executor.commands.clone();
+    let client = fixed_client(
+        executor,
+        RedisCapabilities::unknown().with_redis_version(RedisVersion::new(6, 2, 0)),
+    )
+    .await;
+    let result = client
+        .call_tool(
+            "redis_set",
+            serde_json::json!({
+                "key": "versioned",
+                "value": "new",
+                "condition": "nx",
+                "get": true
+            }),
+        )
+        .await
+        .expect("version-gated SET result");
+    assert!(result.is_error);
+    assert!(
+        serde_json::to_string(&result)
+            .expect("serialize version error")
+            .contains("Redis 7.0")
+    );
+    assert!(commands.lock().expect("version commands").is_empty());
+}
+
+#[tokio::test]
+async fn side_effectful_value_returns_omit_oversized_payloads_but_report_outcomes() {
+    let prior = vec![b'x'; 16];
+    let client = fixed_client(
+        FixedRedis::new(RedisValue::BulkString(prior.clone())),
+        RedisCapabilities::unknown().with_redis_version(RedisVersion::new(7, 0, 0)),
+    )
+    .await;
+    let set = client
+        .call_tool(
+            "redis_set",
+            serde_json::json!({
+                "key": "bounded-set",
+                "value": "new",
+                "condition": "xx",
+                "get": true,
+                "max_previous_bytes": 8
+            }),
+        )
+        .await
+        .expect("bounded SET")
+        .structured_content
+        .expect("structured bounded SET");
+    assert_eq!(set["applied"], true);
+    assert_eq!(set["previous_exists"], true);
+    assert_eq!(set["previous_value_bytes"], 16);
+    assert_eq!(set["previous_value_omitted"], true);
+    assert_eq!(set["previous_value"], serde_json::Value::Null);
+
+    for (tool, input) in [
+        (
+            "redis_getex",
+            serde_json::json!({
+                "key": "bounded-getex",
+                "expiration": {"type": "seconds", "value": 60},
+                "max_value_bytes": 8
+            }),
+        ),
+        (
+            "redis_getdel",
+            serde_json::json!({"key": "bounded-getdel", "max_value_bytes": 8}),
+        ),
+    ] {
+        let client = fixed_client(
+            FixedRedis::new(RedisValue::BulkString(prior.clone())),
+            RedisCapabilities::unknown().with_redis_version(RedisVersion::new(7, 0, 0)),
+        )
+        .await;
+        let result = client
+            .call_tool(tool, input)
+            .await
+            .unwrap_or_else(|error| panic!("{tool}: {error}"))
+            .structured_content
+            .unwrap_or_else(|| panic!("{tool}: structured result"));
+        assert_eq!(result["exists"], true, "{tool}");
+        assert_eq!(result["value_bytes"], 16, "{tool}");
+        assert_eq!(result["value_omitted"], true, "{tool}");
+        assert_eq!(result["value"], serde_json::Value::Null, "{tool}");
+    }
+}
+
+#[tokio::test]
+async fn typed_expiration_variants_emit_exactly_one_redis_modifier() {
+    for (expiration, expected) in [
+        (
+            serde_json::json!({"type": "seconds", "value": 10}),
+            vec![b"EX".to_vec(), b"10".to_vec()],
+        ),
+        (
+            serde_json::json!({"type": "milliseconds", "value": 20}),
+            vec![b"PX".to_vec(), b"20".to_vec()],
+        ),
+        (
+            serde_json::json!({"type": "unix_seconds", "value": 30}),
+            vec![b"EXAT".to_vec(), b"30".to_vec()],
+        ),
+        (
+            serde_json::json!({"type": "unix_milliseconds", "value": 40}),
+            vec![b"PXAT".to_vec(), b"40".to_vec()],
+        ),
+        (
+            serde_json::json!({"type": "keep_ttl"}),
+            vec![b"KEEPTTL".to_vec()],
+        ),
+    ] {
+        let executor = FixedRedis::new(RedisValue::Okay);
+        let commands = executor.commands.clone();
+        let client = fixed_client(
+            executor,
+            RedisCapabilities::unknown().with_redis_version(RedisVersion::new(7, 0, 0)),
+        )
+        .await;
+        let result = client
+            .call_tool(
+                "redis_set",
+                serde_json::json!({
+                    "key": "expiration",
+                    "value": "value",
+                    "expiration": expiration
+                }),
+            )
+            .await
+            .expect("typed SET expiration");
+        assert!(!result.is_error, "{result:?}");
+        let commands = commands.lock().expect("SET expiration command");
+        assert_eq!(&commands[0].arguments()[2..], expected);
+    }
+
+    for (expiration, expected) in [
+        (
+            serde_json::json!({"type": "seconds", "value": 10}),
+            vec![b"EX".to_vec(), b"10".to_vec()],
+        ),
+        (
+            serde_json::json!({"type": "milliseconds", "value": 20}),
+            vec![b"PX".to_vec(), b"20".to_vec()],
+        ),
+        (
+            serde_json::json!({"type": "unix_seconds", "value": 30}),
+            vec![b"EXAT".to_vec(), b"30".to_vec()],
+        ),
+        (
+            serde_json::json!({"type": "unix_milliseconds", "value": 40}),
+            vec![b"PXAT".to_vec(), b"40".to_vec()],
+        ),
+        (
+            serde_json::json!({"type": "persist"}),
+            vec![b"PERSIST".to_vec()],
+        ),
+    ] {
+        let executor = FixedRedis::new(RedisValue::Nil);
+        let commands = executor.commands.clone();
+        let client = fixed_client(
+            executor,
+            RedisCapabilities::unknown().with_redis_version(RedisVersion::new(7, 0, 0)),
+        )
+        .await;
+        let result = client
+            .call_tool(
+                "redis_getex",
+                serde_json::json!({"key": "expiration", "expiration": expiration}),
+            )
+            .await
+            .expect("typed GETEX expiration");
+        assert!(!result.is_error, "{result:?}");
+        let commands = commands.lock().expect("GETEX expiration command");
+        assert_eq!(&commands[0].arguments()[1..], expected);
+    }
 }
 
 #[async_trait]
@@ -456,7 +786,7 @@ fn structured_cases() -> Vec<(&'static str, serde_json::Value, &'static str)> {
         (
             "redis_set",
             serde_json::json!({"key": "greeting", "value": "hello"}),
-            "stored",
+            "applied",
         ),
         (
             "redis_expire",
@@ -478,6 +808,62 @@ fn structured_cases() -> Vec<(&'static str, serde_json::Value, &'static str)> {
             "redis_append",
             serde_json::json!({"key": "greeting", "value": "!"}),
             "length_bytes",
+        ),
+        (
+            "redis_getrange",
+            serde_json::json!({"key": "greeting", "start": 1, "end": 3}),
+            "value",
+        ),
+        (
+            "redis_dump",
+            serde_json::json!({"key": "greeting"}),
+            "payload_base64",
+        ),
+        (
+            "redis_object_inspect",
+            serde_json::json!({"key": "greeting", "operation": "encoding"}),
+            "encoding",
+        ),
+        (
+            "redis_getex",
+            serde_json::json!({"key": "greeting", "expiration": {"type": "seconds", "value": 60}}),
+            "value",
+        ),
+        (
+            "redis_setrange",
+            serde_json::json!({"key": "greeting", "offset": 1, "value": "ell"}),
+            "length_bytes",
+        ),
+        ("redis_decr", serde_json::json!({"key": "counter"}), "value"),
+        (
+            "redis_decrby",
+            serde_json::json!({"key": "counter", "amount": 2}),
+            "value",
+        ),
+        (
+            "redis_incrby",
+            serde_json::json!({"key": "counter", "amount": 2}),
+            "value",
+        ),
+        (
+            "redis_incrbyfloat",
+            serde_json::json!({"key": "counter", "amount": 0.5}),
+            "value",
+        ),
+        (
+            "redis_copy",
+            serde_json::json!({"source": "greeting", "destination": "greeting-copy"}),
+            "copied",
+        ),
+        (
+            "redis_touch",
+            serde_json::json!({"keys": ["greeting"]}),
+            "touched",
+        ),
+        (
+            "redis_restore",
+            serde_json::json!({"key": "restored", "payload_base64": "AA=="}),
+            "restored",
         ),
         (
             "redis_hset",
@@ -535,6 +921,31 @@ fn structured_cases() -> Vec<(&'static str, serde_json::Value, &'static str)> {
             "unlinked",
         ),
         (
+            "redis_getdel",
+            serde_json::json!({"key": "greeting"}),
+            "value",
+        ),
+        (
+            "redis_copy_replace",
+            serde_json::json!({"source": "greeting", "destination": "greeting-copy"}),
+            "copied",
+        ),
+        (
+            "redis_rename",
+            serde_json::json!({"source": "greeting", "destination": "renamed"}),
+            "renamed",
+        ),
+        (
+            "redis_renamenx",
+            serde_json::json!({"source": "greeting", "destination": "renamed"}),
+            "renamed",
+        ),
+        (
+            "redis_restore_replace",
+            serde_json::json!({"key": "restored", "payload_base64": "AA=="}),
+            "restored",
+        ),
+        (
             "redis_json_del",
             serde_json::json!({"key": "doc:1"}),
             "deleted",
@@ -554,8 +965,8 @@ fn structured_cases() -> Vec<(&'static str, serde_json::Value, &'static str)> {
 
 #[tokio::test]
 async fn access_modes_expose_exactly_the_expected_tools() {
-    assert_eq!(tool_names(AccessMode::Full, false).len(), 32);
-    assert_eq!(tool_names(AccessMode::Full, true).len(), 33);
+    assert_eq!(tool_names(AccessMode::Full, false).len(), 49);
+    assert_eq!(tool_names(AccessMode::Full, true).len(), 50);
     for (access, raw) in [
         (AccessMode::ReadOnly, false),
         (AccessMode::ReadWrite, false),
@@ -587,6 +998,55 @@ async fn access_modes_expose_exactly_the_expected_tools() {
             assert!(tool.annotations.is_some(), "{}", tool.name);
         }
     }
+}
+
+#[tokio::test]
+async fn key_string_annotations_match_access_and_overwrite_semantics() {
+    let tools = full_catalog_client()
+        .await
+        .list_tools()
+        .await
+        .expect("list annotated tools")
+        .tools;
+    let annotations = |name: &str| {
+        tools
+            .iter()
+            .find(|tool| tool.name == name)
+            .unwrap_or_else(|| panic!("missing {name}"))
+            .annotations
+            .clone()
+            .unwrap_or_else(|| panic!("missing annotations for {name}"))
+    };
+
+    let inspect = annotations("redis_object_inspect");
+    assert!(inspect.read_only_hint);
+    assert!(!inspect.destructive_hint);
+    assert!(inspect.idempotent_hint);
+
+    let copy = annotations("redis_copy");
+    assert!(!copy.read_only_hint);
+    assert!(!copy.destructive_hint);
+    assert!(copy.idempotent_hint);
+
+    for name in ["redis_set", "redis_expire", "redis_getex", "redis_touch"] {
+        let annotation = annotations(name);
+        assert!(!annotation.read_only_hint, "{name}");
+        assert!(!annotation.destructive_hint, "{name}");
+        assert!(!annotation.idempotent_hint, "{name}");
+    }
+
+    for name in [
+        "redis_copy_replace",
+        "redis_getdel",
+        "redis_rename",
+        "redis_renamenx",
+        "redis_restore_replace",
+    ] {
+        let annotation = annotations(name);
+        assert!(!annotation.read_only_hint, "{name}");
+        assert!(annotation.destructive_hint, "{name}");
+    }
+    assert!(!annotations("redis_restore_replace").idempotent_hint);
 }
 
 #[tokio::test]
@@ -981,6 +1441,78 @@ async fn malformed_and_unbounded_inputs_fail_as_tool_results() {
                 "filters": [{"type": "text", "field": "bad-field", "value": "x"}]
             }),
         ),
+        (
+            "redis_set",
+            serde_json::json!({
+                "key": "greeting",
+                "value": "hello",
+                "expiration": {"type": "seconds", "value": 0}
+            }),
+        ),
+        (
+            "redis_set",
+            serde_json::json!({
+                "key": "greeting",
+                "value": "hello",
+                "expiration": {"type": "seconds", "value": 10, "milliseconds": 20}
+            }),
+        ),
+        (
+            "redis_set",
+            serde_json::json!({
+                "key": "greeting",
+                "value": "hello",
+                "get": true,
+                "max_previous_bytes": 0
+            }),
+        ),
+        (
+            "redis_set",
+            serde_json::json!({
+                "key": "not-base64",
+                "key_encoding": "base64",
+                "value": "hello"
+            }),
+        ),
+        (
+            "redis_getrange",
+            serde_json::json!({"key": "greeting", "start": 10, "end": 9}),
+        ),
+        (
+            "redis_getrange",
+            serde_json::json!({"key": "greeting", "start": 0, "end": 65536}),
+        ),
+        (
+            "redis_setrange",
+            serde_json::json!({"key": "greeting", "offset": 16777216, "value": "x"}),
+        ),
+        (
+            "redis_dump",
+            serde_json::json!({"key": "greeting", "max_bytes": 0}),
+        ),
+        (
+            "redis_dump",
+            serde_json::json!({"key": "greeting", "max_bytes": 2}),
+        ),
+        (
+            "redis_restore",
+            serde_json::json!({"key": "restored", "payload_base64": "not-base64"}),
+        ),
+        (
+            "redis_restore",
+            serde_json::json!({
+                "key": "restored",
+                "payload_base64": "A".repeat(349529)
+            }),
+        ),
+        (
+            "redis_restore",
+            serde_json::json!({
+                "key": "restored",
+                "payload_base64": "AA==",
+                "idle_time_seconds": 0
+            }),
+        ),
     ];
 
     for (name, arguments) in cases {
@@ -1249,8 +1781,14 @@ async fn known_old_redis_can_hide_only_version_incompatible_tools() {
         .map(|tool| tool.name)
         .collect::<Vec<_>>();
     assert!(!names.iter().any(|name| name == "redis_memory_usage"));
+    assert!(!names.iter().any(|name| name == "redis_object_inspect"));
     assert!(!names.iter().any(|name| name == "redis_unlink"));
+    assert!(!names.iter().any(|name| name == "redis_copy"));
+    assert!(!names.iter().any(|name| name == "redis_getdel"));
+    assert!(!names.iter().any(|name| name == "redis_restore"));
     assert!(names.iter().any(|name| name == "redis_get"));
+    assert!(names.iter().any(|name| name == "redis_dump"));
+    assert!(names.iter().any(|name| name == "redis_touch"));
 
     let helper_names = tool_names_for_capabilities(
         AccessMode::Full,
@@ -1270,7 +1808,27 @@ async fn known_old_redis_can_hide_only_version_incompatible_tools() {
         UnavailableToolPolicy::Hide,
     );
     assert!(new_names.contains(&"redis_memory_usage"));
+    assert!(new_names.contains(&"redis_object_inspect"));
     assert!(new_names.contains(&"redis_unlink"));
+    assert!(!new_names.contains(&"redis_restore"));
+
+    let supported = RedisCapabilities::unknown().with_redis_version(RedisVersion::new(6, 2, 0));
+    let supported_names = tool_names_for_capabilities(
+        AccessMode::Full,
+        [ToolBundle::Essentials],
+        false,
+        &supported,
+        UnavailableToolPolicy::Hide,
+    );
+    for name in [
+        "redis_copy",
+        "redis_getdel",
+        "redis_getex",
+        "redis_restore",
+        "redis_restore_replace",
+    ] {
+        assert!(supported_names.contains(&name), "{name}");
+    }
 }
 
 #[tokio::test]

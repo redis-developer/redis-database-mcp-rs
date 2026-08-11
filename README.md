@@ -12,14 +12,19 @@ Redis Cloud and Redis Enterprise APIs. The Rust package is simply redis-mcp.
 
 ## Curated default
 
-The standalone default exposes 32 broadly useful tools:
+The standalone default exposes 49 broadly useful tools:
 
 - read-only essentials: `redis_ping`, `redis_dbsize`, `redis_scan`,
   `redis_get`, `redis_type`, `redis_ttl`, `redis_exists`, `redis_mget`,
-  `redis_strlen`, `redis_memory_usage`, `redis_randomkey`
+  `redis_strlen`, `redis_memory_usage`, `redis_randomkey`, `redis_getrange`,
+  `redis_dump`, `redis_object_inspect`
 - read-write essentials: `redis_set`, `redis_expire`, `redis_persist`,
-  `redis_mset`, `redis_incr`, `redis_append`
-- full-access essentials: `redis_del`, `redis_unlink`
+  `redis_mset`, `redis_incr`, `redis_append`, `redis_getex`, `redis_setrange`,
+  `redis_decr`, `redis_decrby`, `redis_incrby`, `redis_incrbyfloat`,
+  `redis_copy`, `redis_touch`, `redis_restore`
+- full-access essentials: `redis_del`, `redis_unlink`, `redis_getdel`,
+  `redis_copy_replace`, `redis_rename`, `redis_renamenx`,
+  `redis_restore_replace`
 - data structures: `redis_hget`, `redis_hgetall`, `redis_hscan`, `redis_hset`,
   `redis_lrange`, `redis_lpush`, `redis_smembers`, `redis_sscan`, `redis_sadd`,
   `redis_zrange`, `redis_zscan`, `redis_zadd`
@@ -39,6 +44,9 @@ result and 1,000 collection entries. Oversized results return a stable
 `io.redis.mcp/outputLimit` metadata; hashes, sets, sorted sets, ranges, and
 Search also expose typed continuation metadata. A fixed Redis target is
 configured once by the server; arbitrary URLs are not accepted in tool calls.
+Side-effectful value-returning commands (`SET GET`, `GETEX`, and `GETDEL`)
+accept explicit byte caps and report oversized prior values as omitted while
+preserving the mutation outcome.
 
 See [the spike decision record](docs/spike.md) for the tested architecture,
 REPL findings, and redisctl migration sequence.
@@ -239,13 +247,14 @@ hybrid filters.
 
 CI runs the complete suite on Redis 8.8 and the live router/stdio contract on
 every currently supported Redis Open Source series: 6.2, 7.2, 7.4, 8.0, 8.2,
-8.4, 8.6, and 8.8. Live tests exercise both RESP2 and RESP3, the 32-tool curated
-catalog, binary and nil responses, ACL failures, bounded connection loss and
+8.4, 8.6, and 8.8. Live tests exercise both RESP2 and RESP3, the 49-tool curated
+catalog, binary and nil responses, conditional and absolute expiration,
+bounded serialization/restore, ACL failures, bounded connection loss and
 recovery, and the real `redis-mcp-server` stdio process. A separate job pins the
 official `redis/redis-stack-server:7.4.0-v8` image and runs the JSON/Search
 lifecycle. Dedicated three-master cluster jobs run on Redis 6.2 and 8.8 and
-exercise redirection, multi-slot aggregation, stable cross-slot failures, and
-the cluster-configured stdio server. The version list
+exercise redirection, multi-slot aggregation, same-slot copy/rename, stable
+cross-slot failures, and the cluster-configured stdio server. The version list
 follows the [Redis Open Source version-management table](https://redis.io/docs/latest/operate/oss_and_stack/install/version-mgmt/).
 
 ## Non-goals

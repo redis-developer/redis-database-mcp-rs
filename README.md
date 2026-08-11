@@ -12,7 +12,7 @@ Redis Cloud and Redis Enterprise APIs. The Rust package is simply redis-mcp.
 
 ## Curated default
 
-The standalone default exposes 89 broadly useful tools:
+The standalone default exposes 109 broadly useful tools:
 
 - read-only essentials: `redis_ping`, `redis_dbsize`, `redis_scan`,
   `redis_get`, `redis_type`, `redis_ttl`, `redis_exists`, `redis_mget`,
@@ -37,7 +37,13 @@ The standalone default exposes 89 broadly useful tools:
   `redis_zmscore`, `redis_zrange`, `redis_zrank`, `redis_zrevrank`,
   `redis_zscan`, `redis_zscore`, `redis_zadd`, `redis_zincrby`,
   `redis_zpopmin`, `redis_zpopmax`, `redis_zrem`,
-  `redis_zremrangebyscore`
+  `redis_zremrangebyscore`, `redis_xlen`, `redis_xrange`,
+  `redis_xrevrange`, `redis_xread`, `redis_xinfo_stream`,
+  `redis_xinfo_groups`, `redis_xinfo_consumers`, `redis_xpending`,
+  `redis_xadd`, `redis_xgroup_create`, `redis_xgroup_setid`,
+  `redis_xgroup_createconsumer`, `redis_xreadgroup`, `redis_xack`,
+  `redis_xclaim`, `redis_xautoclaim`, `redis_xdel`, `redis_xtrim`,
+  `redis_xgroup_destroy`, `redis_xgroup_delconsumer`
 - diagnostics: `redis_info`
 - optional RedisJSON lifecycle: `redis_json_get`, `redis_json_type`,
   `redis_json_set`, `redis_json_del`
@@ -51,11 +57,11 @@ Every successful tool result includes MCP structuredContent and an output
 schema. Results are limited by default to 256 KiB for the complete encoded MCP
 result and 1,000 collection entries. Oversized results return a stable
 `output_limit_exceeded` reason with machine-readable
-`io.redis.mcp/outputLimit` metadata; hashes, sets, sorted sets, ranges, and
+`io.redis.mcp/outputLimit` metadata; hashes, sets, sorted sets, streams, ranges, and
 Search also expose typed continuation metadata. A fixed Redis target is
 configured once by the server; arbitrary URLs are not accepted in tool calls.
 Side-effectful value-returning commands (`SET GET`, `GETEX`, `GETDEL`, counted
-list and sorted-set pops, and `LMOVE`) accept explicit byte caps and report
+list and sorted-set pops, `LMOVE`, `XREADGROUP`, `XCLAIM`, and `XAUTOCLAIM`) accept explicit byte caps and report
 oversized returned values as omitted while preserving the mutation outcome.
 
 See [the spike decision record](docs/spike.md) for the tested architecture,
@@ -262,17 +268,18 @@ hybrid filters.
 
 CI runs the complete suite on Redis 8.8 and the live router/stdio contract on
 every currently supported Redis Open Source series: 6.2, 7.2, 7.4, 8.0, 8.2,
-8.4, 8.6, and 8.8. Live tests exercise both RESP2 and RESP3, the 89-tool curated
+8.4, 8.6, and 8.8. Live tests exercise both RESP2 and RESP3, the 109-tool curated
 catalog, binary and nil responses, conditional and absolute expiration,
 bounded serialization/restore, complete bounded list semantics, typed
 hash-field expiration, binary-safe membership, budgeted set algebra, complete
-bounded sorted-set semantics, ACL failures, bounded connection loss and
+bounded sorted-set semantics, complete Streams and consumer-group workflows,
+finite blocking reads, ACL failures, bounded connection loss and
 recovery, and the real `redis-mcp-server` stdio process. A separate job pins
 the official
 `redis/redis-stack-server:7.4.0-v8` image and runs the JSON/Search lifecycle.
 Dedicated three-master cluster jobs run on Redis 6.2 and 8.8 and exercise
 redirection, multi-slot aggregation, same-slot copy/rename/list movement and
-set algebra, stable cross-slot failures, and the cluster-configured stdio
+set algebra, single- and same-slot multi-stream reads, stable cross-slot failures, and the cluster-configured stdio
 server. The version list follows the
 [Redis Open Source version-management table](https://redis.io/docs/latest/operate/oss_and_stack/install/version-mgmt/).
 

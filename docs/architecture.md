@@ -135,7 +135,7 @@ which side effects that host permits. These decisions are orthogonal.
 
 The public taxonomy is `essentials`, `data_structures`, `json`, `search`,
 `diagnostics`, `admin`, `bulk`, and `raw`. The curated default enables
-`essentials`, `data_structures`, and `diagnostics`, totaling 89 tools. The
+`essentials`, `data_structures`, and `diagnostics`, totaling 109 tools. The
 module-backed `json` and `search` bundles are explicitly selected so a default
 router never advertises capabilities that its Redis target may not provide.
 Empty bundles are reserved for coherent catalog growth and do not expose
@@ -204,7 +204,9 @@ budget guarded, or cursor-, range-, or offset-paginated.
 `redis_scan`, `redis_hscan`, `redis_sscan`, and `redis_zscan` continue with a
 Redis cursor. `redis_lrange` and rank-mode `redis_zrange` default to ranks 0
 through 99 and continue with a start index; score- and lex-mode `redis_zrange`
-continue with an offset. `redis_ft_search` always emits a LIMIT clause and
+continue with an offset. `redis_xrange` and `redis_xrevrange` fetch one bounded
+page and continue from the last returned stream ID using an exclusive bound.
+`redis_ft_search` always emits a LIMIT clause and
 continues with an offset. Whole-collection reads remain available for small
 values, but `redis_hgetall`, `redis_hkeys`, and `redis_hvals` direct oversized
 callers to `redis_hscan`, while `redis_smembers` directs them to `redis_sscan`.
@@ -241,6 +243,21 @@ count and aggregate member bytes.
 All curated sorted-set operations are single-key. Future union/intersection
 tools must define their same-slot or explicit fan-out behavior before entering
 the catalog; the current surface makes no cluster-wide aggregation promise.
+
+Streams use structured IDs rather than overloaded strings for entry creation,
+range bounds, group start positions, and read offsets. Fields, values, group
+names, and consumer names are binary-safe. `XREAD` and `XREADGROUP` require a
+finite per-stream count; optional blocking must be positive and strictly below
+the library command timeout, so `BLOCK 0` cannot enter the curated path.
+`XAUTOCLAIM` also preflights Redis's ten-times-count scan factor against the
+entry ceiling. Group reads and claims accept a returned-field byte cap and
+retain IDs, counts, and the committed state change when field payloads are
+omitted.
+
+Single-stream operations route normally in Cluster. Multi-stream reads retain
+Redis's native slot contract: same-slot keys are supported, while cross-slot
+requests return the stable `CROSSSLOT` invalid-request classification. The
+library does not fan out consumer-group state across slots.
 
 `SDIFFSTORE`, `SINTERSTORE`, and `SUNIONSTORE` are deliberately not curated
 tools. Although their integer replies are small, the destination write can

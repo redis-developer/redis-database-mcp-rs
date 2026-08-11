@@ -35,7 +35,7 @@ Redis Stack behavior is covered primarily by `tests/redis_tools.rs` and
 
 ## Current overlap
 
-The library implements 72 names from the baseline: 62 default tools, nine
+The library implements 77 names from the baseline: 67 default tools, nine
 optional RedisJSON/Search tools, and the separately enabled raw tool. One typed
 `redis_object_inspect` additionally covers three redisctl OBJECT tools without
 copying their names. Matching a name does not imply an identical contract:
@@ -64,18 +64,30 @@ The expanded overlap also includes `redis_exists`, `redis_mget`,
 `redis_lpush`, `redis_rpop`, `redis_rpush`, `redis_smembers`, `redis_sadd`,
 `redis_scard`, `redis_sdiff`, `redis_sinter`, `redis_sismember`, `redis_srem`,
 `redis_sunion`, `redis_zcard`, `redis_zcount`, `redis_zrank`, `redis_zrem`,
-`redis_zremrangebyscore`, `redis_zscore`, `redis_zrange`, and `redis_zadd`.
+`redis_zremrangebyscore`, `redis_zscore`, `redis_zrange`, `redis_zadd`,
+`redis_xadd`, `redis_xinfo_stream`, `redis_xlen`, `redis_xrange`, and
+`redis_xtrim`.
 
 The library additionally exposes `redis_hscan`, `redis_hincrbyfloat`,
 `redis_hpersist`, `redis_hstrlen`, `redis_httl`, `redis_lmove`, `redis_lpos`,
 `redis_lrem`, `redis_lset`, `redis_ltrim`, `redis_smismember`, `redis_sscan`,
 `redis_zincrby`, `redis_zmscore`, `redis_zpopmax`, `redis_zpopmin`,
-`redis_zrevrank`, and `redis_zscan`.
+`redis_zrevrank`, `redis_zscan`, `redis_xrevrange`, `redis_xread`,
+`redis_xinfo_groups`, `redis_xinfo_consumers`, `redis_xpending`,
+`redis_xgroup_create`, `redis_xgroup_setid`, `redis_xgroup_createconsumer`,
+`redis_xreadgroup`, `redis_xack`, `redis_xclaim`, `redis_xautoclaim`,
+`redis_xdel`, `redis_xgroup_destroy`, and `redis_xgroup_delconsumer`.
 These are command-surface improvements rather than redisctl name overlap. Hash
 reads distinguish a missing hash, missing field, and empty value;
 field-expiration tools are capability-gated to Redis 7.4 or newer and return
 typed per-field statuses; scan tools return one bounded Redis cursor page with
-typed continuation metadata.
+  typed continuation metadata.
+- Streams use explicit IDs and special offsets, preserve binary fields and
+  group/consumer names, bound every range/read/claim page, forbid indefinite
+  blocking, and expose the complete ordinary consumer-group lifecycle. Group
+  reads and claims retain committed IDs when returned fields exceed their
+  per-call byte cap; same-slot multi-stream Cluster reads are supported and
+  cross-slot reads fail explicitly.
 
 - Redis-domain input names remain compatible where practical (`keys`,
   `entries`, `fields`, `elements`, `members`, and the ZADD flags). ZRANGE uses

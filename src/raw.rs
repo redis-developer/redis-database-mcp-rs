@@ -194,6 +194,24 @@ fn classified_access(command: &str, arguments: &[Vec<u8>]) -> Option<AccessMode>
     {
         return Some(AccessMode::Full);
     }
+    if command == "XGROUP" {
+        return match arguments.first().map(Vec::as_slice) {
+            Some(subcommand)
+                if eq_ascii_case(subcommand, b"DESTROY")
+                    || eq_ascii_case(subcommand, b"DELCONSUMER") =>
+            {
+                Some(AccessMode::Full)
+            }
+            Some(subcommand)
+                if eq_ascii_case(subcommand, b"CREATE")
+                    || eq_ascii_case(subcommand, b"SETID")
+                    || eq_ascii_case(subcommand, b"CREATECONSUMER") =>
+            {
+                Some(AccessMode::ReadWrite)
+            }
+            _ => None,
+        };
+    }
     let access = match command {
         "ACL" | "DEL" | "GETDEL" | "HDEL" | "JSON.ARRPOP" | "JSON.ARRTRIM" | "JSON.CLEAR"
         | "JSON.DEL" | "LPOP" | "LMOVE" | "LMPOP" | "LREM" | "LSET" | "LTRIM" | "RENAME"
@@ -220,7 +238,7 @@ fn classified_access(command: &str, arguments: &[Vec<u8>]) -> Option<AccessMode>
         | "JSON.NUMINCRBY" | "JSON.SET" | "JSON.TOGGLE" | "LINSERT" | "LPUSH" | "LPUSHX"
         | "MSET" | "MSETNX" | "PERSIST" | "PEXPIRE" | "PEXPIREAT" | "PSETEX" | "RESTORE"
         | "RPUSH" | "RPUSHX" | "SADD" | "SET" | "SETEX" | "TOUCH" | "XACK" | "XADD"
-        | "XREADGROUP" | "ZADD" | "ZINCRBY" => AccessMode::ReadWrite,
+        | "XAUTOCLAIM" | "XCLAIM" | "XREADGROUP" | "ZADD" | "ZINCRBY" => AccessMode::ReadWrite,
         "MODULE" => AccessMode::Full,
         "COMMAND" | "DBSIZE" | "DUMP" | "ECHO" | "EXISTS" | "EXPIRETIME" | "GET" | "GETRANGE"
         | "HEXISTS" | "HGET" | "HGETALL" | "HKEYS" | "HLEN" | "HMGET" | "HSCAN" | "HSTRLEN"
@@ -238,16 +256,41 @@ fn classified_access(command: &str, arguments: &[Vec<u8>]) -> Option<AccessMode>
 }
 
 fn minimum_redis_version(command: &str, arguments: &[Vec<u8>]) -> Option<RedisVersion> {
+    if command == "XGROUP"
+        && arguments
+            .first()
+            .is_some_and(|subcommand| eq_ascii_case(subcommand, b"CREATECONSUMER"))
+    {
+        return Some(RedisVersion::new(6, 2, 0));
+    }
+    if matches!(command, "XADD" | "XTRIM")
+        && arguments.iter().any(|argument| {
+            eq_ascii_case(argument, b"NOMKSTREAM")
+                || eq_ascii_case(argument, b"MINID")
+                || eq_ascii_case(argument, b"LIMIT")
+        })
+    {
+        return Some(RedisVersion::new(6, 2, 0));
+    }
+    if matches!(command, "XRANGE" | "XREVRANGE")
+        && arguments
+            .iter()
+            .skip(1)
+            .take(2)
+            .any(|argument| argument.starts_with(b"("))
+    {
+        return Some(RedisVersion::new(6, 2, 0));
+    }
     let version = match command {
         "SCAN" | "HSCAN" | "SSCAN" | "ZSCAN" => (2, 8),
         "HSTRLEN" | "TOUCH" => (3, 2),
         "MEMORY" | "UNLINK" => (4, 0),
-        "XACK" | "XADD" | "XDEL" | "XINFO" | "XLEN" | "XPENDING" | "XRANGE" | "XREAD"
-        | "XREADGROUP" | "XREVRANGE" | "XTRIM" => (5, 0),
+        "XACK" | "XADD" | "XCLAIM" | "XDEL" | "XGROUP" | "XINFO" | "XLEN" | "XPENDING"
+        | "XRANGE" | "XREAD" | "XREADGROUP" | "XREVRANGE" | "XTRIM" => (5, 0),
         "LPOS" => (6, 0),
         "LPOP" | "RPOP" if arguments.len() > 1 => (6, 2),
-        "COPY" | "GETDEL" | "GETEX" | "LMOVE" | "SMISMEMBER" | "ZDIFF" | "ZINTER" | "ZMSCORE"
-        | "ZRANDMEMBER" | "ZUNION" => (6, 2),
+        "COPY" | "GETDEL" | "GETEX" | "LMOVE" | "SMISMEMBER" | "XAUTOCLAIM" | "ZDIFF"
+        | "ZINTER" | "ZMSCORE" | "ZRANDMEMBER" | "ZUNION" => (6, 2),
         "EXPIRETIME" | "LCS" | "LMPOP" | "PEXPIRETIME" | "SINTERCARD" | "ZMPOP" => (7, 0),
         "HEXPIRE" | "HPERSIST" | "HTTL" => (7, 4),
         _ => return None,
@@ -389,6 +432,54 @@ mod tests {
                 .required_access(),
             AccessMode::Full
         );
+    }
+
+    #[test]
+    fn stream_group_subcommands_have_explicit_access_and_versions() {
+        for subcommand in ["CREATE", "SETID"] {
+            let metadata = invocation("XGROUP", &[subcommand, "events", "workers"])
+                .expect("classified XGROUP write subcommand");
+            assert_eq!(
+                metadata.required_access(),
+                AccessMode::ReadWrite,
+                "{subcommand}"
+            );
+            assert_eq!(
+                metadata.minimum_redis_version(),
+                Some(RedisVersion::new(5, 0, 0))
+            );
+        }
+        assert_eq!(
+            invocation("XGROUP", &["CREATECONSUMER", "events", "workers"])
+                .expect("classified XGROUP CREATECONSUMER")
+                .minimum_redis_version(),
+            Some(RedisVersion::new(6, 2, 0))
+        );
+        for subcommand in ["DESTROY", "DELCONSUMER"] {
+            assert_eq!(
+                invocation("XGROUP", &[subcommand, "events", "workers"])
+                    .expect("classified XGROUP destructive subcommand")
+                    .required_access(),
+                AccessMode::Full,
+                "{subcommand}"
+            );
+        }
+        for command in ["XCLAIM", "XAUTOCLAIM"] {
+            assert_eq!(
+                invocation(command, &["events", "workers", "consumer"])
+                    .expect("classified claim command")
+                    .required_access(),
+                AccessMode::ReadWrite,
+                "{command}"
+            );
+        }
+        assert_eq!(
+            invocation("XAUTOCLAIM", &["events", "workers", "consumer"])
+                .expect("XAUTOCLAIM version")
+                .minimum_redis_version(),
+            Some(RedisVersion::new(6, 2, 0))
+        );
+        assert!(invocation("XGROUP", &["HELP"]).is_err());
     }
 
     #[test]

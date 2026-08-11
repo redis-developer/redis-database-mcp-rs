@@ -266,6 +266,7 @@ async fn cluster_routes_curated_and_raw_tools_across_three_masters() {
         let remote_hash = format!("{remote_key}:hash");
         let remote_set = format!("{remote_key}:set");
         let remote_zset = format!("{remote_key}:zset");
+        let remote_stream = format!("{remote_key}:stream");
 
         let direct = router_client(
             DirectRedis::connect(&seed_urls[0])
@@ -475,6 +476,27 @@ async fn cluster_routes_curated_and_raw_tools_across_three_masters() {
             .expect("structured remote-slot ZREM");
         assert_eq!(remote_zrem["removed"], 1);
 
+        routed
+            .call_tool(
+                "redis_xadd",
+                serde_json::json!({
+                    "key": remote_stream,
+                    "fields": [{"field": "event", "value": "remote"}]
+                }),
+            )
+            .await
+            .expect("remote-slot XADD");
+        let remote_entries = routed
+            .call_tool(
+                "redis_xrange",
+                serde_json::json!({"key": remote_stream, "count": 1}),
+            )
+            .await
+            .expect("remote-slot XRANGE")
+            .structured_content
+            .expect("structured remote-slot XRANGE");
+        assert_eq!(remote_entries["entries"][0]["fields"][0]["value"], "remote");
+
         let same_source = format!(
             "redis-mcp:test:{}:{{issue18-{protocol}}}:source",
             std::process::id()
@@ -507,6 +529,16 @@ async fn cluster_routes_curated_and_raw_tools_across_three_masters() {
         );
         let cross_set_left = format!("{}:set-left", keys[0]);
         let cross_set_right = format!("{}:set-right", keys[1]);
+        let same_stream_left = format!(
+            "redis-mcp:test:{}:{{issue23-{protocol}}}:stream-left",
+            std::process::id()
+        );
+        let same_stream_right = format!(
+            "redis-mcp:test:{}:{{issue23-{protocol}}}:stream-right",
+            std::process::id()
+        );
+        let cross_stream_left = format!("{}:stream-left", keys[0]);
+        let cross_stream_right = format!("{}:stream-right", keys[1]);
         routed
             .call_tool(
                 "redis_set",
@@ -639,6 +671,65 @@ async fn cluster_routes_curated_and_raw_tools_across_three_masters() {
             assert!(cross_slot.contains("CROSSSLOT"), "{tool}: {cross_slot}");
         }
 
+        for stream in [
+            &same_stream_left,
+            &same_stream_right,
+            &cross_stream_left,
+            &cross_stream_right,
+        ] {
+            routed
+                .call_tool(
+                    "redis_xadd",
+                    serde_json::json!({
+                        "key": stream,
+                        "fields": [{"field": "event", "value": "cluster"}]
+                    }),
+                )
+                .await
+                .expect("seed cluster stream");
+        }
+        let same_slot_stream_read = routed
+            .call_tool(
+                "redis_xread",
+                serde_json::json!({
+                    "streams": [
+                        {"key": same_stream_left, "offset": {"type": "explicit", "id": {"milliseconds": 0, "sequence": 0}}},
+                        {"key": same_stream_right, "offset": {"type": "explicit", "id": {"milliseconds": 0, "sequence": 0}}}
+                    ],
+                    "count": 1
+                }),
+            )
+            .await
+            .expect("same-slot multi-stream XREAD")
+            .structured_content
+            .expect("structured same-slot multi-stream XREAD");
+        assert_eq!(same_slot_stream_read["count"], 2);
+        assert_eq!(
+            same_slot_stream_read["streams"].as_array().unwrap().len(),
+            2
+        );
+
+        let cross_slot_stream_read = routed
+            .call_tool(
+                "redis_xread",
+                serde_json::json!({
+                    "streams": [
+                        {"key": cross_stream_left, "offset": {"type": "explicit", "id": {"milliseconds": 0, "sequence": 0}}},
+                        {"key": cross_stream_right, "offset": {"type": "explicit", "id": {"milliseconds": 0, "sequence": 0}}}
+                    ],
+                    "count": 1
+                }),
+            )
+            .await
+            .expect("cross-slot XREAD is represented as a tool result");
+        assert!(cross_slot_stream_read.is_error);
+        let cross_slot_stream_read =
+            serde_json::to_string(&cross_slot_stream_read).expect("serialize XREAD CROSSSLOT");
+        assert!(
+            cross_slot_stream_read.contains("CROSSSLOT"),
+            "{cross_slot_stream_read}"
+        );
+
         for tool in ["redis_copy", "redis_rename", "redis_renamenx"] {
             let cross_slot = routed
                 .call_tool(
@@ -673,6 +764,24 @@ async fn cluster_routes_curated_and_raw_tools_across_three_masters() {
             .structured_content
             .expect("structured DEL result");
         assert_eq!(deleted["deleted"], keys.len());
+        let stream_deleted = routed
+            .call_tool(
+                "redis_del",
+                serde_json::json!({
+                    "keys": [
+                        remote_stream,
+                        same_stream_left,
+                        same_stream_right,
+                        cross_stream_left,
+                        cross_stream_right
+                    ]
+                }),
+            )
+            .await
+            .expect("delete cluster stream keys")
+            .structured_content
+            .expect("structured stream-key DEL");
+        assert_eq!(stream_deleted["deleted"], 5);
         let same_slot_deleted = routed
             .call_tool(
                 "redis_del",

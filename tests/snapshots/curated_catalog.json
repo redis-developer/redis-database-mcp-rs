@@ -11562,6 +11562,4304 @@
       "capability_requirements": {
         "deployment": "any",
         "minimum_module_version": null,
+        "minimum_redis_version": "5.0.0",
+        "required_commands": [
+          "XACK"
+        ],
+        "required_module": null
+      },
+      "name": "redis_xack",
+      "output_policy": "intrinsically_bounded",
+      "protocol": {
+        "annotations": {
+          "destructiveHint": false,
+          "idempotentHint": true
+        },
+        "description": "Acknowledge an explicit bounded set of pending stream IDs.",
+        "inputSchema": {
+          "$defs": {
+            "BinaryInput": {
+              "additionalProperties": false,
+              "properties": {
+                "encoding": {
+                  "$ref": "#/$defs/InputEncoding",
+                  "default": "utf8"
+                },
+                "value": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "value"
+              ],
+              "type": "object"
+            },
+            "InputEncoding": {
+              "enum": [
+                "utf8",
+                "base64"
+              ],
+              "type": "string"
+            },
+            "StreamId": {
+              "additionalProperties": false,
+              "properties": {
+                "milliseconds": {
+                  "description": "Millisecond timestamp component.",
+                  "format": "uint64",
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                "sequence": {
+                  "description": "Sequence component within the millisecond.",
+                  "format": "uint64",
+                  "minimum": 0,
+                  "type": "integer"
+                }
+              },
+              "required": [
+                "milliseconds",
+                "sequence"
+              ],
+              "type": "object"
+            }
+          },
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "group": {
+              "$ref": "#/$defs/BinaryInput"
+            },
+            "ids": {
+              "items": {
+                "$ref": "#/$defs/StreamId"
+              },
+              "type": "array"
+            },
+            "key": {
+              "type": "string"
+            },
+            "key_encoding": {
+              "$ref": "#/$defs/InputEncoding",
+              "default": "utf8"
+            }
+          },
+          "required": [
+            "key",
+            "group",
+            "ids"
+          ],
+          "title": "XackInput",
+          "type": "object"
+        },
+        "name": "redis_xack",
+        "outputSchema": {
+          "$defs": {
+            "InputEncoding": {
+              "enum": [
+                "utf8",
+                "base64"
+              ],
+              "type": "string"
+            }
+          },
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "acknowledged": {
+              "format": "uint64",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "group": {
+              "type": "string"
+            },
+            "group_encoding": {
+              "$ref": "#/$defs/InputEncoding"
+            },
+            "key": {
+              "type": "string"
+            },
+            "key_encoding": {
+              "$ref": "#/$defs/InputEncoding"
+            },
+            "requested": {
+              "format": "uint",
+              "minimum": 0,
+              "type": "integer"
+            }
+          },
+          "required": [
+            "key",
+            "key_encoding",
+            "group",
+            "group_encoding",
+            "requested",
+            "acknowledged"
+          ],
+          "title": "XackOutput",
+          "type": "object"
+        },
+        "title": "Acknowledge Redis Stream Entries"
+      },
+      "required_access": "read_write",
+      "required_module": null,
+      "requires_raw_opt_in": false
+    },
+    {
+      "bundle": "data_structures",
+      "capability_requirements": {
+        "deployment": "any",
+        "minimum_module_version": null,
+        "minimum_redis_version": "5.0.0",
+        "required_commands": [
+          "XADD"
+        ],
+        "required_module": null
+      },
+      "name": "redis_xadd",
+      "output_policy": "intrinsically_bounded",
+      "protocol": {
+        "annotations": {
+          "destructiveHint": false
+        },
+        "description": "Append one binary-safe stream entry, optionally using bounded MAXLEN or MINID trimming.",
+        "inputSchema": {
+          "$defs": {
+            "AddId": {
+              "oneOf": [
+                {
+                  "properties": {
+                    "type": {
+                      "const": "auto",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "type"
+                  ],
+                  "type": "object"
+                },
+                {
+                  "properties": {
+                    "id": {
+                      "$ref": "#/$defs/StreamId"
+                    },
+                    "type": {
+                      "const": "explicit",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "type",
+                    "id"
+                  ],
+                  "type": "object"
+                }
+              ]
+            },
+            "InputEncoding": {
+              "enum": [
+                "utf8",
+                "base64"
+              ],
+              "type": "string"
+            },
+            "StreamFieldInput": {
+              "additionalProperties": false,
+              "properties": {
+                "field": {
+                  "type": "string"
+                },
+                "field_encoding": {
+                  "$ref": "#/$defs/InputEncoding",
+                  "default": "utf8"
+                },
+                "value": {
+                  "type": "string"
+                },
+                "value_encoding": {
+                  "$ref": "#/$defs/InputEncoding",
+                  "default": "utf8"
+                }
+              },
+              "required": [
+                "field",
+                "value"
+              ],
+              "type": "object"
+            },
+            "StreamId": {
+              "additionalProperties": false,
+              "properties": {
+                "milliseconds": {
+                  "description": "Millisecond timestamp component.",
+                  "format": "uint64",
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                "sequence": {
+                  "description": "Sequence component within the millisecond.",
+                  "format": "uint64",
+                  "minimum": 0,
+                  "type": "integer"
+                }
+              },
+              "required": [
+                "milliseconds",
+                "sequence"
+              ],
+              "type": "object"
+            },
+            "StreamTrim": {
+              "oneOf": [
+                {
+                  "properties": {
+                    "approximate": {
+                      "default": false,
+                      "type": "boolean"
+                    },
+                    "limit": {
+                      "default": null,
+                      "format": "uint64",
+                      "minimum": 0,
+                      "type": [
+                        "integer",
+                        "null"
+                      ]
+                    },
+                    "threshold": {
+                      "format": "uint64",
+                      "minimum": 0,
+                      "type": "integer"
+                    },
+                    "type": {
+                      "const": "max_len",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "type",
+                    "threshold"
+                  ],
+                  "type": "object"
+                },
+                {
+                  "properties": {
+                    "approximate": {
+                      "default": false,
+                      "type": "boolean"
+                    },
+                    "limit": {
+                      "default": null,
+                      "format": "uint64",
+                      "minimum": 0,
+                      "type": [
+                        "integer",
+                        "null"
+                      ]
+                    },
+                    "threshold": {
+                      "$ref": "#/$defs/StreamId"
+                    },
+                    "type": {
+                      "const": "min_id",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "type",
+                    "threshold"
+                  ],
+                  "type": "object"
+                }
+              ]
+            }
+          },
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "fields": {
+              "items": {
+                "$ref": "#/$defs/StreamFieldInput"
+              },
+              "type": "array"
+            },
+            "id": {
+              "$ref": "#/$defs/AddId",
+              "default": {
+                "type": "auto"
+              }
+            },
+            "key": {
+              "type": "string"
+            },
+            "key_encoding": {
+              "$ref": "#/$defs/InputEncoding",
+              "default": "utf8"
+            },
+            "no_mkstream": {
+              "default": false,
+              "type": "boolean"
+            },
+            "trim": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/StreamTrim"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null
+            }
+          },
+          "required": [
+            "key",
+            "fields"
+          ],
+          "title": "XaddInput",
+          "type": "object"
+        },
+        "name": "redis_xadd",
+        "outputSchema": {
+          "$defs": {
+            "InputEncoding": {
+              "enum": [
+                "utf8",
+                "base64"
+              ],
+              "type": "string"
+            }
+          },
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "added": {
+              "type": "boolean"
+            },
+            "field_count": {
+              "format": "uint",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "id": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "key": {
+              "type": "string"
+            },
+            "key_encoding": {
+              "$ref": "#/$defs/InputEncoding"
+            }
+          },
+          "required": [
+            "key",
+            "key_encoding",
+            "added",
+            "field_count"
+          ],
+          "title": "XaddOutput",
+          "type": "object"
+        },
+        "title": "Add Redis Stream Entry"
+      },
+      "required_access": "read_write",
+      "required_module": null,
+      "requires_raw_opt_in": false
+    },
+    {
+      "bundle": "data_structures",
+      "capability_requirements": {
+        "deployment": "any",
+        "minimum_module_version": null,
+        "minimum_redis_version": "6.2.0",
+        "required_commands": [
+          "XAUTOCLAIM"
+        ],
+        "required_module": null
+      },
+      "name": "redis_xautoclaim",
+      "output_policy": "intrinsically_bounded",
+      "protocol": {
+        "annotations": {
+          "destructiveHint": false
+        },
+        "description": "Claim one bounded pending-entry scan page and return the server continuation ID.",
+        "inputSchema": {
+          "$defs": {
+            "BinaryInput": {
+              "additionalProperties": false,
+              "properties": {
+                "encoding": {
+                  "$ref": "#/$defs/InputEncoding",
+                  "default": "utf8"
+                },
+                "value": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "value"
+              ],
+              "type": "object"
+            },
+            "InputEncoding": {
+              "enum": [
+                "utf8",
+                "base64"
+              ],
+              "type": "string"
+            },
+            "StreamId": {
+              "additionalProperties": false,
+              "properties": {
+                "milliseconds": {
+                  "description": "Millisecond timestamp component.",
+                  "format": "uint64",
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                "sequence": {
+                  "description": "Sequence component within the millisecond.",
+                  "format": "uint64",
+                  "minimum": 0,
+                  "type": "integer"
+                }
+              },
+              "required": [
+                "milliseconds",
+                "sequence"
+              ],
+              "type": "object"
+            }
+          },
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "consumer": {
+              "$ref": "#/$defs/BinaryInput"
+            },
+            "count": {
+              "default": 100,
+              "format": "uint",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "group": {
+              "$ref": "#/$defs/BinaryInput"
+            },
+            "just_id": {
+              "default": false,
+              "type": "boolean"
+            },
+            "key": {
+              "type": "string"
+            },
+            "key_encoding": {
+              "$ref": "#/$defs/InputEncoding",
+              "default": "utf8"
+            },
+            "max_returned_bytes": {
+              "default": 65536,
+              "format": "uint",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "min_idle_time_ms": {
+              "format": "uint64",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "start": {
+              "$ref": "#/$defs/StreamId"
+            }
+          },
+          "required": [
+            "key",
+            "group",
+            "consumer",
+            "min_idle_time_ms",
+            "start"
+          ],
+          "title": "XautoclaimInput",
+          "type": "object"
+        },
+        "name": "redis_xautoclaim",
+        "outputSchema": {
+          "$defs": {
+            "InputEncoding": {
+              "enum": [
+                "utf8",
+                "base64"
+              ],
+              "type": "string"
+            },
+            "StreamEntryOutput": {
+              "additionalProperties": false,
+              "properties": {
+                "field_bytes": {
+                  "format": "uint",
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                "field_count": {
+                  "format": "uint",
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                "fields": {
+                  "items": {
+                    "$ref": "#/$defs/StreamFieldOutput"
+                  },
+                  "type": "array"
+                },
+                "fields_omitted": {
+                  "type": "boolean"
+                },
+                "id": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "id",
+                "fields",
+                "field_count",
+                "field_bytes",
+                "fields_omitted"
+              ],
+              "type": "object"
+            },
+            "StreamFieldOutput": {
+              "additionalProperties": false,
+              "properties": {
+                "field": {
+                  "type": "string"
+                },
+                "field_encoding": {
+                  "$ref": "#/$defs/ValueEncoding"
+                },
+                "value": {
+                  "type": "string"
+                },
+                "value_encoding": {
+                  "$ref": "#/$defs/ValueEncoding"
+                }
+              },
+              "required": [
+                "field",
+                "field_encoding",
+                "value",
+                "value_encoding"
+              ],
+              "type": "object"
+            },
+            "ValueEncoding": {
+              "enum": [
+                "utf8",
+                "base64"
+              ],
+              "type": "string"
+            }
+          },
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "consumer": {
+              "type": "string"
+            },
+            "consumer_encoding": {
+              "$ref": "#/$defs/InputEncoding"
+            },
+            "count": {
+              "format": "uint",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "deleted_ids": {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "entries": {
+              "items": {
+                "$ref": "#/$defs/StreamEntryOutput"
+              },
+              "type": "array"
+            },
+            "field_bytes": {
+              "format": "uint",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "fields_omitted": {
+              "type": "boolean"
+            },
+            "group": {
+              "type": "string"
+            },
+            "group_encoding": {
+              "$ref": "#/$defs/InputEncoding"
+            },
+            "ids": {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "just_id": {
+              "type": "boolean"
+            },
+            "key": {
+              "type": "string"
+            },
+            "key_encoding": {
+              "$ref": "#/$defs/InputEncoding"
+            },
+            "next_start_id": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "key",
+            "key_encoding",
+            "group",
+            "group_encoding",
+            "consumer",
+            "consumer_encoding",
+            "next_start_id",
+            "count",
+            "ids",
+            "entries",
+            "deleted_ids",
+            "just_id",
+            "field_bytes",
+            "fields_omitted"
+          ],
+          "title": "XautoclaimOutput",
+          "type": "object"
+        },
+        "title": "Auto-Claim Redis Stream Entries"
+      },
+      "required_access": "read_write",
+      "required_module": null,
+      "requires_raw_opt_in": false
+    },
+    {
+      "bundle": "data_structures",
+      "capability_requirements": {
+        "deployment": "any",
+        "minimum_module_version": null,
+        "minimum_redis_version": "5.0.0",
+        "required_commands": [
+          "XCLAIM"
+        ],
+        "required_module": null
+      },
+      "name": "redis_xclaim",
+      "output_policy": "intrinsically_bounded",
+      "protocol": {
+        "annotations": {
+          "destructiveHint": false
+        },
+        "description": "Claim an explicit bounded set of pending IDs. Supports JUSTID and preserves claimed IDs if returned fields exceed the payload ceiling.",
+        "inputSchema": {
+          "$defs": {
+            "BinaryInput": {
+              "additionalProperties": false,
+              "properties": {
+                "encoding": {
+                  "$ref": "#/$defs/InputEncoding",
+                  "default": "utf8"
+                },
+                "value": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "value"
+              ],
+              "type": "object"
+            },
+            "InputEncoding": {
+              "enum": [
+                "utf8",
+                "base64"
+              ],
+              "type": "string"
+            },
+            "StreamId": {
+              "additionalProperties": false,
+              "properties": {
+                "milliseconds": {
+                  "description": "Millisecond timestamp component.",
+                  "format": "uint64",
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                "sequence": {
+                  "description": "Sequence component within the millisecond.",
+                  "format": "uint64",
+                  "minimum": 0,
+                  "type": "integer"
+                }
+              },
+              "required": [
+                "milliseconds",
+                "sequence"
+              ],
+              "type": "object"
+            }
+          },
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "consumer": {
+              "$ref": "#/$defs/BinaryInput"
+            },
+            "force": {
+              "default": false,
+              "type": "boolean"
+            },
+            "group": {
+              "$ref": "#/$defs/BinaryInput"
+            },
+            "idle_ms": {
+              "default": null,
+              "format": "uint64",
+              "minimum": 0,
+              "type": [
+                "integer",
+                "null"
+              ]
+            },
+            "ids": {
+              "items": {
+                "$ref": "#/$defs/StreamId"
+              },
+              "type": "array"
+            },
+            "just_id": {
+              "default": false,
+              "type": "boolean"
+            },
+            "key": {
+              "type": "string"
+            },
+            "key_encoding": {
+              "$ref": "#/$defs/InputEncoding",
+              "default": "utf8"
+            },
+            "max_returned_bytes": {
+              "default": 65536,
+              "format": "uint",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "min_idle_time_ms": {
+              "format": "uint64",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "retry_count": {
+              "default": null,
+              "format": "uint64",
+              "minimum": 0,
+              "type": [
+                "integer",
+                "null"
+              ]
+            },
+            "time_unix_ms": {
+              "default": null,
+              "format": "uint64",
+              "minimum": 0,
+              "type": [
+                "integer",
+                "null"
+              ]
+            }
+          },
+          "required": [
+            "key",
+            "group",
+            "consumer",
+            "min_idle_time_ms",
+            "ids"
+          ],
+          "title": "XclaimInput",
+          "type": "object"
+        },
+        "name": "redis_xclaim",
+        "outputSchema": {
+          "$defs": {
+            "InputEncoding": {
+              "enum": [
+                "utf8",
+                "base64"
+              ],
+              "type": "string"
+            },
+            "StreamEntryOutput": {
+              "additionalProperties": false,
+              "properties": {
+                "field_bytes": {
+                  "format": "uint",
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                "field_count": {
+                  "format": "uint",
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                "fields": {
+                  "items": {
+                    "$ref": "#/$defs/StreamFieldOutput"
+                  },
+                  "type": "array"
+                },
+                "fields_omitted": {
+                  "type": "boolean"
+                },
+                "id": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "id",
+                "fields",
+                "field_count",
+                "field_bytes",
+                "fields_omitted"
+              ],
+              "type": "object"
+            },
+            "StreamFieldOutput": {
+              "additionalProperties": false,
+              "properties": {
+                "field": {
+                  "type": "string"
+                },
+                "field_encoding": {
+                  "$ref": "#/$defs/ValueEncoding"
+                },
+                "value": {
+                  "type": "string"
+                },
+                "value_encoding": {
+                  "$ref": "#/$defs/ValueEncoding"
+                }
+              },
+              "required": [
+                "field",
+                "field_encoding",
+                "value",
+                "value_encoding"
+              ],
+              "type": "object"
+            },
+            "ValueEncoding": {
+              "enum": [
+                "utf8",
+                "base64"
+              ],
+              "type": "string"
+            }
+          },
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "consumer": {
+              "type": "string"
+            },
+            "consumer_encoding": {
+              "$ref": "#/$defs/InputEncoding"
+            },
+            "count": {
+              "format": "uint",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "entries": {
+              "items": {
+                "$ref": "#/$defs/StreamEntryOutput"
+              },
+              "type": "array"
+            },
+            "field_bytes": {
+              "format": "uint",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "fields_omitted": {
+              "type": "boolean"
+            },
+            "group": {
+              "type": "string"
+            },
+            "group_encoding": {
+              "$ref": "#/$defs/InputEncoding"
+            },
+            "ids": {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "just_id": {
+              "type": "boolean"
+            },
+            "key": {
+              "type": "string"
+            },
+            "key_encoding": {
+              "$ref": "#/$defs/InputEncoding"
+            }
+          },
+          "required": [
+            "key",
+            "key_encoding",
+            "group",
+            "group_encoding",
+            "consumer",
+            "consumer_encoding",
+            "count",
+            "ids",
+            "entries",
+            "just_id",
+            "field_bytes",
+            "fields_omitted"
+          ],
+          "title": "ClaimOutput",
+          "type": "object"
+        },
+        "title": "Claim Redis Stream Entries"
+      },
+      "required_access": "read_write",
+      "required_module": null,
+      "requires_raw_opt_in": false
+    },
+    {
+      "bundle": "data_structures",
+      "capability_requirements": {
+        "deployment": "any",
+        "minimum_module_version": null,
+        "minimum_redis_version": "5.0.0",
+        "required_commands": [
+          "XDEL"
+        ],
+        "required_module": null
+      },
+      "name": "redis_xdel",
+      "output_policy": "intrinsically_bounded",
+      "protocol": {
+        "annotations": {
+          "idempotentHint": true
+        },
+        "description": "Permanently delete an explicit bounded set of stream IDs. Requires full access.",
+        "inputSchema": {
+          "$defs": {
+            "InputEncoding": {
+              "enum": [
+                "utf8",
+                "base64"
+              ],
+              "type": "string"
+            },
+            "StreamId": {
+              "additionalProperties": false,
+              "properties": {
+                "milliseconds": {
+                  "description": "Millisecond timestamp component.",
+                  "format": "uint64",
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                "sequence": {
+                  "description": "Sequence component within the millisecond.",
+                  "format": "uint64",
+                  "minimum": 0,
+                  "type": "integer"
+                }
+              },
+              "required": [
+                "milliseconds",
+                "sequence"
+              ],
+              "type": "object"
+            }
+          },
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "ids": {
+              "items": {
+                "$ref": "#/$defs/StreamId"
+              },
+              "type": "array"
+            },
+            "key": {
+              "type": "string"
+            },
+            "key_encoding": {
+              "$ref": "#/$defs/InputEncoding",
+              "default": "utf8"
+            }
+          },
+          "required": [
+            "key",
+            "ids"
+          ],
+          "title": "XdelInput",
+          "type": "object"
+        },
+        "name": "redis_xdel",
+        "outputSchema": {
+          "$defs": {
+            "InputEncoding": {
+              "enum": [
+                "utf8",
+                "base64"
+              ],
+              "type": "string"
+            }
+          },
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "deleted": {
+              "format": "uint64",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "key": {
+              "type": "string"
+            },
+            "key_encoding": {
+              "$ref": "#/$defs/InputEncoding"
+            },
+            "requested": {
+              "format": "uint",
+              "minimum": 0,
+              "type": "integer"
+            }
+          },
+          "required": [
+            "key",
+            "key_encoding",
+            "requested",
+            "deleted"
+          ],
+          "title": "XdelOutput",
+          "type": "object"
+        },
+        "title": "Delete Redis Stream Entries"
+      },
+      "required_access": "full",
+      "required_module": null,
+      "requires_raw_opt_in": false
+    },
+    {
+      "bundle": "data_structures",
+      "capability_requirements": {
+        "deployment": "any",
+        "minimum_module_version": null,
+        "minimum_redis_version": "5.0.0",
+        "required_commands": [
+          "XGROUP"
+        ],
+        "required_module": null
+      },
+      "name": "redis_xgroup_create",
+      "output_policy": "intrinsically_bounded",
+      "protocol": {
+        "annotations": {
+          "destructiveHint": false
+        },
+        "description": "Create a consumer group at an explicit start position, optionally creating the stream.",
+        "inputSchema": {
+          "$defs": {
+            "BinaryInput": {
+              "additionalProperties": false,
+              "properties": {
+                "encoding": {
+                  "$ref": "#/$defs/InputEncoding",
+                  "default": "utf8"
+                },
+                "value": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "value"
+              ],
+              "type": "object"
+            },
+            "GroupStartId": {
+              "oneOf": [
+                {
+                  "properties": {
+                    "type": {
+                      "const": "beginning",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "type"
+                  ],
+                  "type": "object"
+                },
+                {
+                  "properties": {
+                    "type": {
+                      "const": "latest",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "type"
+                  ],
+                  "type": "object"
+                },
+                {
+                  "properties": {
+                    "id": {
+                      "$ref": "#/$defs/StreamId"
+                    },
+                    "type": {
+                      "const": "explicit",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "type",
+                    "id"
+                  ],
+                  "type": "object"
+                }
+              ]
+            },
+            "InputEncoding": {
+              "enum": [
+                "utf8",
+                "base64"
+              ],
+              "type": "string"
+            },
+            "StreamId": {
+              "additionalProperties": false,
+              "properties": {
+                "milliseconds": {
+                  "description": "Millisecond timestamp component.",
+                  "format": "uint64",
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                "sequence": {
+                  "description": "Sequence component within the millisecond.",
+                  "format": "uint64",
+                  "minimum": 0,
+                  "type": "integer"
+                }
+              },
+              "required": [
+                "milliseconds",
+                "sequence"
+              ],
+              "type": "object"
+            }
+          },
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "group": {
+              "$ref": "#/$defs/BinaryInput"
+            },
+            "id": {
+              "$ref": "#/$defs/GroupStartId",
+              "default": {
+                "type": "latest"
+              }
+            },
+            "key": {
+              "type": "string"
+            },
+            "key_encoding": {
+              "$ref": "#/$defs/InputEncoding",
+              "default": "utf8"
+            },
+            "mkstream": {
+              "default": false,
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "key",
+            "group"
+          ],
+          "title": "XgroupCreateInput",
+          "type": "object"
+        },
+        "name": "redis_xgroup_create",
+        "outputSchema": {
+          "$defs": {
+            "InputEncoding": {
+              "enum": [
+                "utf8",
+                "base64"
+              ],
+              "type": "string"
+            }
+          },
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "applied": {
+              "type": "boolean"
+            },
+            "group": {
+              "type": "string"
+            },
+            "group_encoding": {
+              "$ref": "#/$defs/InputEncoding"
+            },
+            "key": {
+              "type": "string"
+            },
+            "key_encoding": {
+              "$ref": "#/$defs/InputEncoding"
+            }
+          },
+          "required": [
+            "key",
+            "key_encoding",
+            "group",
+            "group_encoding",
+            "applied"
+          ],
+          "title": "GroupMutationOutput",
+          "type": "object"
+        },
+        "title": "Create Redis Stream Group"
+      },
+      "required_access": "read_write",
+      "required_module": null,
+      "requires_raw_opt_in": false
+    },
+    {
+      "bundle": "data_structures",
+      "capability_requirements": {
+        "deployment": "any",
+        "minimum_module_version": null,
+        "minimum_redis_version": "6.2.0",
+        "required_commands": [
+          "XGROUP"
+        ],
+        "required_module": null
+      },
+      "name": "redis_xgroup_createconsumer",
+      "output_policy": "intrinsically_bounded",
+      "protocol": {
+        "annotations": {
+          "destructiveHint": false,
+          "idempotentHint": true
+        },
+        "description": "Explicitly create one consumer in an existing stream group.",
+        "inputSchema": {
+          "$defs": {
+            "BinaryInput": {
+              "additionalProperties": false,
+              "properties": {
+                "encoding": {
+                  "$ref": "#/$defs/InputEncoding",
+                  "default": "utf8"
+                },
+                "value": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "value"
+              ],
+              "type": "object"
+            },
+            "InputEncoding": {
+              "enum": [
+                "utf8",
+                "base64"
+              ],
+              "type": "string"
+            }
+          },
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "consumer": {
+              "$ref": "#/$defs/BinaryInput"
+            },
+            "group": {
+              "$ref": "#/$defs/BinaryInput"
+            },
+            "key": {
+              "type": "string"
+            },
+            "key_encoding": {
+              "$ref": "#/$defs/InputEncoding",
+              "default": "utf8"
+            }
+          },
+          "required": [
+            "key",
+            "group",
+            "consumer"
+          ],
+          "title": "ConsumerKeyInput",
+          "type": "object"
+        },
+        "name": "redis_xgroup_createconsumer",
+        "outputSchema": {
+          "$defs": {
+            "InputEncoding": {
+              "enum": [
+                "utf8",
+                "base64"
+              ],
+              "type": "string"
+            }
+          },
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "consumer": {
+              "type": "string"
+            },
+            "consumer_encoding": {
+              "$ref": "#/$defs/InputEncoding"
+            },
+            "created": {
+              "type": "boolean"
+            },
+            "group": {
+              "type": "string"
+            },
+            "group_encoding": {
+              "$ref": "#/$defs/InputEncoding"
+            },
+            "key": {
+              "type": "string"
+            },
+            "key_encoding": {
+              "$ref": "#/$defs/InputEncoding"
+            }
+          },
+          "required": [
+            "key",
+            "key_encoding",
+            "group",
+            "group_encoding",
+            "consumer",
+            "consumer_encoding",
+            "created"
+          ],
+          "title": "ConsumerMutationOutput",
+          "type": "object"
+        },
+        "title": "Create Redis Stream Consumer"
+      },
+      "required_access": "read_write",
+      "required_module": null,
+      "requires_raw_opt_in": false
+    },
+    {
+      "bundle": "data_structures",
+      "capability_requirements": {
+        "deployment": "any",
+        "minimum_module_version": null,
+        "minimum_redis_version": "5.0.0",
+        "required_commands": [
+          "XGROUP"
+        ],
+        "required_module": null
+      },
+      "name": "redis_xgroup_delconsumer",
+      "output_policy": "intrinsically_bounded",
+      "protocol": {
+        "annotations": {
+          "idempotentHint": true
+        },
+        "description": "Permanently delete a consumer and remove its pending entries from the group PEL. Requires full access.",
+        "inputSchema": {
+          "$defs": {
+            "BinaryInput": {
+              "additionalProperties": false,
+              "properties": {
+                "encoding": {
+                  "$ref": "#/$defs/InputEncoding",
+                  "default": "utf8"
+                },
+                "value": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "value"
+              ],
+              "type": "object"
+            },
+            "InputEncoding": {
+              "enum": [
+                "utf8",
+                "base64"
+              ],
+              "type": "string"
+            }
+          },
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "consumer": {
+              "$ref": "#/$defs/BinaryInput"
+            },
+            "group": {
+              "$ref": "#/$defs/BinaryInput"
+            },
+            "key": {
+              "type": "string"
+            },
+            "key_encoding": {
+              "$ref": "#/$defs/InputEncoding",
+              "default": "utf8"
+            }
+          },
+          "required": [
+            "key",
+            "group",
+            "consumer"
+          ],
+          "title": "ConsumerKeyInput",
+          "type": "object"
+        },
+        "name": "redis_xgroup_delconsumer",
+        "outputSchema": {
+          "$defs": {
+            "InputEncoding": {
+              "enum": [
+                "utf8",
+                "base64"
+              ],
+              "type": "string"
+            }
+          },
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "consumer": {
+              "type": "string"
+            },
+            "consumer_encoding": {
+              "$ref": "#/$defs/InputEncoding"
+            },
+            "group": {
+              "type": "string"
+            },
+            "group_encoding": {
+              "$ref": "#/$defs/InputEncoding"
+            },
+            "key": {
+              "type": "string"
+            },
+            "key_encoding": {
+              "$ref": "#/$defs/InputEncoding"
+            },
+            "pending_deleted": {
+              "format": "uint64",
+              "minimum": 0,
+              "type": "integer"
+            }
+          },
+          "required": [
+            "key",
+            "key_encoding",
+            "group",
+            "group_encoding",
+            "consumer",
+            "consumer_encoding",
+            "pending_deleted"
+          ],
+          "title": "DeleteConsumerOutput",
+          "type": "object"
+        },
+        "title": "Delete Redis Stream Consumer"
+      },
+      "required_access": "full",
+      "required_module": null,
+      "requires_raw_opt_in": false
+    },
+    {
+      "bundle": "data_structures",
+      "capability_requirements": {
+        "deployment": "any",
+        "minimum_module_version": null,
+        "minimum_redis_version": "5.0.0",
+        "required_commands": [
+          "XGROUP"
+        ],
+        "required_module": null
+      },
+      "name": "redis_xgroup_destroy",
+      "output_policy": "intrinsically_bounded",
+      "protocol": {
+        "annotations": {
+          "idempotentHint": true
+        },
+        "description": "Permanently destroy a consumer group and its pending state. Requires full access.",
+        "inputSchema": {
+          "$defs": {
+            "BinaryInput": {
+              "additionalProperties": false,
+              "properties": {
+                "encoding": {
+                  "$ref": "#/$defs/InputEncoding",
+                  "default": "utf8"
+                },
+                "value": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "value"
+              ],
+              "type": "object"
+            },
+            "InputEncoding": {
+              "enum": [
+                "utf8",
+                "base64"
+              ],
+              "type": "string"
+            }
+          },
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "group": {
+              "$ref": "#/$defs/BinaryInput"
+            },
+            "key": {
+              "type": "string"
+            },
+            "key_encoding": {
+              "$ref": "#/$defs/InputEncoding",
+              "default": "utf8"
+            }
+          },
+          "required": [
+            "key",
+            "group"
+          ],
+          "title": "GroupKeyInput",
+          "type": "object"
+        },
+        "name": "redis_xgroup_destroy",
+        "outputSchema": {
+          "$defs": {
+            "InputEncoding": {
+              "enum": [
+                "utf8",
+                "base64"
+              ],
+              "type": "string"
+            }
+          },
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "applied": {
+              "type": "boolean"
+            },
+            "group": {
+              "type": "string"
+            },
+            "group_encoding": {
+              "$ref": "#/$defs/InputEncoding"
+            },
+            "key": {
+              "type": "string"
+            },
+            "key_encoding": {
+              "$ref": "#/$defs/InputEncoding"
+            }
+          },
+          "required": [
+            "key",
+            "key_encoding",
+            "group",
+            "group_encoding",
+            "applied"
+          ],
+          "title": "GroupMutationOutput",
+          "type": "object"
+        },
+        "title": "Destroy Redis Stream Group"
+      },
+      "required_access": "full",
+      "required_module": null,
+      "requires_raw_opt_in": false
+    },
+    {
+      "bundle": "data_structures",
+      "capability_requirements": {
+        "deployment": "any",
+        "minimum_module_version": null,
+        "minimum_redis_version": "5.0.0",
+        "required_commands": [
+          "XGROUP"
+        ],
+        "required_module": null
+      },
+      "name": "redis_xgroup_setid",
+      "output_policy": "intrinsically_bounded",
+      "protocol": {
+        "annotations": {
+          "destructiveHint": false,
+          "idempotentHint": true
+        },
+        "description": "Set the last-delivered position for an existing consumer group.",
+        "inputSchema": {
+          "$defs": {
+            "BinaryInput": {
+              "additionalProperties": false,
+              "properties": {
+                "encoding": {
+                  "$ref": "#/$defs/InputEncoding",
+                  "default": "utf8"
+                },
+                "value": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "value"
+              ],
+              "type": "object"
+            },
+            "GroupStartId": {
+              "oneOf": [
+                {
+                  "properties": {
+                    "type": {
+                      "const": "beginning",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "type"
+                  ],
+                  "type": "object"
+                },
+                {
+                  "properties": {
+                    "type": {
+                      "const": "latest",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "type"
+                  ],
+                  "type": "object"
+                },
+                {
+                  "properties": {
+                    "id": {
+                      "$ref": "#/$defs/StreamId"
+                    },
+                    "type": {
+                      "const": "explicit",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "type",
+                    "id"
+                  ],
+                  "type": "object"
+                }
+              ]
+            },
+            "InputEncoding": {
+              "enum": [
+                "utf8",
+                "base64"
+              ],
+              "type": "string"
+            },
+            "StreamId": {
+              "additionalProperties": false,
+              "properties": {
+                "milliseconds": {
+                  "description": "Millisecond timestamp component.",
+                  "format": "uint64",
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                "sequence": {
+                  "description": "Sequence component within the millisecond.",
+                  "format": "uint64",
+                  "minimum": 0,
+                  "type": "integer"
+                }
+              },
+              "required": [
+                "milliseconds",
+                "sequence"
+              ],
+              "type": "object"
+            }
+          },
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "group": {
+              "$ref": "#/$defs/BinaryInput"
+            },
+            "id": {
+              "$ref": "#/$defs/GroupStartId"
+            },
+            "key": {
+              "type": "string"
+            },
+            "key_encoding": {
+              "$ref": "#/$defs/InputEncoding",
+              "default": "utf8"
+            }
+          },
+          "required": [
+            "key",
+            "group",
+            "id"
+          ],
+          "title": "XgroupSetidInput",
+          "type": "object"
+        },
+        "name": "redis_xgroup_setid",
+        "outputSchema": {
+          "$defs": {
+            "InputEncoding": {
+              "enum": [
+                "utf8",
+                "base64"
+              ],
+              "type": "string"
+            }
+          },
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "applied": {
+              "type": "boolean"
+            },
+            "group": {
+              "type": "string"
+            },
+            "group_encoding": {
+              "$ref": "#/$defs/InputEncoding"
+            },
+            "key": {
+              "type": "string"
+            },
+            "key_encoding": {
+              "$ref": "#/$defs/InputEncoding"
+            }
+          },
+          "required": [
+            "key",
+            "key_encoding",
+            "group",
+            "group_encoding",
+            "applied"
+          ],
+          "title": "GroupMutationOutput",
+          "type": "object"
+        },
+        "title": "Set Redis Stream Group ID"
+      },
+      "required_access": "read_write",
+      "required_module": null,
+      "requires_raw_opt_in": false
+    },
+    {
+      "bundle": "data_structures",
+      "capability_requirements": {
+        "deployment": "any",
+        "minimum_module_version": null,
+        "minimum_redis_version": "5.0.0",
+        "required_commands": [
+          "XINFO"
+        ],
+        "required_module": null
+      },
+      "name": "redis_xinfo_consumers",
+      "output_policy": "budget_guarded",
+      "protocol": {
+        "annotations": {
+          "destructiveHint": false,
+          "idempotentHint": true,
+          "readOnlyHint": true
+        },
+        "description": "Read structured consumer metadata for one stream group.",
+        "inputSchema": {
+          "$defs": {
+            "BinaryInput": {
+              "additionalProperties": false,
+              "properties": {
+                "encoding": {
+                  "$ref": "#/$defs/InputEncoding",
+                  "default": "utf8"
+                },
+                "value": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "value"
+              ],
+              "type": "object"
+            },
+            "InputEncoding": {
+              "enum": [
+                "utf8",
+                "base64"
+              ],
+              "type": "string"
+            }
+          },
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "group": {
+              "$ref": "#/$defs/BinaryInput"
+            },
+            "key": {
+              "type": "string"
+            },
+            "key_encoding": {
+              "$ref": "#/$defs/InputEncoding",
+              "default": "utf8"
+            }
+          },
+          "required": [
+            "key",
+            "group"
+          ],
+          "title": "GroupKeyInput",
+          "type": "object"
+        },
+        "name": "redis_xinfo_consumers",
+        "outputSchema": {
+          "$defs": {
+            "ConsumerInfoOutput": {
+              "additionalProperties": false,
+              "properties": {
+                "idle_ms": {
+                  "format": "uint64",
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                "inactive_ms": {
+                  "format": "int64",
+                  "type": [
+                    "integer",
+                    "null"
+                  ]
+                },
+                "name": {
+                  "type": "string"
+                },
+                "name_encoding": {
+                  "$ref": "#/$defs/ValueEncoding"
+                },
+                "pending": {
+                  "format": "uint64",
+                  "minimum": 0,
+                  "type": "integer"
+                }
+              },
+              "required": [
+                "name",
+                "name_encoding",
+                "pending",
+                "idle_ms"
+              ],
+              "type": "object"
+            },
+            "InputEncoding": {
+              "enum": [
+                "utf8",
+                "base64"
+              ],
+              "type": "string"
+            },
+            "ValueEncoding": {
+              "enum": [
+                "utf8",
+                "base64"
+              ],
+              "type": "string"
+            }
+          },
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "consumers": {
+              "items": {
+                "$ref": "#/$defs/ConsumerInfoOutput"
+              },
+              "type": "array"
+            },
+            "count": {
+              "format": "uint",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "group": {
+              "type": "string"
+            },
+            "group_encoding": {
+              "$ref": "#/$defs/InputEncoding"
+            },
+            "key": {
+              "type": "string"
+            },
+            "key_encoding": {
+              "$ref": "#/$defs/InputEncoding"
+            }
+          },
+          "required": [
+            "key",
+            "key_encoding",
+            "group",
+            "group_encoding",
+            "count",
+            "consumers"
+          ],
+          "title": "XinfoConsumersOutput",
+          "type": "object"
+        },
+        "title": "Inspect Redis Stream Consumers"
+      },
+      "required_access": "read_only",
+      "required_module": null,
+      "requires_raw_opt_in": false
+    },
+    {
+      "bundle": "data_structures",
+      "capability_requirements": {
+        "deployment": "any",
+        "minimum_module_version": null,
+        "minimum_redis_version": "5.0.0",
+        "required_commands": [
+          "XINFO"
+        ],
+        "required_module": null
+      },
+      "name": "redis_xinfo_groups",
+      "output_policy": "budget_guarded",
+      "protocol": {
+        "annotations": {
+          "destructiveHint": false,
+          "idempotentHint": true,
+          "readOnlyHint": true
+        },
+        "description": "Read structured consumer-group metadata for a stream.",
+        "inputSchema": {
+          "$defs": {
+            "InputEncoding": {
+              "enum": [
+                "utf8",
+                "base64"
+              ],
+              "type": "string"
+            }
+          },
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "key": {
+              "description": "Redis key.",
+              "type": "string"
+            },
+            "key_encoding": {
+              "$ref": "#/$defs/InputEncoding",
+              "default": "utf8",
+              "description": "Encoding of `key`."
+            }
+          },
+          "required": [
+            "key"
+          ],
+          "title": "KeyInput",
+          "type": "object"
+        },
+        "name": "redis_xinfo_groups",
+        "outputSchema": {
+          "$defs": {
+            "GroupInfoOutput": {
+              "additionalProperties": false,
+              "properties": {
+                "consumers": {
+                  "format": "uint64",
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                "entries_read": {
+                  "format": "uint64",
+                  "minimum": 0,
+                  "type": [
+                    "integer",
+                    "null"
+                  ]
+                },
+                "lag": {
+                  "format": "uint64",
+                  "minimum": 0,
+                  "type": [
+                    "integer",
+                    "null"
+                  ]
+                },
+                "last_delivered_id": {
+                  "type": "string"
+                },
+                "name": {
+                  "type": "string"
+                },
+                "name_encoding": {
+                  "$ref": "#/$defs/ValueEncoding"
+                },
+                "pending": {
+                  "format": "uint64",
+                  "minimum": 0,
+                  "type": "integer"
+                }
+              },
+              "required": [
+                "name",
+                "name_encoding",
+                "consumers",
+                "pending",
+                "last_delivered_id"
+              ],
+              "type": "object"
+            },
+            "InputEncoding": {
+              "enum": [
+                "utf8",
+                "base64"
+              ],
+              "type": "string"
+            },
+            "ValueEncoding": {
+              "enum": [
+                "utf8",
+                "base64"
+              ],
+              "type": "string"
+            }
+          },
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "count": {
+              "format": "uint",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "groups": {
+              "items": {
+                "$ref": "#/$defs/GroupInfoOutput"
+              },
+              "type": "array"
+            },
+            "key": {
+              "type": "string"
+            },
+            "key_encoding": {
+              "$ref": "#/$defs/InputEncoding"
+            }
+          },
+          "required": [
+            "key",
+            "key_encoding",
+            "count",
+            "groups"
+          ],
+          "title": "XinfoGroupsOutput",
+          "type": "object"
+        },
+        "title": "Inspect Redis Stream Groups"
+      },
+      "required_access": "read_only",
+      "required_module": null,
+      "requires_raw_opt_in": false
+    },
+    {
+      "bundle": "data_structures",
+      "capability_requirements": {
+        "deployment": "any",
+        "minimum_module_version": null,
+        "minimum_redis_version": "5.0.0",
+        "required_commands": [
+          "XINFO"
+        ],
+        "required_module": null
+      },
+      "name": "redis_xinfo_stream",
+      "output_policy": "budget_guarded",
+      "protocol": {
+        "annotations": {
+          "destructiveHint": false,
+          "idempotentHint": true,
+          "readOnlyHint": true
+        },
+        "description": "Read structured stream metadata, including binary-safe first and last entries.",
+        "inputSchema": {
+          "$defs": {
+            "InputEncoding": {
+              "enum": [
+                "utf8",
+                "base64"
+              ],
+              "type": "string"
+            }
+          },
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "key": {
+              "description": "Redis key.",
+              "type": "string"
+            },
+            "key_encoding": {
+              "$ref": "#/$defs/InputEncoding",
+              "default": "utf8",
+              "description": "Encoding of `key`."
+            }
+          },
+          "required": [
+            "key"
+          ],
+          "title": "KeyInput",
+          "type": "object"
+        },
+        "name": "redis_xinfo_stream",
+        "outputSchema": {
+          "$defs": {
+            "InputEncoding": {
+              "enum": [
+                "utf8",
+                "base64"
+              ],
+              "type": "string"
+            },
+            "StreamEntryOutput": {
+              "additionalProperties": false,
+              "properties": {
+                "field_bytes": {
+                  "format": "uint",
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                "field_count": {
+                  "format": "uint",
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                "fields": {
+                  "items": {
+                    "$ref": "#/$defs/StreamFieldOutput"
+                  },
+                  "type": "array"
+                },
+                "fields_omitted": {
+                  "type": "boolean"
+                },
+                "id": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "id",
+                "fields",
+                "field_count",
+                "field_bytes",
+                "fields_omitted"
+              ],
+              "type": "object"
+            },
+            "StreamFieldOutput": {
+              "additionalProperties": false,
+              "properties": {
+                "field": {
+                  "type": "string"
+                },
+                "field_encoding": {
+                  "$ref": "#/$defs/ValueEncoding"
+                },
+                "value": {
+                  "type": "string"
+                },
+                "value_encoding": {
+                  "$ref": "#/$defs/ValueEncoding"
+                }
+              },
+              "required": [
+                "field",
+                "field_encoding",
+                "value",
+                "value_encoding"
+              ],
+              "type": "object"
+            },
+            "ValueEncoding": {
+              "enum": [
+                "utf8",
+                "base64"
+              ],
+              "type": "string"
+            }
+          },
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "entries_added": {
+              "format": "uint64",
+              "minimum": 0,
+              "type": [
+                "integer",
+                "null"
+              ]
+            },
+            "first_entry": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/StreamEntryOutput"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "groups": {
+              "format": "uint64",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "key": {
+              "type": "string"
+            },
+            "key_encoding": {
+              "$ref": "#/$defs/InputEncoding"
+            },
+            "last_entry": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/StreamEntryOutput"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "last_generated_id": {
+              "type": "string"
+            },
+            "length": {
+              "format": "uint64",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "max_deleted_entry_id": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "radix_tree_keys": {
+              "format": "uint64",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "radix_tree_nodes": {
+              "format": "uint64",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "recorded_first_entry_id": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          "required": [
+            "key",
+            "key_encoding",
+            "length",
+            "radix_tree_keys",
+            "radix_tree_nodes",
+            "last_generated_id",
+            "groups"
+          ],
+          "title": "XinfoStreamOutput",
+          "type": "object"
+        },
+        "title": "Inspect Redis Stream"
+      },
+      "required_access": "read_only",
+      "required_module": null,
+      "requires_raw_opt_in": false
+    },
+    {
+      "bundle": "data_structures",
+      "capability_requirements": {
+        "deployment": "any",
+        "minimum_module_version": null,
+        "minimum_redis_version": "5.0.0",
+        "required_commands": [
+          "XLEN",
+          "EXISTS"
+        ],
+        "required_module": null
+      },
+      "name": "redis_xlen",
+      "output_policy": "intrinsically_bounded",
+      "protocol": {
+        "annotations": {
+          "destructiveHint": false,
+          "idempotentHint": true,
+          "readOnlyHint": true
+        },
+        "description": "Read a stream length and distinguish a missing key from an empty stream.",
+        "inputSchema": {
+          "$defs": {
+            "InputEncoding": {
+              "enum": [
+                "utf8",
+                "base64"
+              ],
+              "type": "string"
+            }
+          },
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "key": {
+              "description": "Redis key.",
+              "type": "string"
+            },
+            "key_encoding": {
+              "$ref": "#/$defs/InputEncoding",
+              "default": "utf8",
+              "description": "Encoding of `key`."
+            }
+          },
+          "required": [
+            "key"
+          ],
+          "title": "KeyInput",
+          "type": "object"
+        },
+        "name": "redis_xlen",
+        "outputSchema": {
+          "$defs": {
+            "InputEncoding": {
+              "enum": [
+                "utf8",
+                "base64"
+              ],
+              "type": "string"
+            }
+          },
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "exists": {
+              "type": "boolean"
+            },
+            "key": {
+              "type": "string"
+            },
+            "key_encoding": {
+              "$ref": "#/$defs/InputEncoding"
+            },
+            "length": {
+              "format": "uint64",
+              "minimum": 0,
+              "type": "integer"
+            }
+          },
+          "required": [
+            "key",
+            "key_encoding",
+            "exists",
+            "length"
+          ],
+          "title": "XlenOutput",
+          "type": "object"
+        },
+        "title": "Redis Stream Length"
+      },
+      "required_access": "read_only",
+      "required_module": null,
+      "requires_raw_opt_in": false
+    },
+    {
+      "bundle": "data_structures",
+      "capability_requirements": {
+        "deployment": "any",
+        "minimum_module_version": null,
+        "minimum_redis_version": "5.0.0",
+        "required_commands": [
+          "XPENDING"
+        ],
+        "required_module": null
+      },
+      "name": "redis_xpending",
+      "output_policy": "budget_guarded",
+      "protocol": {
+        "annotations": {
+          "destructiveHint": false,
+          "idempotentHint": true,
+          "readOnlyHint": true
+        },
+        "description": "Read either the fixed XPENDING summary or one bounded pending-entry range.",
+        "inputSchema": {
+          "$defs": {
+            "BinaryInput": {
+              "additionalProperties": false,
+              "properties": {
+                "encoding": {
+                  "$ref": "#/$defs/InputEncoding",
+                  "default": "utf8"
+                },
+                "value": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "value"
+              ],
+              "type": "object"
+            },
+            "InputEncoding": {
+              "enum": [
+                "utf8",
+                "base64"
+              ],
+              "type": "string"
+            },
+            "PendingQuery": {
+              "oneOf": [
+                {
+                  "properties": {
+                    "type": {
+                      "const": "summary",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "type"
+                  ],
+                  "type": "object"
+                },
+                {
+                  "properties": {
+                    "count": {
+                      "default": 100,
+                      "format": "uint",
+                      "minimum": 0,
+                      "type": "integer"
+                    },
+                    "end": {
+                      "$ref": "#/$defs/RangeBound",
+                      "default": {
+                        "type": "positive_infinity"
+                      }
+                    },
+                    "start": {
+                      "$ref": "#/$defs/RangeBound",
+                      "default": {
+                        "type": "negative_infinity"
+                      }
+                    },
+                    "type": {
+                      "const": "entries",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "type"
+                  ],
+                  "type": "object"
+                }
+              ]
+            },
+            "RangeBound": {
+              "oneOf": [
+                {
+                  "properties": {
+                    "type": {
+                      "const": "negative_infinity",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "type"
+                  ],
+                  "type": "object"
+                },
+                {
+                  "properties": {
+                    "type": {
+                      "const": "positive_infinity",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "type"
+                  ],
+                  "type": "object"
+                },
+                {
+                  "properties": {
+                    "id": {
+                      "$ref": "#/$defs/StreamId"
+                    },
+                    "type": {
+                      "const": "inclusive",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "type",
+                    "id"
+                  ],
+                  "type": "object"
+                },
+                {
+                  "properties": {
+                    "id": {
+                      "$ref": "#/$defs/StreamId"
+                    },
+                    "type": {
+                      "const": "exclusive",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "type",
+                    "id"
+                  ],
+                  "type": "object"
+                }
+              ]
+            },
+            "StreamId": {
+              "additionalProperties": false,
+              "properties": {
+                "milliseconds": {
+                  "description": "Millisecond timestamp component.",
+                  "format": "uint64",
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                "sequence": {
+                  "description": "Sequence component within the millisecond.",
+                  "format": "uint64",
+                  "minimum": 0,
+                  "type": "integer"
+                }
+              },
+              "required": [
+                "milliseconds",
+                "sequence"
+              ],
+              "type": "object"
+            }
+          },
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "consumer": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/BinaryInput"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "group": {
+              "$ref": "#/$defs/BinaryInput"
+            },
+            "key": {
+              "type": "string"
+            },
+            "key_encoding": {
+              "$ref": "#/$defs/InputEncoding",
+              "default": "utf8"
+            },
+            "query": {
+              "$ref": "#/$defs/PendingQuery",
+              "default": {
+                "type": "summary"
+              }
+            }
+          },
+          "required": [
+            "key",
+            "group"
+          ],
+          "title": "XpendingInput",
+          "type": "object"
+        },
+        "name": "redis_xpending",
+        "outputSchema": {
+          "$defs": {
+            "InputEncoding": {
+              "enum": [
+                "utf8",
+                "base64"
+              ],
+              "type": "string"
+            },
+            "PendingConsumerOutput": {
+              "additionalProperties": false,
+              "properties": {
+                "count": {
+                  "format": "uint64",
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                "name": {
+                  "type": "string"
+                },
+                "name_encoding": {
+                  "$ref": "#/$defs/ValueEncoding"
+                }
+              },
+              "required": [
+                "name",
+                "name_encoding",
+                "count"
+              ],
+              "type": "object"
+            },
+            "PendingEntryOutput": {
+              "additionalProperties": false,
+              "properties": {
+                "consumer": {
+                  "type": "string"
+                },
+                "consumer_encoding": {
+                  "$ref": "#/$defs/ValueEncoding"
+                },
+                "deliveries": {
+                  "format": "uint64",
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                "id": {
+                  "type": "string"
+                },
+                "idle_ms": {
+                  "format": "uint64",
+                  "minimum": 0,
+                  "type": "integer"
+                }
+              },
+              "required": [
+                "id",
+                "consumer",
+                "consumer_encoding",
+                "idle_ms",
+                "deliveries"
+              ],
+              "type": "object"
+            },
+            "PendingSummaryOutput": {
+              "additionalProperties": false,
+              "properties": {
+                "consumers": {
+                  "items": {
+                    "$ref": "#/$defs/PendingConsumerOutput"
+                  },
+                  "type": "array"
+                },
+                "count": {
+                  "format": "uint64",
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                "greatest_id": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "smallest_id": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                }
+              },
+              "required": [
+                "count",
+                "consumers"
+              ],
+              "type": "object"
+            },
+            "ValueEncoding": {
+              "enum": [
+                "utf8",
+                "base64"
+              ],
+              "type": "string"
+            }
+          },
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "count": {
+              "format": "uint",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "entries": {
+              "items": {
+                "$ref": "#/$defs/PendingEntryOutput"
+              },
+              "type": "array"
+            },
+            "group": {
+              "type": "string"
+            },
+            "group_encoding": {
+              "$ref": "#/$defs/InputEncoding"
+            },
+            "key": {
+              "type": "string"
+            },
+            "key_encoding": {
+              "$ref": "#/$defs/InputEncoding"
+            },
+            "summary": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/PendingSummaryOutput"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          },
+          "required": [
+            "key",
+            "key_encoding",
+            "group",
+            "group_encoding",
+            "entries",
+            "count"
+          ],
+          "title": "XpendingOutput",
+          "type": "object"
+        },
+        "title": "Inspect Redis Stream Pending Entries"
+      },
+      "required_access": "read_only",
+      "required_module": null,
+      "requires_raw_opt_in": false
+    },
+    {
+      "bundle": "data_structures",
+      "capability_requirements": {
+        "deployment": "any",
+        "minimum_module_version": null,
+        "minimum_redis_version": "5.0.0",
+        "required_commands": [
+          "XRANGE"
+        ],
+        "required_module": null
+      },
+      "name": "redis_xrange",
+      "output_policy": "range_paginated",
+      "protocol": {
+        "annotations": {
+          "destructiveHint": false,
+          "idempotentHint": true,
+          "readOnlyHint": true
+        },
+        "description": "Read one bounded page of stream entries with binary-safe fields and an exclusive continuation ID.",
+        "inputSchema": {
+          "$defs": {
+            "InputEncoding": {
+              "enum": [
+                "utf8",
+                "base64"
+              ],
+              "type": "string"
+            },
+            "RangeBound": {
+              "oneOf": [
+                {
+                  "properties": {
+                    "type": {
+                      "const": "negative_infinity",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "type"
+                  ],
+                  "type": "object"
+                },
+                {
+                  "properties": {
+                    "type": {
+                      "const": "positive_infinity",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "type"
+                  ],
+                  "type": "object"
+                },
+                {
+                  "properties": {
+                    "id": {
+                      "$ref": "#/$defs/StreamId"
+                    },
+                    "type": {
+                      "const": "inclusive",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "type",
+                    "id"
+                  ],
+                  "type": "object"
+                },
+                {
+                  "properties": {
+                    "id": {
+                      "$ref": "#/$defs/StreamId"
+                    },
+                    "type": {
+                      "const": "exclusive",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "type",
+                    "id"
+                  ],
+                  "type": "object"
+                }
+              ]
+            },
+            "StreamId": {
+              "additionalProperties": false,
+              "properties": {
+                "milliseconds": {
+                  "description": "Millisecond timestamp component.",
+                  "format": "uint64",
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                "sequence": {
+                  "description": "Sequence component within the millisecond.",
+                  "format": "uint64",
+                  "minimum": 0,
+                  "type": "integer"
+                }
+              },
+              "required": [
+                "milliseconds",
+                "sequence"
+              ],
+              "type": "object"
+            }
+          },
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "count": {
+              "default": 100,
+              "format": "uint",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "key": {
+              "type": "string"
+            },
+            "key_encoding": {
+              "$ref": "#/$defs/InputEncoding",
+              "default": "utf8"
+            },
+            "max": {
+              "$ref": "#/$defs/RangeBound",
+              "default": {
+                "type": "positive_infinity"
+              }
+            },
+            "min": {
+              "$ref": "#/$defs/RangeBound",
+              "default": {
+                "type": "negative_infinity"
+              }
+            }
+          },
+          "required": [
+            "key"
+          ],
+          "title": "RangeInput",
+          "type": "object"
+        },
+        "name": "redis_xrange",
+        "outputSchema": {
+          "$defs": {
+            "InputEncoding": {
+              "enum": [
+                "utf8",
+                "base64"
+              ],
+              "type": "string"
+            },
+            "StreamEntryOutput": {
+              "additionalProperties": false,
+              "properties": {
+                "field_bytes": {
+                  "format": "uint",
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                "field_count": {
+                  "format": "uint",
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                "fields": {
+                  "items": {
+                    "$ref": "#/$defs/StreamFieldOutput"
+                  },
+                  "type": "array"
+                },
+                "fields_omitted": {
+                  "type": "boolean"
+                },
+                "id": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "id",
+                "fields",
+                "field_count",
+                "field_bytes",
+                "fields_omitted"
+              ],
+              "type": "object"
+            },
+            "StreamFieldOutput": {
+              "additionalProperties": false,
+              "properties": {
+                "field": {
+                  "type": "string"
+                },
+                "field_encoding": {
+                  "$ref": "#/$defs/ValueEncoding"
+                },
+                "value": {
+                  "type": "string"
+                },
+                "value_encoding": {
+                  "$ref": "#/$defs/ValueEncoding"
+                }
+              },
+              "required": [
+                "field",
+                "field_encoding",
+                "value",
+                "value_encoding"
+              ],
+              "type": "object"
+            },
+            "StreamPage": {
+              "additionalProperties": false,
+              "properties": {
+                "complete": {
+                  "type": "boolean"
+                },
+                "continuation_exclusive": {
+                  "type": "boolean"
+                },
+                "continuation_id": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "requested": {
+                  "format": "uint",
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                "returned": {
+                  "format": "uint",
+                  "minimum": 0,
+                  "type": "integer"
+                }
+              },
+              "required": [
+                "requested",
+                "returned",
+                "complete",
+                "continuation_exclusive"
+              ],
+              "type": "object"
+            },
+            "ValueEncoding": {
+              "enum": [
+                "utf8",
+                "base64"
+              ],
+              "type": "string"
+            }
+          },
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "direction": {
+              "type": "string"
+            },
+            "entries": {
+              "items": {
+                "$ref": "#/$defs/StreamEntryOutput"
+              },
+              "type": "array"
+            },
+            "key": {
+              "type": "string"
+            },
+            "key_encoding": {
+              "$ref": "#/$defs/InputEncoding"
+            },
+            "page": {
+              "$ref": "#/$defs/StreamPage"
+            }
+          },
+          "required": [
+            "key",
+            "key_encoding",
+            "direction",
+            "entries",
+            "page"
+          ],
+          "title": "RangeOutput",
+          "type": "object"
+        },
+        "title": "Read Redis Stream Range"
+      },
+      "required_access": "read_only",
+      "required_module": null,
+      "requires_raw_opt_in": false
+    },
+    {
+      "bundle": "data_structures",
+      "capability_requirements": {
+        "deployment": "any",
+        "minimum_module_version": null,
+        "minimum_redis_version": "5.0.0",
+        "required_commands": [
+          "XREAD"
+        ],
+        "required_module": null
+      },
+      "name": "redis_xread",
+      "output_policy": "intrinsically_bounded",
+      "protocol": {
+        "annotations": {
+          "destructiveHint": false,
+          "idempotentHint": true,
+          "readOnlyHint": true
+        },
+        "description": "Read one finite, input-bounded page from one or more streams. Optional blocking must finish before the library command timeout.",
+        "inputSchema": {
+          "$defs": {
+            "InputEncoding": {
+              "enum": [
+                "utf8",
+                "base64"
+              ],
+              "type": "string"
+            },
+            "ReadOffset": {
+              "oneOf": [
+                {
+                  "properties": {
+                    "type": {
+                      "const": "latest",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "type"
+                  ],
+                  "type": "object"
+                },
+                {
+                  "properties": {
+                    "id": {
+                      "$ref": "#/$defs/StreamId"
+                    },
+                    "type": {
+                      "const": "explicit",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "type",
+                    "id"
+                  ],
+                  "type": "object"
+                }
+              ]
+            },
+            "ReadTarget": {
+              "additionalProperties": false,
+              "properties": {
+                "key": {
+                  "type": "string"
+                },
+                "key_encoding": {
+                  "$ref": "#/$defs/InputEncoding",
+                  "default": "utf8"
+                },
+                "offset": {
+                  "$ref": "#/$defs/ReadOffset"
+                }
+              },
+              "required": [
+                "key",
+                "offset"
+              ],
+              "type": "object"
+            },
+            "StreamId": {
+              "additionalProperties": false,
+              "properties": {
+                "milliseconds": {
+                  "description": "Millisecond timestamp component.",
+                  "format": "uint64",
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                "sequence": {
+                  "description": "Sequence component within the millisecond.",
+                  "format": "uint64",
+                  "minimum": 0,
+                  "type": "integer"
+                }
+              },
+              "required": [
+                "milliseconds",
+                "sequence"
+              ],
+              "type": "object"
+            }
+          },
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "block_ms": {
+              "default": null,
+              "format": "uint64",
+              "minimum": 0,
+              "type": [
+                "integer",
+                "null"
+              ]
+            },
+            "count": {
+              "default": 100,
+              "format": "uint",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "streams": {
+              "items": {
+                "$ref": "#/$defs/ReadTarget"
+              },
+              "type": "array"
+            }
+          },
+          "required": [
+            "streams"
+          ],
+          "title": "XreadInput",
+          "type": "object"
+        },
+        "name": "redis_xread",
+        "outputSchema": {
+          "$defs": {
+            "StreamBatchOutput": {
+              "additionalProperties": false,
+              "properties": {
+                "continuation_id": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "count": {
+                  "format": "uint",
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                "entries": {
+                  "items": {
+                    "$ref": "#/$defs/StreamEntryOutput"
+                  },
+                  "type": "array"
+                },
+                "key": {
+                  "type": "string"
+                },
+                "key_encoding": {
+                  "$ref": "#/$defs/ValueEncoding"
+                }
+              },
+              "required": [
+                "key",
+                "key_encoding",
+                "entries",
+                "count"
+              ],
+              "type": "object"
+            },
+            "StreamEntryOutput": {
+              "additionalProperties": false,
+              "properties": {
+                "field_bytes": {
+                  "format": "uint",
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                "field_count": {
+                  "format": "uint",
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                "fields": {
+                  "items": {
+                    "$ref": "#/$defs/StreamFieldOutput"
+                  },
+                  "type": "array"
+                },
+                "fields_omitted": {
+                  "type": "boolean"
+                },
+                "id": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "id",
+                "fields",
+                "field_count",
+                "field_bytes",
+                "fields_omitted"
+              ],
+              "type": "object"
+            },
+            "StreamFieldOutput": {
+              "additionalProperties": false,
+              "properties": {
+                "field": {
+                  "type": "string"
+                },
+                "field_encoding": {
+                  "$ref": "#/$defs/ValueEncoding"
+                },
+                "value": {
+                  "type": "string"
+                },
+                "value_encoding": {
+                  "$ref": "#/$defs/ValueEncoding"
+                }
+              },
+              "required": [
+                "field",
+                "field_encoding",
+                "value",
+                "value_encoding"
+              ],
+              "type": "object"
+            },
+            "ValueEncoding": {
+              "enum": [
+                "utf8",
+                "base64"
+              ],
+              "type": "string"
+            }
+          },
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "count": {
+              "format": "uint",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "streams": {
+              "items": {
+                "$ref": "#/$defs/StreamBatchOutput"
+              },
+              "type": "array"
+            },
+            "timed_out": {
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "timed_out",
+            "count",
+            "streams"
+          ],
+          "title": "XreadOutput",
+          "type": "object"
+        },
+        "title": "Read Redis Streams"
+      },
+      "required_access": "read_only",
+      "required_module": null,
+      "requires_raw_opt_in": false
+    },
+    {
+      "bundle": "data_structures",
+      "capability_requirements": {
+        "deployment": "any",
+        "minimum_module_version": null,
+        "minimum_redis_version": "5.0.0",
+        "required_commands": [
+          "XREADGROUP"
+        ],
+        "required_module": null
+      },
+      "name": "redis_xreadgroup",
+      "output_policy": "intrinsically_bounded",
+      "protocol": {
+        "annotations": {
+          "destructiveHint": false
+        },
+        "description": "Read one finite consumer-group page. Large field payloads are omitted after success while entry IDs remain visible.",
+        "inputSchema": {
+          "$defs": {
+            "BinaryInput": {
+              "additionalProperties": false,
+              "properties": {
+                "encoding": {
+                  "$ref": "#/$defs/InputEncoding",
+                  "default": "utf8"
+                },
+                "value": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "value"
+              ],
+              "type": "object"
+            },
+            "GroupReadOffset": {
+              "oneOf": [
+                {
+                  "properties": {
+                    "type": {
+                      "const": "new",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "type"
+                  ],
+                  "type": "object"
+                },
+                {
+                  "properties": {
+                    "id": {
+                      "$ref": "#/$defs/StreamId"
+                    },
+                    "type": {
+                      "const": "explicit",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "type",
+                    "id"
+                  ],
+                  "type": "object"
+                }
+              ]
+            },
+            "GroupReadTarget": {
+              "additionalProperties": false,
+              "properties": {
+                "key": {
+                  "type": "string"
+                },
+                "key_encoding": {
+                  "$ref": "#/$defs/InputEncoding",
+                  "default": "utf8"
+                },
+                "offset": {
+                  "$ref": "#/$defs/GroupReadOffset"
+                }
+              },
+              "required": [
+                "key",
+                "offset"
+              ],
+              "type": "object"
+            },
+            "InputEncoding": {
+              "enum": [
+                "utf8",
+                "base64"
+              ],
+              "type": "string"
+            },
+            "StreamId": {
+              "additionalProperties": false,
+              "properties": {
+                "milliseconds": {
+                  "description": "Millisecond timestamp component.",
+                  "format": "uint64",
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                "sequence": {
+                  "description": "Sequence component within the millisecond.",
+                  "format": "uint64",
+                  "minimum": 0,
+                  "type": "integer"
+                }
+              },
+              "required": [
+                "milliseconds",
+                "sequence"
+              ],
+              "type": "object"
+            }
+          },
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "block_ms": {
+              "default": null,
+              "format": "uint64",
+              "minimum": 0,
+              "type": [
+                "integer",
+                "null"
+              ]
+            },
+            "consumer": {
+              "$ref": "#/$defs/BinaryInput"
+            },
+            "count": {
+              "default": 100,
+              "format": "uint",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "group": {
+              "$ref": "#/$defs/BinaryInput"
+            },
+            "max_returned_bytes": {
+              "default": 65536,
+              "format": "uint",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "no_ack": {
+              "default": false,
+              "type": "boolean"
+            },
+            "streams": {
+              "items": {
+                "$ref": "#/$defs/GroupReadTarget"
+              },
+              "type": "array"
+            }
+          },
+          "required": [
+            "group",
+            "consumer",
+            "streams"
+          ],
+          "title": "XreadgroupInput",
+          "type": "object"
+        },
+        "name": "redis_xreadgroup",
+        "outputSchema": {
+          "$defs": {
+            "InputEncoding": {
+              "enum": [
+                "utf8",
+                "base64"
+              ],
+              "type": "string"
+            },
+            "StreamBatchOutput": {
+              "additionalProperties": false,
+              "properties": {
+                "continuation_id": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "count": {
+                  "format": "uint",
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                "entries": {
+                  "items": {
+                    "$ref": "#/$defs/StreamEntryOutput"
+                  },
+                  "type": "array"
+                },
+                "key": {
+                  "type": "string"
+                },
+                "key_encoding": {
+                  "$ref": "#/$defs/ValueEncoding"
+                }
+              },
+              "required": [
+                "key",
+                "key_encoding",
+                "entries",
+                "count"
+              ],
+              "type": "object"
+            },
+            "StreamEntryOutput": {
+              "additionalProperties": false,
+              "properties": {
+                "field_bytes": {
+                  "format": "uint",
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                "field_count": {
+                  "format": "uint",
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                "fields": {
+                  "items": {
+                    "$ref": "#/$defs/StreamFieldOutput"
+                  },
+                  "type": "array"
+                },
+                "fields_omitted": {
+                  "type": "boolean"
+                },
+                "id": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "id",
+                "fields",
+                "field_count",
+                "field_bytes",
+                "fields_omitted"
+              ],
+              "type": "object"
+            },
+            "StreamFieldOutput": {
+              "additionalProperties": false,
+              "properties": {
+                "field": {
+                  "type": "string"
+                },
+                "field_encoding": {
+                  "$ref": "#/$defs/ValueEncoding"
+                },
+                "value": {
+                  "type": "string"
+                },
+                "value_encoding": {
+                  "$ref": "#/$defs/ValueEncoding"
+                }
+              },
+              "required": [
+                "field",
+                "field_encoding",
+                "value",
+                "value_encoding"
+              ],
+              "type": "object"
+            },
+            "ValueEncoding": {
+              "enum": [
+                "utf8",
+                "base64"
+              ],
+              "type": "string"
+            }
+          },
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "consumer": {
+              "type": "string"
+            },
+            "consumer_encoding": {
+              "$ref": "#/$defs/InputEncoding"
+            },
+            "count": {
+              "format": "uint",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "field_bytes": {
+              "format": "uint",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "fields_omitted": {
+              "type": "boolean"
+            },
+            "group": {
+              "type": "string"
+            },
+            "group_encoding": {
+              "$ref": "#/$defs/InputEncoding"
+            },
+            "streams": {
+              "items": {
+                "$ref": "#/$defs/StreamBatchOutput"
+              },
+              "type": "array"
+            },
+            "timed_out": {
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "group",
+            "group_encoding",
+            "consumer",
+            "consumer_encoding",
+            "timed_out",
+            "count",
+            "streams",
+            "field_bytes",
+            "fields_omitted"
+          ],
+          "title": "XreadgroupOutput",
+          "type": "object"
+        },
+        "title": "Read Redis Stream Group"
+      },
+      "required_access": "read_write",
+      "required_module": null,
+      "requires_raw_opt_in": false
+    },
+    {
+      "bundle": "data_structures",
+      "capability_requirements": {
+        "deployment": "any",
+        "minimum_module_version": null,
+        "minimum_redis_version": "5.0.0",
+        "required_commands": [
+          "XREVRANGE"
+        ],
+        "required_module": null
+      },
+      "name": "redis_xrevrange",
+      "output_policy": "range_paginated",
+      "protocol": {
+        "annotations": {
+          "destructiveHint": false,
+          "idempotentHint": true,
+          "readOnlyHint": true
+        },
+        "description": "Read one bounded page of stream entries with binary-safe fields and an exclusive continuation ID.",
+        "inputSchema": {
+          "$defs": {
+            "InputEncoding": {
+              "enum": [
+                "utf8",
+                "base64"
+              ],
+              "type": "string"
+            },
+            "RangeBound": {
+              "oneOf": [
+                {
+                  "properties": {
+                    "type": {
+                      "const": "negative_infinity",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "type"
+                  ],
+                  "type": "object"
+                },
+                {
+                  "properties": {
+                    "type": {
+                      "const": "positive_infinity",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "type"
+                  ],
+                  "type": "object"
+                },
+                {
+                  "properties": {
+                    "id": {
+                      "$ref": "#/$defs/StreamId"
+                    },
+                    "type": {
+                      "const": "inclusive",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "type",
+                    "id"
+                  ],
+                  "type": "object"
+                },
+                {
+                  "properties": {
+                    "id": {
+                      "$ref": "#/$defs/StreamId"
+                    },
+                    "type": {
+                      "const": "exclusive",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "type",
+                    "id"
+                  ],
+                  "type": "object"
+                }
+              ]
+            },
+            "StreamId": {
+              "additionalProperties": false,
+              "properties": {
+                "milliseconds": {
+                  "description": "Millisecond timestamp component.",
+                  "format": "uint64",
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                "sequence": {
+                  "description": "Sequence component within the millisecond.",
+                  "format": "uint64",
+                  "minimum": 0,
+                  "type": "integer"
+                }
+              },
+              "required": [
+                "milliseconds",
+                "sequence"
+              ],
+              "type": "object"
+            }
+          },
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "count": {
+              "default": 100,
+              "format": "uint",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "key": {
+              "type": "string"
+            },
+            "key_encoding": {
+              "$ref": "#/$defs/InputEncoding",
+              "default": "utf8"
+            },
+            "max": {
+              "$ref": "#/$defs/RangeBound",
+              "default": {
+                "type": "positive_infinity"
+              }
+            },
+            "min": {
+              "$ref": "#/$defs/RangeBound",
+              "default": {
+                "type": "negative_infinity"
+              }
+            }
+          },
+          "required": [
+            "key"
+          ],
+          "title": "RangeInput",
+          "type": "object"
+        },
+        "name": "redis_xrevrange",
+        "outputSchema": {
+          "$defs": {
+            "InputEncoding": {
+              "enum": [
+                "utf8",
+                "base64"
+              ],
+              "type": "string"
+            },
+            "StreamEntryOutput": {
+              "additionalProperties": false,
+              "properties": {
+                "field_bytes": {
+                  "format": "uint",
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                "field_count": {
+                  "format": "uint",
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                "fields": {
+                  "items": {
+                    "$ref": "#/$defs/StreamFieldOutput"
+                  },
+                  "type": "array"
+                },
+                "fields_omitted": {
+                  "type": "boolean"
+                },
+                "id": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "id",
+                "fields",
+                "field_count",
+                "field_bytes",
+                "fields_omitted"
+              ],
+              "type": "object"
+            },
+            "StreamFieldOutput": {
+              "additionalProperties": false,
+              "properties": {
+                "field": {
+                  "type": "string"
+                },
+                "field_encoding": {
+                  "$ref": "#/$defs/ValueEncoding"
+                },
+                "value": {
+                  "type": "string"
+                },
+                "value_encoding": {
+                  "$ref": "#/$defs/ValueEncoding"
+                }
+              },
+              "required": [
+                "field",
+                "field_encoding",
+                "value",
+                "value_encoding"
+              ],
+              "type": "object"
+            },
+            "StreamPage": {
+              "additionalProperties": false,
+              "properties": {
+                "complete": {
+                  "type": "boolean"
+                },
+                "continuation_exclusive": {
+                  "type": "boolean"
+                },
+                "continuation_id": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "requested": {
+                  "format": "uint",
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                "returned": {
+                  "format": "uint",
+                  "minimum": 0,
+                  "type": "integer"
+                }
+              },
+              "required": [
+                "requested",
+                "returned",
+                "complete",
+                "continuation_exclusive"
+              ],
+              "type": "object"
+            },
+            "ValueEncoding": {
+              "enum": [
+                "utf8",
+                "base64"
+              ],
+              "type": "string"
+            }
+          },
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "direction": {
+              "type": "string"
+            },
+            "entries": {
+              "items": {
+                "$ref": "#/$defs/StreamEntryOutput"
+              },
+              "type": "array"
+            },
+            "key": {
+              "type": "string"
+            },
+            "key_encoding": {
+              "$ref": "#/$defs/InputEncoding"
+            },
+            "page": {
+              "$ref": "#/$defs/StreamPage"
+            }
+          },
+          "required": [
+            "key",
+            "key_encoding",
+            "direction",
+            "entries",
+            "page"
+          ],
+          "title": "RangeOutput",
+          "type": "object"
+        },
+        "title": "Read Redis Stream Reverse Range"
+      },
+      "required_access": "read_only",
+      "required_module": null,
+      "requires_raw_opt_in": false
+    },
+    {
+      "bundle": "data_structures",
+      "capability_requirements": {
+        "deployment": "any",
+        "minimum_module_version": null,
+        "minimum_redis_version": "5.0.0",
+        "required_commands": [
+          "XTRIM"
+        ],
+        "required_module": null
+      },
+      "name": "redis_xtrim",
+      "output_policy": "intrinsically_bounded",
+      "protocol": {
+        "annotations": {
+          "idempotentHint": true
+        },
+        "description": "Permanently trim a stream by MAXLEN or MINID. Requires full access.",
+        "inputSchema": {
+          "$defs": {
+            "InputEncoding": {
+              "enum": [
+                "utf8",
+                "base64"
+              ],
+              "type": "string"
+            },
+            "StreamId": {
+              "additionalProperties": false,
+              "properties": {
+                "milliseconds": {
+                  "description": "Millisecond timestamp component.",
+                  "format": "uint64",
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                "sequence": {
+                  "description": "Sequence component within the millisecond.",
+                  "format": "uint64",
+                  "minimum": 0,
+                  "type": "integer"
+                }
+              },
+              "required": [
+                "milliseconds",
+                "sequence"
+              ],
+              "type": "object"
+            },
+            "StreamTrim": {
+              "oneOf": [
+                {
+                  "properties": {
+                    "approximate": {
+                      "default": false,
+                      "type": "boolean"
+                    },
+                    "limit": {
+                      "default": null,
+                      "format": "uint64",
+                      "minimum": 0,
+                      "type": [
+                        "integer",
+                        "null"
+                      ]
+                    },
+                    "threshold": {
+                      "format": "uint64",
+                      "minimum": 0,
+                      "type": "integer"
+                    },
+                    "type": {
+                      "const": "max_len",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "type",
+                    "threshold"
+                  ],
+                  "type": "object"
+                },
+                {
+                  "properties": {
+                    "approximate": {
+                      "default": false,
+                      "type": "boolean"
+                    },
+                    "limit": {
+                      "default": null,
+                      "format": "uint64",
+                      "minimum": 0,
+                      "type": [
+                        "integer",
+                        "null"
+                      ]
+                    },
+                    "threshold": {
+                      "$ref": "#/$defs/StreamId"
+                    },
+                    "type": {
+                      "const": "min_id",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "type",
+                    "threshold"
+                  ],
+                  "type": "object"
+                }
+              ]
+            }
+          },
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "key": {
+              "type": "string"
+            },
+            "key_encoding": {
+              "$ref": "#/$defs/InputEncoding",
+              "default": "utf8"
+            },
+            "trim": {
+              "$ref": "#/$defs/StreamTrim"
+            }
+          },
+          "required": [
+            "key",
+            "trim"
+          ],
+          "title": "XtrimInput",
+          "type": "object"
+        },
+        "name": "redis_xtrim",
+        "outputSchema": {
+          "$defs": {
+            "InputEncoding": {
+              "enum": [
+                "utf8",
+                "base64"
+              ],
+              "type": "string"
+            },
+            "StreamId": {
+              "additionalProperties": false,
+              "properties": {
+                "milliseconds": {
+                  "description": "Millisecond timestamp component.",
+                  "format": "uint64",
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                "sequence": {
+                  "description": "Sequence component within the millisecond.",
+                  "format": "uint64",
+                  "minimum": 0,
+                  "type": "integer"
+                }
+              },
+              "required": [
+                "milliseconds",
+                "sequence"
+              ],
+              "type": "object"
+            },
+            "StreamTrim": {
+              "oneOf": [
+                {
+                  "properties": {
+                    "approximate": {
+                      "default": false,
+                      "type": "boolean"
+                    },
+                    "limit": {
+                      "default": null,
+                      "format": "uint64",
+                      "minimum": 0,
+                      "type": [
+                        "integer",
+                        "null"
+                      ]
+                    },
+                    "threshold": {
+                      "format": "uint64",
+                      "minimum": 0,
+                      "type": "integer"
+                    },
+                    "type": {
+                      "const": "max_len",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "type",
+                    "threshold"
+                  ],
+                  "type": "object"
+                },
+                {
+                  "properties": {
+                    "approximate": {
+                      "default": false,
+                      "type": "boolean"
+                    },
+                    "limit": {
+                      "default": null,
+                      "format": "uint64",
+                      "minimum": 0,
+                      "type": [
+                        "integer",
+                        "null"
+                      ]
+                    },
+                    "threshold": {
+                      "$ref": "#/$defs/StreamId"
+                    },
+                    "type": {
+                      "const": "min_id",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "type",
+                    "threshold"
+                  ],
+                  "type": "object"
+                }
+              ]
+            }
+          },
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "key": {
+              "type": "string"
+            },
+            "key_encoding": {
+              "$ref": "#/$defs/InputEncoding"
+            },
+            "removed": {
+              "format": "uint64",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "trim": {
+              "$ref": "#/$defs/StreamTrim"
+            }
+          },
+          "required": [
+            "key",
+            "key_encoding",
+            "removed",
+            "trim"
+          ],
+          "title": "XtrimOutput",
+          "type": "object"
+        },
+        "title": "Trim Redis Stream"
+      },
+      "required_access": "full",
+      "required_module": null,
+      "requires_raw_opt_in": false
+    },
+    {
+      "bundle": "data_structures",
+      "capability_requirements": {
+        "deployment": "any",
+        "minimum_module_version": null,
         "minimum_redis_version": "6.2.0",
         "required_commands": [
           "ZADD"
@@ -15315,6 +19613,357 @@
       "field_added": true,
       "key": "doc:1",
       "stored": true
+    },
+    "redis_xack": {
+      "acknowledged": 1,
+      "group": "workers",
+      "group_encoding": "utf8",
+      "key": "events",
+      "key_encoding": "utf8",
+      "requested": 1
+    },
+    "redis_xadd": {
+      "added": true,
+      "field_count": 1,
+      "id": "2-0",
+      "key": "events",
+      "key_encoding": "utf8"
+    },
+    "redis_xautoclaim": {
+      "consumer": "worker-2",
+      "consumer_encoding": "utf8",
+      "count": 1,
+      "deleted_ids": [],
+      "entries": [
+        {
+          "field_bytes": 12,
+          "field_count": 1,
+          "fields": [
+            {
+              "field": "event",
+              "field_encoding": "utf8",
+              "value": "created",
+              "value_encoding": "utf8"
+            }
+          ],
+          "fields_omitted": false,
+          "id": "1-0"
+        }
+      ],
+      "field_bytes": 12,
+      "fields_omitted": false,
+      "group": "workers",
+      "group_encoding": "utf8",
+      "ids": [
+        "1-0"
+      ],
+      "just_id": false,
+      "key": "events",
+      "key_encoding": "utf8",
+      "next_start_id": "0-0"
+    },
+    "redis_xclaim": {
+      "consumer": "worker-2",
+      "consumer_encoding": "utf8",
+      "count": 1,
+      "entries": [
+        {
+          "field_bytes": 12,
+          "field_count": 1,
+          "fields": [
+            {
+              "field": "event",
+              "field_encoding": "utf8",
+              "value": "created",
+              "value_encoding": "utf8"
+            }
+          ],
+          "fields_omitted": false,
+          "id": "1-0"
+        }
+      ],
+      "field_bytes": 12,
+      "fields_omitted": false,
+      "group": "workers",
+      "group_encoding": "utf8",
+      "ids": [
+        "1-0"
+      ],
+      "just_id": false,
+      "key": "events",
+      "key_encoding": "utf8"
+    },
+    "redis_xdel": {
+      "deleted": 1,
+      "key": "events",
+      "key_encoding": "utf8",
+      "requested": 1
+    },
+    "redis_xgroup_create": {
+      "applied": true,
+      "group": "workers",
+      "group_encoding": "utf8",
+      "key": "events",
+      "key_encoding": "utf8"
+    },
+    "redis_xgroup_createconsumer": {
+      "consumer": "worker-1",
+      "consumer_encoding": "utf8",
+      "created": true,
+      "group": "workers",
+      "group_encoding": "utf8",
+      "key": "events",
+      "key_encoding": "utf8"
+    },
+    "redis_xgroup_delconsumer": {
+      "consumer": "worker-1",
+      "consumer_encoding": "utf8",
+      "group": "workers",
+      "group_encoding": "utf8",
+      "key": "events",
+      "key_encoding": "utf8",
+      "pending_deleted": 1
+    },
+    "redis_xgroup_destroy": {
+      "applied": true,
+      "group": "workers",
+      "group_encoding": "utf8",
+      "key": "events",
+      "key_encoding": "utf8"
+    },
+    "redis_xgroup_setid": {
+      "applied": true,
+      "group": "workers",
+      "group_encoding": "utf8",
+      "key": "events",
+      "key_encoding": "utf8"
+    },
+    "redis_xinfo_consumers": {
+      "consumers": [
+        {
+          "idle_ms": 25,
+          "inactive_ms": 10,
+          "name": "worker-1",
+          "name_encoding": "utf8",
+          "pending": 1
+        }
+      ],
+      "count": 1,
+      "group": "workers",
+      "group_encoding": "utf8",
+      "key": "events",
+      "key_encoding": "utf8"
+    },
+    "redis_xinfo_groups": {
+      "count": 1,
+      "groups": [
+        {
+          "consumers": 1,
+          "entries_read": 1,
+          "lag": 1,
+          "last_delivered_id": "1-0",
+          "name": "workers",
+          "name_encoding": "utf8",
+          "pending": 1
+        }
+      ],
+      "key": "events",
+      "key_encoding": "utf8"
+    },
+    "redis_xinfo_stream": {
+      "entries_added": 2,
+      "first_entry": {
+        "field_bytes": 12,
+        "field_count": 1,
+        "fields": [
+          {
+            "field": "event",
+            "field_encoding": "utf8",
+            "value": "created",
+            "value_encoding": "utf8"
+          }
+        ],
+        "fields_omitted": false,
+        "id": "1-0"
+      },
+      "groups": 1,
+      "key": "events",
+      "key_encoding": "utf8",
+      "last_entry": {
+        "field_bytes": 12,
+        "field_count": 1,
+        "fields": [
+          {
+            "field": "event",
+            "field_encoding": "utf8",
+            "value": "updated",
+            "value_encoding": "utf8"
+          }
+        ],
+        "fields_omitted": false,
+        "id": "2-0"
+      },
+      "last_generated_id": "2-0",
+      "length": 2,
+      "max_deleted_entry_id": "0-0",
+      "radix_tree_keys": 1,
+      "radix_tree_nodes": 2,
+      "recorded_first_entry_id": "1-0"
+    },
+    "redis_xlen": {
+      "exists": true,
+      "key": "events",
+      "key_encoding": "utf8",
+      "length": 2
+    },
+    "redis_xpending": {
+      "count": 1,
+      "entries": [],
+      "group": "workers",
+      "group_encoding": "utf8",
+      "key": "events",
+      "key_encoding": "utf8",
+      "summary": {
+        "consumers": [
+          {
+            "count": 1,
+            "name": "worker-1",
+            "name_encoding": "utf8"
+          }
+        ],
+        "count": 1,
+        "greatest_id": "1-0",
+        "smallest_id": "1-0"
+      }
+    },
+    "redis_xrange": {
+      "direction": "forward",
+      "entries": [
+        {
+          "field_bytes": 12,
+          "field_count": 1,
+          "fields": [
+            {
+              "field": "event",
+              "field_encoding": "utf8",
+              "value": "created",
+              "value_encoding": "utf8"
+            }
+          ],
+          "fields_omitted": false,
+          "id": "1-0"
+        }
+      ],
+      "key": "events",
+      "key_encoding": "utf8",
+      "page": {
+        "complete": true,
+        "continuation_exclusive": true,
+        "continuation_id": null,
+        "requested": 10,
+        "returned": 1
+      }
+    },
+    "redis_xread": {
+      "count": 1,
+      "streams": [
+        {
+          "continuation_id": "1-0",
+          "count": 1,
+          "entries": [
+            {
+              "field_bytes": 12,
+              "field_count": 1,
+              "fields": [
+                {
+                  "field": "event",
+                  "field_encoding": "utf8",
+                  "value": "created",
+                  "value_encoding": "utf8"
+                }
+              ],
+              "fields_omitted": false,
+              "id": "1-0"
+            }
+          ],
+          "key": "events",
+          "key_encoding": "utf8"
+        }
+      ],
+      "timed_out": false
+    },
+    "redis_xreadgroup": {
+      "consumer": "worker-1",
+      "consumer_encoding": "utf8",
+      "count": 1,
+      "field_bytes": 12,
+      "fields_omitted": false,
+      "group": "workers",
+      "group_encoding": "utf8",
+      "streams": [
+        {
+          "continuation_id": "1-0",
+          "count": 1,
+          "entries": [
+            {
+              "field_bytes": 12,
+              "field_count": 1,
+              "fields": [
+                {
+                  "field": "event",
+                  "field_encoding": "utf8",
+                  "value": "created",
+                  "value_encoding": "utf8"
+                }
+              ],
+              "fields_omitted": false,
+              "id": "1-0"
+            }
+          ],
+          "key": "events",
+          "key_encoding": "utf8"
+        }
+      ],
+      "timed_out": false
+    },
+    "redis_xrevrange": {
+      "direction": "reverse",
+      "entries": [
+        {
+          "field_bytes": 12,
+          "field_count": 1,
+          "fields": [
+            {
+              "field": "event",
+              "field_encoding": "utf8",
+              "value": "created",
+              "value_encoding": "utf8"
+            }
+          ],
+          "fields_omitted": false,
+          "id": "1-0"
+        }
+      ],
+      "key": "events",
+      "key_encoding": "utf8",
+      "page": {
+        "complete": true,
+        "continuation_exclusive": true,
+        "continuation_id": null,
+        "requested": 10,
+        "returned": 1
+      }
+    },
+    "redis_xtrim": {
+      "key": "events",
+      "key_encoding": "utf8",
+      "removed": 1,
+      "trim": {
+        "approximate": true,
+        "limit": null,
+        "threshold": 100,
+        "type": "max_len"
+      }
     },
     "redis_zadd": {
       "affected": 1,

@@ -958,6 +958,21 @@ async fn live_list_family_preserves_order_binary_values_and_nil_semantics() {
             .expect("structured missing LLEN");
         assert_eq!(missing_length["exists"], false);
         assert_eq!(missing_length["length"], 0);
+        let not_added = client
+            .call_tool(
+                "redis_xadd",
+                serde_json::json!({
+                    "key": missing,
+                    "no_mkstream": true,
+                    "fields": [{"field": "event", "value": "ignored"}]
+                }),
+            )
+            .await
+            .expect("XADD NOMKSTREAM on a missing key")
+            .structured_content
+            .expect("structured XADD NOMKSTREAM");
+        assert_eq!(not_added["added"], false);
+        assert_eq!(not_added["id"], serde_json::Value::Null);
         let missing_range = client
             .call_tool("redis_lrange", serde_json::json!({"key": missing}))
             .await
@@ -1709,6 +1724,407 @@ async fn live_sorted_set_family_preserves_exact_scores_ranges_binary_and_nil_sem
             )
             .await
             .expect("clean up sorted-set family");
+    }
+}
+
+#[tokio::test]
+async fn live_stream_family_is_bounded_binary_safe_and_group_aware_in_resp2_and_resp3() {
+    let Some(redis) = TestRedis::start().await else {
+        return;
+    };
+
+    for protocol in ["resp2", "resp3"] {
+        let client = router_client(&with_protocol(&redis.url, protocol), AccessMode::Full).await;
+        let stream = test_key(&format!("stream-family:{protocol}"));
+        let missing = test_key(&format!("stream-family:{protocol}:missing"));
+        let wrong_type = test_key(&format!("stream-family:{protocol}:wrong-type"));
+        let group = "/g==";
+        let consumer_one = "/Q==";
+        let consumer_two = "/A==";
+
+        let missing_length = client
+            .call_tool("redis_xlen", serde_json::json!({"key": missing}))
+            .await
+            .expect("missing XLEN")
+            .structured_content
+            .expect("structured missing XLEN");
+        assert_eq!(missing_length["exists"], false);
+        assert_eq!(missing_length["length"], 0);
+
+        for (milliseconds, value, value_encoding) in [
+            (1, "created", "utf8"),
+            (2, "/wA=", "base64"),
+            (3, "updated", "utf8"),
+        ] {
+            let added = client
+                .call_tool(
+                    "redis_xadd",
+                    serde_json::json!({
+                        "key": stream,
+                        "id": {"type": "explicit", "id": {"milliseconds": milliseconds, "sequence": 0}},
+                        "fields": [{
+                            "field": "/g==",
+                            "field_encoding": "base64",
+                            "value": value,
+                            "value_encoding": value_encoding
+                        }]
+                    }),
+                )
+                .await
+                .expect("XADD")
+                .structured_content
+                .expect("structured XADD");
+            assert_eq!(added["added"], true);
+            assert_eq!(added["id"], format!("{milliseconds}-0"));
+        }
+
+        let length = client
+            .call_tool("redis_xlen", serde_json::json!({"key": stream}))
+            .await
+            .expect("XLEN")
+            .structured_content
+            .expect("structured XLEN");
+        assert_eq!(length["exists"], true);
+        assert_eq!(length["length"], 3);
+
+        let range = client
+            .call_tool(
+                "redis_xrange",
+                serde_json::json!({"key": stream, "count": 2}),
+            )
+            .await
+            .expect("XRANGE")
+            .structured_content
+            .expect("structured XRANGE");
+        assert_eq!(range["page"]["complete"], false);
+        assert_eq!(range["page"]["continuation_id"], "2-0");
+        assert_eq!(range["entries"][0]["fields"][0]["field_encoding"], "base64");
+        assert_eq!(range["entries"][1]["fields"][0]["value_encoding"], "base64");
+        assert_eq!(range["entries"][1]["fields"][0]["value"], "/wA=");
+
+        let reverse = client
+            .call_tool(
+                "redis_xrevrange",
+                serde_json::json!({"key": stream, "count": 2}),
+            )
+            .await
+            .expect("XREVRANGE")
+            .structured_content
+            .expect("structured XREVRANGE");
+        assert_eq!(reverse["entries"][0]["id"], "3-0");
+        assert_eq!(reverse["page"]["continuation_id"], "2-0");
+
+        let read = client
+            .call_tool(
+                "redis_xread",
+                serde_json::json!({
+                    "streams": [{
+                        "key": stream,
+                        "offset": {"type": "explicit", "id": {"milliseconds": 1, "sequence": 0}}
+                    }],
+                    "count": 2
+                }),
+            )
+            .await
+            .expect("XREAD")
+            .structured_content
+            .expect("structured XREAD");
+        assert_eq!(read["count"], 2);
+        assert_eq!(read["streams"][0]["continuation_id"], "3-0");
+
+        let timed = client
+            .call_tool(
+                "redis_xread",
+                serde_json::json!({
+                    "streams": [{"key": missing, "offset": {"type": "latest"}}],
+                    "count": 1,
+                    "block_ms": 20
+                }),
+            )
+            .await
+            .expect("finite blocking XREAD")
+            .structured_content
+            .expect("structured finite XREAD");
+        assert_eq!(timed["timed_out"], true);
+        assert_eq!(timed["streams"], serde_json::json!([]));
+
+        let created = client
+            .call_tool(
+                "redis_xgroup_create",
+                serde_json::json!({
+                    "key": stream,
+                    "group": {"value": group, "encoding": "base64"},
+                    "id": {"type": "beginning"}
+                }),
+            )
+            .await
+            .expect("XGROUP CREATE")
+            .structured_content
+            .expect("structured XGROUP CREATE");
+        assert_eq!(created["applied"], true);
+
+        let create_consumer = client
+            .call_tool(
+                "redis_xgroup_createconsumer",
+                serde_json::json!({
+                    "key": stream,
+                    "group": {"value": group, "encoding": "base64"},
+                    "consumer": {"value": consumer_one, "encoding": "base64"}
+                }),
+            )
+            .await
+            .expect("XGROUP CREATECONSUMER")
+            .structured_content
+            .expect("structured XGROUP CREATECONSUMER");
+        assert_eq!(create_consumer["created"], true);
+
+        let groups = client
+            .call_tool("redis_xinfo_groups", serde_json::json!({"key": stream}))
+            .await
+            .expect("XINFO GROUPS")
+            .structured_content
+            .expect("structured XINFO GROUPS");
+        assert_eq!(groups["groups"][0]["name"], group);
+        assert_eq!(groups["groups"][0]["name_encoding"], "base64");
+
+        let consumers_result = client
+            .call_tool(
+                "redis_xinfo_consumers",
+                serde_json::json!({
+                    "key": stream,
+                    "group": {"value": group, "encoding": "base64"}
+                }),
+            )
+            .await
+            .expect("XINFO CONSUMERS");
+        assert!(
+            !consumers_result.is_error,
+            "XINFO CONSUMERS: {consumers_result:?}"
+        );
+        let consumers = consumers_result
+            .structured_content
+            .expect("structured XINFO CONSUMERS");
+        assert_eq!(consumers["consumers"][0]["name"], consumer_one);
+        assert_eq!(consumers["consumers"][0]["name_encoding"], "base64");
+
+        let info = client
+            .call_tool("redis_xinfo_stream", serde_json::json!({"key": stream}))
+            .await
+            .expect("XINFO STREAM")
+            .structured_content
+            .expect("structured XINFO STREAM");
+        assert_eq!(info["length"], 3);
+        assert_eq!(info["groups"], 1);
+        assert_eq!(info["first_entry"]["id"], "1-0");
+
+        let group_read = client
+            .call_tool(
+                "redis_xreadgroup",
+                serde_json::json!({
+                    "group": {"value": group, "encoding": "base64"},
+                    "consumer": {"value": consumer_one, "encoding": "base64"},
+                    "streams": [{"key": stream, "offset": {"type": "new"}}],
+                    "count": 1,
+                    "max_returned_bytes": 1
+                }),
+            )
+            .await
+            .expect("XREADGROUP")
+            .structured_content
+            .expect("structured XREADGROUP");
+        assert_eq!(group_read["count"], 1);
+        assert_eq!(group_read["fields_omitted"], true);
+        assert_eq!(group_read["streams"][0]["entries"][0]["id"], "1-0");
+        assert_eq!(
+            group_read["streams"][0]["entries"][0]["fields"],
+            serde_json::json!([])
+        );
+
+        let pending = client
+            .call_tool(
+                "redis_xpending",
+                serde_json::json!({
+                    "key": stream,
+                    "group": {"value": group, "encoding": "base64"}
+                }),
+            )
+            .await
+            .expect("XPENDING summary")
+            .structured_content
+            .expect("structured XPENDING summary");
+        assert_eq!(pending["summary"]["count"], 1);
+        assert_eq!(
+            pending["summary"]["consumers"][0]["name_encoding"],
+            "base64"
+        );
+
+        let pending_entries = client
+            .call_tool(
+                "redis_xpending",
+                serde_json::json!({
+                    "key": stream,
+                    "group": {"value": group, "encoding": "base64"},
+                    "query": {"type": "entries", "count": 10}
+                }),
+            )
+            .await
+            .expect("XPENDING entries")
+            .structured_content
+            .expect("structured XPENDING entries");
+        assert_eq!(pending_entries["entries"][0]["id"], "1-0");
+
+        let claimed = client
+            .call_tool(
+                "redis_xclaim",
+                serde_json::json!({
+                    "key": stream,
+                    "group": {"value": group, "encoding": "base64"},
+                    "consumer": {"value": consumer_two, "encoding": "base64"},
+                    "min_idle_time_ms": 0,
+                    "ids": [{"milliseconds": 1, "sequence": 0}],
+                    "just_id": true
+                }),
+            )
+            .await
+            .expect("XCLAIM JUSTID")
+            .structured_content
+            .expect("structured XCLAIM JUSTID");
+        assert_eq!(claimed["ids"], serde_json::json!(["1-0"]));
+
+        let auto_claimed = client
+            .call_tool(
+                "redis_xautoclaim",
+                serde_json::json!({
+                    "key": stream,
+                    "group": {"value": group, "encoding": "base64"},
+                    "consumer": {"value": consumer_one, "encoding": "base64"},
+                    "min_idle_time_ms": 0,
+                    "start": {"milliseconds": 0, "sequence": 0},
+                    "count": 10,
+                    "just_id": true
+                }),
+            )
+            .await
+            .expect("XAUTOCLAIM JUSTID")
+            .structured_content
+            .expect("structured XAUTOCLAIM JUSTID");
+        assert_eq!(auto_claimed["ids"], serde_json::json!(["1-0"]));
+        assert!(auto_claimed["next_start_id"].is_string());
+
+        let acknowledged = client
+            .call_tool(
+                "redis_xack",
+                serde_json::json!({
+                    "key": stream,
+                    "group": {"value": group, "encoding": "base64"},
+                    "ids": [{"milliseconds": 1, "sequence": 0}]
+                }),
+            )
+            .await
+            .expect("XACK")
+            .structured_content
+            .expect("structured XACK");
+        assert_eq!(acknowledged["acknowledged"], 1);
+
+        let deleted_consumer = client
+            .call_tool(
+                "redis_xgroup_delconsumer",
+                serde_json::json!({
+                    "key": stream,
+                    "group": {"value": group, "encoding": "base64"},
+                    "consumer": {"value": consumer_two, "encoding": "base64"}
+                }),
+            )
+            .await
+            .expect("XGROUP DELCONSUMER")
+            .structured_content
+            .expect("structured XGROUP DELCONSUMER");
+        assert_eq!(deleted_consumer["pending_deleted"], 0);
+
+        let trimmed = client
+            .call_tool(
+                "redis_xtrim",
+                serde_json::json!({
+                    "key": stream,
+                    "trim": {"type": "max_len", "threshold": 2}
+                }),
+            )
+            .await
+            .expect("XTRIM")
+            .structured_content
+            .expect("structured XTRIM");
+        assert_eq!(trimmed["removed"], 1);
+
+        let deleted = client
+            .call_tool(
+                "redis_xdel",
+                serde_json::json!({
+                    "key": stream,
+                    "ids": [{"milliseconds": 2, "sequence": 0}]
+                }),
+            )
+            .await
+            .expect("XDEL")
+            .structured_content
+            .expect("structured XDEL");
+        assert_eq!(deleted["deleted"], 1);
+
+        let destroyed = client
+            .call_tool(
+                "redis_xgroup_destroy",
+                serde_json::json!({
+                    "key": stream,
+                    "group": {"value": group, "encoding": "base64"}
+                }),
+            )
+            .await
+            .expect("XGROUP DESTROY")
+            .structured_content
+            .expect("structured XGROUP DESTROY");
+        assert_eq!(destroyed["applied"], true);
+        let missing_group = client
+            .call_tool(
+                "redis_xpending",
+                serde_json::json!({
+                    "key": stream,
+                    "group": {"value": "missing-group"}
+                }),
+            )
+            .await
+            .expect("missing group is represented as a tool result");
+        assert!(missing_group.is_error);
+        let missing_group =
+            serde_json::to_string(&missing_group).expect("serialize missing-group result");
+        assert!(
+            missing_group.contains("NOGROUP") || missing_group.contains("no such key"),
+            "{missing_group}"
+        );
+
+        client
+            .call_tool(
+                "redis_set",
+                serde_json::json!({"key": wrong_type, "value": "not-a-stream"}),
+            )
+            .await
+            .expect("seed wrong-type stream key");
+        let wrong = client
+            .call_tool("redis_xlen", serde_json::json!({"key": wrong_type}))
+            .await
+            .expect("wrong-type XLEN is a tool result");
+        assert!(wrong.is_error);
+        assert!(
+            serde_json::to_string(&wrong)
+                .expect("serialize wrong-type XLEN")
+                .contains("WRONGTYPE")
+        );
+
+        client
+            .call_tool(
+                "redis_unlink",
+                serde_json::json!({"keys": [stream, missing, wrong_type]}),
+            )
+            .await
+            .expect("clean up stream family");
     }
 }
 
@@ -2603,6 +3019,7 @@ async fn live_acl_failures_are_classified_without_leaking_credentials() {
     let readable_list = test_key("acl-readable-list");
     let readable_set = test_key("acl-readable-set");
     let readable_zset = test_key("acl-readable-zset");
+    let readable_stream = test_key("acl-readable-stream");
     redis::cmd("HSET")
         .arg(&readable_hash)
         .arg("name")
@@ -2629,6 +3046,14 @@ async fn live_acl_failures_are_classified_without_leaking_credentials() {
         .query_async::<()>(&mut connection)
         .await
         .expect("seed ACL-readable sorted set");
+    redis::cmd("XADD")
+        .arg(&readable_stream)
+        .arg("1-0")
+        .arg("event")
+        .arg("visible")
+        .query_async::<()>(&mut connection)
+        .await
+        .expect("seed ACL-readable stream");
     redis::cmd("ACL")
         .arg("SETUSER")
         .arg(&username)
@@ -2643,6 +3068,7 @@ async fn live_acl_failures_are_classified_without_leaking_credentials() {
         .arg("+lindex")
         .arg("+sismember")
         .arg("+zscore")
+        .arg("+xlen")
         .arg("+exists")
         .query_async::<()>(&mut connection)
         .await
@@ -2764,6 +3190,16 @@ async fn live_acl_failures_are_classified_without_leaking_credentials() {
         "1"
     );
 
+    let allowed_stream = client
+        .call_tool("redis_xlen", serde_json::json!({"key": readable_stream}))
+        .await
+        .expect("ACL-allowed XLEN");
+    assert!(!allowed_stream.is_error);
+    assert_eq!(
+        allowed_stream.structured_content.as_ref().unwrap()["length"],
+        1
+    );
+
     let full_client = router_client(restricted_url.as_str(), AccessMode::Full).await;
     let denied_list = full_client
         .call_tool(
@@ -2841,6 +3277,42 @@ async fn live_acl_failures_are_classified_without_leaking_credentials() {
     );
     assert!(!denied_sorted_remove.contains(password));
 
+    let denied_stream_range = client
+        .call_tool(
+            "redis_xrange",
+            serde_json::json!({"key": readable_stream, "count": 1}),
+        )
+        .await
+        .expect("ACL-denied XRANGE is represented as a tool result");
+    assert!(denied_stream_range.is_error);
+    let denied_stream_range =
+        serde_json::to_string(&denied_stream_range).expect("serialize XRANGE ACL denial");
+    assert!(
+        denied_stream_range.contains("[Authorization]"),
+        "{denied_stream_range}"
+    );
+    assert!(!denied_stream_range.contains(password));
+
+    let denied_stream_add = client
+        .call_tool(
+            "redis_xadd",
+            serde_json::json!({
+                "key": readable_stream,
+                "fields": [{"field": "event", "value": "blocked-stream-value"}]
+            }),
+        )
+        .await
+        .expect("ACL-denied XADD is represented as a tool result");
+    assert!(denied_stream_add.is_error);
+    let denied_stream_add =
+        serde_json::to_string(&denied_stream_add).expect("serialize XADD ACL denial");
+    assert!(
+        denied_stream_add.contains("[Authorization]"),
+        "{denied_stream_add}"
+    );
+    assert!(!denied_stream_add.contains(password));
+    assert!(!denied_stream_add.contains("blocked-stream-value"));
+
     let denied = client
         .call_tool(
             "redis_set",
@@ -2891,6 +3363,7 @@ async fn live_acl_failures_are_classified_without_leaking_credentials() {
             &readable_list,
             &readable_set,
             &readable_zset,
+            &readable_stream,
         ])
         .query_async::<()>(&mut connection)
         .await

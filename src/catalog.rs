@@ -207,10 +207,30 @@ impl ToolMetadata {
             "redis_memory_usage" | "redis_object_inspect" | "redis_unlink" => {
                 Some(RedisVersion::new(4, 0, 0))
             }
-            "redis_restore" | "redis_restore_replace" | "redis_zpopmax" | "redis_zpopmin" => {
-                Some(RedisVersion::new(5, 0, 0))
-            }
+            "redis_restore"
+            | "redis_restore_replace"
+            | "redis_zpopmax"
+            | "redis_zpopmin"
+            | "redis_xlen"
+            | "redis_xrange"
+            | "redis_xrevrange"
+            | "redis_xread"
+            | "redis_xinfo_stream"
+            | "redis_xinfo_groups"
+            | "redis_xinfo_consumers"
+            | "redis_xpending"
+            | "redis_xadd"
+            | "redis_xgroup_create"
+            | "redis_xgroup_setid"
+            | "redis_xreadgroup"
+            | "redis_xack"
+            | "redis_xclaim"
+            | "redis_xdel"
+            | "redis_xtrim"
+            | "redis_xgroup_destroy"
+            | "redis_xgroup_delconsumer" => Some(RedisVersion::new(5, 0, 0)),
             "redis_lpos" => Some(RedisVersion::new(6, 0, 0)),
+            "redis_xgroup_createconsumer" | "redis_xautoclaim" => Some(RedisVersion::new(6, 2, 0)),
             "redis_copy" | "redis_copy_replace" | "redis_getdel" | "redis_getex"
             | "redis_lmove" | "redis_lpop" | "redis_rpop" | "redis_smismember" | "redis_zadd"
             | "redis_zmscore" | "redis_zrange" => Some(RedisVersion::new(6, 2, 0)),
@@ -271,6 +291,12 @@ impl ToolMetadata {
             "redis_zrevrank" => &["ZREVRANK", "EXISTS"],
             "redis_zscan" => &["ZSCAN", "EXISTS"],
             "redis_zscore" => &["ZSCORE", "EXISTS"],
+            "redis_xlen" => &["XLEN", "EXISTS"],
+            "redis_xrange" => &["XRANGE"],
+            "redis_xrevrange" => &["XREVRANGE"],
+            "redis_xread" => &["XREAD"],
+            "redis_xinfo_stream" | "redis_xinfo_groups" | "redis_xinfo_consumers" => &["XINFO"],
+            "redis_xpending" => &["XPENDING"],
             "redis_json_get" => &["JSON.GET"],
             "redis_json_type" => &["JSON.TYPE"],
             "redis_ft_list" => &["FT._LIST"],
@@ -303,6 +329,14 @@ impl ToolMetadata {
             "redis_sadd" => &["SADD"],
             "redis_zadd" => &["ZADD"],
             "redis_zincrby" => &["ZINCRBY"],
+            "redis_xadd" => &["XADD"],
+            "redis_xgroup_create" | "redis_xgroup_setid" | "redis_xgroup_createconsumer" => {
+                &["XGROUP"]
+            }
+            "redis_xreadgroup" => &["XREADGROUP"],
+            "redis_xack" => &["XACK"],
+            "redis_xclaim" => &["XCLAIM"],
+            "redis_xautoclaim" => &["XAUTOCLAIM"],
             "redis_json_set" => &["JSON.SET"],
             "redis_ft_create" => &["FT.CREATE"],
             "redis_vector_set_hash" => &["HSET"],
@@ -319,6 +353,9 @@ impl ToolMetadata {
             "redis_zpopmin" => &["ZPOPMIN"],
             "redis_zrem" => &["ZREM"],
             "redis_zremrangebyscore" => &["ZREMRANGEBYSCORE"],
+            "redis_xdel" => &["XDEL"],
+            "redis_xtrim" => &["XTRIM"],
+            "redis_xgroup_destroy" | "redis_xgroup_delconsumer" => &["XGROUP"],
             "redis_unlink" => &["UNLINK"],
             "redis_getdel" => &["GETDEL"],
             "redis_rename" => &["RENAME"],
@@ -352,7 +389,9 @@ impl ToolMetadata {
             "redis_scan" | "redis_hscan" | "redis_sscan" | "redis_zscan" => {
                 ToolOutputPolicy::CursorPaginated
             }
-            "redis_lrange" | "redis_zrange" => ToolOutputPolicy::RangePaginated,
+            "redis_lrange" | "redis_zrange" | "redis_xrange" | "redis_xrevrange" => {
+                ToolOutputPolicy::RangePaginated
+            }
             "redis_ft_search" | "redis_ft_vector_search" | "redis_ft_hybrid_search" => {
                 ToolOutputPolicy::OffsetPaginated
             }
@@ -376,6 +415,10 @@ impl ToolMetadata {
             | "redis_smismember"
             | "redis_sunion"
             | "redis_zmscore"
+            | "redis_xinfo_stream"
+            | "redis_xinfo_groups"
+            | "redis_xinfo_consumers"
+            | "redis_xpending"
             | "redis_json_get"
             | "redis_json_type"
             | "redis_ft_list"
@@ -659,6 +702,54 @@ pub(crate) const CATALOG: &[ToolMetadata] = &[
         requires_raw_opt_in: false,
     },
     ToolMetadata {
+        name: "redis_xlen",
+        bundle: ToolBundle::DataStructures,
+        required_access: AccessMode::ReadOnly,
+        requires_raw_opt_in: false,
+    },
+    ToolMetadata {
+        name: "redis_xrange",
+        bundle: ToolBundle::DataStructures,
+        required_access: AccessMode::ReadOnly,
+        requires_raw_opt_in: false,
+    },
+    ToolMetadata {
+        name: "redis_xrevrange",
+        bundle: ToolBundle::DataStructures,
+        required_access: AccessMode::ReadOnly,
+        requires_raw_opt_in: false,
+    },
+    ToolMetadata {
+        name: "redis_xread",
+        bundle: ToolBundle::DataStructures,
+        required_access: AccessMode::ReadOnly,
+        requires_raw_opt_in: false,
+    },
+    ToolMetadata {
+        name: "redis_xinfo_stream",
+        bundle: ToolBundle::DataStructures,
+        required_access: AccessMode::ReadOnly,
+        requires_raw_opt_in: false,
+    },
+    ToolMetadata {
+        name: "redis_xinfo_groups",
+        bundle: ToolBundle::DataStructures,
+        required_access: AccessMode::ReadOnly,
+        requires_raw_opt_in: false,
+    },
+    ToolMetadata {
+        name: "redis_xinfo_consumers",
+        bundle: ToolBundle::DataStructures,
+        required_access: AccessMode::ReadOnly,
+        requires_raw_opt_in: false,
+    },
+    ToolMetadata {
+        name: "redis_xpending",
+        bundle: ToolBundle::DataStructures,
+        required_access: AccessMode::ReadOnly,
+        requires_raw_opt_in: false,
+    },
+    ToolMetadata {
         name: "redis_json_get",
         bundle: ToolBundle::Json,
         required_access: AccessMode::ReadOnly,
@@ -857,6 +948,54 @@ pub(crate) const CATALOG: &[ToolMetadata] = &[
         requires_raw_opt_in: false,
     },
     ToolMetadata {
+        name: "redis_xadd",
+        bundle: ToolBundle::DataStructures,
+        required_access: AccessMode::ReadWrite,
+        requires_raw_opt_in: false,
+    },
+    ToolMetadata {
+        name: "redis_xgroup_create",
+        bundle: ToolBundle::DataStructures,
+        required_access: AccessMode::ReadWrite,
+        requires_raw_opt_in: false,
+    },
+    ToolMetadata {
+        name: "redis_xgroup_setid",
+        bundle: ToolBundle::DataStructures,
+        required_access: AccessMode::ReadWrite,
+        requires_raw_opt_in: false,
+    },
+    ToolMetadata {
+        name: "redis_xgroup_createconsumer",
+        bundle: ToolBundle::DataStructures,
+        required_access: AccessMode::ReadWrite,
+        requires_raw_opt_in: false,
+    },
+    ToolMetadata {
+        name: "redis_xreadgroup",
+        bundle: ToolBundle::DataStructures,
+        required_access: AccessMode::ReadWrite,
+        requires_raw_opt_in: false,
+    },
+    ToolMetadata {
+        name: "redis_xack",
+        bundle: ToolBundle::DataStructures,
+        required_access: AccessMode::ReadWrite,
+        requires_raw_opt_in: false,
+    },
+    ToolMetadata {
+        name: "redis_xclaim",
+        bundle: ToolBundle::DataStructures,
+        required_access: AccessMode::ReadWrite,
+        requires_raw_opt_in: false,
+    },
+    ToolMetadata {
+        name: "redis_xautoclaim",
+        bundle: ToolBundle::DataStructures,
+        required_access: AccessMode::ReadWrite,
+        requires_raw_opt_in: false,
+    },
+    ToolMetadata {
         name: "redis_json_set",
         bundle: ToolBundle::Json,
         required_access: AccessMode::ReadWrite,
@@ -954,6 +1093,30 @@ pub(crate) const CATALOG: &[ToolMetadata] = &[
     },
     ToolMetadata {
         name: "redis_zremrangebyscore",
+        bundle: ToolBundle::DataStructures,
+        required_access: AccessMode::Full,
+        requires_raw_opt_in: false,
+    },
+    ToolMetadata {
+        name: "redis_xdel",
+        bundle: ToolBundle::DataStructures,
+        required_access: AccessMode::Full,
+        requires_raw_opt_in: false,
+    },
+    ToolMetadata {
+        name: "redis_xtrim",
+        bundle: ToolBundle::DataStructures,
+        required_access: AccessMode::Full,
+        requires_raw_opt_in: false,
+    },
+    ToolMetadata {
+        name: "redis_xgroup_destroy",
+        bundle: ToolBundle::DataStructures,
+        required_access: AccessMode::Full,
+        requires_raw_opt_in: false,
+    },
+    ToolMetadata {
+        name: "redis_xgroup_delconsumer",
         bundle: ToolBundle::DataStructures,
         required_access: AccessMode::Full,
         requires_raw_opt_in: false,

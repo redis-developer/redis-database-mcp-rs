@@ -8793,8 +8793,47 @@
           "destructiveHint": false,
           "idempotentHint": true
         },
-        "description": "Add between 1 and 1000 UTF-8 members to a Redis set.",
+        "description": "Add between 1 and 1000 binary-safe members to a Redis set.",
         "inputSchema": {
+          "$defs": {
+            "EncodedSetMemberInput": {
+              "additionalProperties": false,
+              "properties": {
+                "member": {
+                  "description": "Redis set member.",
+                  "type": "string"
+                },
+                "member_encoding": {
+                  "$ref": "#/$defs/InputEncoding",
+                  "default": "utf8",
+                  "description": "Encoding of `member`."
+                }
+              },
+              "required": [
+                "member"
+              ],
+              "type": "object"
+            },
+            "InputEncoding": {
+              "enum": [
+                "utf8",
+                "base64"
+              ],
+              "type": "string"
+            },
+            "SetMemberSelector": {
+              "anyOf": [
+                {
+                  "description": "UTF-8 set member shorthand.",
+                  "type": "string"
+                },
+                {
+                  "$ref": "#/$defs/EncodedSetMemberInput",
+                  "description": "Explicitly encoded set member."
+                }
+              ]
+            }
+          },
           "$schema": "https://json-schema.org/draft/2020-12/schema",
           "additionalProperties": false,
           "properties": {
@@ -8802,10 +8841,15 @@
               "description": "Redis set key.",
               "type": "string"
             },
+            "key_encoding": {
+              "$ref": "#/$defs/InputEncoding",
+              "default": "utf8",
+              "description": "Encoding of `key`."
+            },
             "members": {
-              "description": "UTF-8 members to add.",
+              "description": "One to 1000 members. Strings are UTF-8 shorthand; objects can select base64.",
               "items": {
-                "type": "string"
+                "$ref": "#/$defs/SetMemberSelector"
               },
               "maxItems": 1000,
               "minItems": 1,
@@ -8816,11 +8860,20 @@
             "key",
             "members"
           ],
-          "title": "SetAddInput",
+          "title": "SetMembersInput",
           "type": "object"
         },
         "name": "redis_sadd",
         "outputSchema": {
+          "$defs": {
+            "InputEncoding": {
+              "enum": [
+                "utf8",
+                "base64"
+              ],
+              "type": "string"
+            }
+          },
           "$schema": "https://json-schema.org/draft/2020-12/schema",
           "additionalProperties": false,
           "properties": {
@@ -8832,6 +8885,9 @@
             "key": {
               "type": "string"
             },
+            "key_encoding": {
+              "$ref": "#/$defs/InputEncoding"
+            },
             "requested": {
               "format": "uint",
               "minimum": 0,
@@ -8840,6 +8896,7 @@
           },
           "required": [
             "key",
+            "key_encoding",
             "requested",
             "added"
           ],
@@ -9008,6 +9065,262 @@
           "type": "object"
         },
         "title": "Scan Redis Keys"
+      },
+      "required_access": "read_only",
+      "required_module": null,
+      "requires_raw_opt_in": false
+    },
+    {
+      "bundle": "data_structures",
+      "capability_requirements": {
+        "deployment": "any",
+        "minimum_module_version": null,
+        "minimum_redis_version": null,
+        "required_commands": [
+          "SCARD"
+        ],
+        "required_module": null
+      },
+      "name": "redis_scard",
+      "output_policy": "intrinsically_bounded",
+      "protocol": {
+        "annotations": {
+          "destructiveHint": false,
+          "idempotentHint": true,
+          "readOnlyHint": true
+        },
+        "description": "Return the number of members in a binary-safe Redis set key. Missing sets have cardinality zero and exists=false.",
+        "inputSchema": {
+          "$defs": {
+            "InputEncoding": {
+              "enum": [
+                "utf8",
+                "base64"
+              ],
+              "type": "string"
+            }
+          },
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "key": {
+              "description": "Redis set key.",
+              "type": "string"
+            },
+            "key_encoding": {
+              "$ref": "#/$defs/InputEncoding",
+              "default": "utf8",
+              "description": "Encoding of `key`."
+            }
+          },
+          "required": [
+            "key"
+          ],
+          "title": "SetKeyInput",
+          "type": "object"
+        },
+        "name": "redis_scard",
+        "outputSchema": {
+          "$defs": {
+            "InputEncoding": {
+              "enum": [
+                "utf8",
+                "base64"
+              ],
+              "type": "string"
+            }
+          },
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "cardinality": {
+              "format": "uint64",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "exists": {
+              "type": "boolean"
+            },
+            "key": {
+              "type": "string"
+            },
+            "key_encoding": {
+              "$ref": "#/$defs/InputEncoding"
+            }
+          },
+          "required": [
+            "key",
+            "key_encoding",
+            "exists",
+            "cardinality"
+          ],
+          "title": "ScardOutput",
+          "type": "object"
+        },
+        "title": "Read Redis Set Cardinality"
+      },
+      "required_access": "read_only",
+      "required_module": null,
+      "requires_raw_opt_in": false
+    },
+    {
+      "bundle": "data_structures",
+      "capability_requirements": {
+        "deployment": "any",
+        "minimum_module_version": null,
+        "minimum_redis_version": null,
+        "required_commands": [
+          "SDIFF"
+        ],
+        "required_module": null
+      },
+      "name": "redis_sdiff",
+      "output_policy": "budget_guarded",
+      "protocol": {
+        "annotations": {
+          "destructiveHint": false,
+          "idempotentHint": true,
+          "readOnlyHint": true
+        },
+        "description": "Compute a binary-safe, output-budgeted Redis set difference across 1 to 1000 keys. Results are byte-sorted for deterministic structured output even though Redis sets are unordered. On Redis Cluster, every key must share a hash slot.",
+        "inputSchema": {
+          "$defs": {
+            "EncodedSetKeyInput": {
+              "additionalProperties": false,
+              "properties": {
+                "key": {
+                  "description": "Redis set key.",
+                  "type": "string"
+                },
+                "key_encoding": {
+                  "$ref": "#/$defs/InputEncoding",
+                  "default": "utf8",
+                  "description": "Encoding of `key`."
+                }
+              },
+              "required": [
+                "key"
+              ],
+              "type": "object"
+            },
+            "InputEncoding": {
+              "enum": [
+                "utf8",
+                "base64"
+              ],
+              "type": "string"
+            },
+            "SetKeySelector": {
+              "anyOf": [
+                {
+                  "description": "UTF-8 Redis set key shorthand.",
+                  "type": "string"
+                },
+                {
+                  "$ref": "#/$defs/EncodedSetKeyInput",
+                  "description": "Explicitly encoded Redis set key."
+                }
+              ]
+            }
+          },
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "keys": {
+              "description": "One to 1000 set keys. Strings are UTF-8 shorthand; objects can select base64.",
+              "items": {
+                "$ref": "#/$defs/SetKeySelector"
+              },
+              "maxItems": 1000,
+              "minItems": 1,
+              "type": "array"
+            }
+          },
+          "required": [
+            "keys"
+          ],
+          "title": "SetAlgebraInput",
+          "type": "object"
+        },
+        "name": "redis_sdiff",
+        "outputSchema": {
+          "$defs": {
+            "EncodedValue": {
+              "additionalProperties": false,
+              "properties": {
+                "encoding": {
+                  "$ref": "#/$defs/ValueEncoding"
+                },
+                "value": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "value",
+                "encoding"
+              ],
+              "type": "object"
+            },
+            "SetAlgebraOperation": {
+              "enum": [
+                "difference",
+                "intersection",
+                "union"
+              ],
+              "type": "string"
+            },
+            "SetResultOrdering": {
+              "enum": [
+                "byte_sorted",
+                "byte_sorted_within_page"
+              ],
+              "type": "string"
+            },
+            "ValueEncoding": {
+              "enum": [
+                "utf8",
+                "base64"
+              ],
+              "type": "string"
+            }
+          },
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "count": {
+              "format": "uint",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "members": {
+              "items": {
+                "$ref": "#/$defs/EncodedValue"
+              },
+              "type": "array"
+            },
+            "operation": {
+              "$ref": "#/$defs/SetAlgebraOperation"
+            },
+            "ordering": {
+              "$ref": "#/$defs/SetResultOrdering"
+            },
+            "requested_keys": {
+              "format": "uint",
+              "minimum": 0,
+              "type": "integer"
+            }
+          },
+          "required": [
+            "operation",
+            "requested_keys",
+            "count",
+            "ordering",
+            "members"
+          ],
+          "title": "SetAlgebraOutput",
+          "type": "object"
+        },
+        "title": "Read Redis Set Difference"
       },
       "required_access": "read_only",
       "required_module": null,
@@ -9533,6 +9846,279 @@
         "minimum_module_version": null,
         "minimum_redis_version": null,
         "required_commands": [
+          "SINTER"
+        ],
+        "required_module": null
+      },
+      "name": "redis_sinter",
+      "output_policy": "budget_guarded",
+      "protocol": {
+        "annotations": {
+          "destructiveHint": false,
+          "idempotentHint": true,
+          "readOnlyHint": true
+        },
+        "description": "Compute a binary-safe, output-budgeted Redis set intersection across 1 to 1000 keys. Results are byte-sorted for deterministic structured output even though Redis sets are unordered. On Redis Cluster, every key must share a hash slot.",
+        "inputSchema": {
+          "$defs": {
+            "EncodedSetKeyInput": {
+              "additionalProperties": false,
+              "properties": {
+                "key": {
+                  "description": "Redis set key.",
+                  "type": "string"
+                },
+                "key_encoding": {
+                  "$ref": "#/$defs/InputEncoding",
+                  "default": "utf8",
+                  "description": "Encoding of `key`."
+                }
+              },
+              "required": [
+                "key"
+              ],
+              "type": "object"
+            },
+            "InputEncoding": {
+              "enum": [
+                "utf8",
+                "base64"
+              ],
+              "type": "string"
+            },
+            "SetKeySelector": {
+              "anyOf": [
+                {
+                  "description": "UTF-8 Redis set key shorthand.",
+                  "type": "string"
+                },
+                {
+                  "$ref": "#/$defs/EncodedSetKeyInput",
+                  "description": "Explicitly encoded Redis set key."
+                }
+              ]
+            }
+          },
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "keys": {
+              "description": "One to 1000 set keys. Strings are UTF-8 shorthand; objects can select base64.",
+              "items": {
+                "$ref": "#/$defs/SetKeySelector"
+              },
+              "maxItems": 1000,
+              "minItems": 1,
+              "type": "array"
+            }
+          },
+          "required": [
+            "keys"
+          ],
+          "title": "SetAlgebraInput",
+          "type": "object"
+        },
+        "name": "redis_sinter",
+        "outputSchema": {
+          "$defs": {
+            "EncodedValue": {
+              "additionalProperties": false,
+              "properties": {
+                "encoding": {
+                  "$ref": "#/$defs/ValueEncoding"
+                },
+                "value": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "value",
+                "encoding"
+              ],
+              "type": "object"
+            },
+            "SetAlgebraOperation": {
+              "enum": [
+                "difference",
+                "intersection",
+                "union"
+              ],
+              "type": "string"
+            },
+            "SetResultOrdering": {
+              "enum": [
+                "byte_sorted",
+                "byte_sorted_within_page"
+              ],
+              "type": "string"
+            },
+            "ValueEncoding": {
+              "enum": [
+                "utf8",
+                "base64"
+              ],
+              "type": "string"
+            }
+          },
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "count": {
+              "format": "uint",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "members": {
+              "items": {
+                "$ref": "#/$defs/EncodedValue"
+              },
+              "type": "array"
+            },
+            "operation": {
+              "$ref": "#/$defs/SetAlgebraOperation"
+            },
+            "ordering": {
+              "$ref": "#/$defs/SetResultOrdering"
+            },
+            "requested_keys": {
+              "format": "uint",
+              "minimum": 0,
+              "type": "integer"
+            }
+          },
+          "required": [
+            "operation",
+            "requested_keys",
+            "count",
+            "ordering",
+            "members"
+          ],
+          "title": "SetAlgebraOutput",
+          "type": "object"
+        },
+        "title": "Read Redis Set Intersection"
+      },
+      "required_access": "read_only",
+      "required_module": null,
+      "requires_raw_opt_in": false
+    },
+    {
+      "bundle": "data_structures",
+      "capability_requirements": {
+        "deployment": "any",
+        "minimum_module_version": null,
+        "minimum_redis_version": null,
+        "required_commands": [
+          "SISMEMBER",
+          "EXISTS"
+        ],
+        "required_module": null
+      },
+      "name": "redis_sismember",
+      "output_policy": "intrinsically_bounded",
+      "protocol": {
+        "annotations": {
+          "destructiveHint": false,
+          "idempotentHint": true,
+          "readOnlyHint": true
+        },
+        "description": "Check one binary-safe set member and distinguish a missing set from a non-member.",
+        "inputSchema": {
+          "$defs": {
+            "InputEncoding": {
+              "enum": [
+                "utf8",
+                "base64"
+              ],
+              "type": "string"
+            }
+          },
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "key": {
+              "description": "Redis set key.",
+              "type": "string"
+            },
+            "key_encoding": {
+              "$ref": "#/$defs/InputEncoding",
+              "default": "utf8",
+              "description": "Encoding of `key`."
+            },
+            "member": {
+              "description": "Redis set member.",
+              "type": "string"
+            },
+            "member_encoding": {
+              "$ref": "#/$defs/InputEncoding",
+              "default": "utf8",
+              "description": "Encoding of `member`."
+            }
+          },
+          "required": [
+            "key",
+            "member"
+          ],
+          "title": "SetMemberInput",
+          "type": "object"
+        },
+        "name": "redis_sismember",
+        "outputSchema": {
+          "$defs": {
+            "InputEncoding": {
+              "enum": [
+                "utf8",
+                "base64"
+              ],
+              "type": "string"
+            }
+          },
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "is_member": {
+              "type": "boolean"
+            },
+            "key": {
+              "type": "string"
+            },
+            "key_encoding": {
+              "$ref": "#/$defs/InputEncoding"
+            },
+            "member": {
+              "type": "string"
+            },
+            "member_encoding": {
+              "$ref": "#/$defs/InputEncoding"
+            },
+            "set_exists": {
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "key",
+            "key_encoding",
+            "member",
+            "member_encoding",
+            "set_exists",
+            "is_member"
+          ],
+          "title": "SismemberOutput",
+          "type": "object"
+        },
+        "title": "Check Redis Set Membership"
+      },
+      "required_access": "read_only",
+      "required_module": null,
+      "requires_raw_opt_in": false
+    },
+    {
+      "bundle": "data_structures",
+      "capability_requirements": {
+        "deployment": "any",
+        "minimum_module_version": null,
+        "minimum_redis_version": null,
+        "required_commands": [
           "SMEMBERS"
         ],
         "required_module": null
@@ -9545,14 +10131,28 @@
           "idempotentHint": true,
           "readOnlyHint": true
         },
-        "description": "Read all Redis set members in deterministic byte order. The configured output budget is enforced; use redis_sscan for large sets. Binary members are base64.",
+        "description": "Read all Redis set members in deterministic byte order. Redis sets themselves are unordered. The configured output budget is enforced; use redis_sscan for large sets. Keys and members are binary-safe.",
         "inputSchema": {
+          "$defs": {
+            "InputEncoding": {
+              "enum": [
+                "utf8",
+                "base64"
+              ],
+              "type": "string"
+            }
+          },
           "$schema": "https://json-schema.org/draft/2020-12/schema",
           "additionalProperties": false,
           "properties": {
             "key": {
               "description": "Redis set key.",
               "type": "string"
+            },
+            "key_encoding": {
+              "$ref": "#/$defs/InputEncoding",
+              "default": "utf8",
+              "description": "Encoding of `key`."
             }
           },
           "required": [
@@ -9580,6 +10180,20 @@
               ],
               "type": "object"
             },
+            "InputEncoding": {
+              "enum": [
+                "utf8",
+                "base64"
+              ],
+              "type": "string"
+            },
+            "SetResultOrdering": {
+              "enum": [
+                "byte_sorted",
+                "byte_sorted_within_page"
+              ],
+              "type": "string"
+            },
             "ValueEncoding": {
               "enum": [
                 "utf8",
@@ -9602,17 +10216,25 @@
             "key": {
               "type": "string"
             },
+            "key_encoding": {
+              "$ref": "#/$defs/InputEncoding"
+            },
             "members": {
               "items": {
                 "$ref": "#/$defs/EncodedValue"
               },
               "type": "array"
+            },
+            "ordering": {
+              "$ref": "#/$defs/SetResultOrdering"
             }
           },
           "required": [
             "key",
+            "key_encoding",
             "exists",
             "count",
+            "ordering",
             "members"
           ],
           "title": "SmembersOutput",
@@ -9629,9 +10251,304 @@
       "capability_requirements": {
         "deployment": "any",
         "minimum_module_version": null,
+        "minimum_redis_version": "6.2.0",
+        "required_commands": [
+          "SMISMEMBER",
+          "EXISTS"
+        ],
+        "required_module": null
+      },
+      "name": "redis_smismember",
+      "output_policy": "budget_guarded",
+      "protocol": {
+        "annotations": {
+          "destructiveHint": false,
+          "idempotentHint": true,
+          "readOnlyHint": true
+        },
+        "description": "Check 1 to 1000 binary-safe members in one Redis set. Results remain aligned one-to-one with the requested member order. Requires Redis 6.2 or newer.",
+        "inputSchema": {
+          "$defs": {
+            "EncodedSetMemberInput": {
+              "additionalProperties": false,
+              "properties": {
+                "member": {
+                  "description": "Redis set member.",
+                  "type": "string"
+                },
+                "member_encoding": {
+                  "$ref": "#/$defs/InputEncoding",
+                  "default": "utf8",
+                  "description": "Encoding of `member`."
+                }
+              },
+              "required": [
+                "member"
+              ],
+              "type": "object"
+            },
+            "InputEncoding": {
+              "enum": [
+                "utf8",
+                "base64"
+              ],
+              "type": "string"
+            },
+            "SetMemberSelector": {
+              "anyOf": [
+                {
+                  "description": "UTF-8 set member shorthand.",
+                  "type": "string"
+                },
+                {
+                  "$ref": "#/$defs/EncodedSetMemberInput",
+                  "description": "Explicitly encoded set member."
+                }
+              ]
+            }
+          },
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "key": {
+              "description": "Redis set key.",
+              "type": "string"
+            },
+            "key_encoding": {
+              "$ref": "#/$defs/InputEncoding",
+              "default": "utf8",
+              "description": "Encoding of `key`."
+            },
+            "members": {
+              "description": "One to 1000 members. Strings are UTF-8 shorthand; objects can select base64.",
+              "items": {
+                "$ref": "#/$defs/SetMemberSelector"
+              },
+              "maxItems": 1000,
+              "minItems": 1,
+              "type": "array"
+            }
+          },
+          "required": [
+            "key",
+            "members"
+          ],
+          "title": "SetMembersInput",
+          "type": "object"
+        },
+        "name": "redis_smismember",
+        "outputSchema": {
+          "$defs": {
+            "InputEncoding": {
+              "enum": [
+                "utf8",
+                "base64"
+              ],
+              "type": "string"
+            },
+            "SetMembershipEntry": {
+              "additionalProperties": false,
+              "properties": {
+                "is_member": {
+                  "type": "boolean"
+                },
+                "member": {
+                  "type": "string"
+                },
+                "member_encoding": {
+                  "$ref": "#/$defs/InputEncoding"
+                }
+              },
+              "required": [
+                "member",
+                "member_encoding",
+                "is_member"
+              ],
+              "type": "object"
+            }
+          },
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "count": {
+              "format": "uint",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "key": {
+              "type": "string"
+            },
+            "key_encoding": {
+              "$ref": "#/$defs/InputEncoding"
+            },
+            "members": {
+              "items": {
+                "$ref": "#/$defs/SetMembershipEntry"
+              },
+              "type": "array"
+            },
+            "set_exists": {
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "key",
+            "key_encoding",
+            "set_exists",
+            "count",
+            "members"
+          ],
+          "title": "SmismemberOutput",
+          "type": "object"
+        },
+        "title": "Check Multiple Redis Set Members"
+      },
+      "required_access": "read_only",
+      "required_module": null,
+      "requires_raw_opt_in": false
+    },
+    {
+      "bundle": "data_structures",
+      "capability_requirements": {
+        "deployment": "any",
+        "minimum_module_version": null,
         "minimum_redis_version": null,
         "required_commands": [
-          "SSCAN"
+          "SREM"
+        ],
+        "required_module": null
+      },
+      "name": "redis_srem",
+      "output_policy": "intrinsically_bounded",
+      "protocol": {
+        "annotations": {
+          "idempotentHint": true
+        },
+        "description": "Permanently remove 1 to 1000 binary-safe members from a Redis set. Requires full access.",
+        "inputSchema": {
+          "$defs": {
+            "EncodedSetMemberInput": {
+              "additionalProperties": false,
+              "properties": {
+                "member": {
+                  "description": "Redis set member.",
+                  "type": "string"
+                },
+                "member_encoding": {
+                  "$ref": "#/$defs/InputEncoding",
+                  "default": "utf8",
+                  "description": "Encoding of `member`."
+                }
+              },
+              "required": [
+                "member"
+              ],
+              "type": "object"
+            },
+            "InputEncoding": {
+              "enum": [
+                "utf8",
+                "base64"
+              ],
+              "type": "string"
+            },
+            "SetMemberSelector": {
+              "anyOf": [
+                {
+                  "description": "UTF-8 set member shorthand.",
+                  "type": "string"
+                },
+                {
+                  "$ref": "#/$defs/EncodedSetMemberInput",
+                  "description": "Explicitly encoded set member."
+                }
+              ]
+            }
+          },
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "key": {
+              "description": "Redis set key.",
+              "type": "string"
+            },
+            "key_encoding": {
+              "$ref": "#/$defs/InputEncoding",
+              "default": "utf8",
+              "description": "Encoding of `key`."
+            },
+            "members": {
+              "description": "One to 1000 members. Strings are UTF-8 shorthand; objects can select base64.",
+              "items": {
+                "$ref": "#/$defs/SetMemberSelector"
+              },
+              "maxItems": 1000,
+              "minItems": 1,
+              "type": "array"
+            }
+          },
+          "required": [
+            "key",
+            "members"
+          ],
+          "title": "SetMembersInput",
+          "type": "object"
+        },
+        "name": "redis_srem",
+        "outputSchema": {
+          "$defs": {
+            "InputEncoding": {
+              "enum": [
+                "utf8",
+                "base64"
+              ],
+              "type": "string"
+            }
+          },
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "key": {
+              "type": "string"
+            },
+            "key_encoding": {
+              "$ref": "#/$defs/InputEncoding"
+            },
+            "removed": {
+              "format": "uint64",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "requested": {
+              "format": "uint",
+              "minimum": 0,
+              "type": "integer"
+            }
+          },
+          "required": [
+            "key",
+            "key_encoding",
+            "requested",
+            "removed"
+          ],
+          "title": "SremOutput",
+          "type": "object"
+        },
+        "title": "Remove Redis Set Members"
+      },
+      "required_access": "full",
+      "required_module": null,
+      "requires_raw_opt_in": false
+    },
+    {
+      "bundle": "data_structures",
+      "capability_requirements": {
+        "deployment": "any",
+        "minimum_module_version": null,
+        "minimum_redis_version": null,
+        "required_commands": [
+          "SSCAN",
+          "EXISTS"
         ],
         "required_module": null
       },
@@ -9643,14 +10560,23 @@
           "idempotentHint": true,
           "readOnlyHint": true
         },
-        "description": "Read one bounded SSCAN page. Pass page.continuation.cursor as cursor until page.complete is true. Members are binary-safe.",
+        "description": "Read one bounded SSCAN page. Pass page.continuation.cursor as cursor until page.complete is true. Members are binary-safe and byte-sorted within each page for deterministic structured output; Redis sets and cursor traversal remain unordered and may repeat members.",
         "inputSchema": {
+          "$defs": {
+            "InputEncoding": {
+              "enum": [
+                "utf8",
+                "base64"
+              ],
+              "type": "string"
+            }
+          },
           "$schema": "https://json-schema.org/draft/2020-12/schema",
           "additionalProperties": false,
           "properties": {
             "count": {
               "default": 100,
-              "description": "Approximate number of fields or members Redis should inspect.",
+              "description": "Approximate number of members Redis should inspect.",
               "format": "uint",
               "maximum": 1000,
               "minimum": 1,
@@ -9664,19 +10590,24 @@
               "type": "integer"
             },
             "key": {
-              "description": "Redis key containing the collection.",
+              "description": "Redis set key.",
               "type": "string"
+            },
+            "key_encoding": {
+              "$ref": "#/$defs/InputEncoding",
+              "default": "utf8",
+              "description": "Encoding of `key`."
             },
             "pattern": {
               "default": "*",
-              "description": "Glob-style field or member pattern.",
+              "description": "Glob-style member pattern. The pattern itself is UTF-8.",
               "type": "string"
             }
           },
           "required": [
             "key"
           ],
-          "title": "CollectionScanInput",
+          "title": "SetScanInput",
           "type": "object"
         },
         "name": "redis_sscan",
@@ -9697,6 +10628,13 @@
                 "encoding"
               ],
               "type": "object"
+            },
+            "InputEncoding": {
+              "enum": [
+                "utf8",
+                "base64"
+              ],
+              "type": "string"
             },
             "PageContinuation": {
               "additionalProperties": false,
@@ -9761,6 +10699,13 @@
               ],
               "type": "object"
             },
+            "SetResultOrdering": {
+              "enum": [
+                "byte_sorted",
+                "byte_sorted_within_page"
+              ],
+              "type": "string"
+            },
             "ValueEncoding": {
               "enum": [
                 "utf8",
@@ -9782,8 +10727,14 @@
               "minimum": 0,
               "type": "integer"
             },
+            "exists": {
+              "type": "boolean"
+            },
             "key": {
               "type": "string"
+            },
+            "key_encoding": {
+              "$ref": "#/$defs/InputEncoding"
             },
             "members": {
               "items": {
@@ -9791,14 +10742,20 @@
               },
               "type": "array"
             },
+            "ordering": {
+              "$ref": "#/$defs/SetResultOrdering"
+            },
             "page": {
               "$ref": "#/$defs/PageMetadata"
             }
           },
           "required": [
             "key",
+            "key_encoding",
+            "exists",
             "cursor",
             "count",
+            "ordering",
             "members",
             "page"
           ],
@@ -9868,6 +10825,169 @@
           "type": "object"
         },
         "title": "Redis String Length"
+      },
+      "required_access": "read_only",
+      "required_module": null,
+      "requires_raw_opt_in": false
+    },
+    {
+      "bundle": "data_structures",
+      "capability_requirements": {
+        "deployment": "any",
+        "minimum_module_version": null,
+        "minimum_redis_version": null,
+        "required_commands": [
+          "SUNION"
+        ],
+        "required_module": null
+      },
+      "name": "redis_sunion",
+      "output_policy": "budget_guarded",
+      "protocol": {
+        "annotations": {
+          "destructiveHint": false,
+          "idempotentHint": true,
+          "readOnlyHint": true
+        },
+        "description": "Compute a binary-safe, output-budgeted Redis set union across 1 to 1000 keys. Results are byte-sorted for deterministic structured output even though Redis sets are unordered. On Redis Cluster, every key must share a hash slot.",
+        "inputSchema": {
+          "$defs": {
+            "EncodedSetKeyInput": {
+              "additionalProperties": false,
+              "properties": {
+                "key": {
+                  "description": "Redis set key.",
+                  "type": "string"
+                },
+                "key_encoding": {
+                  "$ref": "#/$defs/InputEncoding",
+                  "default": "utf8",
+                  "description": "Encoding of `key`."
+                }
+              },
+              "required": [
+                "key"
+              ],
+              "type": "object"
+            },
+            "InputEncoding": {
+              "enum": [
+                "utf8",
+                "base64"
+              ],
+              "type": "string"
+            },
+            "SetKeySelector": {
+              "anyOf": [
+                {
+                  "description": "UTF-8 Redis set key shorthand.",
+                  "type": "string"
+                },
+                {
+                  "$ref": "#/$defs/EncodedSetKeyInput",
+                  "description": "Explicitly encoded Redis set key."
+                }
+              ]
+            }
+          },
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "keys": {
+              "description": "One to 1000 set keys. Strings are UTF-8 shorthand; objects can select base64.",
+              "items": {
+                "$ref": "#/$defs/SetKeySelector"
+              },
+              "maxItems": 1000,
+              "minItems": 1,
+              "type": "array"
+            }
+          },
+          "required": [
+            "keys"
+          ],
+          "title": "SetAlgebraInput",
+          "type": "object"
+        },
+        "name": "redis_sunion",
+        "outputSchema": {
+          "$defs": {
+            "EncodedValue": {
+              "additionalProperties": false,
+              "properties": {
+                "encoding": {
+                  "$ref": "#/$defs/ValueEncoding"
+                },
+                "value": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "value",
+                "encoding"
+              ],
+              "type": "object"
+            },
+            "SetAlgebraOperation": {
+              "enum": [
+                "difference",
+                "intersection",
+                "union"
+              ],
+              "type": "string"
+            },
+            "SetResultOrdering": {
+              "enum": [
+                "byte_sorted",
+                "byte_sorted_within_page"
+              ],
+              "type": "string"
+            },
+            "ValueEncoding": {
+              "enum": [
+                "utf8",
+                "base64"
+              ],
+              "type": "string"
+            }
+          },
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "count": {
+              "format": "uint",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "members": {
+              "items": {
+                "$ref": "#/$defs/EncodedValue"
+              },
+              "type": "array"
+            },
+            "operation": {
+              "$ref": "#/$defs/SetAlgebraOperation"
+            },
+            "ordering": {
+              "$ref": "#/$defs/SetResultOrdering"
+            },
+            "requested_keys": {
+              "format": "uint",
+              "minimum": 0,
+              "type": "integer"
+            }
+          },
+          "required": [
+            "operation",
+            "requested_keys",
+            "count",
+            "ordering",
+            "members"
+          ],
+          "title": "SetAlgebraOutput",
+          "type": "object"
+        },
+        "title": "Read Redis Set Union"
       },
       "required_access": "read_only",
       "required_module": null,
@@ -11640,6 +12760,7 @@
     "redis_sadd": {
       "added": 1,
       "key": "tags",
+      "key_encoding": "utf8",
       "requested": 2
     },
     "redis_scan": {
@@ -11655,6 +12776,24 @@
         "requested": 10,
         "returned": 2
       }
+    },
+    "redis_scard": {
+      "cardinality": 2,
+      "exists": true,
+      "key": "tags",
+      "key_encoding": "utf8"
+    },
+    "redis_sdiff": {
+      "count": 1,
+      "members": [
+        {
+          "encoding": "utf8",
+          "value": "alpha"
+        }
+      ],
+      "operation": "difference",
+      "ordering": "byte_sorted",
+      "requested_keys": 2
     },
     "redis_set": {
       "applied": true,
@@ -11676,10 +12815,31 @@
       "offset": 1,
       "written_bytes": 3
     },
+    "redis_sinter": {
+      "count": 1,
+      "members": [
+        {
+          "encoding": "utf8",
+          "value": "beta"
+        }
+      ],
+      "operation": "intersection",
+      "ordering": "byte_sorted",
+      "requested_keys": 2
+    },
+    "redis_sismember": {
+      "is_member": true,
+      "key": "tags",
+      "key_encoding": "utf8",
+      "member": "alpha",
+      "member_encoding": "utf8",
+      "set_exists": true
+    },
     "redis_smembers": {
       "count": 2,
       "exists": true,
       "key": "tags",
+      "key_encoding": "utf8",
       "members": [
         {
           "encoding": "utf8",
@@ -11689,18 +12849,46 @@
           "encoding": "utf8",
           "value": "beta"
         }
-      ]
+      ],
+      "ordering": "byte_sorted"
+    },
+    "redis_smismember": {
+      "count": 2,
+      "key": "tags",
+      "key_encoding": "utf8",
+      "members": [
+        {
+          "is_member": true,
+          "member": "alpha",
+          "member_encoding": "utf8"
+        },
+        {
+          "is_member": false,
+          "member": "missing",
+          "member_encoding": "utf8"
+        }
+      ],
+      "set_exists": true
+    },
+    "redis_srem": {
+      "key": "tags",
+      "key_encoding": "utf8",
+      "removed": 1,
+      "requested": 1
     },
     "redis_sscan": {
       "count": 1,
       "cursor": 0,
+      "exists": true,
       "key": "tags",
+      "key_encoding": "utf8",
       "members": [
         {
           "encoding": "utf8",
           "value": "alpha"
         }
       ],
+      "ordering": "byte_sorted_within_page",
       "page": {
         "complete": true,
         "continuation": null,
@@ -11711,6 +12899,22 @@
     "redis_strlen": {
       "key": "greeting",
       "length_bytes": 5
+    },
+    "redis_sunion": {
+      "count": 2,
+      "members": [
+        {
+          "encoding": "utf8",
+          "value": "alpha"
+        },
+        {
+          "encoding": "utf8",
+          "value": "beta"
+        }
+      ],
+      "operation": "union",
+      "ordering": "byte_sorted",
+      "requested_keys": 2
     },
     "redis_touch": {
       "requested": 1,

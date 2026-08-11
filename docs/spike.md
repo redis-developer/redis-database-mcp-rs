@@ -123,3 +123,14 @@ operations require full access, Redis 6.0/6.2 features are capability-gated,
 oversized values preserve mutation outcomes through explicit omission metadata,
 and `LMOVE` retains Redis Cluster's same-slot rule. Blocking list commands stay
 outside ordinary request/response tools.
+
+## 2026-08-11 set-surface follow-up
+
+The curated default now includes binary-safe cardinality, single and ordered
+multi-member checks, full-access removal, cursor scans, and deterministic
+budget-guarded difference/intersection/union results. Missing sets stay
+distinct from absent members, SMISMEMBER is capability-gated to Redis 6.2, and
+the suite exercises RESP2/RESP3, ACLs, large outputs, custom executor argv, and
+same-slot versus CROSSSLOT Cluster behavior. The destructive `*STORE` variants
+are not advertised as bounded tools because the output budget cannot constrain
+their destination cardinality or overwrite effect.

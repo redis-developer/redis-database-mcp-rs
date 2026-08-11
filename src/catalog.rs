@@ -210,7 +210,9 @@ impl ToolMetadata {
             "redis_restore" | "redis_restore_replace" => Some(RedisVersion::new(5, 0, 0)),
             "redis_lpos" => Some(RedisVersion::new(6, 0, 0)),
             "redis_copy" | "redis_copy_replace" | "redis_getdel" | "redis_getex"
-            | "redis_lmove" | "redis_lpop" | "redis_rpop" => Some(RedisVersion::new(6, 2, 0)),
+            | "redis_lmove" | "redis_lpop" | "redis_rpop" | "redis_smismember" => {
+                Some(RedisVersion::new(6, 2, 0))
+            }
             "redis_hexpire" | "redis_hpersist" | "redis_httl" => Some(RedisVersion::new(7, 4, 0)),
             _ => None,
         };
@@ -252,8 +254,14 @@ impl ToolMetadata {
             "redis_llen" => &["LLEN"],
             "redis_lpos" => &["LPOS", "EXISTS"],
             "redis_lrange" => &["LRANGE", "EXISTS"],
+            "redis_scard" => &["SCARD"],
+            "redis_sdiff" => &["SDIFF"],
+            "redis_sinter" => &["SINTER"],
+            "redis_sismember" => &["SISMEMBER", "EXISTS"],
             "redis_smembers" => &["SMEMBERS"],
-            "redis_sscan" => &["SSCAN"],
+            "redis_smismember" => &["SMISMEMBER", "EXISTS"],
+            "redis_sscan" => &["SSCAN", "EXISTS"],
+            "redis_sunion" => &["SUNION"],
             "redis_zrange" => &["ZRANGE"],
             "redis_zscan" => &["ZSCAN"],
             "redis_json_get" => &["JSON.GET"],
@@ -298,6 +306,7 @@ impl ToolMetadata {
             "redis_lset" => &["LSET"],
             "redis_ltrim" => &["LTRIM", "EXISTS"],
             "redis_rpop" => &["RPOP"],
+            "redis_srem" => &["SREM"],
             "redis_unlink" => &["UNLINK"],
             "redis_getdel" => &["GETDEL"],
             "redis_rename" => &["RENAME"],
@@ -349,7 +358,11 @@ impl ToolMetadata {
             | "redis_hkeys"
             | "redis_hmget"
             | "redis_hvals"
+            | "redis_sdiff"
+            | "redis_sinter"
             | "redis_smembers"
+            | "redis_smismember"
+            | "redis_sunion"
             | "redis_json_get"
             | "redis_json_type"
             | "redis_ft_list"
@@ -537,13 +550,49 @@ pub(crate) const CATALOG: &[ToolMetadata] = &[
         requires_raw_opt_in: false,
     },
     ToolMetadata {
+        name: "redis_scard",
+        bundle: ToolBundle::DataStructures,
+        required_access: AccessMode::ReadOnly,
+        requires_raw_opt_in: false,
+    },
+    ToolMetadata {
+        name: "redis_sdiff",
+        bundle: ToolBundle::DataStructures,
+        required_access: AccessMode::ReadOnly,
+        requires_raw_opt_in: false,
+    },
+    ToolMetadata {
+        name: "redis_sinter",
+        bundle: ToolBundle::DataStructures,
+        required_access: AccessMode::ReadOnly,
+        requires_raw_opt_in: false,
+    },
+    ToolMetadata {
+        name: "redis_sismember",
+        bundle: ToolBundle::DataStructures,
+        required_access: AccessMode::ReadOnly,
+        requires_raw_opt_in: false,
+    },
+    ToolMetadata {
         name: "redis_smembers",
         bundle: ToolBundle::DataStructures,
         required_access: AccessMode::ReadOnly,
         requires_raw_opt_in: false,
     },
     ToolMetadata {
+        name: "redis_smismember",
+        bundle: ToolBundle::DataStructures,
+        required_access: AccessMode::ReadOnly,
+        requires_raw_opt_in: false,
+    },
+    ToolMetadata {
         name: "redis_sscan",
+        bundle: ToolBundle::DataStructures,
+        required_access: AccessMode::ReadOnly,
+        requires_raw_opt_in: false,
+    },
+    ToolMetadata {
+        name: "redis_sunion",
         bundle: ToolBundle::DataStructures,
         required_access: AccessMode::ReadOnly,
         requires_raw_opt_in: false,
@@ -820,6 +869,12 @@ pub(crate) const CATALOG: &[ToolMetadata] = &[
     },
     ToolMetadata {
         name: "redis_rpop",
+        bundle: ToolBundle::DataStructures,
+        required_access: AccessMode::Full,
+        requires_raw_opt_in: false,
+    },
+    ToolMetadata {
+        name: "redis_srem",
         bundle: ToolBundle::DataStructures,
         required_access: AccessMode::Full,
         requires_raw_opt_in: false,

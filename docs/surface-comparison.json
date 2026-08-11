@@ -225,7 +225,7 @@
   },
   "current_gate": {
     "met": false,
-    "blockers": [21, 22, 23, 27, 28, 29, 30, 31, 32, 33]
+    "blockers": [22, 23, 27, 28, 29, 30, 31, 32, 33]
   },
   "contract_scorecard": {
     "scale": {
@@ -549,7 +549,7 @@
       "redisctl_tools": ["redis_smembers"],
       "library_tools": ["redis_smembers"],
       "disposition": "implemented",
-      "reason": "Members are binary-safe, deterministic, and budget-guarded with redis_sscan as the cursor alternative."
+      "reason": "Keys and members are binary-safe; results are deterministically byte-sorted and budget-guarded with redis_sscan as the cursor alternative."
     },
     {
       "id": "set.scan",
@@ -557,7 +557,7 @@
       "redisctl_tools": [],
       "library_tools": ["redis_sscan"],
       "disposition": "implemented",
-      "reason": "SSCAN pages expose a typed continuation cursor and obey both configured output ceilings."
+      "reason": "Binary-safe SSCAN pages distinguish missing sets, expose a typed continuation cursor, sort each returned page, and obey both configured output ceilings."
     },
     {
       "id": "set.add",
@@ -565,7 +565,7 @@
       "redisctl_tools": ["redis_sadd"],
       "library_tools": ["redis_sadd"],
       "disposition": "implemented",
-      "reason": "Bounded multi-member writes return requested and added counts."
+      "reason": "Bounded binary-safe multi-member writes return requested and added counts."
     },
     {
       "id": "sorted_set.range",
@@ -758,10 +758,17 @@
       "id": "set.expansion",
       "redis_mcp_tools": ["srem"],
       "redisctl_tools": ["redis_scard", "redis_sdiff", "redis_sinter", "redis_sismember", "redis_srem", "redis_sunion"],
-      "library_tools": [],
-      "disposition": "planned",
-      "issue": 21,
-      "reason": "Issue #21 adds membership, scans, removal, and bounded set algebra."
+      "library_tools": [
+        "redis_scard",
+        "redis_sdiff",
+        "redis_sinter",
+        "redis_sismember",
+        "redis_smismember",
+        "redis_srem",
+        "redis_sunion"
+      ],
+      "disposition": "implemented",
+      "reason": "The set family is a strict superset of both baselines: binary-safe single and ordered multi-member checks, cardinality, removal, deterministic budget-guarded algebra, explicit missing-set results, Redis 6.2 capability metadata, and live ACL, RESP2/RESP3, large-set, and Cluster slot coverage. Store variants remain raw full-access operations because their destination writes cannot be bounded by the MCP output budget."
     },
     {
       "id": "sorted_set.expansion",

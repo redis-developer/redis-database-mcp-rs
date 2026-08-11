@@ -401,7 +401,7 @@
         "annotations": {
           "destructiveHint": false
         },
-        "description": "Create a HASH or JSON search index with TEXT, TAG, NUMERIC, or GEO fields.",
+        "description": "Create a HASH or JSON search index with TEXT, TAG, NUMERIC, GEO, or typed FLAT/HNSW VECTOR fields.",
         "inputSchema": {
           "$defs": {
             "SearchField": {
@@ -416,7 +416,7 @@
                   ]
                 },
                 "field_type": {
-                  "description": "TEXT, TAG, NUMERIC, or GEO.",
+                  "description": "TEXT, TAG, NUMERIC, GEO, or VECTOR.",
                   "type": "string"
                 },
                 "name": {
@@ -437,11 +437,126 @@
                   "default": false,
                   "description": "Make the field available to SORTBY.",
                   "type": "boolean"
+                },
+                "vector": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/$defs/VectorFieldOptions"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ],
+                  "description": "Required VECTOR algorithm, type, dimension, metric, and tuning options."
                 }
               },
               "required": [
                 "name",
                 "field_type"
+              ],
+              "type": "object"
+            },
+            "VectorAlgorithm": {
+              "enum": [
+                "FLAT",
+                "HNSW"
+              ],
+              "type": "string"
+            },
+            "VectorDataType": {
+              "enum": [
+                "FLOAT32",
+                "FLOAT64"
+              ],
+              "type": "string"
+            },
+            "VectorFieldOptions": {
+              "additionalProperties": false,
+              "properties": {
+                "algorithm": {
+                  "$ref": "#/$defs/VectorAlgorithm",
+                  "description": "Vector index algorithm: FLAT for exact search or HNSW for approximate search."
+                },
+                "block_size": {
+                  "default": null,
+                  "description": "Optional FLAT allocation block size.",
+                  "format": "uint64",
+                  "minimum": 0,
+                  "type": [
+                    "integer",
+                    "null"
+                  ]
+                },
+                "data_type": {
+                  "$ref": "#/$defs/VectorDataType",
+                  "description": "Element representation used in Redis: FLOAT32 or FLOAT64."
+                },
+                "dimensions": {
+                  "description": "Number of elements in each vector.",
+                  "format": "uint",
+                  "maximum": 16384,
+                  "minimum": 1,
+                  "type": "integer"
+                },
+                "distance_metric": {
+                  "description": "Distance metric: L2, IP, or COSINE.",
+                  "type": "string"
+                },
+                "ef_construction": {
+                  "default": null,
+                  "description": "Optional HNSW construction candidate count.",
+                  "format": "uint64",
+                  "minimum": 0,
+                  "type": [
+                    "integer",
+                    "null"
+                  ]
+                },
+                "ef_runtime": {
+                  "default": null,
+                  "description": "Optional default HNSW runtime candidate count.",
+                  "format": "uint64",
+                  "minimum": 0,
+                  "type": [
+                    "integer",
+                    "null"
+                  ]
+                },
+                "epsilon": {
+                  "default": null,
+                  "description": "Optional HNSW range-query relative distance factor.",
+                  "format": "double",
+                  "type": [
+                    "number",
+                    "null"
+                  ]
+                },
+                "initial_capacity": {
+                  "default": null,
+                  "description": "Optional initial index capacity.",
+                  "format": "uint64",
+                  "minimum": 0,
+                  "type": [
+                    "integer",
+                    "null"
+                  ]
+                },
+                "m": {
+                  "default": null,
+                  "description": "Optional HNSW maximum outgoing edges per node.",
+                  "format": "uint64",
+                  "minimum": 0,
+                  "type": [
+                    "integer",
+                    "null"
+                  ]
+                }
+              },
+              "required": [
+                "algorithm",
+                "data_type",
+                "dimensions",
+                "distance_metric"
               ],
               "type": "object"
             }
@@ -505,12 +620,18 @@
             },
             "on": {
               "type": "string"
+            },
+            "vector_fields": {
+              "format": "uint",
+              "minimum": 0,
+              "type": "integer"
             }
           },
           "required": [
             "index",
             "on",
             "fields",
+            "vector_fields",
             "created"
           ],
           "title": "FtCreateOutput",
@@ -584,6 +705,527 @@
         "title": "Drop Redis Search Index"
       },
       "required_access": "full",
+      "required_module": "search",
+      "requires_raw_opt_in": false
+    },
+    {
+      "bundle": "search",
+      "capability_requirements": {
+        "deployment": "any",
+        "minimum_module_version": "2.4.0",
+        "minimum_redis_version": null,
+        "required_commands": [
+          "FT.SEARCH"
+        ],
+        "required_module": "search"
+      },
+      "name": "redis_ft_hybrid_search",
+      "output_policy": "offset_paginated",
+      "protocol": {
+        "annotations": {
+          "destructiveHint": false,
+          "idempotentHint": true,
+          "readOnlyHint": true
+        },
+        "description": "Run bounded KNN search combined with typed, escaped text, tag, numeric, and geo filters.",
+        "inputSchema": {
+          "$defs": {
+            "GeoUnit": {
+              "enum": [
+                "m",
+                "km",
+                "ft",
+                "mi"
+              ],
+              "type": "string"
+            },
+            "HybridFilter": {
+              "oneOf": [
+                {
+                  "additionalProperties": false,
+                  "description": "Match one escaped literal text value.",
+                  "properties": {
+                    "field": {
+                      "type": "string"
+                    },
+                    "type": {
+                      "const": "text",
+                      "type": "string"
+                    },
+                    "value": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "type",
+                    "field",
+                    "value"
+                  ],
+                  "type": "object"
+                },
+                {
+                  "additionalProperties": false,
+                  "description": "Match any one of the escaped literal tag values.",
+                  "properties": {
+                    "field": {
+                      "type": "string"
+                    },
+                    "type": {
+                      "const": "tag",
+                      "type": "string"
+                    },
+                    "values": {
+                      "items": {
+                        "type": "string"
+                      },
+                      "maxItems": 100,
+                      "minItems": 1,
+                      "type": "array"
+                    }
+                  },
+                  "required": [
+                    "type",
+                    "field",
+                    "values"
+                  ],
+                  "type": "object"
+                },
+                {
+                  "additionalProperties": false,
+                  "description": "Match a numeric range. Omitted endpoints mean negative or positive infinity.",
+                  "properties": {
+                    "field": {
+                      "type": "string"
+                    },
+                    "maximum": {
+                      "default": null,
+                      "format": "double",
+                      "type": [
+                        "number",
+                        "null"
+                      ]
+                    },
+                    "maximum_exclusive": {
+                      "default": false,
+                      "type": "boolean"
+                    },
+                    "minimum": {
+                      "default": null,
+                      "format": "double",
+                      "type": [
+                        "number",
+                        "null"
+                      ]
+                    },
+                    "minimum_exclusive": {
+                      "default": false,
+                      "type": "boolean"
+                    },
+                    "type": {
+                      "const": "numeric",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "type",
+                    "field"
+                  ],
+                  "type": "object"
+                },
+                {
+                  "additionalProperties": false,
+                  "description": "Match a point within a radius of a geographic coordinate.",
+                  "properties": {
+                    "field": {
+                      "type": "string"
+                    },
+                    "latitude": {
+                      "format": "double",
+                      "type": "number"
+                    },
+                    "longitude": {
+                      "format": "double",
+                      "type": "number"
+                    },
+                    "radius": {
+                      "format": "double",
+                      "type": "number"
+                    },
+                    "type": {
+                      "const": "geo",
+                      "type": "string"
+                    },
+                    "unit": {
+                      "$ref": "#/$defs/GeoUnit"
+                    }
+                  },
+                  "required": [
+                    "type",
+                    "field",
+                    "longitude",
+                    "latitude",
+                    "radius",
+                    "unit"
+                  ],
+                  "type": "object"
+                }
+              ]
+            },
+            "HybridPolicy": {
+              "enum": [
+                "batches",
+                "ad_hoc_brute_force"
+              ],
+              "type": "string"
+            },
+            "VectorDataType": {
+              "enum": [
+                "FLOAT32",
+                "FLOAT64"
+              ],
+              "type": "string"
+            }
+          },
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "batch_size": {
+              "default": null,
+              "description": "Optional batch size, valid only with hybrid_policy=batches.",
+              "format": "uint64",
+              "minimum": 0,
+              "type": [
+                "integer",
+                "null"
+              ]
+            },
+            "data_type": {
+              "$ref": "#/$defs/VectorDataType",
+              "description": "Element representation expected by the index."
+            },
+            "ef_runtime": {
+              "default": null,
+              "description": "Per-query HNSW candidate count.",
+              "format": "uint64",
+              "minimum": 0,
+              "type": [
+                "integer",
+                "null"
+              ]
+            },
+            "filters": {
+              "description": "Typed text, tag, numeric, and geo clauses combined with AND.",
+              "items": {
+                "$ref": "#/$defs/HybridFilter"
+              },
+              "maxItems": 100,
+              "minItems": 1,
+              "type": "array"
+            },
+            "hybrid_policy": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/HybridPolicy"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Optional Query Engine hybrid execution policy."
+            },
+            "index": {
+              "description": "Search index name.",
+              "type": "string"
+            },
+            "limit_num": {
+              "default": null,
+              "description": "Maximum results returned by this page, bounded to 100.",
+              "format": "uint64",
+              "maximum": 100,
+              "minimum": 1,
+              "type": [
+                "integer",
+                "null"
+              ]
+            },
+            "limit_offset": {
+              "default": null,
+              "description": "Offset within the top-k neighbors. Follow page.continuation.offset.",
+              "format": "uint64",
+              "minimum": 0,
+              "type": [
+                "integer",
+                "null"
+              ]
+            },
+            "return_fields": {
+              "default": [],
+              "description": "Additional fields to return with each document.",
+              "items": {
+                "type": "string"
+              },
+              "maxItems": 100,
+              "type": "array"
+            },
+            "score_alias": {
+              "default": null,
+              "description": "Alias used for the computed distance field.",
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "shard_k_ratio": {
+              "default": null,
+              "description": "Cluster shard over-fetch ratio between 0.1 and 1.0, with at most two decimals.",
+              "format": "double",
+              "type": [
+                "number",
+                "null"
+              ]
+            },
+            "top_k": {
+              "default": null,
+              "description": "Number of nearest neighbors considered, bounded to 100.",
+              "format": "uint64",
+              "maximum": 100,
+              "minimum": 1,
+              "type": [
+                "integer",
+                "null"
+              ]
+            },
+            "vector": {
+              "description": "Numeric query vector. Its length must equal the index dimension.",
+              "items": {
+                "format": "double",
+                "type": "number"
+              },
+              "maxItems": 16384,
+              "minItems": 1,
+              "type": "array"
+            },
+            "vector_field": {
+              "description": "Query-facing alias of the indexed VECTOR field.",
+              "type": "string"
+            }
+          },
+          "required": [
+            "index",
+            "vector_field",
+            "data_type",
+            "vector",
+            "filters"
+          ],
+          "title": "FtHybridSearchInput",
+          "type": "object"
+        },
+        "name": "redis_ft_hybrid_search",
+        "outputSchema": {
+          "$defs": {
+            "PageContinuation": {
+              "additionalProperties": false,
+              "properties": {
+                "cursor": {
+                  "format": "uint64",
+                  "minimum": 0,
+                  "type": [
+                    "integer",
+                    "null"
+                  ]
+                },
+                "offset": {
+                  "format": "uint64",
+                  "minimum": 0,
+                  "type": [
+                    "integer",
+                    "null"
+                  ]
+                },
+                "start": {
+                  "format": "int64",
+                  "type": [
+                    "integer",
+                    "null"
+                  ]
+                }
+              },
+              "type": "object"
+            },
+            "PageMetadata": {
+              "additionalProperties": false,
+              "properties": {
+                "complete": {
+                  "type": "boolean"
+                },
+                "continuation": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/$defs/PageContinuation"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "requested": {
+                  "format": "uint",
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                "returned": {
+                  "format": "uint",
+                  "minimum": 0,
+                  "type": "integer"
+                }
+              },
+              "required": [
+                "requested",
+                "returned",
+                "complete"
+              ],
+              "type": "object"
+            },
+            "SearchFieldValue": {
+              "additionalProperties": false,
+              "properties": {
+                "name": {
+                  "type": "string"
+                },
+                "name_encoding": {
+                  "$ref": "#/$defs/ValueEncoding"
+                },
+                "value": true
+              },
+              "required": [
+                "name",
+                "name_encoding",
+                "value"
+              ],
+              "type": "object"
+            },
+            "ValueEncoding": {
+              "enum": [
+                "utf8",
+                "base64"
+              ],
+              "type": "string"
+            },
+            "VectorDataType": {
+              "enum": [
+                "FLOAT32",
+                "FLOAT64"
+              ],
+              "type": "string"
+            },
+            "VectorSearchDocument": {
+              "additionalProperties": false,
+              "properties": {
+                "distance": {
+                  "format": "double",
+                  "type": "number"
+                },
+                "fields": {
+                  "items": {
+                    "$ref": "#/$defs/SearchFieldValue"
+                  },
+                  "type": "array"
+                },
+                "id": {
+                  "type": "string"
+                },
+                "id_encoding": {
+                  "$ref": "#/$defs/ValueEncoding"
+                }
+              },
+              "required": [
+                "id",
+                "id_encoding",
+                "distance",
+                "fields"
+              ],
+              "type": "object"
+            }
+          },
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "count": {
+              "format": "uint",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "data_type": {
+              "$ref": "#/$defs/VectorDataType"
+            },
+            "dimensions": {
+              "format": "uint",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "index": {
+              "type": "string"
+            },
+            "limit_num": {
+              "format": "uint64",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "limit_offset": {
+              "format": "uint64",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "page": {
+              "$ref": "#/$defs/PageMetadata"
+            },
+            "query": {
+              "type": "string"
+            },
+            "results": {
+              "items": {
+                "$ref": "#/$defs/VectorSearchDocument"
+              },
+              "type": "array"
+            },
+            "score_alias": {
+              "type": "string"
+            },
+            "top_k": {
+              "format": "uint64",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "total": {
+              "format": "uint64",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "vector_field": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "index",
+            "vector_field",
+            "data_type",
+            "dimensions",
+            "query",
+            "score_alias",
+            "total",
+            "top_k",
+            "limit_offset",
+            "limit_num",
+            "count",
+            "results",
+            "page"
+          ],
+          "title": "VectorSearchOutput",
+          "type": "object"
+        },
+        "title": "Search Redis Vectors With Filters"
+      },
+      "required_access": "read_only",
       "required_module": "search",
       "requires_raw_opt_in": false
     },
@@ -917,6 +1559,348 @@
           "type": "object"
         },
         "title": "Search Redis Index"
+      },
+      "required_access": "read_only",
+      "required_module": "search",
+      "requires_raw_opt_in": false
+    },
+    {
+      "bundle": "search",
+      "capability_requirements": {
+        "deployment": "any",
+        "minimum_module_version": "2.4.0",
+        "minimum_redis_version": null,
+        "required_commands": [
+          "FT.SEARCH"
+        ],
+        "required_module": "search"
+      },
+      "name": "redis_ft_vector_search",
+      "output_policy": "offset_paginated",
+      "protocol": {
+        "annotations": {
+          "destructiveHint": false,
+          "idempotentHint": true,
+          "readOnlyHint": true
+        },
+        "description": "Run a binary-safe, bounded KNN query and return typed documents, distances, and continuation metadata.",
+        "inputSchema": {
+          "$defs": {
+            "VectorDataType": {
+              "enum": [
+                "FLOAT32",
+                "FLOAT64"
+              ],
+              "type": "string"
+            }
+          },
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "data_type": {
+              "$ref": "#/$defs/VectorDataType",
+              "description": "Element representation expected by the index."
+            },
+            "ef_runtime": {
+              "default": null,
+              "description": "Per-query HNSW candidate count.",
+              "format": "uint64",
+              "minimum": 0,
+              "type": [
+                "integer",
+                "null"
+              ]
+            },
+            "index": {
+              "description": "Search index name.",
+              "type": "string"
+            },
+            "limit_num": {
+              "default": null,
+              "description": "Maximum results returned by this page, bounded to 100.",
+              "format": "uint64",
+              "maximum": 100,
+              "minimum": 1,
+              "type": [
+                "integer",
+                "null"
+              ]
+            },
+            "limit_offset": {
+              "default": null,
+              "description": "Offset within the top-k neighbors. Follow page.continuation.offset.",
+              "format": "uint64",
+              "minimum": 0,
+              "type": [
+                "integer",
+                "null"
+              ]
+            },
+            "return_fields": {
+              "default": [],
+              "description": "Additional fields to return with each document.",
+              "items": {
+                "type": "string"
+              },
+              "maxItems": 100,
+              "type": "array"
+            },
+            "score_alias": {
+              "default": null,
+              "description": "Alias used for the computed distance field.",
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "shard_k_ratio": {
+              "default": null,
+              "description": "Cluster shard over-fetch ratio between 0.1 and 1.0, with at most two decimals.",
+              "format": "double",
+              "type": [
+                "number",
+                "null"
+              ]
+            },
+            "top_k": {
+              "default": null,
+              "description": "Number of nearest neighbors considered, bounded to 100.",
+              "format": "uint64",
+              "maximum": 100,
+              "minimum": 1,
+              "type": [
+                "integer",
+                "null"
+              ]
+            },
+            "vector": {
+              "description": "Numeric query vector. Its length must equal the index dimension.",
+              "items": {
+                "format": "double",
+                "type": "number"
+              },
+              "maxItems": 16384,
+              "minItems": 1,
+              "type": "array"
+            },
+            "vector_field": {
+              "description": "Query-facing alias of the indexed VECTOR field.",
+              "type": "string"
+            }
+          },
+          "required": [
+            "index",
+            "vector_field",
+            "data_type",
+            "vector"
+          ],
+          "title": "VectorQueryInput",
+          "type": "object"
+        },
+        "name": "redis_ft_vector_search",
+        "outputSchema": {
+          "$defs": {
+            "PageContinuation": {
+              "additionalProperties": false,
+              "properties": {
+                "cursor": {
+                  "format": "uint64",
+                  "minimum": 0,
+                  "type": [
+                    "integer",
+                    "null"
+                  ]
+                },
+                "offset": {
+                  "format": "uint64",
+                  "minimum": 0,
+                  "type": [
+                    "integer",
+                    "null"
+                  ]
+                },
+                "start": {
+                  "format": "int64",
+                  "type": [
+                    "integer",
+                    "null"
+                  ]
+                }
+              },
+              "type": "object"
+            },
+            "PageMetadata": {
+              "additionalProperties": false,
+              "properties": {
+                "complete": {
+                  "type": "boolean"
+                },
+                "continuation": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/$defs/PageContinuation"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "requested": {
+                  "format": "uint",
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                "returned": {
+                  "format": "uint",
+                  "minimum": 0,
+                  "type": "integer"
+                }
+              },
+              "required": [
+                "requested",
+                "returned",
+                "complete"
+              ],
+              "type": "object"
+            },
+            "SearchFieldValue": {
+              "additionalProperties": false,
+              "properties": {
+                "name": {
+                  "type": "string"
+                },
+                "name_encoding": {
+                  "$ref": "#/$defs/ValueEncoding"
+                },
+                "value": true
+              },
+              "required": [
+                "name",
+                "name_encoding",
+                "value"
+              ],
+              "type": "object"
+            },
+            "ValueEncoding": {
+              "enum": [
+                "utf8",
+                "base64"
+              ],
+              "type": "string"
+            },
+            "VectorDataType": {
+              "enum": [
+                "FLOAT32",
+                "FLOAT64"
+              ],
+              "type": "string"
+            },
+            "VectorSearchDocument": {
+              "additionalProperties": false,
+              "properties": {
+                "distance": {
+                  "format": "double",
+                  "type": "number"
+                },
+                "fields": {
+                  "items": {
+                    "$ref": "#/$defs/SearchFieldValue"
+                  },
+                  "type": "array"
+                },
+                "id": {
+                  "type": "string"
+                },
+                "id_encoding": {
+                  "$ref": "#/$defs/ValueEncoding"
+                }
+              },
+              "required": [
+                "id",
+                "id_encoding",
+                "distance",
+                "fields"
+              ],
+              "type": "object"
+            }
+          },
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "count": {
+              "format": "uint",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "data_type": {
+              "$ref": "#/$defs/VectorDataType"
+            },
+            "dimensions": {
+              "format": "uint",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "index": {
+              "type": "string"
+            },
+            "limit_num": {
+              "format": "uint64",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "limit_offset": {
+              "format": "uint64",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "page": {
+              "$ref": "#/$defs/PageMetadata"
+            },
+            "query": {
+              "type": "string"
+            },
+            "results": {
+              "items": {
+                "$ref": "#/$defs/VectorSearchDocument"
+              },
+              "type": "array"
+            },
+            "score_alias": {
+              "type": "string"
+            },
+            "top_k": {
+              "format": "uint64",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "total": {
+              "format": "uint64",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "vector_field": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "index",
+            "vector_field",
+            "data_type",
+            "dimensions",
+            "query",
+            "score_alias",
+            "total",
+            "top_k",
+            "limit_offset",
+            "limit_num",
+            "count",
+            "results",
+            "page"
+          ],
+          "title": "VectorSearchOutput",
+          "type": "object"
+        },
+        "title": "Search Redis Vectors"
       },
       "required_access": "read_only",
       "required_module": "search",
@@ -3460,6 +4444,253 @@
       "requires_raw_opt_in": false
     },
     {
+      "bundle": "search",
+      "capability_requirements": {
+        "deployment": "any",
+        "minimum_module_version": "2.4.0",
+        "minimum_redis_version": null,
+        "required_commands": [
+          "HGET"
+        ],
+        "required_module": "search"
+      },
+      "name": "redis_vector_get_hash",
+      "output_policy": "budget_guarded",
+      "protocol": {
+        "annotations": {
+          "destructiveHint": false,
+          "idempotentHint": true,
+          "readOnlyHint": true
+        },
+        "description": "Decode one binary Redis hash field as a bounded little-endian FLOAT32 or FLOAT64 numeric vector.",
+        "inputSchema": {
+          "$defs": {
+            "VectorDataType": {
+              "enum": [
+                "FLOAT32",
+                "FLOAT64"
+              ],
+              "type": "string"
+            }
+          },
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "data_type": {
+              "$ref": "#/$defs/VectorDataType",
+              "description": "Element representation used for the stored bytes."
+            },
+            "field": {
+              "description": "Hash field containing the binary vector.",
+              "type": "string"
+            },
+            "key": {
+              "description": "Redis hash key.",
+              "type": "string"
+            }
+          },
+          "required": [
+            "key",
+            "field",
+            "data_type"
+          ],
+          "title": "HashVectorInput",
+          "type": "object"
+        },
+        "name": "redis_vector_get_hash",
+        "outputSchema": {
+          "$defs": {
+            "VectorDataType": {
+              "enum": [
+                "FLOAT32",
+                "FLOAT64"
+              ],
+              "type": "string"
+            }
+          },
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "bytes": {
+              "format": "uint",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "data_type": {
+              "$ref": "#/$defs/VectorDataType"
+            },
+            "dimensions": {
+              "format": "uint",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "encoding": {
+              "type": "string"
+            },
+            "exists": {
+              "type": "boolean"
+            },
+            "field": {
+              "type": "string"
+            },
+            "key": {
+              "type": "string"
+            },
+            "vector": {
+              "items": {
+                "format": "double",
+                "type": "number"
+              },
+              "type": [
+                "array",
+                "null"
+              ]
+            }
+          },
+          "required": [
+            "key",
+            "field",
+            "exists",
+            "data_type",
+            "dimensions",
+            "bytes",
+            "encoding"
+          ],
+          "title": "GetHashVectorOutput",
+          "type": "object"
+        },
+        "title": "Read Redis Hash Vector"
+      },
+      "required_access": "read_only",
+      "required_module": "search",
+      "requires_raw_opt_in": false
+    },
+    {
+      "bundle": "search",
+      "capability_requirements": {
+        "deployment": "any",
+        "minimum_module_version": "2.4.0",
+        "minimum_redis_version": null,
+        "required_commands": [
+          "HSET"
+        ],
+        "required_module": "search"
+      },
+      "name": "redis_vector_set_hash",
+      "output_policy": "intrinsically_bounded",
+      "protocol": {
+        "annotations": {
+          "destructiveHint": false
+        },
+        "description": "Encode a numeric FLOAT32 or FLOAT64 vector into deterministic little-endian bytes and store it in one Redis hash field.",
+        "inputSchema": {
+          "$defs": {
+            "VectorDataType": {
+              "enum": [
+                "FLOAT32",
+                "FLOAT64"
+              ],
+              "type": "string"
+            }
+          },
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "data_type": {
+              "$ref": "#/$defs/VectorDataType",
+              "description": "Element representation used for the stored bytes."
+            },
+            "field": {
+              "description": "Hash field that will contain the binary vector.",
+              "type": "string"
+            },
+            "key": {
+              "description": "Redis hash key.",
+              "type": "string"
+            },
+            "vector": {
+              "description": "Numeric vector encoded directly into a binary-safe Redis argument.",
+              "items": {
+                "format": "double",
+                "type": "number"
+              },
+              "maxItems": 16384,
+              "minItems": 1,
+              "type": "array"
+            }
+          },
+          "required": [
+            "key",
+            "field",
+            "data_type",
+            "vector"
+          ],
+          "title": "SetHashVectorInput",
+          "type": "object"
+        },
+        "name": "redis_vector_set_hash",
+        "outputSchema": {
+          "$defs": {
+            "VectorDataType": {
+              "enum": [
+                "FLOAT32",
+                "FLOAT64"
+              ],
+              "type": "string"
+            }
+          },
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "bytes": {
+              "format": "uint",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "data_type": {
+              "$ref": "#/$defs/VectorDataType"
+            },
+            "dimensions": {
+              "format": "uint",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "encoding": {
+              "type": "string"
+            },
+            "field": {
+              "type": "string"
+            },
+            "field_added": {
+              "type": "boolean"
+            },
+            "key": {
+              "type": "string"
+            },
+            "stored": {
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "key",
+            "field",
+            "data_type",
+            "dimensions",
+            "bytes",
+            "encoding",
+            "field_added",
+            "stored"
+          ],
+          "title": "SetHashVectorOutput",
+          "type": "object"
+        },
+        "title": "Store Redis Hash Vector"
+      },
+      "required_access": "read_write",
+      "required_module": "search",
+      "requires_raw_opt_in": false
+    },
+    {
       "bundle": "data_structures",
       "capability_requirements": {
         "deployment": "any",
@@ -4016,12 +5247,49 @@
       "created": true,
       "fields": 1,
       "index": "idx:docs",
-      "on": "JSON"
+      "on": "JSON",
+      "vector_fields": 0
     },
     "redis_ft_dropindex": {
       "documents_deleted": false,
       "dropped": true,
       "index": "idx:docs"
+    },
+    "redis_ft_hybrid_search": {
+      "count": 1,
+      "data_type": "FLOAT32",
+      "dimensions": 2,
+      "index": "idx:docs",
+      "limit_num": 10,
+      "limit_offset": 0,
+      "page": {
+        "complete": true,
+        "continuation": null,
+        "requested": 10,
+        "returned": 1
+      },
+      "query": "(@title:Redis)=>[KNN 10 @embedding $BLOB HYBRID_POLICY BATCHES AS vector_distance]",
+      "results": [
+        {
+          "distance": 0.125,
+          "fields": [
+            {
+              "name": "title",
+              "name_encoding": "utf8",
+              "value": {
+                "encoding": "utf8",
+                "value": "Redis guide"
+              }
+            }
+          ],
+          "id": "doc:1",
+          "id_encoding": "utf8"
+        }
+      ],
+      "score_alias": "vector_distance",
+      "top_k": 10,
+      "total": 1,
+      "vector_field": "embedding"
     },
     "redis_ft_info": {
       "attributes": {
@@ -4067,6 +5335,42 @@
         ]
       ],
       "total": 1
+    },
+    "redis_ft_vector_search": {
+      "count": 1,
+      "data_type": "FLOAT32",
+      "dimensions": 2,
+      "index": "idx:docs",
+      "limit_num": 10,
+      "limit_offset": 0,
+      "page": {
+        "complete": true,
+        "continuation": null,
+        "requested": 10,
+        "returned": 1
+      },
+      "query": "*=>[KNN 10 @embedding $BLOB AS vector_distance]",
+      "results": [
+        {
+          "distance": 0.125,
+          "fields": [
+            {
+              "name": "title",
+              "name_encoding": "utf8",
+              "value": {
+                "encoding": "utf8",
+                "value": "Redis guide"
+              }
+            }
+          ],
+          "id": "doc:1",
+          "id_encoding": "utf8"
+        }
+      ],
+      "score_alias": "vector_distance",
+      "top_k": 10,
+      "total": 1,
+      "vector_field": "embedding"
     },
     "redis_get": {
       "encoding": "utf8",
@@ -4298,6 +5602,29 @@
     "redis_unlink": {
       "requested": 1,
       "unlinked": 1
+    },
+    "redis_vector_get_hash": {
+      "bytes": 8,
+      "data_type": "FLOAT32",
+      "dimensions": 2,
+      "encoding": "ieee754_little_endian",
+      "exists": true,
+      "field": "embedding",
+      "key": "doc:1",
+      "vector": [
+        1.0,
+        2.0
+      ]
+    },
+    "redis_vector_set_hash": {
+      "bytes": 8,
+      "data_type": "FLOAT32",
+      "dimensions": 2,
+      "encoding": "ieee754_little_endian",
+      "field": "embedding",
+      "field_added": true,
+      "key": "doc:1",
+      "stored": true
     },
     "redis_zadd": {
       "affected": 1,

@@ -27,7 +27,9 @@ The standalone default exposes 32 broadly useful tools:
 - optional RedisJSON lifecycle: `redis_json_get`, `redis_json_type`,
   `redis_json_set`, `redis_json_del`
 - optional Search lifecycle: `redis_ft_list`, `redis_ft_info`,
-  `redis_ft_search`, `redis_ft_create`, `redis_ft_dropindex`
+  `redis_ft_search`, `redis_ft_create`, `redis_ft_dropindex`,
+  `redis_vector_get_hash`, `redis_vector_set_hash`,
+  `redis_ft_vector_search`, `redis_ft_hybrid_search`
 - explicit full-access escape hatch: `redis_command`
 
 Every successful tool result includes MCP structuredContent and an output
@@ -230,7 +232,10 @@ always takes precedence and is never stopped by the suite.
 The Redis Stack lifecycle test similarly uses `REDIS_STACK_URL` when supplied.
 Otherwise, the wrapper auto-detects a local Redis Stack installation and loads
 its Search and RedisJSON modules into an isolated server. A plain Redis target
-is also exercised to keep missing-module errors stable and actionable.
+is also exercised to keep missing-module errors stable and actionable. Stack
+coverage includes FLOAT32 HASH and FLOAT64 JSON vectors, FLAT and HNSW indexes,
+binary-safe hash round trips, KNN pagination, and typed text/tag/numeric/geo
+hybrid filters.
 
 CI runs the complete suite on Redis 8.8 and the live router/stdio contract on
 every currently supported Redis Open Source series: 6.2, 7.2, 7.4, 8.0, 8.2,

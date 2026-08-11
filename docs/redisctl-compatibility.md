@@ -75,7 +75,9 @@ metadata.
 
 The optional module-backed overlap adds `redis_json_get`, `redis_json_type`,
 `redis_json_set`, `redis_json_del`, `redis_ft_list`, `redis_ft_info`,
-`redis_ft_search`, `redis_ft_create`, and `redis_ft_dropindex`.
+`redis_ft_search`, `redis_ft_create`, `redis_ft_dropindex`,
+`redis_vector_get_hash`, `redis_vector_set_hash`, `redis_ft_vector_search`, and
+`redis_ft_hybrid_search`.
 
 - Tool names and Redis-domain field names remain aligned where practical.
 - `redis_json_set.value` accepts structured JSON directly. redisctl accepts a
@@ -87,10 +89,12 @@ The optional module-backed overlap adds `redis_json_get`, `redis_json_type`,
   returns a typed continuation offset. Search result payloads retain their
   protocol sequence with explicit binary encodings while exposing the total
   separately.
-- The first `redis_ft_create` contract supports HASH and JSON indexes with
-  TEXT, TAG, NUMERIC, and GEO fields. VECTOR configuration and redisctl's
-  `if_exists=drop` shortcut remain out of scope because they need a richer
-  schema and clearer destructive-access semantics.
+- `redis_ft_create` supports HASH and JSON indexes with TEXT, TAG, NUMERIC,
+  GEO, and typed FLAT/HNSW VECTOR fields. Focused vector tools encode numeric
+  arrays as binary-safe FLOAT32/FLOAT64 values, return structured distances and
+  documents, and compose KNN with escaped text, tag, numeric, and geo filters.
+  redisctl's `if_exists=drop` shortcut remains out of scope because implicit
+  index deletion needs clearer destructive-access semantics.
 - Redis and module minimum versions plus required commands travel in catalog
   metadata. Module requirements also travel in `RedisCommand`. Hosts can supply
   a crate-owned capability snapshot or use bounded direct-adapter discovery,

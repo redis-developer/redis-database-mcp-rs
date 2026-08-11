@@ -207,6 +207,10 @@ impl ToolMetadata {
         };
         let minimum_module_version = match self.name {
             "redis_ft_list" => Some(RedisVersion::new(2, 0, 0)),
+            "redis_vector_get_hash"
+            | "redis_vector_set_hash"
+            | "redis_ft_vector_search"
+            | "redis_ft_hybrid_search" => Some(RedisVersion::new(2, 4, 0)),
             _ => None,
         };
         let required_commands = match self.name {
@@ -235,6 +239,8 @@ impl ToolMetadata {
             "redis_ft_list" => &["FT._LIST"],
             "redis_ft_info" => &["FT.INFO"],
             "redis_ft_search" => &["FT.SEARCH"],
+            "redis_vector_get_hash" => &["HGET"],
+            "redis_ft_vector_search" | "redis_ft_hybrid_search" => &["FT.SEARCH"],
             "redis_set" => &["SET"],
             "redis_expire" => &["EXPIRE"],
             "redis_persist" => &["PERSIST"],
@@ -247,6 +253,7 @@ impl ToolMetadata {
             "redis_zadd" => &["ZADD"],
             "redis_json_set" => &["JSON.SET"],
             "redis_ft_create" => &["FT.CREATE"],
+            "redis_vector_set_hash" => &["HSET"],
             "redis_del" => &["DEL"],
             "redis_unlink" => &["UNLINK"],
             "redis_json_del" => &["JSON.DEL"],
@@ -279,12 +286,22 @@ impl ToolMetadata {
                 ToolOutputPolicy::CursorPaginated
             }
             "redis_lrange" | "redis_zrange" => ToolOutputPolicy::RangePaginated,
-            "redis_ft_search" => ToolOutputPolicy::OffsetPaginated,
-            "redis_info" | "redis_get" | "redis_mget" | "redis_randomkey" | "redis_hget"
-            | "redis_hgetall" | "redis_smembers" | "redis_json_get" | "redis_json_type"
-            | "redis_ft_list" | "redis_ft_info" | "redis_command" => {
-                ToolOutputPolicy::BudgetGuarded
+            "redis_ft_search" | "redis_ft_vector_search" | "redis_ft_hybrid_search" => {
+                ToolOutputPolicy::OffsetPaginated
             }
+            "redis_info"
+            | "redis_get"
+            | "redis_mget"
+            | "redis_randomkey"
+            | "redis_hget"
+            | "redis_hgetall"
+            | "redis_smembers"
+            | "redis_json_get"
+            | "redis_json_type"
+            | "redis_ft_list"
+            | "redis_ft_info"
+            | "redis_vector_get_hash"
+            | "redis_command" => ToolOutputPolicy::BudgetGuarded,
             _ => ToolOutputPolicy::IntrinsicallyBounded,
         }
     }
@@ -442,6 +459,24 @@ pub(crate) const CATALOG: &[ToolMetadata] = &[
         requires_raw_opt_in: false,
     },
     ToolMetadata {
+        name: "redis_vector_get_hash",
+        bundle: ToolBundle::Search,
+        required_access: AccessMode::ReadOnly,
+        requires_raw_opt_in: false,
+    },
+    ToolMetadata {
+        name: "redis_ft_vector_search",
+        bundle: ToolBundle::Search,
+        required_access: AccessMode::ReadOnly,
+        requires_raw_opt_in: false,
+    },
+    ToolMetadata {
+        name: "redis_ft_hybrid_search",
+        bundle: ToolBundle::Search,
+        required_access: AccessMode::ReadOnly,
+        requires_raw_opt_in: false,
+    },
+    ToolMetadata {
         name: "redis_set",
         bundle: ToolBundle::Essentials,
         required_access: AccessMode::ReadWrite,
@@ -509,6 +544,12 @@ pub(crate) const CATALOG: &[ToolMetadata] = &[
     },
     ToolMetadata {
         name: "redis_ft_create",
+        bundle: ToolBundle::Search,
+        required_access: AccessMode::ReadWrite,
+        requires_raw_opt_in: false,
+    },
+    ToolMetadata {
+        name: "redis_vector_set_hash",
         bundle: ToolBundle::Search,
         required_access: AccessMode::ReadWrite,
         requires_raw_opt_in: false,

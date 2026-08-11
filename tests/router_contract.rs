@@ -64,6 +64,13 @@ impl RedisExecutor for StubRedis {
                 RedisValue::BulkString(b"name".to_vec()),
                 RedisValue::BulkString(b"Ada".to_vec()),
             )]),
+            "HEXISTS" => RedisValue::Integer(1),
+            "HKEYS" => RedisValue::Array(vec![RedisValue::BulkString(b"name".to_vec())]),
+            "HLEN" => RedisValue::Integer(1),
+            "HMGET" => RedisValue::Array(vec![
+                RedisValue::BulkString(b"Ada".to_vec()),
+                RedisValue::Nil,
+            ]),
             "HSCAN" => RedisValue::Array(vec![
                 RedisValue::BulkString(b"7".to_vec()),
                 RedisValue::Array(vec![
@@ -71,6 +78,9 @@ impl RedisExecutor for StubRedis {
                     RedisValue::BulkString(b"Ada".to_vec()),
                 ]),
             ]),
+            "HSTRLEN" => RedisValue::Integer(3),
+            "HTTL" => RedisValue::Array(vec![RedisValue::Integer(-1)]),
+            "HVALS" => RedisValue::Array(vec![RedisValue::BulkString(b"Ada".to_vec())]),
             "LRANGE" => RedisValue::Array(vec![
                 RedisValue::BulkString(b"second".to_vec()),
                 RedisValue::BulkString(b"first".to_vec()),
@@ -112,7 +122,9 @@ impl RedisExecutor for StubRedis {
             "INCRBYFLOAT" => RedisValue::BulkString(b"2.5".to_vec()),
             "SETRANGE" => RedisValue::Integer(5),
             "APPEND" => RedisValue::Integer(5),
-            "HSET" | "SADD" | "ZADD" => RedisValue::Integer(1),
+            "HSET" | "SADD" | "ZADD" | "HINCRBY" | "HDEL" => RedisValue::Integer(1),
+            "HINCRBYFLOAT" => RedisValue::BulkString(b"2.5".to_vec()),
+            "HEXPIRE" | "HPERSIST" => RedisValue::Array(vec![RedisValue::Integer(1)]),
             "LPUSH" => RedisValue::Integer(2),
             "DEL" | "UNLINK" => RedisValue::Integer(1),
             "JSON.GET" => RedisValue::BulkString(br#"[{"name":"Ada"}]"#.to_vec()),
@@ -539,6 +551,9 @@ impl RedisExecutor for RecordingRedis {
     async fn execute(&self, command: RedisCommand) -> Result<RedisValue, RedisError> {
         let response = match command.name() {
             "HSET" => RedisValue::Integer(1),
+            "HMGET" => RedisValue::Array(vec![RedisValue::BulkString(vec![0xfd]), RedisValue::Nil]),
+            "HDEL" => RedisValue::Integer(1),
+            "HEXPIRE" => RedisValue::Array(vec![RedisValue::Integer(1)]),
             "FT.SEARCH" => RedisValue::Array(vec![
                 RedisValue::Integer(1),
                 RedisValue::BulkString(b"doc:1".to_vec()),
@@ -623,6 +638,128 @@ async fn vector_values_remain_binary_safe_in_curated_commands() {
     assert_eq!(search.arguments()[blob_position + 1], expected);
 }
 
+#[tokio::test]
+async fn hash_multi_field_commands_preserve_binary_argv_and_request_order() {
+    let executor = RecordingRedis::default();
+    let commands = executor.commands.clone();
+    let router = RedisMcp::builder(executor)
+        .access(AccessMode::Full)
+        .bundles([ToolBundle::DataStructures])
+        .capabilities(RedisCapabilities::unknown().with_redis_version(RedisVersion::new(7, 4, 0)))
+        .build();
+    let client = McpClient::connect(ChannelTransport::new(router))
+        .await
+        .expect("connect hash recording client");
+    client
+        .initialize("redis-mcp-hash-recording-test", "0")
+        .await
+        .expect("initialize hash recording client");
+
+    let set = client
+        .call_tool(
+            "redis_hset",
+            serde_json::json!({
+                "key": "/wA=",
+                "key_encoding": "base64",
+                "entries": [{
+                    "field": "/g==",
+                    "field_encoding": "base64",
+                    "value": "/Q==",
+                    "value_encoding": "base64"
+                }]
+            }),
+        )
+        .await
+        .expect("binary HSET");
+    assert!(!set.is_error, "{set:?}");
+
+    let get = client
+        .call_tool(
+            "redis_hmget",
+            serde_json::json!({
+                "key": "/wA=",
+                "key_encoding": "base64",
+                "fields": [
+                    {"field": "/g==", "field_encoding": "base64"},
+                    "missing"
+                ]
+            }),
+        )
+        .await
+        .expect("binary HMGET")
+        .structured_content
+        .expect("structured binary HMGET");
+    assert_eq!(get["values"][0]["value"], "/Q==");
+    assert_eq!(get["values"][0]["value_encoding"], "base64");
+    assert_eq!(get["values"][1]["exists"], false);
+
+    client
+        .call_tool(
+            "redis_hexpire",
+            serde_json::json!({
+                "key": "/wA=",
+                "key_encoding": "base64",
+                "seconds": 60,
+                "condition": "gt",
+                "fields": [{"field": "/g==", "field_encoding": "base64"}]
+            }),
+        )
+        .await
+        .expect("binary HEXPIRE");
+    client
+        .call_tool(
+            "redis_hdel",
+            serde_json::json!({
+                "key": "/wA=",
+                "key_encoding": "base64",
+                "fields": [{"field": "/g==", "field_encoding": "base64"}]
+            }),
+        )
+        .await
+        .expect("binary HDEL");
+
+    let commands = commands.lock().expect("recorded hash commands");
+    let hset = commands
+        .iter()
+        .find(|command| command.tool_name() == "redis_hset")
+        .expect("recorded HSET");
+    assert_eq!(
+        hset.arguments(),
+        &[vec![0xff, 0x00], vec![0xfe], vec![0xfd]]
+    );
+
+    let hmget = commands
+        .iter()
+        .find(|command| command.tool_name() == "redis_hmget")
+        .expect("recorded HMGET");
+    assert_eq!(
+        hmget.arguments(),
+        &[vec![0xff, 0x00], vec![0xfe], b"missing".to_vec()]
+    );
+
+    let hexpire = commands
+        .iter()
+        .find(|command| command.tool_name() == "redis_hexpire")
+        .expect("recorded HEXPIRE");
+    assert_eq!(
+        hexpire.arguments(),
+        &[
+            vec![0xff, 0x00],
+            b"60".to_vec(),
+            b"GT".to_vec(),
+            b"FIELDS".to_vec(),
+            b"1".to_vec(),
+            vec![0xfe]
+        ]
+    );
+
+    let hdel = commands
+        .iter()
+        .find(|command| command.tool_name() == "redis_hdel")
+        .expect("recorded HDEL");
+    assert_eq!(hdel.arguments(), &[vec![0xff, 0x00], vec![0xfe]]);
+}
+
 async fn full_catalog_client() -> McpClient {
     client_for_bundles(
         AccessMode::Full,
@@ -705,9 +842,40 @@ fn structured_cases() -> Vec<(&'static str, serde_json::Value, &'static str)> {
             "entries",
         ),
         (
+            "redis_hexists",
+            serde_json::json!({"key": "user:1", "field": "name"}),
+            "field_exists",
+        ),
+        (
+            "redis_hkeys",
+            serde_json::json!({"key": "user:1"}),
+            "fields",
+        ),
+        ("redis_hlen", serde_json::json!({"key": "user:1"}), "length"),
+        (
+            "redis_hmget",
+            serde_json::json!({"key": "user:1", "fields": ["name", "missing"]}),
+            "values",
+        ),
+        (
             "redis_hscan",
             serde_json::json!({"key": "user:1", "count": 10}),
             "page",
+        ),
+        (
+            "redis_hstrlen",
+            serde_json::json!({"key": "user:1", "field": "name"}),
+            "length_bytes",
+        ),
+        (
+            "redis_httl",
+            serde_json::json!({"key": "user:1", "fields": ["name"]}),
+            "fields",
+        ),
+        (
+            "redis_hvals",
+            serde_json::json!({"key": "user:1"}),
+            "values",
         ),
         (
             "redis_lrange",
@@ -871,6 +1039,26 @@ fn structured_cases() -> Vec<(&'static str, serde_json::Value, &'static str)> {
             "fields_added",
         ),
         (
+            "redis_hexpire",
+            serde_json::json!({"key": "user:1", "seconds": 60, "fields": ["name"]}),
+            "expirations_set",
+        ),
+        (
+            "redis_hincrby",
+            serde_json::json!({"key": "user:1", "field": "visits", "increment": 1}),
+            "value",
+        ),
+        (
+            "redis_hincrbyfloat",
+            serde_json::json!({"key": "user:1", "field": "score", "increment": 0.5}),
+            "value",
+        ),
+        (
+            "redis_hpersist",
+            serde_json::json!({"key": "user:1", "fields": ["name"]}),
+            "expirations_removed",
+        ),
+        (
             "redis_lpush",
             serde_json::json!({"key": "queue", "elements": ["first", "second"]}),
             "length",
@@ -921,6 +1109,11 @@ fn structured_cases() -> Vec<(&'static str, serde_json::Value, &'static str)> {
             "unlinked",
         ),
         (
+            "redis_hdel",
+            serde_json::json!({"key": "user:1", "fields": ["name"]}),
+            "deleted",
+        ),
+        (
             "redis_getdel",
             serde_json::json!({"key": "greeting"}),
             "value",
@@ -965,8 +1158,8 @@ fn structured_cases() -> Vec<(&'static str, serde_json::Value, &'static str)> {
 
 #[tokio::test]
 async fn access_modes_expose_exactly_the_expected_tools() {
-    assert_eq!(tool_names(AccessMode::Full, false).len(), 49);
-    assert_eq!(tool_names(AccessMode::Full, true).len(), 50);
+    assert_eq!(tool_names(AccessMode::Full, false).len(), 61);
+    assert_eq!(tool_names(AccessMode::Full, true).len(), 62);
     for (access, raw) in [
         (AccessMode::ReadOnly, false),
         (AccessMode::ReadWrite, false),
@@ -1047,6 +1240,57 @@ async fn key_string_annotations_match_access_and_overwrite_semantics() {
         assert!(annotation.destructive_hint, "{name}");
     }
     assert!(!annotations("redis_restore_replace").idempotent_hint);
+}
+
+#[tokio::test]
+async fn hash_annotations_match_read_write_and_destructive_semantics() {
+    let tools = full_catalog_client()
+        .await
+        .list_tools()
+        .await
+        .expect("list annotated hash tools")
+        .tools;
+    let annotations = |name: &str| {
+        tools
+            .iter()
+            .find(|tool| tool.name == name)
+            .unwrap_or_else(|| panic!("missing {name}"))
+            .annotations
+            .clone()
+            .unwrap_or_else(|| panic!("missing annotations for {name}"))
+    };
+
+    for name in [
+        "redis_hexists",
+        "redis_hkeys",
+        "redis_hlen",
+        "redis_hmget",
+        "redis_hstrlen",
+        "redis_httl",
+        "redis_hvals",
+    ] {
+        let annotation = annotations(name);
+        assert!(annotation.read_only_hint, "{name}");
+        assert!(!annotation.destructive_hint, "{name}");
+        assert!(annotation.idempotent_hint, "{name}");
+    }
+
+    for name in ["redis_hexpire", "redis_hincrby", "redis_hincrbyfloat"] {
+        let annotation = annotations(name);
+        assert!(!annotation.read_only_hint, "{name}");
+        assert!(!annotation.destructive_hint, "{name}");
+        assert!(!annotation.idempotent_hint, "{name}");
+    }
+
+    let persist = annotations("redis_hpersist");
+    assert!(!persist.read_only_hint);
+    assert!(!persist.destructive_hint);
+    assert!(persist.idempotent_hint);
+
+    let delete = annotations("redis_hdel");
+    assert!(!delete.read_only_hint);
+    assert!(delete.destructive_hint);
+    assert!(delete.idempotent_hint);
 }
 
 #[tokio::test]
@@ -1355,6 +1599,56 @@ async fn malformed_and_unbounded_inputs_fail_as_tool_results() {
             serde_json::json!({"key": "queue", "elements": []}),
         ),
         (
+            "redis_hmget",
+            serde_json::json!({"key": "hash", "fields": []}),
+        ),
+        (
+            "redis_httl",
+            serde_json::json!({"key": "hash", "fields": []}),
+        ),
+        ("redis_hset", serde_json::json!({"key": "hash"})),
+        (
+            "redis_hset",
+            serde_json::json!({
+                "key": "hash",
+                "fields": {"field": "value"},
+                "entries": [{"field": "other", "value": "value"}]
+            }),
+        ),
+        (
+            "redis_hset",
+            serde_json::json!({
+                "key": "hash",
+                "entries": [
+                    {"field": "field", "value": "one"},
+                    {"field": "ZmllbGQ=", "field_encoding": "base64", "value": "two"}
+                ]
+            }),
+        ),
+        (
+            "redis_hset",
+            serde_json::json!({
+                "key": "hash",
+                "entries": [{"field": "not-base64", "field_encoding": "base64", "value": "value"}]
+            }),
+        ),
+        (
+            "redis_hexpire",
+            serde_json::json!({"key": "hash", "seconds": 0, "fields": ["field"]}),
+        ),
+        (
+            "redis_hexpire",
+            serde_json::json!({"key": "hash", "seconds": 60, "fields": ["field", "field"]}),
+        ),
+        (
+            "redis_hpersist",
+            serde_json::json!({"key": "hash", "fields": []}),
+        ),
+        (
+            "redis_hdel",
+            serde_json::json!({"key": "hash", "fields": ["field", "field"]}),
+        ),
+        (
             "redis_sadd",
             serde_json::json!({"key": "tags", "members": []}),
         ),
@@ -1540,6 +1834,10 @@ impl RedisExecutor for BinaryRedis {
                 RedisValue::BulkString(vec![0xfe]),
                 RedisValue::BulkString(vec![0xff]),
             )]),
+            "HMGET" => RedisValue::Array(vec![RedisValue::BulkString(vec![0xff]), RedisValue::Nil]),
+            "HKEYS" => RedisValue::Array(vec![RedisValue::BulkString(vec![0xfe])]),
+            "HVALS" => RedisValue::Array(vec![RedisValue::BulkString(vec![0xff])]),
+            "EXISTS" => RedisValue::Integer(1),
             "LRANGE" => RedisValue::Array(vec![RedisValue::BulkString(vec![0xff])]),
             "SMEMBERS" => RedisValue::Set(vec![RedisValue::BulkString(vec![0xff])]),
             "ZRANGE" => RedisValue::Array(vec![
@@ -1549,6 +1847,123 @@ impl RedisExecutor for BinaryRedis {
             _ => RedisValue::Nil,
         })
     }
+}
+
+#[derive(Clone, Copy)]
+struct HashEdgeRedis;
+
+#[async_trait]
+impl RedisExecutor for HashEdgeRedis {
+    async fn execute(&self, command: RedisCommand) -> Result<RedisValue, RedisError> {
+        let key = command.arguments().first().map(Vec::as_slice);
+        Ok(match command.name() {
+            "HGET"
+                if key == Some(b"empty".as_slice())
+                    && command.arguments().get(1).map(Vec::as_slice)
+                        == Some(b"present".as_slice()) =>
+            {
+                RedisValue::BulkString(Vec::new())
+            }
+            "HGET" => RedisValue::Nil,
+            "HMGET" if key == Some(b"empty".as_slice()) => {
+                RedisValue::Array(vec![RedisValue::BulkString(Vec::new()), RedisValue::Nil])
+            }
+            "HMGET" => RedisValue::Array(vec![RedisValue::Nil, RedisValue::Nil]),
+            "HSTRLEN" => RedisValue::Integer(0),
+            "HEXISTS"
+                if key == Some(b"empty".as_slice())
+                    && command.arguments().get(1).map(Vec::as_slice)
+                        == Some(b"present".as_slice()) =>
+            {
+                RedisValue::Integer(1)
+            }
+            "HEXISTS" => RedisValue::Integer(0),
+            "EXISTS" if key == Some(b"missing-hash".as_slice()) => RedisValue::Integer(0),
+            "EXISTS" => RedisValue::Integer(1),
+            _ => RedisValue::Nil,
+        })
+    }
+}
+
+#[tokio::test]
+async fn hash_reads_distinguish_empty_missing_field_and_missing_hash() {
+    let router = RedisMcp::builder(HashEdgeRedis)
+        .access(AccessMode::ReadOnly)
+        .bundles([ToolBundle::DataStructures])
+        .build();
+    let client = McpClient::connect(ChannelTransport::new(router))
+        .await
+        .expect("connect hash edge client");
+    client
+        .initialize("redis-mcp-hash-edge-test", "0")
+        .await
+        .expect("initialize hash edge client");
+
+    let empty = client
+        .call_tool(
+            "redis_hget",
+            serde_json::json!({"key": "empty", "field": "present"}),
+        )
+        .await
+        .expect("empty HGET")
+        .structured_content
+        .expect("structured empty HGET");
+    assert_eq!(empty["hash_exists"], true);
+    assert_eq!(empty["field_exists"], true);
+    assert_eq!(empty["value"], "");
+    assert_eq!(empty["encoding"], "utf8");
+
+    let missing_field = client
+        .call_tool(
+            "redis_hget",
+            serde_json::json!({"key": "empty", "field": "missing"}),
+        )
+        .await
+        .expect("missing field HGET")
+        .structured_content
+        .expect("structured missing field HGET");
+    assert_eq!(missing_field["hash_exists"], true);
+    assert_eq!(missing_field["field_exists"], false);
+    assert_eq!(missing_field["value"], serde_json::Value::Null);
+
+    let missing_hash = client
+        .call_tool(
+            "redis_hget",
+            serde_json::json!({"key": "missing-hash", "field": "missing"}),
+        )
+        .await
+        .expect("missing hash HGET")
+        .structured_content
+        .expect("structured missing hash HGET");
+    assert_eq!(missing_hash["hash_exists"], false);
+    assert_eq!(missing_hash["field_exists"], false);
+
+    let multiple = client
+        .call_tool(
+            "redis_hmget",
+            serde_json::json!({"key": "empty", "fields": ["present", "missing"]}),
+        )
+        .await
+        .expect("edge HMGET")
+        .structured_content
+        .expect("structured edge HMGET");
+    assert_eq!(multiple["hash_exists"], true);
+    assert_eq!(multiple["values"][0]["exists"], true);
+    assert_eq!(multiple["values"][0]["value"], "");
+    assert_eq!(multiple["values"][1]["exists"], false);
+
+    let length = client
+        .call_tool(
+            "redis_hstrlen",
+            serde_json::json!({"key": "empty", "field": "present"}),
+        )
+        .await
+        .expect("empty HSTRLEN")
+        .structured_content
+        .expect("structured empty HSTRLEN");
+    assert_eq!(length["length_bytes"], 0);
+    assert_eq!(length["field_exists"], true);
+    assert_eq!(length["hash_exists"], true);
 }
 
 #[tokio::test]
@@ -1596,6 +2011,21 @@ async fn binary_and_nil_values_are_explicit_across_curated_reads() {
             "redis_hgetall",
             serde_json::json!({"key": "hash"}),
             "/entries/0/field_encoding",
+        ),
+        (
+            "redis_hmget",
+            serde_json::json!({"key": "hash", "fields": ["field", "missing"]}),
+            "/values/0/value_encoding",
+        ),
+        (
+            "redis_hkeys",
+            serde_json::json!({"key": "hash"}),
+            "/fields/0/encoding",
+        ),
+        (
+            "redis_hvals",
+            serde_json::json!({"key": "hash"}),
+            "/values/0/encoding",
         ),
         (
             "redis_lrange",
@@ -1829,6 +2259,33 @@ async fn known_old_redis_can_hide_only_version_incompatible_tools() {
     ] {
         assert!(supported_names.contains(&name), "{name}");
     }
+
+    let pre_field_expiration =
+        RedisCapabilities::unknown().with_redis_version(RedisVersion::new(7, 2, 0));
+    let pre_field_expiration_names = tool_names_for_capabilities(
+        AccessMode::Full,
+        [ToolBundle::DataStructures],
+        false,
+        &pre_field_expiration,
+        UnavailableToolPolicy::Hide,
+    );
+    for name in ["redis_hexpire", "redis_hpersist", "redis_httl"] {
+        assert!(!pre_field_expiration_names.contains(&name), "{name}");
+    }
+    assert!(pre_field_expiration_names.contains(&"redis_hstrlen"));
+
+    let field_expiration =
+        RedisCapabilities::unknown().with_redis_version(RedisVersion::new(7, 4, 0));
+    let field_expiration_names = tool_names_for_capabilities(
+        AccessMode::Full,
+        [ToolBundle::DataStructures],
+        false,
+        &field_expiration,
+        UnavailableToolPolicy::Hide,
+    );
+    for name in ["redis_hexpire", "redis_hpersist", "redis_httl"] {
+        assert!(field_expiration_names.contains(&name), "{name}");
+    }
 }
 
 #[tokio::test]
@@ -1939,6 +2396,22 @@ async fn advertised_capability_failures_have_stable_categories_and_codes() {
     assert!(result.is_error);
     assert!(text.contains("CapabilityUnavailable"));
     assert!(text.contains("REDIS_VERSION_UNAVAILABLE"));
+
+    let pre_field_expiration =
+        RedisCapabilities::unknown().with_redis_version(RedisVersion::new(7, 2, 0));
+    let client = capability_client(pre_field_expiration, UnavailableToolPolicy::Advertise).await;
+    let result = client
+        .call_tool(
+            "redis_hexpire",
+            serde_json::json!({"key": "never-sent", "seconds": 60, "fields": ["field"]}),
+        )
+        .await
+        .expect("hash field expiration version failure is a tool result");
+    let text = serde_json::to_string(&result).expect("serialize hash version error");
+    assert!(result.is_error);
+    assert!(text.contains("CapabilityUnavailable"));
+    assert!(text.contains("REDIS_VERSION_UNAVAILABLE"));
+    assert!(!text.contains("never-sent"));
 
     let missing_json = RedisCapabilities::unknown()
         .with_module(RedisModule::Json, RedisModuleCapability::unavailable());

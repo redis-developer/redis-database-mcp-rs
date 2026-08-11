@@ -91,9 +91,18 @@ fn parse_seed_urls(seed_urls: &str) -> Vec<String> {
 // Keep the unavoidable check/start race isolated here until upstream issue
 // joshrotenberg/redis-server-wrapper#166 provides range-aware auto allocation.
 fn available_cluster_base_port(nodes: u16) -> io::Result<u16> {
-    for _ in 0..256 {
-        let first = TcpListener::bind(("127.0.0.1", 0))?;
-        let base = first.local_addr()?.port();
+    const FIRST_CANDIDATE: u32 = 20_000;
+    const LAST_CANDIDATE: u32 = 50_000;
+    let node_span = u32::from(nodes);
+    let candidate_count = (LAST_CANDIDATE - FIRST_CANDIDATE) / node_span;
+    let start = std::process::id() % candidate_count;
+
+    for index in 0..candidate_count {
+        let candidate = FIRST_CANDIDATE + ((start + index) % candidate_count) * node_span;
+        let base = u16::try_from(candidate).expect("cluster port candidate fits u16");
+        let Ok(first) = TcpListener::bind(("127.0.0.1", base)) else {
+            continue;
+        };
         let Some(highest_client) = base.checked_add(nodes - 1) else {
             continue;
         };
@@ -254,6 +263,7 @@ async fn cluster_routes_curated_and_raw_tools_across_three_masters() {
             .map(|url| with_protocol(url, protocol))
             .collect::<Vec<_>>();
         let (keys, remote_key) = keys_on_three_masters(&seed_urls[0], protocol).await;
+        let remote_hash = format!("{remote_key}:hash");
 
         let direct = router_client(
             DirectRedis::connect(&seed_urls[0])
@@ -313,6 +323,52 @@ async fn cluster_routes_curated_and_raw_tools_across_three_masters() {
         {
             assert_eq!(value["value"], format!("value-{index}"));
         }
+
+        let hash_set = routed
+            .call_tool(
+                "redis_hset",
+                serde_json::json!({
+                    "key": remote_hash,
+                    "fields": {"name": "Ada", "visits": "1"}
+                }),
+            )
+            .await
+            .expect("remote-slot HSET")
+            .structured_content
+            .expect("structured remote-slot HSET");
+        assert_eq!(hash_set["fields_added"], 2);
+        let hash_values = routed
+            .call_tool(
+                "redis_hmget",
+                serde_json::json!({"key": remote_hash, "fields": ["visits", "name", "missing"]}),
+            )
+            .await
+            .expect("remote-slot HMGET")
+            .structured_content
+            .expect("structured remote-slot HMGET");
+        assert_eq!(hash_values["values"][0]["value"], "1");
+        assert_eq!(hash_values["values"][1]["value"], "Ada");
+        assert_eq!(hash_values["values"][2]["exists"], false);
+        let hash_incremented = routed
+            .call_tool(
+                "redis_hincrby",
+                serde_json::json!({"key": remote_hash, "field": "visits", "increment": 2}),
+            )
+            .await
+            .expect("remote-slot HINCRBY")
+            .structured_content
+            .expect("structured remote-slot HINCRBY");
+        assert_eq!(hash_incremented["value"], 3);
+        let hash_deleted = routed
+            .call_tool(
+                "redis_hdel",
+                serde_json::json!({"key": remote_hash, "fields": ["name", "visits"]}),
+            )
+            .await
+            .expect("remote-slot HDEL")
+            .structured_content
+            .expect("structured remote-slot HDEL");
+        assert_eq!(hash_deleted["deleted"], 2);
 
         let same_source = format!(
             "redis-mcp:test:{}:{{issue18-{protocol}}}:source",

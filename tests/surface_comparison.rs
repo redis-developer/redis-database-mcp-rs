@@ -133,7 +133,7 @@ fn assert_exact_mapping(name: &str, baseline: &Baseline, mapped: impl Iterator<I
 fn comparison_baselines_are_pinned_and_completely_mapped() {
     let scorecard = scorecard();
     assert_eq!(scorecard.schema_version, 1);
-    assert_eq!(scorecard.captured_at, "2026-08-10");
+    assert_eq!(scorecard.captured_at, "2026-08-11");
     assert_pinned_baseline("redis/mcp-redis", &scorecard.baselines.redis_mcp, 53);
     assert_eq!(
         scorecard.baselines.redis_mcp.release.as_deref(),

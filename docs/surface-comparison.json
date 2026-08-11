@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "captured_at": "2026-08-10",
+  "captured_at": "2026-08-11",
   "baselines": {
     "redis_mcp": {
       "repository": "https://github.com/redis/mcp-redis",
@@ -225,7 +225,7 @@
   },
   "current_gate": {
     "met": false,
-    "blockers": [19, 20, 21, 22, 23, 27, 28, 29, 30, 31, 32, 33]
+    "blockers": [20, 21, 22, 23, 27, 28, 29, 30, 31, 32, 33]
   },
   "contract_scorecard": {
     "scale": {
@@ -525,8 +525,7 @@
       "redisctl_tools": ["redis_hset"],
       "library_tools": ["redis_hset"],
       "disposition": "implemented",
-      "quality_issues": [19],
-      "reason": "Bounded multi-field writes are implemented; issue #19 completes the hash family."
+      "reason": "Bounded UTF-8 and binary-safe multi-field writes reject duplicate decoded fields and report added versus updated counts."
     },
     {
       "id": "list.range",
@@ -719,10 +718,22 @@
         "redis_hmget",
         "redis_hvals"
       ],
-      "library_tools": [],
-      "disposition": "planned",
-      "issue": 19,
-      "reason": "Issue #19 adds complete reads, bounded scans, increments, removals, and version-gated field expiration."
+      "library_tools": [
+        "redis_hdel",
+        "redis_hexists",
+        "redis_hexpire",
+        "redis_hincrby",
+        "redis_hincrbyfloat",
+        "redis_hkeys",
+        "redis_hlen",
+        "redis_hmget",
+        "redis_hpersist",
+        "redis_hstrlen",
+        "redis_httl",
+        "redis_hvals"
+      ],
+      "disposition": "implemented",
+      "reason": "The hash family now has bounded binary-safe reads and writes, typed nil/empty/missing semantics, full-access deletion, live Cluster and ACL coverage, and Redis 7.4-gated field expiration."
     },
     {
       "id": "list.expansion",

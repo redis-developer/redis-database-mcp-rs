@@ -35,7 +35,7 @@ Redis Stack behavior is covered primarily by `tests/redis_tools.rs` and
 
 ## Current overlap
 
-The library implements 47 names from the baseline: 37 default tools, nine
+The library implements 55 names from the baseline: 45 default tools, nine
 optional RedisJSON/Search tools, and the separately enabled raw tool. One typed
 `redis_object_inspect` additionally covers three redisctl OBJECT tools without
 copying their names. Matching a name does not imply an identical contract:
@@ -58,13 +58,18 @@ The expanded overlap also includes `redis_exists`, `redis_mget`,
 `redis_persist`, `redis_mset`, `redis_incr`, `redis_append`, `redis_unlink`,
 `redis_copy`, `redis_decr`, `redis_dump`, `redis_getrange`, `redis_rename`,
 `redis_restore`, `redis_setrange`, `redis_touch`,
-`redis_hget`, `redis_hgetall`, `redis_hset`, `redis_lrange`, `redis_lpush`,
-`redis_smembers`, `redis_sadd`, `redis_zrange`, and `redis_zadd`.
+`redis_hdel`, `redis_hexists`, `redis_hexpire`, `redis_hget`, `redis_hgetall`,
+`redis_hincrby`, `redis_hkeys`, `redis_hlen`, `redis_hmget`, `redis_hset`,
+`redis_hvals`, `redis_lrange`, `redis_lpush`, `redis_smembers`, `redis_sadd`,
+`redis_zrange`, and `redis_zadd`.
 
-The library additionally exposes `redis_hscan`, `redis_sscan`, and
-`redis_zscan`. They are command-surface improvements rather than redisctl name
-overlap: each returns one bounded Redis cursor page with typed continuation
-metadata.
+The library additionally exposes `redis_hscan`, `redis_hincrbyfloat`,
+`redis_hpersist`, `redis_hstrlen`, `redis_httl`, `redis_sscan`, and
+`redis_zscan`. These are command-surface improvements rather than redisctl name
+overlap. Hash reads distinguish a missing hash, missing field, and empty value;
+field-expiration tools are capability-gated to Redis 7.4 or newer and return
+typed per-field statuses; scan tools return one bounded Redis cursor page with
+typed continuation metadata.
 
 - Redis-domain input names remain compatible where practical (`keys`,
   `entries`, `fields`, `elements`, `members`, and the ZADD/ZRANGE flags).
@@ -82,6 +87,11 @@ metadata.
   both write size and resulting sparse extent.
 - Collection reads use explicit UTF-8/base64 encodings and deterministic order
   where Redis itself is unordered (hash fields and set members).
+- Multi-field HSET and HMGET preserve binary data and request order, enforce
+  configured entry ceilings, and expose added/updated or present/missing status
+  without collapsing nil and empty values.
+- Hash deletion is full-access and destructive; increments and field-expiration
+  mutations are read-write and independently ACL-enforced by Redis.
 - Outputs are structured rather than preserving redisctl's prose rendering.
 
 The optional module-backed overlap adds `redis_json_get`, `redis_json_type`,

@@ -203,7 +203,7 @@ impl ToolMetadata {
     pub fn capability_requirements(self) -> ToolCapabilityRequirements {
         let minimum_redis_version = match self.name {
             "redis_dump" => Some(RedisVersion::new(2, 6, 0)),
-            "redis_touch" => Some(RedisVersion::new(3, 2, 0)),
+            "redis_touch" | "redis_hstrlen" => Some(RedisVersion::new(3, 2, 0)),
             "redis_memory_usage" | "redis_object_inspect" | "redis_unlink" => {
                 Some(RedisVersion::new(4, 0, 0))
             }
@@ -211,6 +211,7 @@ impl ToolMetadata {
             "redis_copy" | "redis_copy_replace" | "redis_getdel" | "redis_getex" => {
                 Some(RedisVersion::new(6, 2, 0))
             }
+            "redis_hexpire" | "redis_hpersist" | "redis_httl" => Some(RedisVersion::new(7, 4, 0)),
             _ => None,
         };
         let minimum_module_version = match self.name {
@@ -237,9 +238,16 @@ impl ToolMetadata {
             "redis_getrange" => &["GETRANGE"],
             "redis_dump" => &["DUMP"],
             "redis_object_inspect" => &["OBJECT"],
-            "redis_hget" => &["HGET"],
+            "redis_hget" => &["HGET", "EXISTS"],
             "redis_hgetall" => &["HGETALL"],
+            "redis_hexists" => &["HEXISTS", "EXISTS"],
+            "redis_hkeys" => &["HKEYS"],
+            "redis_hlen" => &["HLEN"],
+            "redis_hmget" => &["HMGET", "EXISTS"],
             "redis_hscan" => &["HSCAN"],
+            "redis_hstrlen" => &["HSTRLEN", "HEXISTS", "EXISTS"],
+            "redis_httl" => &["HTTL", "EXISTS"],
+            "redis_hvals" => &["HVALS"],
             "redis_lrange" => &["LRANGE"],
             "redis_smembers" => &["SMEMBERS"],
             "redis_sscan" => &["SSCAN"],
@@ -268,6 +276,10 @@ impl ToolMetadata {
             "redis_touch" => &["TOUCH"],
             "redis_restore" | "redis_restore_replace" => &["RESTORE"],
             "redis_hset" => &["HSET"],
+            "redis_hexpire" => &["HEXPIRE"],
+            "redis_hincrby" => &["HINCRBY"],
+            "redis_hincrbyfloat" => &["HINCRBYFLOAT"],
+            "redis_hpersist" => &["HPERSIST"],
             "redis_lpush" => &["LPUSH"],
             "redis_sadd" => &["SADD"],
             "redis_zadd" => &["ZADD"],
@@ -275,6 +287,7 @@ impl ToolMetadata {
             "redis_ft_create" => &["FT.CREATE"],
             "redis_vector_set_hash" => &["HSET"],
             "redis_del" => &["DEL"],
+            "redis_hdel" => &["HDEL"],
             "redis_unlink" => &["UNLINK"],
             "redis_getdel" => &["GETDEL"],
             "redis_rename" => &["RENAME"],
@@ -323,6 +336,9 @@ impl ToolMetadata {
             | "redis_randomkey"
             | "redis_hget"
             | "redis_hgetall"
+            | "redis_hkeys"
+            | "redis_hmget"
+            | "redis_hvals"
             | "redis_smembers"
             | "redis_json_get"
             | "redis_json_type"
@@ -439,7 +455,49 @@ pub(crate) const CATALOG: &[ToolMetadata] = &[
         requires_raw_opt_in: false,
     },
     ToolMetadata {
+        name: "redis_hexists",
+        bundle: ToolBundle::DataStructures,
+        required_access: AccessMode::ReadOnly,
+        requires_raw_opt_in: false,
+    },
+    ToolMetadata {
+        name: "redis_hkeys",
+        bundle: ToolBundle::DataStructures,
+        required_access: AccessMode::ReadOnly,
+        requires_raw_opt_in: false,
+    },
+    ToolMetadata {
+        name: "redis_hlen",
+        bundle: ToolBundle::DataStructures,
+        required_access: AccessMode::ReadOnly,
+        requires_raw_opt_in: false,
+    },
+    ToolMetadata {
+        name: "redis_hmget",
+        bundle: ToolBundle::DataStructures,
+        required_access: AccessMode::ReadOnly,
+        requires_raw_opt_in: false,
+    },
+    ToolMetadata {
         name: "redis_hscan",
+        bundle: ToolBundle::DataStructures,
+        required_access: AccessMode::ReadOnly,
+        requires_raw_opt_in: false,
+    },
+    ToolMetadata {
+        name: "redis_hstrlen",
+        bundle: ToolBundle::DataStructures,
+        required_access: AccessMode::ReadOnly,
+        requires_raw_opt_in: false,
+    },
+    ToolMetadata {
+        name: "redis_httl",
+        bundle: ToolBundle::DataStructures,
+        required_access: AccessMode::ReadOnly,
+        requires_raw_opt_in: false,
+    },
+    ToolMetadata {
+        name: "redis_hvals",
         bundle: ToolBundle::DataStructures,
         required_access: AccessMode::ReadOnly,
         requires_raw_opt_in: false,
@@ -619,6 +677,30 @@ pub(crate) const CATALOG: &[ToolMetadata] = &[
         requires_raw_opt_in: false,
     },
     ToolMetadata {
+        name: "redis_hexpire",
+        bundle: ToolBundle::DataStructures,
+        required_access: AccessMode::ReadWrite,
+        requires_raw_opt_in: false,
+    },
+    ToolMetadata {
+        name: "redis_hincrby",
+        bundle: ToolBundle::DataStructures,
+        required_access: AccessMode::ReadWrite,
+        requires_raw_opt_in: false,
+    },
+    ToolMetadata {
+        name: "redis_hincrbyfloat",
+        bundle: ToolBundle::DataStructures,
+        required_access: AccessMode::ReadWrite,
+        requires_raw_opt_in: false,
+    },
+    ToolMetadata {
+        name: "redis_hpersist",
+        bundle: ToolBundle::DataStructures,
+        required_access: AccessMode::ReadWrite,
+        requires_raw_opt_in: false,
+    },
+    ToolMetadata {
         name: "redis_lpush",
         bundle: ToolBundle::DataStructures,
         required_access: AccessMode::ReadWrite,
@@ -663,6 +745,12 @@ pub(crate) const CATALOG: &[ToolMetadata] = &[
     ToolMetadata {
         name: "redis_unlink",
         bundle: ToolBundle::Essentials,
+        required_access: AccessMode::Full,
+        requires_raw_opt_in: false,
+    },
+    ToolMetadata {
+        name: "redis_hdel",
+        bundle: ToolBundle::DataStructures,
         required_access: AccessMode::Full,
         requires_raw_opt_in: false,
     },

@@ -178,10 +178,22 @@ fn eq_ascii_case(value: &[u8], expected: &[u8]) -> bool {
     value.eq_ignore_ascii_case(expected)
 }
 
+fn parse_i64(value: &[u8]) -> Option<i64> {
+    std::str::from_utf8(value).ok()?.parse().ok()
+}
+
 // This is intentionally an explicit allowlist rather than an attempted copy
 // of Redis' full command table. There is no default read-only branch: every
 // addition must choose an access tier alongside its semantics.
 fn classified_access(command: &str, arguments: &[Vec<u8>]) -> Option<AccessMode> {
+    if command == "HEXPIRE"
+        && arguments
+            .get(1)
+            .and_then(|seconds| parse_i64(seconds))
+            .is_some_and(|seconds| seconds <= 0)
+    {
+        return Some(AccessMode::Full);
+    }
     let access = match command {
         "ACL" | "DEL" | "GETDEL" | "HDEL" | "JSON.ARRPOP" | "JSON.ARRTRIM" | "JSON.CLEAR"
         | "JSON.DEL" | "LPOP" | "LMOVE" | "LMPOP" | "LREM" | "LSET" | "LTRIM" | "RENAME"
@@ -203,24 +215,23 @@ fn classified_access(command: &str, arguments: &[Vec<u8>]) -> Option<AccessMode>
             AccessMode::Full
         }
         "APPEND" | "COPY" | "DECR" | "DECRBY" | "EXPIRE" | "EXPIREAT" | "GETEX" | "GETSET"
-        | "HINCRBY" | "HINCRBYFLOAT" | "HMSET" | "HSET" | "HSETNX" | "INCR" | "INCRBY"
-        | "INCRBYFLOAT" | "JSON.ARRAPPEND" | "JSON.ARRINSERT" | "JSON.NUMINCRBY" | "JSON.SET"
-        | "JSON.TOGGLE" | "LINSERT" | "LPUSH" | "LPUSHX" | "MSET" | "MSETNX" | "PERSIST"
-        | "PEXPIRE" | "PEXPIREAT" | "PSETEX" | "RESTORE" | "RPUSH" | "RPUSHX" | "SADD" | "SET"
-        | "SETEX" | "TOUCH" | "XACK" | "XADD" | "XREADGROUP" | "ZADD" | "ZINCRBY" => {
-            AccessMode::ReadWrite
-        }
+        | "HEXPIRE" | "HINCRBY" | "HINCRBYFLOAT" | "HMSET" | "HPERSIST" | "HSET" | "HSETNX"
+        | "INCR" | "INCRBY" | "INCRBYFLOAT" | "JSON.ARRAPPEND" | "JSON.ARRINSERT"
+        | "JSON.NUMINCRBY" | "JSON.SET" | "JSON.TOGGLE" | "LINSERT" | "LPUSH" | "LPUSHX"
+        | "MSET" | "MSETNX" | "PERSIST" | "PEXPIRE" | "PEXPIREAT" | "PSETEX" | "RESTORE"
+        | "RPUSH" | "RPUSHX" | "SADD" | "SET" | "SETEX" | "TOUCH" | "XACK" | "XADD"
+        | "XREADGROUP" | "ZADD" | "ZINCRBY" => AccessMode::ReadWrite,
         "MODULE" => AccessMode::Full,
         "COMMAND" | "DBSIZE" | "DUMP" | "ECHO" | "EXISTS" | "EXPIRETIME" | "GET" | "GETRANGE"
-        | "HEXISTS" | "HGET" | "HGETALL" | "HLEN" | "HMGET" | "HSCAN" | "HSTRLEN" | "INFO"
-        | "JSON.ARRLEN" | "JSON.GET" | "JSON.MGET" | "JSON.OBJKEYS" | "JSON.OBJLEN"
-        | "JSON.STRLEN" | "JSON.TYPE" | "LCS" | "LINDEX" | "LLEN" | "LPOS" | "LRANGE"
-        | "MEMORY" | "MGET" | "OBJECT" | "PEXPIRETIME" | "PING" | "PTTL" | "RANDOMKEY" | "SCAN"
-        | "SCARD" | "SDIFF" | "SINTER" | "SINTERCARD" | "SISMEMBER" | "SMEMBERS" | "SMISMEMBER"
-        | "SRANDMEMBER" | "SSCAN" | "STRLEN" | "SUNION" | "TTL" | "TYPE" | "XINFO" | "XLEN"
-        | "XPENDING" | "XRANGE" | "XREAD" | "XREVRANGE" | "ZCARD" | "ZCOUNT" | "ZDIFF"
-        | "ZINTER" | "ZLEXCOUNT" | "ZMSCORE" | "ZRANDMEMBER" | "ZRANGE" | "ZRANK" | "ZREVRANK"
-        | "ZSCAN" | "ZSCORE" | "ZUNION" => AccessMode::ReadOnly,
+        | "HEXISTS" | "HGET" | "HGETALL" | "HKEYS" | "HLEN" | "HMGET" | "HSCAN" | "HSTRLEN"
+        | "HTTL" | "HVALS" | "INFO" | "JSON.ARRLEN" | "JSON.GET" | "JSON.MGET" | "JSON.OBJKEYS"
+        | "JSON.OBJLEN" | "JSON.STRLEN" | "JSON.TYPE" | "LCS" | "LINDEX" | "LLEN" | "LPOS"
+        | "LRANGE" | "MEMORY" | "MGET" | "OBJECT" | "PEXPIRETIME" | "PING" | "PTTL"
+        | "RANDOMKEY" | "SCAN" | "SCARD" | "SDIFF" | "SINTER" | "SINTERCARD" | "SISMEMBER"
+        | "SMEMBERS" | "SMISMEMBER" | "SRANDMEMBER" | "SSCAN" | "STRLEN" | "SUNION" | "TTL"
+        | "TYPE" | "XINFO" | "XLEN" | "XPENDING" | "XRANGE" | "XREAD" | "XREVRANGE" | "ZCARD"
+        | "ZCOUNT" | "ZDIFF" | "ZINTER" | "ZLEXCOUNT" | "ZMSCORE" | "ZRANDMEMBER" | "ZRANGE"
+        | "ZRANK" | "ZREVRANK" | "ZSCAN" | "ZSCORE" | "ZUNION" => AccessMode::ReadOnly,
         _ => return None,
     };
     Some(access)
@@ -236,6 +247,7 @@ fn minimum_redis_version(command: &str) -> Option<RedisVersion> {
         "COPY" | "GETDEL" | "GETEX" | "LMOVE" | "SMISMEMBER" | "ZDIFF" | "ZINTER" | "ZMSCORE"
         | "ZRANDMEMBER" | "ZUNION" => (6, 2),
         "EXPIRETIME" | "LCS" | "LMPOP" | "PEXPIRETIME" | "SINTERCARD" | "ZMPOP" => (7, 0),
+        "HEXPIRE" | "HPERSIST" | "HTTL" => (7, 4),
         _ => return None,
     };
     Some(RedisVersion::new(version.0, version.1, 0))
@@ -336,6 +348,11 @@ mod tests {
             getdel.minimum_redis_version(),
             Some(RedisVersion::new(6, 2, 0))
         );
+        let httl = invocation("HTTL", &["key", "FIELDS", "1", "field"]).expect("HTTL metadata");
+        assert_eq!(
+            httl.minimum_redis_version(),
+            Some(RedisVersion::new(7, 4, 0))
+        );
     }
 
     #[test]
@@ -352,5 +369,23 @@ mod tests {
                 .required_access(),
             AccessMode::Full
         );
+    }
+
+    #[test]
+    fn nonpositive_hash_expiration_is_destructive() {
+        assert_eq!(
+            invocation("HEXPIRE", &["key", "60", "FIELDS", "1", "field"])
+                .expect("positive HEXPIRE metadata")
+                .required_access(),
+            AccessMode::ReadWrite
+        );
+        for seconds in ["0", "-1"] {
+            assert_eq!(
+                invocation("HEXPIRE", &["key", seconds, "FIELDS", "1", "field"])
+                    .expect("deleting HEXPIRE metadata")
+                    .required_access(),
+                AccessMode::Full
+            );
+        }
     }
 }

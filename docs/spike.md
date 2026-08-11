@@ -105,3 +105,11 @@ The native frontend seam is now implemented as `RedisInvocationEngine`. It
 accepts pre-tokenized binary argv and deliberately stops before terminal
 syntax or rendering; `redis_command` delegates to the same policy-preserving
 service. Session-oriented operations remain separate future work.
+
+## 2026-08-11 hash-surface follow-up
+
+The curated default now includes a complete bounded hash command family. Its
+contracts preserve binary fields and values, distinguish nil from empty data,
+separate read-write mutations from full-access deletion, and capability-gate
+field expiration to Redis 7.4 or newer. The surface is exercised through
+RESP2, RESP3, restricted ACLs, output-budget failures, and remote Cluster slots.

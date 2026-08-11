@@ -3100,7 +3100,488 @@
         "minimum_module_version": null,
         "minimum_redis_version": null,
         "required_commands": [
-          "HGET"
+          "HDEL"
+        ],
+        "required_module": null
+      },
+      "name": "redis_hdel",
+      "output_policy": "intrinsically_bounded",
+      "protocol": {
+        "annotations": {
+          "idempotentHint": true
+        },
+        "description": "Permanently delete 1 to 1000 unique hash fields. Requires full access.",
+        "inputSchema": {
+          "$defs": {
+            "EncodedHashFieldInput": {
+              "additionalProperties": false,
+              "properties": {
+                "field": {
+                  "description": "Hash field.",
+                  "type": "string"
+                },
+                "field_encoding": {
+                  "$ref": "#/$defs/InputEncoding",
+                  "default": "utf8",
+                  "description": "Encoding of `field`."
+                }
+              },
+              "required": [
+                "field"
+              ],
+              "type": "object"
+            },
+            "HashFieldSelector": {
+              "anyOf": [
+                {
+                  "description": "UTF-8 hash field shorthand.",
+                  "type": "string"
+                },
+                {
+                  "$ref": "#/$defs/EncodedHashFieldInput",
+                  "description": "Explicitly encoded hash field."
+                }
+              ]
+            },
+            "InputEncoding": {
+              "enum": [
+                "utf8",
+                "base64"
+              ],
+              "type": "string"
+            }
+          },
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "fields": {
+              "description": "One to 1000 fields. Strings are UTF-8 shorthand; objects can select base64.",
+              "items": {
+                "$ref": "#/$defs/HashFieldSelector"
+              },
+              "maxItems": 1000,
+              "minItems": 1,
+              "type": "array"
+            },
+            "key": {
+              "description": "Redis hash key.",
+              "type": "string"
+            },
+            "key_encoding": {
+              "$ref": "#/$defs/InputEncoding",
+              "default": "utf8",
+              "description": "Encoding of `key`."
+            }
+          },
+          "required": [
+            "key",
+            "fields"
+          ],
+          "title": "HashFieldsInput",
+          "type": "object"
+        },
+        "name": "redis_hdel",
+        "outputSchema": {
+          "$defs": {
+            "InputEncoding": {
+              "enum": [
+                "utf8",
+                "base64"
+              ],
+              "type": "string"
+            }
+          },
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "deleted": {
+              "format": "uint64",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "key": {
+              "type": "string"
+            },
+            "key_encoding": {
+              "$ref": "#/$defs/InputEncoding"
+            },
+            "requested": {
+              "format": "uint",
+              "minimum": 0,
+              "type": "integer"
+            }
+          },
+          "required": [
+            "key",
+            "key_encoding",
+            "requested",
+            "deleted"
+          ],
+          "title": "HdelOutput",
+          "type": "object"
+        },
+        "title": "Delete Redis Hash Fields"
+      },
+      "required_access": "full",
+      "required_module": null,
+      "requires_raw_opt_in": false
+    },
+    {
+      "bundle": "data_structures",
+      "capability_requirements": {
+        "deployment": "any",
+        "minimum_module_version": null,
+        "minimum_redis_version": null,
+        "required_commands": [
+          "HEXISTS",
+          "EXISTS"
+        ],
+        "required_module": null
+      },
+      "name": "redis_hexists",
+      "output_policy": "intrinsically_bounded",
+      "protocol": {
+        "annotations": {
+          "destructiveHint": false,
+          "idempotentHint": true,
+          "readOnlyHint": true
+        },
+        "description": "Check whether one binary-safe field exists and distinguish a missing hash from a missing field.",
+        "inputSchema": {
+          "$defs": {
+            "InputEncoding": {
+              "enum": [
+                "utf8",
+                "base64"
+              ],
+              "type": "string"
+            }
+          },
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "field": {
+              "description": "Hash field.",
+              "type": "string"
+            },
+            "field_encoding": {
+              "$ref": "#/$defs/InputEncoding",
+              "default": "utf8",
+              "description": "Encoding of `field`."
+            },
+            "key": {
+              "description": "Redis hash key.",
+              "type": "string"
+            },
+            "key_encoding": {
+              "$ref": "#/$defs/InputEncoding",
+              "default": "utf8",
+              "description": "Encoding of `key`."
+            }
+          },
+          "required": [
+            "key",
+            "field"
+          ],
+          "title": "HashFieldInput",
+          "type": "object"
+        },
+        "name": "redis_hexists",
+        "outputSchema": {
+          "$defs": {
+            "InputEncoding": {
+              "enum": [
+                "utf8",
+                "base64"
+              ],
+              "type": "string"
+            }
+          },
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "field": {
+              "type": "string"
+            },
+            "field_encoding": {
+              "$ref": "#/$defs/InputEncoding"
+            },
+            "field_exists": {
+              "type": "boolean"
+            },
+            "hash_exists": {
+              "type": "boolean"
+            },
+            "key": {
+              "type": "string"
+            },
+            "key_encoding": {
+              "$ref": "#/$defs/InputEncoding"
+            }
+          },
+          "required": [
+            "key",
+            "key_encoding",
+            "field",
+            "field_encoding",
+            "hash_exists",
+            "field_exists"
+          ],
+          "title": "HexistsOutput",
+          "type": "object"
+        },
+        "title": "Check Redis Hash Field"
+      },
+      "required_access": "read_only",
+      "required_module": null,
+      "requires_raw_opt_in": false
+    },
+    {
+      "bundle": "data_structures",
+      "capability_requirements": {
+        "deployment": "any",
+        "minimum_module_version": null,
+        "minimum_redis_version": "7.4.0",
+        "required_commands": [
+          "HEXPIRE"
+        ],
+        "required_module": null
+      },
+      "name": "redis_hexpire",
+      "output_policy": "intrinsically_bounded",
+      "protocol": {
+        "annotations": {
+          "destructiveHint": false
+        },
+        "description": "Set positive relative field expirations on Redis 7.4 or newer with a typed NX, XX, GT, or LT condition.",
+        "inputSchema": {
+          "$defs": {
+            "EncodedHashFieldInput": {
+              "additionalProperties": false,
+              "properties": {
+                "field": {
+                  "description": "Hash field.",
+                  "type": "string"
+                },
+                "field_encoding": {
+                  "$ref": "#/$defs/InputEncoding",
+                  "default": "utf8",
+                  "description": "Encoding of `field`."
+                }
+              },
+              "required": [
+                "field"
+              ],
+              "type": "object"
+            },
+            "HashExpireCondition": {
+              "enum": [
+                "nx",
+                "xx",
+                "gt",
+                "lt"
+              ],
+              "type": "string"
+            },
+            "HashFieldSelector": {
+              "anyOf": [
+                {
+                  "description": "UTF-8 hash field shorthand.",
+                  "type": "string"
+                },
+                {
+                  "$ref": "#/$defs/EncodedHashFieldInput",
+                  "description": "Explicitly encoded hash field."
+                }
+              ]
+            },
+            "InputEncoding": {
+              "enum": [
+                "utf8",
+                "base64"
+              ],
+              "type": "string"
+            }
+          },
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "condition": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/HashExpireCondition"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "description": "Optional NX, XX, GT, or LT condition."
+            },
+            "fields": {
+              "description": "One to 1000 unique fields. Strings are UTF-8 shorthand; objects can select base64.",
+              "items": {
+                "$ref": "#/$defs/HashFieldSelector"
+              },
+              "maxItems": 1000,
+              "minItems": 1,
+              "type": "array"
+            },
+            "key": {
+              "description": "Redis hash key.",
+              "type": "string"
+            },
+            "key_encoding": {
+              "$ref": "#/$defs/InputEncoding",
+              "default": "utf8",
+              "description": "Encoding of `key`."
+            },
+            "seconds": {
+              "description": "Positive relative expiration in seconds.",
+              "format": "int64",
+              "minimum": 1,
+              "type": "integer"
+            }
+          },
+          "required": [
+            "key",
+            "seconds",
+            "fields"
+          ],
+          "title": "HexpireInput",
+          "type": "object"
+        },
+        "name": "redis_hexpire",
+        "outputSchema": {
+          "$defs": {
+            "HashExpireCondition": {
+              "enum": [
+                "nx",
+                "xx",
+                "gt",
+                "lt"
+              ],
+              "type": "string"
+            },
+            "HashExpireEntry": {
+              "additionalProperties": false,
+              "properties": {
+                "field": {
+                  "type": "string"
+                },
+                "field_encoding": {
+                  "$ref": "#/$defs/InputEncoding"
+                },
+                "redis_code": {
+                  "format": "int64",
+                  "type": "integer"
+                },
+                "status": {
+                  "$ref": "#/$defs/HashExpireStatus"
+                }
+              },
+              "required": [
+                "field",
+                "field_encoding",
+                "status",
+                "redis_code"
+              ],
+              "type": "object"
+            },
+            "HashExpireStatus": {
+              "enum": [
+                "field_missing",
+                "condition_not_met",
+                "expiration_set"
+              ],
+              "type": "string"
+            },
+            "InputEncoding": {
+              "enum": [
+                "utf8",
+                "base64"
+              ],
+              "type": "string"
+            }
+          },
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "condition": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/HashExpireCondition"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "condition_not_met": {
+              "format": "uint",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "count": {
+              "format": "uint",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "expirations_set": {
+              "format": "uint",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "fields": {
+              "items": {
+                "$ref": "#/$defs/HashExpireEntry"
+              },
+              "type": "array"
+            },
+            "fields_missing": {
+              "format": "uint",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "key": {
+              "type": "string"
+            },
+            "key_encoding": {
+              "$ref": "#/$defs/InputEncoding"
+            },
+            "seconds": {
+              "format": "int64",
+              "type": "integer"
+            }
+          },
+          "required": [
+            "key",
+            "key_encoding",
+            "seconds",
+            "count",
+            "expirations_set",
+            "condition_not_met",
+            "fields_missing",
+            "fields"
+          ],
+          "title": "HexpireOutput",
+          "type": "object"
+        },
+        "title": "Expire Redis Hash Fields"
+      },
+      "required_access": "read_write",
+      "required_module": null,
+      "requires_raw_opt_in": false
+    },
+    {
+      "bundle": "data_structures",
+      "capability_requirements": {
+        "deployment": "any",
+        "minimum_module_version": null,
+        "minimum_redis_version": null,
+        "required_commands": [
+          "HGET",
+          "EXISTS"
         ],
         "required_module": null
       },
@@ -3114,6 +3595,15 @@
         },
         "description": "Read one Redis hash field. Binary values are returned as base64.",
         "inputSchema": {
+          "$defs": {
+            "InputEncoding": {
+              "enum": [
+                "utf8",
+                "base64"
+              ],
+              "type": "string"
+            }
+          },
           "$schema": "https://json-schema.org/draft/2020-12/schema",
           "additionalProperties": false,
           "properties": {
@@ -3121,9 +3611,19 @@
               "description": "Hash field.",
               "type": "string"
             },
+            "field_encoding": {
+              "$ref": "#/$defs/InputEncoding",
+              "default": "utf8",
+              "description": "Encoding of `field`."
+            },
             "key": {
               "description": "Redis hash key.",
               "type": "string"
+            },
+            "key_encoding": {
+              "$ref": "#/$defs/InputEncoding",
+              "default": "utf8",
+              "description": "Encoding of `key`."
             }
           },
           "required": [
@@ -3136,6 +3636,13 @@
         "name": "redis_hget",
         "outputSchema": {
           "$defs": {
+            "InputEncoding": {
+              "enum": [
+                "utf8",
+                "base64"
+              ],
+              "type": "string"
+            },
             "ValueEncoding": {
               "enum": [
                 "utf8",
@@ -3157,14 +3664,23 @@
                 }
               ]
             },
-            "exists": {
-              "type": "boolean"
-            },
             "field": {
               "type": "string"
             },
+            "field_encoding": {
+              "$ref": "#/$defs/InputEncoding"
+            },
+            "field_exists": {
+              "type": "boolean"
+            },
+            "hash_exists": {
+              "type": "boolean"
+            },
             "key": {
               "type": "string"
+            },
+            "key_encoding": {
+              "$ref": "#/$defs/InputEncoding"
             },
             "value": {
               "type": [
@@ -3175,8 +3691,11 @@
           },
           "required": [
             "key",
+            "key_encoding",
             "field",
-            "exists"
+            "field_encoding",
+            "hash_exists",
+            "field_exists"
           ],
           "title": "HgetOutput",
           "type": "object"
@@ -3208,18 +3727,32 @@
         },
         "description": "Read all fields and values in a Redis hash with binary-safe encodings. The configured output budget is enforced; use redis_hscan for large hashes.",
         "inputSchema": {
+          "$defs": {
+            "InputEncoding": {
+              "enum": [
+                "utf8",
+                "base64"
+              ],
+              "type": "string"
+            }
+          },
           "$schema": "https://json-schema.org/draft/2020-12/schema",
           "additionalProperties": false,
           "properties": {
             "key": {
-              "description": "Redis key.",
+              "description": "Redis hash key.",
               "type": "string"
+            },
+            "key_encoding": {
+              "$ref": "#/$defs/InputEncoding",
+              "default": "utf8",
+              "description": "Encoding of `key`."
             }
           },
           "required": [
             "key"
           ],
-          "title": "KeyInput",
+          "title": "HashKeyInput",
           "type": "object"
         },
         "name": "redis_hgetall",
@@ -3249,6 +3782,13 @@
               ],
               "type": "object"
             },
+            "InputEncoding": {
+              "enum": [
+                "utf8",
+                "base64"
+              ],
+              "type": "string"
+            },
             "ValueEncoding": {
               "enum": [
                 "utf8",
@@ -3276,10 +3816,14 @@
             },
             "key": {
               "type": "string"
+            },
+            "key_encoding": {
+              "$ref": "#/$defs/InputEncoding"
             }
           },
           "required": [
             "key",
+            "key_encoding",
             "exists",
             "count",
             "entries"
@@ -3290,6 +3834,811 @@
         "title": "Get Redis Hash"
       },
       "required_access": "read_only",
+      "required_module": null,
+      "requires_raw_opt_in": false
+    },
+    {
+      "bundle": "data_structures",
+      "capability_requirements": {
+        "deployment": "any",
+        "minimum_module_version": null,
+        "minimum_redis_version": null,
+        "required_commands": [
+          "HINCRBY"
+        ],
+        "required_module": null
+      },
+      "name": "redis_hincrby",
+      "output_policy": "intrinsically_bounded",
+      "protocol": {
+        "annotations": {
+          "destructiveHint": false
+        },
+        "description": "Increment a binary-safe hash field by a signed integer and return the resulting value.",
+        "inputSchema": {
+          "$defs": {
+            "InputEncoding": {
+              "enum": [
+                "utf8",
+                "base64"
+              ],
+              "type": "string"
+            }
+          },
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "field": {
+              "description": "Hash field.",
+              "type": "string"
+            },
+            "field_encoding": {
+              "$ref": "#/$defs/InputEncoding",
+              "default": "utf8",
+              "description": "Encoding of `field`."
+            },
+            "increment": {
+              "description": "Signed integer increment.",
+              "format": "int64",
+              "type": "integer"
+            },
+            "key": {
+              "description": "Redis hash key.",
+              "type": "string"
+            },
+            "key_encoding": {
+              "$ref": "#/$defs/InputEncoding",
+              "default": "utf8",
+              "description": "Encoding of `key`."
+            }
+          },
+          "required": [
+            "key",
+            "field",
+            "increment"
+          ],
+          "title": "HincrbyInput",
+          "type": "object"
+        },
+        "name": "redis_hincrby",
+        "outputSchema": {
+          "$defs": {
+            "InputEncoding": {
+              "enum": [
+                "utf8",
+                "base64"
+              ],
+              "type": "string"
+            }
+          },
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "field": {
+              "type": "string"
+            },
+            "field_encoding": {
+              "$ref": "#/$defs/InputEncoding"
+            },
+            "key": {
+              "type": "string"
+            },
+            "key_encoding": {
+              "$ref": "#/$defs/InputEncoding"
+            },
+            "value": {
+              "format": "int64",
+              "type": "integer"
+            }
+          },
+          "required": [
+            "key",
+            "key_encoding",
+            "field",
+            "field_encoding",
+            "value"
+          ],
+          "title": "HincrbyOutput",
+          "type": "object"
+        },
+        "title": "Increment Redis Hash Integer"
+      },
+      "required_access": "read_write",
+      "required_module": null,
+      "requires_raw_opt_in": false
+    },
+    {
+      "bundle": "data_structures",
+      "capability_requirements": {
+        "deployment": "any",
+        "minimum_module_version": null,
+        "minimum_redis_version": null,
+        "required_commands": [
+          "HINCRBYFLOAT"
+        ],
+        "required_module": null
+      },
+      "name": "redis_hincrbyfloat",
+      "output_policy": "intrinsically_bounded",
+      "protocol": {
+        "annotations": {
+          "destructiveHint": false
+        },
+        "description": "Increment a binary-safe hash field by a finite decimal and return Redis's canonical decimal string.",
+        "inputSchema": {
+          "$defs": {
+            "InputEncoding": {
+              "enum": [
+                "utf8",
+                "base64"
+              ],
+              "type": "string"
+            }
+          },
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "field": {
+              "description": "Hash field.",
+              "type": "string"
+            },
+            "field_encoding": {
+              "$ref": "#/$defs/InputEncoding",
+              "default": "utf8",
+              "description": "Encoding of `field`."
+            },
+            "increment": {
+              "description": "Finite floating-point increment.",
+              "format": "double",
+              "type": "number"
+            },
+            "key": {
+              "description": "Redis hash key.",
+              "type": "string"
+            },
+            "key_encoding": {
+              "$ref": "#/$defs/InputEncoding",
+              "default": "utf8",
+              "description": "Encoding of `key`."
+            }
+          },
+          "required": [
+            "key",
+            "field",
+            "increment"
+          ],
+          "title": "HincrbyfloatInput",
+          "type": "object"
+        },
+        "name": "redis_hincrbyfloat",
+        "outputSchema": {
+          "$defs": {
+            "InputEncoding": {
+              "enum": [
+                "utf8",
+                "base64"
+              ],
+              "type": "string"
+            }
+          },
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "field": {
+              "type": "string"
+            },
+            "field_encoding": {
+              "$ref": "#/$defs/InputEncoding"
+            },
+            "key": {
+              "type": "string"
+            },
+            "key_encoding": {
+              "$ref": "#/$defs/InputEncoding"
+            },
+            "value": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "key",
+            "key_encoding",
+            "field",
+            "field_encoding",
+            "value"
+          ],
+          "title": "HincrbyfloatOutput",
+          "type": "object"
+        },
+        "title": "Increment Redis Hash Decimal"
+      },
+      "required_access": "read_write",
+      "required_module": null,
+      "requires_raw_opt_in": false
+    },
+    {
+      "bundle": "data_structures",
+      "capability_requirements": {
+        "deployment": "any",
+        "minimum_module_version": null,
+        "minimum_redis_version": null,
+        "required_commands": [
+          "HKEYS"
+        ],
+        "required_module": null
+      },
+      "name": "redis_hkeys",
+      "output_policy": "budget_guarded",
+      "protocol": {
+        "annotations": {
+          "destructiveHint": false,
+          "idempotentHint": true,
+          "readOnlyHint": true
+        },
+        "description": "Read all hash field names in deterministic byte order. The configured output budget is enforced; use redis_hscan for large hashes.",
+        "inputSchema": {
+          "$defs": {
+            "InputEncoding": {
+              "enum": [
+                "utf8",
+                "base64"
+              ],
+              "type": "string"
+            }
+          },
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "key": {
+              "description": "Redis hash key.",
+              "type": "string"
+            },
+            "key_encoding": {
+              "$ref": "#/$defs/InputEncoding",
+              "default": "utf8",
+              "description": "Encoding of `key`."
+            }
+          },
+          "required": [
+            "key"
+          ],
+          "title": "HashKeyInput",
+          "type": "object"
+        },
+        "name": "redis_hkeys",
+        "outputSchema": {
+          "$defs": {
+            "EncodedValue": {
+              "additionalProperties": false,
+              "properties": {
+                "encoding": {
+                  "$ref": "#/$defs/ValueEncoding"
+                },
+                "value": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "value",
+                "encoding"
+              ],
+              "type": "object"
+            },
+            "InputEncoding": {
+              "enum": [
+                "utf8",
+                "base64"
+              ],
+              "type": "string"
+            },
+            "ValueEncoding": {
+              "enum": [
+                "utf8",
+                "base64"
+              ],
+              "type": "string"
+            }
+          },
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "count": {
+              "format": "uint",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "exists": {
+              "type": "boolean"
+            },
+            "fields": {
+              "items": {
+                "$ref": "#/$defs/EncodedValue"
+              },
+              "type": "array"
+            },
+            "key": {
+              "type": "string"
+            },
+            "key_encoding": {
+              "$ref": "#/$defs/InputEncoding"
+            }
+          },
+          "required": [
+            "key",
+            "key_encoding",
+            "exists",
+            "count",
+            "fields"
+          ],
+          "title": "HkeysOutput",
+          "type": "object"
+        },
+        "title": "Read Redis Hash Fields"
+      },
+      "required_access": "read_only",
+      "required_module": null,
+      "requires_raw_opt_in": false
+    },
+    {
+      "bundle": "data_structures",
+      "capability_requirements": {
+        "deployment": "any",
+        "minimum_module_version": null,
+        "minimum_redis_version": null,
+        "required_commands": [
+          "HLEN"
+        ],
+        "required_module": null
+      },
+      "name": "redis_hlen",
+      "output_policy": "intrinsically_bounded",
+      "protocol": {
+        "annotations": {
+          "destructiveHint": false,
+          "idempotentHint": true,
+          "readOnlyHint": true
+        },
+        "description": "Return the number of fields in a binary-safe Redis hash key.",
+        "inputSchema": {
+          "$defs": {
+            "InputEncoding": {
+              "enum": [
+                "utf8",
+                "base64"
+              ],
+              "type": "string"
+            }
+          },
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "key": {
+              "description": "Redis hash key.",
+              "type": "string"
+            },
+            "key_encoding": {
+              "$ref": "#/$defs/InputEncoding",
+              "default": "utf8",
+              "description": "Encoding of `key`."
+            }
+          },
+          "required": [
+            "key"
+          ],
+          "title": "HashKeyInput",
+          "type": "object"
+        },
+        "name": "redis_hlen",
+        "outputSchema": {
+          "$defs": {
+            "InputEncoding": {
+              "enum": [
+                "utf8",
+                "base64"
+              ],
+              "type": "string"
+            }
+          },
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "exists": {
+              "type": "boolean"
+            },
+            "key": {
+              "type": "string"
+            },
+            "key_encoding": {
+              "$ref": "#/$defs/InputEncoding"
+            },
+            "length": {
+              "format": "uint64",
+              "minimum": 0,
+              "type": "integer"
+            }
+          },
+          "required": [
+            "key",
+            "key_encoding",
+            "exists",
+            "length"
+          ],
+          "title": "HlenOutput",
+          "type": "object"
+        },
+        "title": "Read Redis Hash Length"
+      },
+      "required_access": "read_only",
+      "required_module": null,
+      "requires_raw_opt_in": false
+    },
+    {
+      "bundle": "data_structures",
+      "capability_requirements": {
+        "deployment": "any",
+        "minimum_module_version": null,
+        "minimum_redis_version": null,
+        "required_commands": [
+          "HMGET",
+          "EXISTS"
+        ],
+        "required_module": null
+      },
+      "name": "redis_hmget",
+      "output_policy": "budget_guarded",
+      "protocol": {
+        "annotations": {
+          "destructiveHint": false,
+          "idempotentHint": true,
+          "readOnlyHint": true
+        },
+        "description": "Read one bounded, ordered list of binary-safe hash fields. Missing fields are null; empty values remain present.",
+        "inputSchema": {
+          "$defs": {
+            "EncodedHashFieldInput": {
+              "additionalProperties": false,
+              "properties": {
+                "field": {
+                  "description": "Hash field.",
+                  "type": "string"
+                },
+                "field_encoding": {
+                  "$ref": "#/$defs/InputEncoding",
+                  "default": "utf8",
+                  "description": "Encoding of `field`."
+                }
+              },
+              "required": [
+                "field"
+              ],
+              "type": "object"
+            },
+            "HashFieldSelector": {
+              "anyOf": [
+                {
+                  "description": "UTF-8 hash field shorthand.",
+                  "type": "string"
+                },
+                {
+                  "$ref": "#/$defs/EncodedHashFieldInput",
+                  "description": "Explicitly encoded hash field."
+                }
+              ]
+            },
+            "InputEncoding": {
+              "enum": [
+                "utf8",
+                "base64"
+              ],
+              "type": "string"
+            }
+          },
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "fields": {
+              "description": "One to 1000 fields. Strings are UTF-8 shorthand; objects can select base64.",
+              "items": {
+                "$ref": "#/$defs/HashFieldSelector"
+              },
+              "maxItems": 1000,
+              "minItems": 1,
+              "type": "array"
+            },
+            "key": {
+              "description": "Redis hash key.",
+              "type": "string"
+            },
+            "key_encoding": {
+              "$ref": "#/$defs/InputEncoding",
+              "default": "utf8",
+              "description": "Encoding of `key`."
+            }
+          },
+          "required": [
+            "key",
+            "fields"
+          ],
+          "title": "HashFieldsInput",
+          "type": "object"
+        },
+        "name": "redis_hmget",
+        "outputSchema": {
+          "$defs": {
+            "HmgetEntry": {
+              "additionalProperties": false,
+              "properties": {
+                "exists": {
+                  "type": "boolean"
+                },
+                "field": {
+                  "type": "string"
+                },
+                "field_encoding": {
+                  "$ref": "#/$defs/InputEncoding"
+                },
+                "value": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "value_encoding": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/$defs/ValueEncoding"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                }
+              },
+              "required": [
+                "field",
+                "field_encoding",
+                "exists"
+              ],
+              "type": "object"
+            },
+            "InputEncoding": {
+              "enum": [
+                "utf8",
+                "base64"
+              ],
+              "type": "string"
+            },
+            "ValueEncoding": {
+              "enum": [
+                "utf8",
+                "base64"
+              ],
+              "type": "string"
+            }
+          },
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "count": {
+              "format": "uint",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "hash_exists": {
+              "type": "boolean"
+            },
+            "key": {
+              "type": "string"
+            },
+            "key_encoding": {
+              "$ref": "#/$defs/InputEncoding"
+            },
+            "values": {
+              "items": {
+                "$ref": "#/$defs/HmgetEntry"
+              },
+              "type": "array"
+            }
+          },
+          "required": [
+            "key",
+            "key_encoding",
+            "hash_exists",
+            "count",
+            "values"
+          ],
+          "title": "HmgetOutput",
+          "type": "object"
+        },
+        "title": "Get Redis Hash Fields"
+      },
+      "required_access": "read_only",
+      "required_module": null,
+      "requires_raw_opt_in": false
+    },
+    {
+      "bundle": "data_structures",
+      "capability_requirements": {
+        "deployment": "any",
+        "minimum_module_version": null,
+        "minimum_redis_version": "7.4.0",
+        "required_commands": [
+          "HPERSIST"
+        ],
+        "required_module": null
+      },
+      "name": "redis_hpersist",
+      "output_policy": "intrinsically_bounded",
+      "protocol": {
+        "annotations": {
+          "destructiveHint": false,
+          "idempotentHint": true
+        },
+        "description": "Remove field expirations on Redis 7.4 or newer.",
+        "inputSchema": {
+          "$defs": {
+            "EncodedHashFieldInput": {
+              "additionalProperties": false,
+              "properties": {
+                "field": {
+                  "description": "Hash field.",
+                  "type": "string"
+                },
+                "field_encoding": {
+                  "$ref": "#/$defs/InputEncoding",
+                  "default": "utf8",
+                  "description": "Encoding of `field`."
+                }
+              },
+              "required": [
+                "field"
+              ],
+              "type": "object"
+            },
+            "HashFieldSelector": {
+              "anyOf": [
+                {
+                  "description": "UTF-8 hash field shorthand.",
+                  "type": "string"
+                },
+                {
+                  "$ref": "#/$defs/EncodedHashFieldInput",
+                  "description": "Explicitly encoded hash field."
+                }
+              ]
+            },
+            "InputEncoding": {
+              "enum": [
+                "utf8",
+                "base64"
+              ],
+              "type": "string"
+            }
+          },
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "fields": {
+              "description": "One to 1000 fields. Strings are UTF-8 shorthand; objects can select base64.",
+              "items": {
+                "$ref": "#/$defs/HashFieldSelector"
+              },
+              "maxItems": 1000,
+              "minItems": 1,
+              "type": "array"
+            },
+            "key": {
+              "description": "Redis hash key.",
+              "type": "string"
+            },
+            "key_encoding": {
+              "$ref": "#/$defs/InputEncoding",
+              "default": "utf8",
+              "description": "Encoding of `key`."
+            }
+          },
+          "required": [
+            "key",
+            "fields"
+          ],
+          "title": "HashFieldsInput",
+          "type": "object"
+        },
+        "name": "redis_hpersist",
+        "outputSchema": {
+          "$defs": {
+            "HashPersistEntry": {
+              "additionalProperties": false,
+              "properties": {
+                "field": {
+                  "type": "string"
+                },
+                "field_encoding": {
+                  "$ref": "#/$defs/InputEncoding"
+                },
+                "redis_code": {
+                  "format": "int64",
+                  "type": "integer"
+                },
+                "status": {
+                  "$ref": "#/$defs/HashPersistStatus"
+                }
+              },
+              "required": [
+                "field",
+                "field_encoding",
+                "status",
+                "redis_code"
+              ],
+              "type": "object"
+            },
+            "HashPersistStatus": {
+              "enum": [
+                "field_missing",
+                "already_persistent",
+                "expiration_removed"
+              ],
+              "type": "string"
+            },
+            "InputEncoding": {
+              "enum": [
+                "utf8",
+                "base64"
+              ],
+              "type": "string"
+            }
+          },
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "already_persistent": {
+              "format": "uint",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "count": {
+              "format": "uint",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "expirations_removed": {
+              "format": "uint",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "fields": {
+              "items": {
+                "$ref": "#/$defs/HashPersistEntry"
+              },
+              "type": "array"
+            },
+            "fields_missing": {
+              "format": "uint",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "key": {
+              "type": "string"
+            },
+            "key_encoding": {
+              "$ref": "#/$defs/InputEncoding"
+            }
+          },
+          "required": [
+            "key",
+            "key_encoding",
+            "count",
+            "expirations_removed",
+            "already_persistent",
+            "fields_missing",
+            "fields"
+          ],
+          "title": "HpersistOutput",
+          "type": "object"
+        },
+        "title": "Persist Redis Hash Fields"
+      },
+      "required_access": "read_write",
       "required_module": null,
       "requires_raw_opt_in": false
     },
@@ -3314,12 +4663,21 @@
         },
         "description": "Read one bounded HSCAN page. Pass page.continuation.cursor as cursor until page.complete is true. Fields and values are binary-safe.",
         "inputSchema": {
+          "$defs": {
+            "InputEncoding": {
+              "enum": [
+                "utf8",
+                "base64"
+              ],
+              "type": "string"
+            }
+          },
           "$schema": "https://json-schema.org/draft/2020-12/schema",
           "additionalProperties": false,
           "properties": {
             "count": {
               "default": 100,
-              "description": "Approximate number of fields or members Redis should inspect.",
+              "description": "Approximate number of fields Redis should inspect.",
               "format": "uint",
               "maximum": 1000,
               "minimum": 1,
@@ -3333,19 +4691,24 @@
               "type": "integer"
             },
             "key": {
-              "description": "Redis key containing the collection.",
+              "description": "Redis hash key.",
               "type": "string"
+            },
+            "key_encoding": {
+              "$ref": "#/$defs/InputEncoding",
+              "default": "utf8",
+              "description": "Encoding of `key`."
             },
             "pattern": {
               "default": "*",
-              "description": "Glob-style field or member pattern.",
+              "description": "Glob-style field pattern.",
               "type": "string"
             }
           },
           "required": [
             "key"
           ],
-          "title": "CollectionScanInput",
+          "title": "HashScanInput",
           "type": "object"
         },
         "name": "redis_hscan",
@@ -3374,6 +4737,13 @@
                 "value_encoding"
               ],
               "type": "object"
+            },
+            "InputEncoding": {
+              "enum": [
+                "utf8",
+                "base64"
+              ],
+              "type": "string"
             },
             "PageContinuation": {
               "additionalProperties": false,
@@ -3468,12 +4838,16 @@
             "key": {
               "type": "string"
             },
+            "key_encoding": {
+              "$ref": "#/$defs/InputEncoding"
+            },
             "page": {
               "$ref": "#/$defs/PageMetadata"
             }
           },
           "required": [
             "key",
+            "key_encoding",
             "cursor",
             "count",
             "entries",
@@ -3506,32 +4880,100 @@
           "destructiveHint": false,
           "idempotentHint": true
         },
-        "description": "Set between 1 and 1000 UTF-8 field-value pairs in a Redis hash.",
+        "description": "Set 1 to 1000 hash fields atomically in one HSET. The UTF-8 object form is deterministic; the binary entry form rejects duplicate decoded fields.",
         "inputSchema": {
+          "$defs": {
+            "HashFieldValueInput": {
+              "additionalProperties": false,
+              "properties": {
+                "field": {
+                  "description": "Hash field.",
+                  "type": "string"
+                },
+                "field_encoding": {
+                  "$ref": "#/$defs/InputEncoding",
+                  "default": "utf8",
+                  "description": "Encoding of `field`."
+                },
+                "value": {
+                  "description": "Hash value.",
+                  "type": "string"
+                },
+                "value_encoding": {
+                  "$ref": "#/$defs/InputEncoding",
+                  "default": "utf8",
+                  "description": "Encoding of `value`."
+                }
+              },
+              "required": [
+                "field",
+                "value"
+              ],
+              "type": "object"
+            },
+            "InputEncoding": {
+              "enum": [
+                "utf8",
+                "base64"
+              ],
+              "type": "string"
+            }
+          },
           "$schema": "https://json-schema.org/draft/2020-12/schema",
           "additionalProperties": false,
           "properties": {
+            "entries": {
+              "description": "Explicitly encoded field-value entries. Use either `fields` or `entries`.",
+              "items": {
+                "$ref": "#/$defs/HashFieldValueInput"
+              },
+              "maxItems": 1000,
+              "minItems": 1,
+              "type": [
+                "array",
+                "null"
+              ]
+            },
             "fields": {
               "additionalProperties": {
                 "type": "string"
               },
-              "description": "Field-value pairs to set.",
-              "type": "object"
+              "default": null,
+              "description": "UTF-8 field-value object. Use either `fields` or `entries`.",
+              "maxProperties": 1000,
+              "minProperties": 1,
+              "type": [
+                "object",
+                "null"
+              ]
             },
             "key": {
               "description": "Redis hash key.",
               "type": "string"
+            },
+            "key_encoding": {
+              "$ref": "#/$defs/InputEncoding",
+              "default": "utf8",
+              "description": "Encoding of `key`."
             }
           },
           "required": [
-            "key",
-            "fields"
+            "key"
           ],
           "title": "HsetInput",
           "type": "object"
         },
         "name": "redis_hset",
         "outputSchema": {
+          "$defs": {
+            "InputEncoding": {
+              "enum": [
+                "utf8",
+                "base64"
+              ],
+              "type": "string"
+            }
+          },
           "$schema": "https://json-schema.org/draft/2020-12/schema",
           "additionalProperties": false,
           "properties": {
@@ -3545,14 +4987,24 @@
               "minimum": 0,
               "type": "integer"
             },
+            "fields_updated": {
+              "format": "uint64",
+              "minimum": 0,
+              "type": "integer"
+            },
             "key": {
               "type": "string"
+            },
+            "key_encoding": {
+              "$ref": "#/$defs/InputEncoding"
             }
           },
           "required": [
             "key",
+            "key_encoding",
             "fields_set",
-            "fields_added"
+            "fields_added",
+            "fields_updated"
           ],
           "title": "HsetOutput",
           "type": "object"
@@ -3560,6 +5012,428 @@
         "title": "Set Redis Hash Fields"
       },
       "required_access": "read_write",
+      "required_module": null,
+      "requires_raw_opt_in": false
+    },
+    {
+      "bundle": "data_structures",
+      "capability_requirements": {
+        "deployment": "any",
+        "minimum_module_version": null,
+        "minimum_redis_version": "3.2.0",
+        "required_commands": [
+          "HSTRLEN",
+          "HEXISTS",
+          "EXISTS"
+        ],
+        "required_module": null
+      },
+      "name": "redis_hstrlen",
+      "output_policy": "intrinsically_bounded",
+      "protocol": {
+        "annotations": {
+          "destructiveHint": false,
+          "idempotentHint": true,
+          "readOnlyHint": true
+        },
+        "description": "Read one hash value length in bytes and distinguish an empty value, missing field, and missing hash.",
+        "inputSchema": {
+          "$defs": {
+            "InputEncoding": {
+              "enum": [
+                "utf8",
+                "base64"
+              ],
+              "type": "string"
+            }
+          },
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "field": {
+              "description": "Hash field.",
+              "type": "string"
+            },
+            "field_encoding": {
+              "$ref": "#/$defs/InputEncoding",
+              "default": "utf8",
+              "description": "Encoding of `field`."
+            },
+            "key": {
+              "description": "Redis hash key.",
+              "type": "string"
+            },
+            "key_encoding": {
+              "$ref": "#/$defs/InputEncoding",
+              "default": "utf8",
+              "description": "Encoding of `key`."
+            }
+          },
+          "required": [
+            "key",
+            "field"
+          ],
+          "title": "HashFieldInput",
+          "type": "object"
+        },
+        "name": "redis_hstrlen",
+        "outputSchema": {
+          "$defs": {
+            "InputEncoding": {
+              "enum": [
+                "utf8",
+                "base64"
+              ],
+              "type": "string"
+            }
+          },
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "field": {
+              "type": "string"
+            },
+            "field_encoding": {
+              "$ref": "#/$defs/InputEncoding"
+            },
+            "field_exists": {
+              "type": "boolean"
+            },
+            "hash_exists": {
+              "type": "boolean"
+            },
+            "key": {
+              "type": "string"
+            },
+            "key_encoding": {
+              "$ref": "#/$defs/InputEncoding"
+            },
+            "length_bytes": {
+              "format": "uint64",
+              "minimum": 0,
+              "type": "integer"
+            }
+          },
+          "required": [
+            "key",
+            "key_encoding",
+            "field",
+            "field_encoding",
+            "hash_exists",
+            "field_exists",
+            "length_bytes"
+          ],
+          "title": "HstrlenOutput",
+          "type": "object"
+        },
+        "title": "Read Redis Hash Value Length"
+      },
+      "required_access": "read_only",
+      "required_module": null,
+      "requires_raw_opt_in": false
+    },
+    {
+      "bundle": "data_structures",
+      "capability_requirements": {
+        "deployment": "any",
+        "minimum_module_version": null,
+        "minimum_redis_version": "7.4.0",
+        "required_commands": [
+          "HTTL",
+          "EXISTS"
+        ],
+        "required_module": null
+      },
+      "name": "redis_httl",
+      "output_policy": "intrinsically_bounded",
+      "protocol": {
+        "annotations": {
+          "destructiveHint": false,
+          "idempotentHint": true,
+          "readOnlyHint": true
+        },
+        "description": "Read remaining field TTLs in seconds on Redis 7.4 or newer. Results preserve request order and distinguish missing and persistent fields.",
+        "inputSchema": {
+          "$defs": {
+            "EncodedHashFieldInput": {
+              "additionalProperties": false,
+              "properties": {
+                "field": {
+                  "description": "Hash field.",
+                  "type": "string"
+                },
+                "field_encoding": {
+                  "$ref": "#/$defs/InputEncoding",
+                  "default": "utf8",
+                  "description": "Encoding of `field`."
+                }
+              },
+              "required": [
+                "field"
+              ],
+              "type": "object"
+            },
+            "HashFieldSelector": {
+              "anyOf": [
+                {
+                  "description": "UTF-8 hash field shorthand.",
+                  "type": "string"
+                },
+                {
+                  "$ref": "#/$defs/EncodedHashFieldInput",
+                  "description": "Explicitly encoded hash field."
+                }
+              ]
+            },
+            "InputEncoding": {
+              "enum": [
+                "utf8",
+                "base64"
+              ],
+              "type": "string"
+            }
+          },
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "fields": {
+              "description": "One to 1000 fields. Strings are UTF-8 shorthand; objects can select base64.",
+              "items": {
+                "$ref": "#/$defs/HashFieldSelector"
+              },
+              "maxItems": 1000,
+              "minItems": 1,
+              "type": "array"
+            },
+            "key": {
+              "description": "Redis hash key.",
+              "type": "string"
+            },
+            "key_encoding": {
+              "$ref": "#/$defs/InputEncoding",
+              "default": "utf8",
+              "description": "Encoding of `key`."
+            }
+          },
+          "required": [
+            "key",
+            "fields"
+          ],
+          "title": "HashFieldsInput",
+          "type": "object"
+        },
+        "name": "redis_httl",
+        "outputSchema": {
+          "$defs": {
+            "HashTtlStatus": {
+              "enum": [
+                "field_missing",
+                "persistent",
+                "expiring"
+              ],
+              "type": "string"
+            },
+            "HttlEntry": {
+              "additionalProperties": false,
+              "properties": {
+                "field": {
+                  "type": "string"
+                },
+                "field_encoding": {
+                  "$ref": "#/$defs/InputEncoding"
+                },
+                "redis_code": {
+                  "format": "int64",
+                  "type": "integer"
+                },
+                "status": {
+                  "$ref": "#/$defs/HashTtlStatus"
+                },
+                "ttl_seconds": {
+                  "format": "uint64",
+                  "minimum": 0,
+                  "type": [
+                    "integer",
+                    "null"
+                  ]
+                }
+              },
+              "required": [
+                "field",
+                "field_encoding",
+                "status",
+                "redis_code"
+              ],
+              "type": "object"
+            },
+            "InputEncoding": {
+              "enum": [
+                "utf8",
+                "base64"
+              ],
+              "type": "string"
+            }
+          },
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "count": {
+              "format": "uint",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "fields": {
+              "items": {
+                "$ref": "#/$defs/HttlEntry"
+              },
+              "type": "array"
+            },
+            "hash_exists": {
+              "type": "boolean"
+            },
+            "key": {
+              "type": "string"
+            },
+            "key_encoding": {
+              "$ref": "#/$defs/InputEncoding"
+            }
+          },
+          "required": [
+            "key",
+            "key_encoding",
+            "hash_exists",
+            "count",
+            "fields"
+          ],
+          "title": "HttlOutput",
+          "type": "object"
+        },
+        "title": "Read Redis Hash Field TTLs"
+      },
+      "required_access": "read_only",
+      "required_module": null,
+      "requires_raw_opt_in": false
+    },
+    {
+      "bundle": "data_structures",
+      "capability_requirements": {
+        "deployment": "any",
+        "minimum_module_version": null,
+        "minimum_redis_version": null,
+        "required_commands": [
+          "HVALS"
+        ],
+        "required_module": null
+      },
+      "name": "redis_hvals",
+      "output_policy": "budget_guarded",
+      "protocol": {
+        "annotations": {
+          "destructiveHint": false,
+          "idempotentHint": true,
+          "readOnlyHint": true
+        },
+        "description": "Read all hash values in deterministic byte order. The configured output budget is enforced; use redis_hscan for large hashes.",
+        "inputSchema": {
+          "$defs": {
+            "InputEncoding": {
+              "enum": [
+                "utf8",
+                "base64"
+              ],
+              "type": "string"
+            }
+          },
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "key": {
+              "description": "Redis hash key.",
+              "type": "string"
+            },
+            "key_encoding": {
+              "$ref": "#/$defs/InputEncoding",
+              "default": "utf8",
+              "description": "Encoding of `key`."
+            }
+          },
+          "required": [
+            "key"
+          ],
+          "title": "HashKeyInput",
+          "type": "object"
+        },
+        "name": "redis_hvals",
+        "outputSchema": {
+          "$defs": {
+            "EncodedValue": {
+              "additionalProperties": false,
+              "properties": {
+                "encoding": {
+                  "$ref": "#/$defs/ValueEncoding"
+                },
+                "value": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "value",
+                "encoding"
+              ],
+              "type": "object"
+            },
+            "InputEncoding": {
+              "enum": [
+                "utf8",
+                "base64"
+              ],
+              "type": "string"
+            },
+            "ValueEncoding": {
+              "enum": [
+                "utf8",
+                "base64"
+              ],
+              "type": "string"
+            }
+          },
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "count": {
+              "format": "uint",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "exists": {
+              "type": "boolean"
+            },
+            "key": {
+              "type": "string"
+            },
+            "key_encoding": {
+              "$ref": "#/$defs/InputEncoding"
+            },
+            "values": {
+              "items": {
+                "$ref": "#/$defs/EncodedValue"
+              },
+              "type": "array"
+            }
+          },
+          "required": [
+            "key",
+            "key_encoding",
+            "exists",
+            "count",
+            "values"
+          ],
+          "title": "HvalsOutput",
+          "type": "object"
+        },
+        "title": "Read Redis Hash Values"
+      },
+      "required_access": "read_only",
       "required_module": null,
       "requires_raw_opt_in": false
     },
@@ -6295,14 +8169,14 @@
           "additionalProperties": false,
           "properties": {
             "key": {
-              "description": "Redis key.",
+              "description": "Redis set key.",
               "type": "string"
             }
           },
           "required": [
             "key"
           ],
-          "title": "KeyInput",
+          "title": "SetKeyInput",
           "type": "object"
         },
         "name": "redis_smembers",
@@ -7934,11 +9808,46 @@
       "start": 1,
       "value": "ell"
     },
+    "redis_hdel": {
+      "deleted": 1,
+      "key": "user:1",
+      "key_encoding": "utf8",
+      "requested": 1
+    },
+    "redis_hexists": {
+      "field": "name",
+      "field_encoding": "utf8",
+      "field_exists": true,
+      "hash_exists": true,
+      "key": "user:1",
+      "key_encoding": "utf8"
+    },
+    "redis_hexpire": {
+      "condition": null,
+      "condition_not_met": 0,
+      "count": 1,
+      "expirations_set": 1,
+      "fields": [
+        {
+          "field": "name",
+          "field_encoding": "utf8",
+          "redis_code": 1,
+          "status": "expiration_set"
+        }
+      ],
+      "fields_missing": 0,
+      "key": "user:1",
+      "key_encoding": "utf8",
+      "seconds": 60
+    },
     "redis_hget": {
       "encoding": "utf8",
-      "exists": true,
       "field": "name",
+      "field_encoding": "utf8",
+      "field_exists": true,
+      "hash_exists": true,
       "key": "user:1",
+      "key_encoding": "utf8",
       "value": "Ada"
     },
     "redis_hgetall": {
@@ -7952,7 +9861,78 @@
         }
       ],
       "exists": true,
-      "key": "user:1"
+      "key": "user:1",
+      "key_encoding": "utf8"
+    },
+    "redis_hincrby": {
+      "field": "visits",
+      "field_encoding": "utf8",
+      "key": "user:1",
+      "key_encoding": "utf8",
+      "value": 1
+    },
+    "redis_hincrbyfloat": {
+      "field": "score",
+      "field_encoding": "utf8",
+      "key": "user:1",
+      "key_encoding": "utf8",
+      "value": "2.5"
+    },
+    "redis_hkeys": {
+      "count": 1,
+      "exists": true,
+      "fields": [
+        {
+          "encoding": "utf8",
+          "value": "name"
+        }
+      ],
+      "key": "user:1",
+      "key_encoding": "utf8"
+    },
+    "redis_hlen": {
+      "exists": true,
+      "key": "user:1",
+      "key_encoding": "utf8",
+      "length": 1
+    },
+    "redis_hmget": {
+      "count": 2,
+      "hash_exists": true,
+      "key": "user:1",
+      "key_encoding": "utf8",
+      "values": [
+        {
+          "exists": true,
+          "field": "name",
+          "field_encoding": "utf8",
+          "value": "Ada",
+          "value_encoding": "utf8"
+        },
+        {
+          "exists": false,
+          "field": "missing",
+          "field_encoding": "utf8",
+          "value": null,
+          "value_encoding": null
+        }
+      ]
+    },
+    "redis_hpersist": {
+      "already_persistent": 0,
+      "count": 1,
+      "expirations_removed": 1,
+      "fields": [
+        {
+          "field": "name",
+          "field_encoding": "utf8",
+          "redis_code": 1,
+          "status": "expiration_removed"
+        }
+      ],
+      "fields_missing": 0,
+      "key": "user:1",
+      "key_encoding": "utf8"
     },
     "redis_hscan": {
       "count": 1,
@@ -7966,6 +9946,7 @@
         }
       ],
       "key": "user:1",
+      "key_encoding": "utf8",
       "page": {
         "complete": false,
         "continuation": {
@@ -7980,7 +9961,45 @@
     "redis_hset": {
       "fields_added": 1,
       "fields_set": 1,
-      "key": "user:1"
+      "fields_updated": 0,
+      "key": "user:1",
+      "key_encoding": "utf8"
+    },
+    "redis_hstrlen": {
+      "field": "name",
+      "field_encoding": "utf8",
+      "field_exists": true,
+      "hash_exists": true,
+      "key": "user:1",
+      "key_encoding": "utf8",
+      "length_bytes": 3
+    },
+    "redis_httl": {
+      "count": 1,
+      "fields": [
+        {
+          "field": "name",
+          "field_encoding": "utf8",
+          "redis_code": -1,
+          "status": "persistent",
+          "ttl_seconds": null
+        }
+      ],
+      "hash_exists": true,
+      "key": "user:1",
+      "key_encoding": "utf8"
+    },
+    "redis_hvals": {
+      "count": 1,
+      "exists": true,
+      "key": "user:1",
+      "key_encoding": "utf8",
+      "values": [
+        {
+          "encoding": "utf8",
+          "value": "Ada"
+        }
+      ]
     },
     "redis_incr": {
       "key": "counter",

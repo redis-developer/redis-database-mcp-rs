@@ -135,7 +135,7 @@ which side effects that host permits. These decisions are orthogonal.
 
 The public taxonomy is `essentials`, `data_structures`, `json`, `search`,
 `diagnostics`, `admin`, `bulk`, and `raw`. The curated default enables
-`essentials`, `data_structures`, and `diagnostics`, totaling 49 tools. The
+`essentials`, `data_structures`, and `diagnostics`, totaling 61 tools. The
 module-backed `json` and `search` bundles are explicitly selected so a default
 router never advertises capabilities that its Redis target may not provide.
 Empty bundles are reserved for coherent catalog growth and do not expose
@@ -205,8 +205,10 @@ budget guarded, or cursor-, range-, or offset-paginated.
 Redis cursor. `redis_lrange` and `redis_zrange` default to ranks 0 through 99
 and continue with a start index. `redis_ft_search` always emits a LIMIT clause
 and continues with an offset. Whole-collection reads remain available for small
-values, but `redis_hgetall` and `redis_smembers` direct oversized callers to the
-corresponding scan tool.
+values, but `redis_hgetall`, `redis_hkeys`, and `redis_hvals` direct oversized
+callers to `redis_hscan`, while `redis_smembers` directs them to `redis_sscan`.
+Bounded multi-field hash reads such as `redis_hmget` and `redis_httl` reject
+requests above the configured entry ceiling before execution.
 
 Redis ACLs remain the ultimate authorization boundary. Bundle selection, access
 mode, annotations, raw policy, and timeouts are defense-in-depth and product

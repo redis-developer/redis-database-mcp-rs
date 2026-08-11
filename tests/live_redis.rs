@@ -3,7 +3,7 @@ use std::time::Duration;
 use redis_mcp::{
     AccessMode, CapabilityStatus, DirectRedis, NativeRedisInvocation, OutputBudget,
     RawCommandPolicy, RedisDeployment, RedisInvocationEngine, RedisMcp, RedisModule, RedisValue,
-    ToolBundle, tool_names,
+    RedisVersion, ToolBundle, UnavailableToolPolicy, tool_names,
 };
 use tower_mcp::client::{ChannelTransport, McpClient, StdioClientTransport};
 
@@ -141,6 +141,31 @@ async fn router_client_with_budget(
         .await
         .expect("initialize budget MCP client");
     client
+}
+
+async fn capability_router_client(
+    url: &str,
+    access: AccessMode,
+) -> (McpClient, redis_mcp::RedisCapabilities) {
+    let executor = DirectRedis::connect(url).await.expect("connect to Redis");
+    let capabilities = executor
+        .discover_capabilities()
+        .await
+        .expect("discover Redis capabilities");
+    let router = RedisMcp::builder(executor)
+        .access(access)
+        .raw_commands(access == AccessMode::Full)
+        .capabilities(capabilities.clone())
+        .unavailable_tool_policy(UnavailableToolPolicy::Hide)
+        .build();
+    let client = McpClient::connect(ChannelTransport::new(router))
+        .await
+        .expect("connect capability-aware MCP client");
+    client
+        .initialize("redis-mcp-live-capability-test", "0")
+        .await
+        .expect("initialize capability-aware MCP client");
+    (client, capabilities)
 }
 
 async fn module_router_client(url: &str) -> McpClient {
@@ -756,6 +781,388 @@ async fn live_curated_catalog_round_trip_in_resp2_and_resp3() {
 }
 
 #[tokio::test]
+async fn live_hash_family_preserves_semantics_and_binary_data_in_resp2_and_resp3() {
+    let Some(redis) = TestRedis::start().await else {
+        return;
+    };
+
+    for protocol in ["resp2", "resp3"] {
+        let client = router_client(&with_protocol(&redis.url, protocol), AccessMode::Full).await;
+        let hash = test_key(&format!("hash-family:{protocol}"));
+        let missing_hash = test_key(&format!("hash-family:{protocol}:missing"));
+        let wrong_type = test_key(&format!("hash-family:{protocol}:wrong-type"));
+
+        let seeded = client
+            .call_tool(
+                "redis_hset",
+                serde_json::json!({
+                    "key": hash,
+                    "fields": {
+                        "empty": "",
+                        "name": "Ada",
+                        "score": "1.25",
+                        "visits": "10"
+                    }
+                }),
+            )
+            .await
+            .expect("seed UTF-8 hash")
+            .structured_content
+            .expect("structured UTF-8 HSET");
+        assert_eq!(seeded["fields_set"], 4);
+        assert_eq!(seeded["fields_added"], 4);
+        assert_eq!(seeded["fields_updated"], 0);
+
+        let binary = client
+            .call_tool(
+                "redis_hset",
+                serde_json::json!({
+                    "key": hash,
+                    "entries": [
+                        {
+                            "field": "/g==",
+                            "field_encoding": "base64",
+                            "value": "/Q==",
+                            "value_encoding": "base64"
+                        },
+                        {"field": "name", "value": "Grace"}
+                    ]
+                }),
+            )
+            .await
+            .expect("binary-safe HSET")
+            .structured_content
+            .expect("structured binary-safe HSET");
+        assert_eq!(binary["fields_set"], 2);
+        assert_eq!(binary["fields_added"], 1);
+        assert_eq!(binary["fields_updated"], 1);
+
+        let empty = client
+            .call_tool(
+                "redis_hget",
+                serde_json::json!({"key": hash, "field": "empty"}),
+            )
+            .await
+            .expect("HGET empty value")
+            .structured_content
+            .expect("structured empty HGET");
+        assert_eq!(empty["hash_exists"], true);
+        assert_eq!(empty["field_exists"], true);
+        assert_eq!(empty["value"], "");
+
+        let missing_field = client
+            .call_tool(
+                "redis_hget",
+                serde_json::json!({"key": hash, "field": "missing"}),
+            )
+            .await
+            .expect("HGET missing field")
+            .structured_content
+            .expect("structured missing-field HGET");
+        assert_eq!(missing_field["hash_exists"], true);
+        assert_eq!(missing_field["field_exists"], false);
+        assert_eq!(missing_field["value"], serde_json::Value::Null);
+
+        let missing = client
+            .call_tool(
+                "redis_hget",
+                serde_json::json!({"key": missing_hash, "field": "missing"}),
+            )
+            .await
+            .expect("HGET missing hash")
+            .structured_content
+            .expect("structured missing-hash HGET");
+        assert_eq!(missing["hash_exists"], false);
+        assert_eq!(missing["field_exists"], false);
+
+        let exists = client
+            .call_tool(
+                "redis_hexists",
+                serde_json::json!({"key": hash, "field": "name"}),
+            )
+            .await
+            .expect("HEXISTS")
+            .structured_content
+            .expect("structured HEXISTS");
+        assert_eq!(exists["hash_exists"], true);
+        assert_eq!(exists["field_exists"], true);
+
+        let length = client
+            .call_tool("redis_hlen", serde_json::json!({"key": hash}))
+            .await
+            .expect("HLEN")
+            .structured_content
+            .expect("structured HLEN");
+        assert_eq!(length["exists"], true);
+        assert_eq!(length["length"], 5);
+
+        let selected = client
+            .call_tool(
+                "redis_hmget",
+                serde_json::json!({
+                    "key": hash,
+                    "fields": [
+                        "name",
+                        "missing",
+                        {"field": "/g==", "field_encoding": "base64"},
+                        "empty"
+                    ]
+                }),
+            )
+            .await
+            .expect("HMGET")
+            .structured_content
+            .expect("structured HMGET");
+        assert_eq!(selected["hash_exists"], true);
+        assert_eq!(selected["count"], 4);
+        assert_eq!(selected["values"][0]["value"], "Grace");
+        assert_eq!(selected["values"][1]["exists"], false);
+        assert_eq!(selected["values"][2]["field_encoding"], "base64");
+        assert_eq!(selected["values"][2]["value"], "/Q==");
+        assert_eq!(selected["values"][2]["value_encoding"], "base64");
+        assert_eq!(selected["values"][3]["exists"], true);
+        assert_eq!(selected["values"][3]["value"], "");
+
+        let empty_length = client
+            .call_tool(
+                "redis_hstrlen",
+                serde_json::json!({"key": hash, "field": "empty"}),
+            )
+            .await
+            .expect("HSTRLEN empty value")
+            .structured_content
+            .expect("structured HSTRLEN");
+        assert_eq!(empty_length["hash_exists"], true);
+        assert_eq!(empty_length["field_exists"], true);
+        assert_eq!(empty_length["length_bytes"], 0);
+
+        let keys = client
+            .call_tool("redis_hkeys", serde_json::json!({"key": hash}))
+            .await
+            .expect("HKEYS")
+            .structured_content
+            .expect("structured HKEYS");
+        assert_eq!(keys["count"], 5);
+        assert!(keys["fields"].as_array().is_some_and(|fields| {
+            fields
+                .iter()
+                .any(|field| field["value"] == "/g==" && field["encoding"] == "base64")
+        }));
+
+        let values = client
+            .call_tool("redis_hvals", serde_json::json!({"key": hash}))
+            .await
+            .expect("HVALS")
+            .structured_content
+            .expect("structured HVALS");
+        assert_eq!(values["count"], 5);
+        assert!(values["values"].as_array().is_some_and(|values| {
+            values
+                .iter()
+                .any(|value| value["value"] == "/Q==" && value["encoding"] == "base64")
+        }));
+
+        let scan = client
+            .call_tool(
+                "redis_hscan",
+                serde_json::json!({"key": hash, "cursor": 0, "count": 100}),
+            )
+            .await
+            .expect("HSCAN")
+            .structured_content
+            .expect("structured HSCAN");
+        assert_eq!(scan["cursor"], 0);
+        assert_eq!(scan["count"], 5);
+        assert_eq!(scan["page"]["complete"], true);
+
+        let incremented = client
+            .call_tool(
+                "redis_hincrby",
+                serde_json::json!({"key": hash, "field": "visits", "increment": -3}),
+            )
+            .await
+            .expect("HINCRBY")
+            .structured_content
+            .expect("structured HINCRBY");
+        assert_eq!(incremented["value"], 7);
+
+        let decimal = client
+            .call_tool(
+                "redis_hincrbyfloat",
+                serde_json::json!({"key": hash, "field": "score", "increment": 0.5}),
+            )
+            .await
+            .expect("HINCRBYFLOAT")
+            .structured_content
+            .expect("structured HINCRBYFLOAT");
+        assert_eq!(decimal["value"], "1.75");
+
+        client
+            .call_tool(
+                "redis_set",
+                serde_json::json!({"key": wrong_type, "value": "not-a-hash"}),
+            )
+            .await
+            .expect("seed wrong-type key");
+        let wrong_type_result = client
+            .call_tool(
+                "redis_hget",
+                serde_json::json!({"key": wrong_type, "field": "name"}),
+            )
+            .await
+            .expect("wrong type is represented as a tool result");
+        assert!(wrong_type_result.is_error);
+        let wrong_type_result =
+            serde_json::to_string(&wrong_type_result).expect("serialize wrong-type result");
+        assert!(
+            wrong_type_result.contains("WRONGTYPE"),
+            "{wrong_type_result}"
+        );
+
+        let deleted = client
+            .call_tool(
+                "redis_hdel",
+                serde_json::json!({
+                    "key": hash,
+                    "fields": ["name", {"field": "/g==", "field_encoding": "base64"}]
+                }),
+            )
+            .await
+            .expect("HDEL")
+            .structured_content
+            .expect("structured HDEL");
+        assert_eq!(deleted["requested"], 2);
+        assert_eq!(deleted["deleted"], 2);
+
+        client
+            .call_tool("redis_del", serde_json::json!({"keys": [hash, wrong_type]}))
+            .await
+            .expect("clean up hash family test");
+    }
+}
+
+#[tokio::test]
+async fn live_hash_field_expiration_is_version_gated_and_typed() {
+    let Some(redis) = TestRedis::start().await else {
+        return;
+    };
+    let (client, capabilities) = capability_router_client(&redis.url, AccessMode::Full).await;
+    let listed = client
+        .list_tools()
+        .await
+        .expect("list capability-aware tools");
+    let names = listed
+        .tools
+        .iter()
+        .map(|tool| tool.name.as_ref())
+        .collect::<Vec<_>>();
+    let field_expiration_tools = ["redis_hexpire", "redis_hpersist", "redis_httl"];
+    let version = capabilities
+        .redis_version()
+        .expect("live capability discovery reports Redis version");
+
+    if version < RedisVersion::new(7, 4, 0) {
+        for tool in field_expiration_tools {
+            assert!(
+                !names.contains(&tool),
+                "{tool} must be hidden on Redis {version}"
+            );
+        }
+        return;
+    }
+    for tool in field_expiration_tools {
+        assert!(
+            names.contains(&tool),
+            "{tool} must be exposed on Redis {version}"
+        );
+    }
+
+    let hash = test_key("hash-field-expiration");
+    client
+        .call_tool(
+            "redis_hset",
+            serde_json::json!({
+                "key": hash,
+                "fields": {"expiring": "value", "persistent": "value"}
+            }),
+        )
+        .await
+        .expect("seed field-expiration hash");
+
+    let expired = client
+        .call_tool(
+            "redis_hexpire",
+            serde_json::json!({
+                "key": hash,
+                "seconds": 60,
+                "fields": ["expiring", "missing"]
+            }),
+        )
+        .await
+        .expect("HEXPIRE")
+        .structured_content
+        .expect("structured HEXPIRE");
+    assert_eq!(expired["expirations_set"], 1);
+    assert_eq!(expired["fields_missing"], 1);
+    assert_eq!(expired["fields"][0]["status"], "expiration_set");
+    assert_eq!(expired["fields"][1]["status"], "field_missing");
+
+    let conditional = client
+        .call_tool(
+            "redis_hexpire",
+            serde_json::json!({
+                "key": hash,
+                "seconds": 30,
+                "condition": "nx",
+                "fields": ["expiring"]
+            }),
+        )
+        .await
+        .expect("conditional HEXPIRE")
+        .structured_content
+        .expect("structured conditional HEXPIRE");
+    assert_eq!(conditional["condition_not_met"], 1);
+    assert_eq!(conditional["fields"][0]["status"], "condition_not_met");
+
+    let ttls = client
+        .call_tool(
+            "redis_httl",
+            serde_json::json!({"key": hash, "fields": ["expiring", "persistent", "missing"]}),
+        )
+        .await
+        .expect("HTTL")
+        .structured_content
+        .expect("structured HTTL");
+    assert_eq!(ttls["hash_exists"], true);
+    assert_eq!(ttls["fields"][0]["status"], "expiring");
+    assert!(
+        ttls["fields"][0]["ttl_seconds"]
+            .as_u64()
+            .is_some_and(|ttl| ttl <= 60)
+    );
+    assert_eq!(ttls["fields"][1]["status"], "persistent");
+    assert_eq!(ttls["fields"][2]["status"], "field_missing");
+
+    let persisted = client
+        .call_tool(
+            "redis_hpersist",
+            serde_json::json!({"key": hash, "fields": ["expiring", "persistent", "missing"]}),
+        )
+        .await
+        .expect("HPERSIST")
+        .structured_content
+        .expect("structured HPERSIST");
+    assert_eq!(persisted["expirations_removed"], 1);
+    assert_eq!(persisted["already_persistent"], 1);
+    assert_eq!(persisted["fields_missing"], 1);
+
+    client
+        .call_tool("redis_del", serde_json::json!({"keys": [hash]}))
+        .await
+        .expect("clean up field-expiration hash");
+}
+
+#[tokio::test]
 async fn live_large_collections_are_paged_or_fail_with_stable_budget_errors() {
     let Some(redis) = TestRedis::start().await else {
         return;
@@ -807,6 +1214,16 @@ async fn live_large_collections_are_paged_or_fail_with_stable_budget_errors() {
     for (tool, input, alternative) in [
         (
             "redis_hgetall",
+            serde_json::json!({"key": hash}),
+            "redis_hscan",
+        ),
+        (
+            "redis_hkeys",
+            serde_json::json!({"key": hash}),
+            "redis_hscan",
+        ),
+        (
+            "redis_hvals",
             serde_json::json!({"key": hash}),
             "redis_hscan",
         ),
@@ -1105,6 +1522,14 @@ async fn live_acl_failures_are_classified_without_leaking_credentials() {
         .get_multiplexed_async_connection()
         .await
         .expect("connect admin Redis client");
+    let readable_hash = test_key("acl-readable-hash");
+    redis::cmd("HSET")
+        .arg(&readable_hash)
+        .arg("name")
+        .arg("Ada")
+        .query_async::<()>(&mut connection)
+        .await
+        .expect("seed ACL-readable hash");
     redis::cmd("ACL")
         .arg("SETUSER")
         .arg(&username)
@@ -1115,6 +1540,8 @@ async fn live_acl_failures_are_classified_without_leaking_credentials() {
         .arg("+ping")
         .arg("+get")
         .arg("+getrange")
+        .arg("+hget")
+        .arg("+exists")
         .query_async::<()>(&mut connection)
         .await
         .expect("create restricted ACL user");
@@ -1183,6 +1610,19 @@ async fn live_acl_failures_are_classified_without_leaking_credentials() {
         .expect("ACL-allowed GETRANGE");
     assert!(!allowed_range.is_error);
 
+    let allowed_hash = client
+        .call_tool(
+            "redis_hget",
+            serde_json::json!({"key": readable_hash, "field": "name"}),
+        )
+        .await
+        .expect("ACL-allowed HGET");
+    assert!(!allowed_hash.is_error);
+    assert_eq!(
+        allowed_hash.structured_content.as_ref().unwrap()["value"],
+        "Ada"
+    );
+
     let denied = client
         .call_tool(
             "redis_set",
@@ -1209,6 +1649,29 @@ async fn live_acl_failures_are_classified_without_leaking_credentials() {
     let denied_getex = serde_json::to_string(&denied_getex).expect("serialize GETEX ACL denial");
     assert!(denied_getex.contains("[Authorization]"), "{denied_getex}");
     assert!(!denied_getex.contains(password));
+
+    let denied_hash = client
+        .call_tool(
+            "redis_hincrby",
+            serde_json::json!({
+                "key": readable_hash,
+                "field": "visits",
+                "increment": 123456789
+            }),
+        )
+        .await
+        .expect("ACL-denied HINCRBY is represented as a tool result");
+    assert!(denied_hash.is_error);
+    let denied_hash = serde_json::to_string(&denied_hash).expect("serialize HINCRBY ACL denial");
+    assert!(denied_hash.contains("[Authorization]"), "{denied_hash}");
+    assert!(!denied_hash.contains(password));
+    assert!(!denied_hash.contains("123456789"));
+
+    redis::cmd("DEL")
+        .arg(&readable_hash)
+        .query_async::<()>(&mut connection)
+        .await
+        .expect("delete ACL-readable hash");
 
     redis::cmd("ACL")
         .arg("DELUSER")

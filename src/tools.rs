@@ -307,6 +307,9 @@ pub(crate) fn add_destructive_tools(
         router =
             essentials::add_destructive_tools(router.tool(del_tool(state.clone())), state.clone());
     }
+    if bundles.contains(&ToolBundle::DataStructures) {
+        router = data_structures::add_destructive_tools(router, state.clone());
+    }
     if bundles.contains(&ToolBundle::Json) {
         router = json_tools::add_destructive_tools(router, state.clone());
     }

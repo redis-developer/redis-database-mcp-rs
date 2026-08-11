@@ -12,7 +12,7 @@ Redis Cloud and Redis Enterprise APIs. The Rust package is simply redis-mcp.
 
 ## Curated default
 
-The standalone default exposes 49 broadly useful tools:
+The standalone default exposes 61 broadly useful tools:
 
 - read-only essentials: `redis_ping`, `redis_dbsize`, `redis_scan`,
   `redis_get`, `redis_type`, `redis_ttl`, `redis_exists`, `redis_mget`,
@@ -25,7 +25,10 @@ The standalone default exposes 49 broadly useful tools:
 - full-access essentials: `redis_del`, `redis_unlink`, `redis_getdel`,
   `redis_copy_replace`, `redis_rename`, `redis_renamenx`,
   `redis_restore_replace`
-- data structures: `redis_hget`, `redis_hgetall`, `redis_hscan`, `redis_hset`,
+- data structures: `redis_hget`, `redis_hgetall`, `redis_hexists`,
+  `redis_hkeys`, `redis_hlen`, `redis_hmget`, `redis_hstrlen`, `redis_httl`,
+  `redis_hvals`, `redis_hscan`, `redis_hset`, `redis_hincrby`,
+  `redis_hincrbyfloat`, `redis_hexpire`, `redis_hpersist`, `redis_hdel`,
   `redis_lrange`, `redis_lpush`, `redis_smembers`, `redis_sscan`, `redis_sadd`,
   `redis_zrange`, `redis_zscan`, `redis_zadd`
 - diagnostics: `redis_info`
@@ -247,15 +250,16 @@ hybrid filters.
 
 CI runs the complete suite on Redis 8.8 and the live router/stdio contract on
 every currently supported Redis Open Source series: 6.2, 7.2, 7.4, 8.0, 8.2,
-8.4, 8.6, and 8.8. Live tests exercise both RESP2 and RESP3, the 49-tool curated
+8.4, 8.6, and 8.8. Live tests exercise both RESP2 and RESP3, the 61-tool curated
 catalog, binary and nil responses, conditional and absolute expiration,
-bounded serialization/restore, ACL failures, bounded connection loss and
-recovery, and the real `redis-mcp-server` stdio process. A separate job pins the
-official `redis/redis-stack-server:7.4.0-v8` image and runs the JSON/Search
-lifecycle. Dedicated three-master cluster jobs run on Redis 6.2 and 8.8 and
-exercise redirection, multi-slot aggregation, same-slot copy/rename, stable
-cross-slot failures, and the cluster-configured stdio server. The version list
-follows the [Redis Open Source version-management table](https://redis.io/docs/latest/operate/oss_and_stack/install/version-mgmt/).
+bounded serialization/restore, typed hash-field expiration, ACL failures,
+bounded connection loss and recovery, and the real `redis-mcp-server` stdio
+process. A separate job pins the official
+`redis/redis-stack-server:7.4.0-v8` image and runs the JSON/Search lifecycle.
+Dedicated three-master cluster jobs run on Redis 6.2 and 8.8 and exercise
+redirection, multi-slot aggregation, same-slot copy/rename, stable cross-slot
+failures, and the cluster-configured stdio server. The version list follows the
+[Redis Open Source version-management table](https://redis.io/docs/latest/operate/oss_and_stack/install/version-mgmt/).
 
 ## Non-goals
 

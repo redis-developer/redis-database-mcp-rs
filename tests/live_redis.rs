@@ -767,7 +767,7 @@ async fn live_curated_catalog_round_trip_in_resp2_and_resp3() {
             .structured_content
             .expect("structured zrange");
         assert_eq!(zrange["members"][0]["member"], "alice");
-        assert_eq!(zrange["members"][0]["score"], 1.0);
+        assert_eq!(zrange["members"][0]["score"], "1");
 
         let cleanup_keys = [string_a, string_b, counter, hash, list, set, zset];
         let cleanup = client
@@ -1340,6 +1340,369 @@ async fn live_set_family_preserves_membership_binary_algebra_and_nil_semantics()
 }
 
 #[tokio::test]
+async fn live_sorted_set_family_preserves_exact_scores_ranges_binary_and_nil_semantics() {
+    let Some(redis) = TestRedis::start().await else {
+        return;
+    };
+
+    for protocol in ["resp2", "resp3"] {
+        let client = router_client(&with_protocol(&redis.url, protocol), AccessMode::Full).await;
+        let zset = test_key(&format!("sorted-set-family:{protocol}"));
+        let lex = test_key(&format!("sorted-set-family:{protocol}:lex"));
+        let missing = test_key(&format!("sorted-set-family:{protocol}:missing"));
+        let wrong_type = test_key(&format!("sorted-set-family:{protocol}:wrong-type"));
+
+        let added = client
+            .call_tool(
+                "redis_zadd",
+                serde_json::json!({
+                    "key": zset,
+                    "members": [
+                        {"score": "0.10000000000000001", "member": {"member": "/g==", "member_encoding": "base64"}},
+                        {"score": "1", "member": "alice"},
+                        {"score": 2, "member": "bob"},
+                        {"score": "3.0", "member": "carol"}
+                    ]
+                }),
+            )
+            .await
+            .expect("seed sorted-set family")
+            .structured_content
+            .expect("structured ZADD");
+        assert_eq!(added["requested"], 4);
+        assert_eq!(added["affected"], 4);
+
+        let card = client
+            .call_tool("redis_zcard", serde_json::json!({"key": zset}))
+            .await
+            .expect("ZCARD")
+            .structured_content
+            .expect("structured ZCARD");
+        assert_eq!(card["exists"], true);
+        assert_eq!(card["cardinality"], 4);
+
+        let exact_result = client
+            .call_tool(
+                "redis_zscore",
+                serde_json::json!({
+                    "key": zset,
+                    "member": "/g==",
+                    "member_encoding": "base64"
+                }),
+            )
+            .await
+            .expect("binary ZSCORE");
+        assert!(!exact_result.is_error, "binary ZSCORE: {exact_result:?}");
+        let exact = exact_result.structured_content.expect("structured ZSCORE");
+        assert_eq!(exact["zset_exists"], true);
+        assert_eq!(exact["member_exists"], true);
+        assert_eq!(exact["score"], "0.1");
+
+        let scores = client
+            .call_tool(
+                "redis_zmscore",
+                serde_json::json!({
+                    "key": zset,
+                    "members": [
+                        "alice",
+                        "missing",
+                        {"member": "/g==", "member_encoding": "base64"}
+                    ]
+                }),
+            )
+            .await
+            .expect("ZMSCORE")
+            .structured_content
+            .expect("structured ZMSCORE");
+        assert_eq!(scores["zset_exists"], true);
+        assert_eq!(scores["members"][0]["score"], "1");
+        assert_eq!(scores["members"][1]["member_exists"], false);
+        assert_eq!(scores["members"][1]["score"], serde_json::Value::Null);
+        assert_eq!(scores["members"][2]["member_encoding"], "base64");
+
+        let rank = client
+            .call_tool(
+                "redis_zrank",
+                serde_json::json!({"key": zset, "member": "alice"}),
+            )
+            .await
+            .expect("ZRANK")
+            .structured_content
+            .expect("structured ZRANK");
+        assert_eq!(rank["rank"], 1);
+        let reverse_rank = client
+            .call_tool(
+                "redis_zrevrank",
+                serde_json::json!({"key": zset, "member": "alice"}),
+            )
+            .await
+            .expect("ZREVRANK")
+            .structured_content
+            .expect("structured ZREVRANK");
+        assert_eq!(reverse_rank["rank"], 2);
+
+        let count = client
+            .call_tool(
+                "redis_zcount",
+                serde_json::json!({
+                    "key": zset,
+                    "min": {"kind": "exclusive", "value": "1"},
+                    "max": {"kind": "positive_infinity"}
+                }),
+            )
+            .await
+            .expect("ZCOUNT")
+            .structured_content
+            .expect("structured ZCOUNT");
+        assert_eq!(count["count"], 2);
+
+        let rank_page = client
+            .call_tool(
+                "redis_zrange",
+                serde_json::json!({
+                    "key": zset,
+                    "range": {"kind": "rank", "start": 0, "stop": 1},
+                    "withscores": true
+                }),
+            )
+            .await
+            .expect("rank ZRANGE")
+            .structured_content
+            .expect("structured rank ZRANGE");
+        assert_eq!(rank_page["count"], 2);
+        assert_eq!(rank_page["page"]["continuation"]["start"], 2);
+        assert_eq!(rank_page["members"][0]["encoding"], "base64");
+
+        let score_page = client
+            .call_tool(
+                "redis_zrange",
+                serde_json::json!({
+                    "key": zset,
+                    "range": {
+                        "kind": "score",
+                        "min": {"kind": "inclusive", "value": "1"},
+                        "max": {"kind": "exclusive", "value": "3"},
+                        "limit": 1
+                    },
+                    "withscores": true
+                }),
+            )
+            .await
+            .expect("score ZRANGE")
+            .structured_content
+            .expect("structured score ZRANGE");
+        assert_eq!(score_page["members"][0]["member"], "alice");
+        assert_eq!(score_page["page"]["continuation"]["offset"], 1);
+        let reverse_score = client
+            .call_tool(
+                "redis_zrange",
+                serde_json::json!({
+                    "key": zset,
+                    "rev": true,
+                    "range": {
+                        "kind": "score",
+                        "min": {"kind": "inclusive", "value": "1"},
+                        "max": {"kind": "exclusive", "value": "3"},
+                        "limit": 2
+                    }
+                }),
+            )
+            .await
+            .expect("reverse score ZRANGE")
+            .structured_content
+            .expect("structured reverse score ZRANGE");
+        assert_eq!(reverse_score["members"][0]["member"], "bob");
+        assert_eq!(reverse_score["members"][1]["member"], "alice");
+
+        client
+            .call_tool(
+                "redis_zadd",
+                serde_json::json!({
+                    "key": lex,
+                    "members": [
+                        {"score": 0, "member": "apple"},
+                        {"score": 0, "member": "banana"},
+                        {"score": 0, "member": "cherry"}
+                    ]
+                }),
+            )
+            .await
+            .expect("seed lex sorted set");
+        let lex_page = client
+            .call_tool(
+                "redis_zrange",
+                serde_json::json!({
+                    "key": lex,
+                    "range": {
+                        "kind": "lex",
+                        "min": {"kind": "exclusive", "value": "apple"},
+                        "max": {"kind": "positive_infinity"},
+                        "limit": 1
+                    }
+                }),
+            )
+            .await
+            .expect("lex ZRANGE")
+            .structured_content
+            .expect("structured lex ZRANGE");
+        assert_eq!(lex_page["members"][0]["member"], "banana");
+        assert_eq!(lex_page["page"]["continuation"]["offset"], 1);
+
+        let scan = client
+            .call_tool(
+                "redis_zscan",
+                serde_json::json!({"key": zset, "cursor": 0, "count": 100}),
+            )
+            .await
+            .expect("ZSCAN")
+            .structured_content
+            .expect("structured ZSCAN");
+        assert_eq!(scan["exists"], true);
+        assert_eq!(scan["page"]["complete"], true);
+        assert!(scan["members"].as_array().is_some_and(|members| {
+            members
+                .iter()
+                .any(|member| member["encoding"] == "base64" && member["score"] == "0.1")
+        }));
+
+        let increment = client
+            .call_tool(
+                "redis_zincrby",
+                serde_json::json!({"key": zset, "member": "alice", "increment": "0.25"}),
+            )
+            .await
+            .expect("ZINCRBY")
+            .structured_content
+            .expect("structured ZINCRBY");
+        assert_eq!(increment["score"], "1.25");
+
+        client
+            .call_tool(
+                "redis_zadd",
+                serde_json::json!({
+                    "key": zset,
+                    "members": [{"score": "-1", "member": "xxxxxxxxxxxxxxxx"}]
+                }),
+            )
+            .await
+            .expect("seed oversized sorted-set member");
+        let omitted_pop = client
+            .call_tool(
+                "redis_zpopmin",
+                serde_json::json!({
+                    "key": zset,
+                    "count": 1,
+                    "max_returned_bytes": 8
+                }),
+            )
+            .await
+            .expect("bounded ZPOPMIN")
+            .structured_content
+            .expect("structured bounded ZPOPMIN");
+        assert_eq!(omitted_pop["count"], 1);
+        assert_eq!(omitted_pop["member_bytes"], 16);
+        assert_eq!(omitted_pop["members_omitted"], true);
+        assert_eq!(omitted_pop["members"], serde_json::json!([]));
+
+        let popped_min = client
+            .call_tool(
+                "redis_zpopmin",
+                serde_json::json!({"key": zset, "count": 1}),
+            )
+            .await
+            .expect("ZPOPMIN")
+            .structured_content
+            .expect("structured ZPOPMIN");
+        assert_eq!(popped_min["members"][0]["encoding"], "base64");
+        assert_eq!(popped_min["members"][0]["score"], "0.1");
+        let popped_max = client
+            .call_tool(
+                "redis_zpopmax",
+                serde_json::json!({"key": zset, "count": 1}),
+            )
+            .await
+            .expect("ZPOPMAX")
+            .structured_content
+            .expect("structured ZPOPMAX");
+        assert_eq!(popped_max["members"][0]["member"], "carol");
+
+        let removed = client
+            .call_tool(
+                "redis_zrem",
+                serde_json::json!({"key": zset, "members": ["bob", "missing"]}),
+            )
+            .await
+            .expect("ZREM")
+            .structured_content
+            .expect("structured ZREM");
+        assert_eq!(removed["removed"], 1);
+        let removed_range = client
+            .call_tool(
+                "redis_zremrangebyscore",
+                serde_json::json!({
+                    "key": zset,
+                    "min": {"kind": "inclusive", "value": "1"},
+                    "max": {"kind": "inclusive", "value": "2"}
+                }),
+            )
+            .await
+            .expect("ZREMRANGEBYSCORE")
+            .structured_content
+            .expect("structured ZREMRANGEBYSCORE");
+        assert_eq!(removed_range["removed"], 1);
+
+        let missing_score = client
+            .call_tool(
+                "redis_zscore",
+                serde_json::json!({"key": missing, "member": "missing"}),
+            )
+            .await
+            .expect("missing ZSCORE")
+            .structured_content
+            .expect("structured missing ZSCORE");
+        assert_eq!(missing_score["zset_exists"], false);
+        assert_eq!(missing_score["member_exists"], false);
+        assert_eq!(missing_score["score"], serde_json::Value::Null);
+        for tool in ["redis_zrange", "redis_zscan"] {
+            let result = client
+                .call_tool(tool, serde_json::json!({"key": missing}))
+                .await
+                .unwrap_or_else(|error| panic!("{tool}: {error}"))
+                .structured_content
+                .unwrap_or_else(|| panic!("{tool}: structured missing result"));
+            assert_eq!(result["exists"], false, "{tool}");
+            assert_eq!(result["members"], serde_json::json!([]), "{tool}");
+        }
+
+        client
+            .call_tool(
+                "redis_set",
+                serde_json::json!({"key": wrong_type, "value": "not-a-zset"}),
+            )
+            .await
+            .expect("seed wrong-type sorted-set key");
+        let wrong = client
+            .call_tool("redis_zcard", serde_json::json!({"key": wrong_type}))
+            .await
+            .expect("wrong-type ZCARD is a tool result");
+        assert!(wrong.is_error);
+        assert!(
+            serde_json::to_string(&wrong)
+                .expect("serialize wrong-type ZCARD")
+                .contains("WRONGTYPE")
+        );
+
+        client
+            .call_tool(
+                "redis_unlink",
+                serde_json::json!({"keys": [zset, lex, missing, wrong_type]}),
+            )
+            .await
+            .expect("clean up sorted-set family");
+    }
+}
+
+#[tokio::test]
 async fn live_hash_family_preserves_semantics_and_binary_data_in_resp2_and_resp3() {
     let Some(redis) = TestRedis::start().await else {
         return;
@@ -1827,7 +2190,7 @@ async fn live_large_collections_are_paged_or_fail_with_stable_budget_errors() {
     let membership = client
         .call_tool(
             "redis_smismember",
-            serde_json::json!({"key": set, "members": oversized_members}),
+            serde_json::json!({"key": set, "members": oversized_members.clone()}),
         )
         .await
         .expect("oversized SMISMEMBER is a tool result");
@@ -1837,6 +2200,35 @@ async fn live_large_collections_are_paged_or_fail_with_stable_budget_errors() {
             .expect("serialize oversized SMISMEMBER")
             .contains("configured output limit of 100 entries")
     );
+    let scores = client
+        .call_tool(
+            "redis_zmscore",
+            serde_json::json!({"key": zset, "members": oversized_members}),
+        )
+        .await
+        .expect("oversized ZMSCORE is a tool result");
+    assert!(scores.is_error);
+    assert!(
+        serde_json::to_string(&scores)
+            .expect("serialize oversized ZMSCORE")
+            .contains("configured output limit of 100 entries")
+    );
+    let score_range = client
+        .call_tool(
+            "redis_zrange",
+            serde_json::json!({
+                "key": zset,
+                "range": {
+                    "kind": "score",
+                    "min": {"kind": "negative_infinity"},
+                    "max": {"kind": "positive_infinity"},
+                    "limit": 101
+                }
+            }),
+        )
+        .await
+        .expect("oversized score ZRANGE is a tool result");
+    assert!(score_range.is_error);
 
     for (tool, key) in [
         ("redis_hscan", &hash),
@@ -1858,8 +2250,16 @@ async fn live_large_collections_are_paged_or_fail_with_stable_budget_errors() {
     }
 
     for (tool, key) in [("redis_lrange", &list), ("redis_zrange", &zset)] {
+        let arguments = if tool == "redis_zrange" {
+            serde_json::json!({
+                "key": key,
+                "range": {"kind": "rank", "start": 0, "stop": 9}
+            })
+        } else {
+            serde_json::json!({"key": key, "start": 0, "stop": 9})
+        };
         let page = client
-            .call_tool(tool, serde_json::json!({"key": key, "start": 0, "stop": 9}))
+            .call_tool(tool, arguments)
             .await
             .unwrap_or_else(|error| panic!("{tool}: {error}"));
         assert!(!page.is_error, "{tool}: {page:?}");
@@ -1885,6 +2285,27 @@ async fn live_large_collections_are_paged_or_fail_with_stable_budget_errors() {
         .structured_content
         .expect("structured LLEN after rejected LPOP");
     assert_eq!(length["length"], 200);
+
+    let oversized_zpop = client
+        .call_tool(
+            "redis_zpopmax",
+            serde_json::json!({"key": zset, "count": 101}),
+        )
+        .await
+        .expect("oversized ZPOPMAX is a tool result");
+    assert!(oversized_zpop.is_error);
+    assert!(
+        serde_json::to_string(&oversized_zpop)
+            .expect("serialize oversized ZPOPMAX")
+            .contains("configured output limit of 100 entries")
+    );
+    let zcard = client
+        .call_tool("redis_zcard", serde_json::json!({"key": zset}))
+        .await
+        .expect("ZCARD after rejected ZPOPMAX")
+        .structured_content
+        .expect("structured ZCARD after rejected ZPOPMAX");
+    assert_eq!(zcard["cardinality"], 200);
 
     let raw = client
         .call_tool(
@@ -2053,7 +2474,7 @@ async fn live_binary_values_remain_explicit_in_resp2_and_resp3() {
             .structured_content
             .expect("structured binary zrange");
         assert_eq!(zrange["members"][0]["encoding"], "base64");
-        assert_eq!(zrange["members"][0]["score"], 1.0);
+        assert_eq!(zrange["members"][0]["score"], "1");
 
         let mut cleanup = redis::cmd("DEL");
         for key in [&string, &hash, &list, &set, &zset] {
@@ -2171,6 +2592,7 @@ async fn live_acl_failures_are_classified_without_leaking_credentials() {
     let readable_hash = test_key("acl-readable-hash");
     let readable_list = test_key("acl-readable-list");
     let readable_set = test_key("acl-readable-set");
+    let readable_zset = test_key("acl-readable-zset");
     redis::cmd("HSET")
         .arg(&readable_hash)
         .arg("name")
@@ -2190,6 +2612,13 @@ async fn live_acl_failures_are_classified_without_leaking_credentials() {
         .query_async::<()>(&mut connection)
         .await
         .expect("seed ACL-readable set");
+    redis::cmd("ZADD")
+        .arg(&readable_zset)
+        .arg(1)
+        .arg("visible")
+        .query_async::<()>(&mut connection)
+        .await
+        .expect("seed ACL-readable sorted set");
     redis::cmd("ACL")
         .arg("SETUSER")
         .arg(&username)
@@ -2203,6 +2632,7 @@ async fn live_acl_failures_are_classified_without_leaking_credentials() {
         .arg("+hget")
         .arg("+lindex")
         .arg("+sismember")
+        .arg("+zscore")
         .arg("+exists")
         .query_async::<()>(&mut connection)
         .await
@@ -2311,6 +2741,19 @@ async fn live_acl_failures_are_classified_without_leaking_credentials() {
         true
     );
 
+    let allowed_sorted_set = client
+        .call_tool(
+            "redis_zscore",
+            serde_json::json!({"key": readable_zset, "member": "visible"}),
+        )
+        .await
+        .expect("ACL-allowed ZSCORE");
+    assert!(!allowed_sorted_set.is_error);
+    assert_eq!(
+        allowed_sorted_set.structured_content.as_ref().unwrap()["score"],
+        "1"
+    );
+
     let full_client = router_client(restricted_url.as_str(), AccessMode::Full).await;
     let denied_list = full_client
         .call_tool(
@@ -2355,6 +2798,38 @@ async fn live_acl_failures_are_classified_without_leaking_credentials() {
         "{denied_set_remove}"
     );
     assert!(!denied_set_remove.contains(password));
+
+    let denied_sorted_scores = client
+        .call_tool(
+            "redis_zmscore",
+            serde_json::json!({"key": readable_zset, "members": ["visible"]}),
+        )
+        .await
+        .expect("ACL-denied ZMSCORE is represented as a tool result");
+    assert!(denied_sorted_scores.is_error);
+    let denied_sorted_scores =
+        serde_json::to_string(&denied_sorted_scores).expect("serialize ZMSCORE ACL denial");
+    assert!(
+        denied_sorted_scores.contains("[Authorization]"),
+        "{denied_sorted_scores}"
+    );
+    assert!(!denied_sorted_scores.contains(password));
+
+    let denied_sorted_remove = full_client
+        .call_tool(
+            "redis_zrem",
+            serde_json::json!({"key": readable_zset, "members": ["visible"]}),
+        )
+        .await
+        .expect("ACL-denied ZREM is represented as a tool result");
+    assert!(denied_sorted_remove.is_error);
+    let denied_sorted_remove =
+        serde_json::to_string(&denied_sorted_remove).expect("serialize ZREM ACL denial");
+    assert!(
+        denied_sorted_remove.contains("[Authorization]"),
+        "{denied_sorted_remove}"
+    );
+    assert!(!denied_sorted_remove.contains(password));
 
     let denied = client
         .call_tool(
@@ -2401,7 +2876,12 @@ async fn live_acl_failures_are_classified_without_leaking_credentials() {
     assert!(!denied_hash.contains("123456789"));
 
     redis::cmd("DEL")
-        .arg(&[&readable_hash, &readable_list, &readable_set])
+        .arg(&[
+            &readable_hash,
+            &readable_list,
+            &readable_set,
+            &readable_zset,
+        ])
         .query_async::<()>(&mut connection)
         .await
         .expect("delete ACL-readable hash");

@@ -207,12 +207,13 @@ impl ToolMetadata {
             "redis_memory_usage" | "redis_object_inspect" | "redis_unlink" => {
                 Some(RedisVersion::new(4, 0, 0))
             }
-            "redis_restore" | "redis_restore_replace" => Some(RedisVersion::new(5, 0, 0)),
+            "redis_restore" | "redis_restore_replace" | "redis_zpopmax" | "redis_zpopmin" => {
+                Some(RedisVersion::new(5, 0, 0))
+            }
             "redis_lpos" => Some(RedisVersion::new(6, 0, 0)),
             "redis_copy" | "redis_copy_replace" | "redis_getdel" | "redis_getex"
-            | "redis_lmove" | "redis_lpop" | "redis_rpop" | "redis_smismember" => {
-                Some(RedisVersion::new(6, 2, 0))
-            }
+            | "redis_lmove" | "redis_lpop" | "redis_rpop" | "redis_smismember" | "redis_zadd"
+            | "redis_zmscore" | "redis_zrange" => Some(RedisVersion::new(6, 2, 0)),
             "redis_hexpire" | "redis_hpersist" | "redis_httl" => Some(RedisVersion::new(7, 4, 0)),
             _ => None,
         };
@@ -262,8 +263,14 @@ impl ToolMetadata {
             "redis_smismember" => &["SMISMEMBER", "EXISTS"],
             "redis_sscan" => &["SSCAN", "EXISTS"],
             "redis_sunion" => &["SUNION"],
-            "redis_zrange" => &["ZRANGE"],
-            "redis_zscan" => &["ZSCAN"],
+            "redis_zcard" => &["ZCARD"],
+            "redis_zcount" => &["ZCOUNT", "EXISTS"],
+            "redis_zmscore" => &["ZMSCORE", "EXISTS"],
+            "redis_zrange" => &["ZRANGE", "EXISTS"],
+            "redis_zrank" => &["ZRANK", "EXISTS"],
+            "redis_zrevrank" => &["ZREVRANK", "EXISTS"],
+            "redis_zscan" => &["ZSCAN", "EXISTS"],
+            "redis_zscore" => &["ZSCORE", "EXISTS"],
             "redis_json_get" => &["JSON.GET"],
             "redis_json_type" => &["JSON.TYPE"],
             "redis_ft_list" => &["FT._LIST"],
@@ -295,6 +302,7 @@ impl ToolMetadata {
             "redis_rpush" => &["RPUSH"],
             "redis_sadd" => &["SADD"],
             "redis_zadd" => &["ZADD"],
+            "redis_zincrby" => &["ZINCRBY"],
             "redis_json_set" => &["JSON.SET"],
             "redis_ft_create" => &["FT.CREATE"],
             "redis_vector_set_hash" => &["HSET"],
@@ -307,6 +315,10 @@ impl ToolMetadata {
             "redis_ltrim" => &["LTRIM", "EXISTS"],
             "redis_rpop" => &["RPOP"],
             "redis_srem" => &["SREM"],
+            "redis_zpopmax" => &["ZPOPMAX"],
+            "redis_zpopmin" => &["ZPOPMIN"],
+            "redis_zrem" => &["ZREM"],
+            "redis_zremrangebyscore" => &["ZREMRANGEBYSCORE"],
             "redis_unlink" => &["UNLINK"],
             "redis_getdel" => &["GETDEL"],
             "redis_rename" => &["RENAME"],
@@ -363,6 +375,7 @@ impl ToolMetadata {
             | "redis_smembers"
             | "redis_smismember"
             | "redis_sunion"
+            | "redis_zmscore"
             | "redis_json_get"
             | "redis_json_type"
             | "redis_ft_list"
@@ -598,13 +611,49 @@ pub(crate) const CATALOG: &[ToolMetadata] = &[
         requires_raw_opt_in: false,
     },
     ToolMetadata {
+        name: "redis_zcard",
+        bundle: ToolBundle::DataStructures,
+        required_access: AccessMode::ReadOnly,
+        requires_raw_opt_in: false,
+    },
+    ToolMetadata {
+        name: "redis_zcount",
+        bundle: ToolBundle::DataStructures,
+        required_access: AccessMode::ReadOnly,
+        requires_raw_opt_in: false,
+    },
+    ToolMetadata {
+        name: "redis_zmscore",
+        bundle: ToolBundle::DataStructures,
+        required_access: AccessMode::ReadOnly,
+        requires_raw_opt_in: false,
+    },
+    ToolMetadata {
         name: "redis_zrange",
         bundle: ToolBundle::DataStructures,
         required_access: AccessMode::ReadOnly,
         requires_raw_opt_in: false,
     },
     ToolMetadata {
+        name: "redis_zrank",
+        bundle: ToolBundle::DataStructures,
+        required_access: AccessMode::ReadOnly,
+        requires_raw_opt_in: false,
+    },
+    ToolMetadata {
+        name: "redis_zrevrank",
+        bundle: ToolBundle::DataStructures,
+        required_access: AccessMode::ReadOnly,
+        requires_raw_opt_in: false,
+    },
+    ToolMetadata {
         name: "redis_zscan",
+        bundle: ToolBundle::DataStructures,
+        required_access: AccessMode::ReadOnly,
+        requires_raw_opt_in: false,
+    },
+    ToolMetadata {
+        name: "redis_zscore",
         bundle: ToolBundle::DataStructures,
         required_access: AccessMode::ReadOnly,
         requires_raw_opt_in: false,
@@ -802,6 +851,12 @@ pub(crate) const CATALOG: &[ToolMetadata] = &[
         requires_raw_opt_in: false,
     },
     ToolMetadata {
+        name: "redis_zincrby",
+        bundle: ToolBundle::DataStructures,
+        required_access: AccessMode::ReadWrite,
+        requires_raw_opt_in: false,
+    },
+    ToolMetadata {
         name: "redis_json_set",
         bundle: ToolBundle::Json,
         required_access: AccessMode::ReadWrite,
@@ -875,6 +930,30 @@ pub(crate) const CATALOG: &[ToolMetadata] = &[
     },
     ToolMetadata {
         name: "redis_srem",
+        bundle: ToolBundle::DataStructures,
+        required_access: AccessMode::Full,
+        requires_raw_opt_in: false,
+    },
+    ToolMetadata {
+        name: "redis_zpopmax",
+        bundle: ToolBundle::DataStructures,
+        required_access: AccessMode::Full,
+        requires_raw_opt_in: false,
+    },
+    ToolMetadata {
+        name: "redis_zpopmin",
+        bundle: ToolBundle::DataStructures,
+        required_access: AccessMode::Full,
+        requires_raw_opt_in: false,
+    },
+    ToolMetadata {
+        name: "redis_zrem",
+        bundle: ToolBundle::DataStructures,
+        required_access: AccessMode::Full,
+        requires_raw_opt_in: false,
+    },
+    ToolMetadata {
+        name: "redis_zremrangebyscore",
         bundle: ToolBundle::DataStructures,
         required_access: AccessMode::Full,
         requires_raw_opt_in: false,

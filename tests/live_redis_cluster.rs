@@ -265,6 +265,7 @@ async fn cluster_routes_curated_and_raw_tools_across_three_masters() {
         let (keys, remote_key) = keys_on_three_masters(&seed_urls[0], protocol).await;
         let remote_hash = format!("{remote_key}:hash");
         let remote_set = format!("{remote_key}:set");
+        let remote_zset = format!("{remote_key}:zset");
 
         let direct = router_client(
             DirectRedis::connect(&seed_urls[0])
@@ -399,6 +400,80 @@ async fn cluster_routes_curated_and_raw_tools_across_three_masters() {
             .structured_content
             .expect("structured remote-slot SREM");
         assert_eq!(remote_removed["removed"], 1);
+
+        routed
+            .call_tool(
+                "redis_zadd",
+                serde_json::json!({
+                    "key": remote_zset,
+                    "members": [
+                        {"score": "1.25", "member": "alice"},
+                        {"score": 2, "member": "bob"}
+                    ]
+                }),
+            )
+            .await
+            .expect("remote-slot ZADD");
+        let remote_scores = routed
+            .call_tool(
+                "redis_zmscore",
+                serde_json::json!({"key": remote_zset, "members": ["bob", "missing"]}),
+            )
+            .await
+            .expect("remote-slot ZMSCORE")
+            .structured_content
+            .expect("structured remote-slot ZMSCORE");
+        assert_eq!(remote_scores["members"][0]["score"], "2");
+        assert_eq!(remote_scores["members"][1]["member_exists"], false);
+        let remote_range = routed
+            .call_tool(
+                "redis_zrange",
+                serde_json::json!({
+                    "key": remote_zset,
+                    "range": {
+                        "kind": "score",
+                        "min": {"kind": "negative_infinity"},
+                        "max": {"kind": "positive_infinity"},
+                        "limit": 10
+                    },
+                    "withscores": true
+                }),
+            )
+            .await
+            .expect("remote-slot score ZRANGE")
+            .structured_content
+            .expect("structured remote-slot score ZRANGE");
+        assert_eq!(remote_range["count"], 2);
+        let remote_increment = routed
+            .call_tool(
+                "redis_zincrby",
+                serde_json::json!({"key": remote_zset, "member": "alice", "increment": "0.25"}),
+            )
+            .await
+            .expect("remote-slot ZINCRBY")
+            .structured_content
+            .expect("structured remote-slot ZINCRBY");
+        assert_eq!(remote_increment["score"], "1.5");
+        let remote_popped = routed
+            .call_tool(
+                "redis_zpopmax",
+                serde_json::json!({"key": remote_zset, "count": 1}),
+            )
+            .await
+            .expect("remote-slot ZPOPMAX")
+            .structured_content
+            .expect("structured remote-slot ZPOPMAX");
+        assert_eq!(remote_popped["members"][0]["member"], "bob");
+        let remote_zrem = routed
+            .call_tool(
+                "redis_zrem",
+                serde_json::json!({"key": remote_zset, "members": ["alice"]}),
+            )
+            .await
+            .expect("remote-slot ZREM")
+            .structured_content
+            .expect("structured remote-slot ZREM");
+        assert_eq!(remote_zrem["removed"], 1);
 
         let same_source = format!(
             "redis-mcp:test:{}:{{issue18-{protocol}}}:source",
@@ -610,6 +685,7 @@ async fn cluster_routes_curated_and_raw_tools_across_three_masters() {
                         cross_list_source,
                         cross_list_destination,
                         remote_set,
+                        remote_zset,
                         same_set_left,
                         same_set_right,
                         cross_set_left,

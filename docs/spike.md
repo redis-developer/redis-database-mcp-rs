@@ -134,3 +134,14 @@ the suite exercises RESP2/RESP3, ACLs, large outputs, custom executor argv, and
 same-slot versus CROSSSLOT Cluster behavior. The destructive `*STORE` variants
 are not advertised as bounded tools because the output budget cannot constrain
 their destination cardinality or overwrite effect.
+
+## 2026-08-11 sorted-set-surface follow-up
+
+The curated default now includes the complete single-key sorted-set family:
+binary-safe add, score increments, cardinality, scoring, rank, removal, bounded
+cursor scans, destructive pops, and explicit rank/score/lex ranges. Decimal
+string inputs avoid JSON-number coercion and score results remain canonical
+strings. Missing keys, missing members, nil scores, RESP2/RESP3 shapes, ACLs,
+large requests, exact custom-executor argv, and remote Cluster slots are all
+contract cases. Multi-key union/intersection remains deferred until its
+same-slot or explicit fan-out behavior is designed.

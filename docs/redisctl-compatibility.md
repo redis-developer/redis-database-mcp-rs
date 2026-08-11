@@ -35,7 +35,7 @@ Redis Stack behavior is covered primarily by `tests/redis_tools.rs` and
 
 ## Current overlap
 
-The library implements 66 names from the baseline: 56 default tools, nine
+The library implements 72 names from the baseline: 62 default tools, nine
 optional RedisJSON/Search tools, and the separately enabled raw tool. One typed
 `redis_object_inspect` additionally covers three redisctl OBJECT tools without
 copying their names. Matching a name does not imply an identical contract:
@@ -63,13 +63,14 @@ The expanded overlap also includes `redis_exists`, `redis_mget`,
 `redis_hvals`, `redis_lindex`, `redis_llen`, `redis_lpop`, `redis_lrange`,
 `redis_lpush`, `redis_rpop`, `redis_rpush`, `redis_smembers`, `redis_sadd`,
 `redis_scard`, `redis_sdiff`, `redis_sinter`, `redis_sismember`, `redis_srem`,
-`redis_sunion`,
-`redis_zrange`, and `redis_zadd`.
+`redis_sunion`, `redis_zcard`, `redis_zcount`, `redis_zrank`, `redis_zrem`,
+`redis_zremrangebyscore`, `redis_zscore`, `redis_zrange`, and `redis_zadd`.
 
 The library additionally exposes `redis_hscan`, `redis_hincrbyfloat`,
 `redis_hpersist`, `redis_hstrlen`, `redis_httl`, `redis_lmove`, `redis_lpos`,
 `redis_lrem`, `redis_lset`, `redis_ltrim`, `redis_smismember`, `redis_sscan`,
-and `redis_zscan`.
+`redis_zincrby`, `redis_zmscore`, `redis_zpopmax`, `redis_zpopmin`,
+`redis_zrevrank`, and `redis_zscan`.
 These are command-surface improvements rather than redisctl name overlap. Hash
 reads distinguish a missing hash, missing field, and empty value;
 field-expiration tools are capability-gated to Redis 7.4 or newer and return
@@ -77,7 +78,10 @@ typed per-field statuses; scan tools return one bounded Redis cursor page with
 typed continuation metadata.
 
 - Redis-domain input names remain compatible where practical (`keys`,
-  `entries`, `fields`, `elements`, `members`, and the ZADD/ZRANGE flags).
+  `entries`, `fields`, `elements`, `members`, and the ZADD flags). ZRANGE uses
+  one tagged rank/score/lex range object instead of copying mutually ambiguous
+  top-level flags; that single tool also supersedes redisctl's separate
+  `redis_zrangebyscore` name.
 - Every collection input is bounded to 1–1000 items in both JSON Schema and
   handler validation.
 - `redis_expire` accepts only positive seconds at the read-write tier; Redis's
@@ -108,6 +112,12 @@ typed continuation metadata.
   and multi-key algebra documents and tests Redis Cluster's same-slot rule.
   The destructive `*STORE` variants are not curated because output limits do
   not bound the cardinality or overwrite effect of their destination writes.
+- Sorted-set keys and members are binary-safe, exact decimal string inputs avoid
+  JSON-number coercion, and score outputs remain canonical strings. Reads
+  distinguish missing keys and members; multi-score results stay aligned with
+  request order; rank, score, and lex ranges are explicitly tagged and bounded;
+  pops and removals require full access. The current family is single-key, so
+  normal Cluster routing is live-tested without implying multi-key fan-out.
 - Outputs are structured rather than preserving redisctl's prose rendering.
 
 The optional module-backed overlap adds `redis_json_get`, `redis_json_type`,

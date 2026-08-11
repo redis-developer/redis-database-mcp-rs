@@ -16,10 +16,10 @@ use super::{
     InputEncoding, PageMetadata, ToolState, ValueEncoding, command, decode_input,
     destructive_annotations, output_schema, read_annotations, write_annotations,
 };
-use crate::AccessMode;
+use crate::{AccessMode, RedisValue};
 
 const MAX_ITEMS: usize = 1_000;
-const DEFAULT_LIST_RETURNED_BYTES: usize = 64 * 1024;
+const DEFAULT_RETURNED_COLLECTION_BYTES: usize = 64 * 1024;
 type BinaryPair = (Vec<u8>, Vec<u8>);
 
 fn validate_items(items: &[impl Sized], name: &str) -> tower_mcp::Result<()> {
@@ -811,23 +811,6 @@ fn hscan_tool(state: Arc<ToolState>) -> Tool {
 
 #[derive(Debug, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
-struct CollectionScanInput {
-    /// Redis key containing the collection.
-    key: String,
-    /// Cursor returned by the previous page. Start with zero.
-    #[serde(default)]
-    cursor: u64,
-    /// Glob-style field or member pattern.
-    #[serde(default = "default_pattern")]
-    pattern: String,
-    /// Approximate number of fields or members Redis should inspect.
-    #[serde(default = "default_scan_count")]
-    #[schemars(range(min = 1, max = 1000))]
-    count: usize,
-}
-
-#[derive(Debug, Deserialize, JsonSchema)]
-#[serde(deny_unknown_fields)]
 struct SetScanInput {
     /// Redis set key.
     key: String,
@@ -926,13 +909,15 @@ fn sscan_tool(state: Arc<ToolState>) -> Tool {
 struct ZscanEntry {
     member: String,
     encoding: ValueEncoding,
-    score: f64,
+    score: String,
 }
 
 #[derive(Debug, Serialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 struct ZscanOutput {
     key: String,
+    key_encoding: InputEncoding,
+    exists: bool,
     cursor: u64,
     count: usize,
     members: Vec<ZscanEntry>,
@@ -943,25 +928,26 @@ fn zscan_tool(state: Arc<ToolState>) -> Tool {
     ToolBuilder::new("redis_zscan")
         .title("Scan Redis Sorted Set")
         .description(
-            "Read one bounded ZSCAN page. Pass page.continuation.cursor as cursor until page.complete is true. Members are binary-safe and include scores.",
+            "Read one bounded ZSCAN page. Pass page.continuation.cursor as cursor until page.complete is true. Keys and members are binary-safe, and scores are returned as canonical strings instead of JSON numbers.",
         )
         .output_schema(output_schema::<ZscanOutput>())
         .annotations(read_annotations())
         .extractor_handler(
             state,
             |State(state): State<Arc<ToolState>>,
-             Json(input): Json<CollectionScanInput>| async move {
+             Json(input): Json<SetScanInput>| async move {
                 state.validate_requested_entries(input.count, "count")?;
+                let key = decode_input(&input.key, input.key_encoding, "key")?;
                 let mut command = command("redis_zscan", AccessMode::ReadOnly, "ZSCAN");
                 command
-                    .arg(input.key.as_str())
+                    .arg(key.clone())
                     .arg(input.cursor.to_string())
                     .arg("MATCH")
                     .arg(input.pattern.as_str())
                     .arg("COUNT")
                     .arg(input.count.to_string());
-                let (cursor, values): (u64, Vec<(Vec<u8>, f64)>) =
-                    state.query(command, "ZSCAN failed").await?;
+                let value = state.raw(command, "ZSCAN failed").await?;
+                let (cursor, values) = decode_zscan_response(value)?;
                 let members = values
                     .into_iter()
                     .map(|(member, score)| {
@@ -973,8 +959,15 @@ fn zscan_tool(state: Arc<ToolState>) -> Tool {
                         }
                     })
                     .collect::<Vec<_>>();
+                let exists = if members.is_empty() {
+                    key_exists(&state, "redis_zscan", AccessMode::ReadOnly, key).await?
+                } else {
+                    true
+                };
                 let output = ZscanOutput {
                     key: input.key,
+                    key_encoding: input.key_encoding,
+                    exists,
                     cursor,
                     count: members.len(),
                     page: PageMetadata::cursor(input.count, members.len(), cursor),
@@ -988,6 +981,264 @@ fn zscan_tool(state: Arc<ToolState>) -> Tool {
             },
         )
         .build()
+}
+
+fn redis_array(value: RedisValue, command_name: &str) -> tower_mcp::Result<Vec<RedisValue>> {
+    match value {
+        RedisValue::Array(values) => Ok(values),
+        RedisValue::Attribute { data, .. } => redis_array(*data, command_name),
+        other => Err(tower_mcp::Error::tool(format!(
+            "{command_name} returned an unexpected response shape: {other:?}"
+        ))),
+    }
+}
+
+fn redis_bytes(value: RedisValue, command_name: &str) -> tower_mcp::Result<Vec<u8>> {
+    match value {
+        RedisValue::BulkString(value) | RedisValue::BigNumber(value) => Ok(value),
+        RedisValue::SimpleString(value) => Ok(value.into_bytes()),
+        RedisValue::VerbatimString { text, .. } => Ok(text.into_bytes()),
+        RedisValue::Attribute { data, .. } => redis_bytes(*data, command_name),
+        other => Err(tower_mcp::Error::tool(format!(
+            "{command_name} returned a non-binary member: {other:?}"
+        ))),
+    }
+}
+
+fn decode_score(value: RedisValue, command_name: &str) -> tower_mcp::Result<Option<String>> {
+    match value {
+        RedisValue::Nil => Ok(None),
+        RedisValue::BulkString(bytes) | RedisValue::BigNumber(bytes) => {
+            String::from_utf8(bytes).map(Some).map_err(|_| {
+                tower_mcp::Error::tool(format!(
+                    "{command_name} returned a score that was not valid UTF-8"
+                ))
+            })
+        }
+        RedisValue::SimpleString(value) => Ok(Some(value)),
+        RedisValue::Double(value) => Ok(Some(value.to_string())),
+        RedisValue::Integer(value) => Ok(Some(value.to_string())),
+        RedisValue::Attribute { data, .. } => decode_score(*data, command_name),
+        other => Err(tower_mcp::Error::tool(format!(
+            "{command_name} returned an unexpected score: {other:?}"
+        ))),
+    }
+}
+
+type ScoredMember = (Vec<u8>, String);
+type ZscanResponse = (u64, Vec<ScoredMember>);
+
+fn decode_score_pairs(
+    value: RedisValue,
+    command_name: &str,
+) -> tower_mcp::Result<Vec<ScoredMember>> {
+    let values = redis_array(value, command_name)?;
+    let pairs = if values
+        .iter()
+        .all(|value| matches!(value, RedisValue::Array(_)))
+    {
+        values
+            .into_iter()
+            .map(|value| {
+                let mut pair = redis_array(value, command_name)?;
+                if pair.len() != 2 {
+                    return Err(tower_mcp::Error::tool(format!(
+                        "{command_name} returned a score pair with {} values",
+                        pair.len()
+                    )));
+                }
+                let score = pair.pop().expect("score pair length checked");
+                let member = pair.pop().expect("score pair length checked");
+                Ok((
+                    redis_bytes(member, command_name)?,
+                    decode_score(score, command_name)?.ok_or_else(|| {
+                        tower_mcp::Error::tool(format!(
+                            "{command_name} returned a nil score for a member"
+                        ))
+                    })?,
+                ))
+            })
+            .collect::<tower_mcp::Result<Vec<_>>>()?
+    } else {
+        if values.len() % 2 != 0 {
+            return Err(tower_mcp::Error::tool(format!(
+                "{command_name} returned an odd number of member/score values"
+            )));
+        }
+        let mut pairs = Vec::with_capacity(values.len() / 2);
+        let mut values = values.into_iter();
+        while let Some(member) = values.next() {
+            let score = values.next().expect("even score pair length checked");
+            pairs.push((
+                redis_bytes(member, command_name)?,
+                decode_score(score, command_name)?.ok_or_else(|| {
+                    tower_mcp::Error::tool(format!(
+                        "{command_name} returned a nil score for a member"
+                    ))
+                })?,
+            ));
+        }
+        pairs
+    };
+    Ok(pairs)
+}
+
+fn decode_zscan_response(value: RedisValue) -> tower_mcp::Result<ZscanResponse> {
+    let mut response = redis_array(value, "ZSCAN")?;
+    if response.len() != 2 {
+        return Err(tower_mcp::Error::tool(format!(
+            "ZSCAN returned {} top-level values instead of two",
+            response.len()
+        )));
+    }
+    let members = response.pop().expect("ZSCAN response length checked");
+    let cursor = response.pop().expect("ZSCAN response length checked");
+    let cursor = match cursor {
+        RedisValue::BulkString(bytes) | RedisValue::BigNumber(bytes) => std::str::from_utf8(&bytes)
+            .ok()
+            .and_then(|value| value.parse().ok()),
+        RedisValue::SimpleString(value) => value.parse().ok(),
+        RedisValue::Integer(value) => u64::try_from(value).ok(),
+        _ => None,
+    }
+    .ok_or_else(|| tower_mcp::Error::tool("ZSCAN returned an invalid cursor"))?;
+    Ok((cursor, decode_score_pairs(members, "ZSCAN")?))
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize, JsonSchema)]
+#[serde(untagged)]
+enum RedisDecimalInput {
+    /// JSON number shorthand. Use a string when every decimal digit must be preserved.
+    Number(f64),
+    /// Exact finite Redis decimal string.
+    Exact(String),
+}
+
+impl RedisDecimalInput {
+    fn finite_token(&self, name: &str) -> tower_mcp::Result<String> {
+        let token = match self {
+            Self::Number(value) => value.to_string(),
+            Self::Exact(value) => value.clone(),
+        };
+        let value = token.parse::<f64>().map_err(|_| {
+            tower_mcp::Error::tool(format!("{name} must be a valid finite Redis decimal"))
+        })?;
+        if !value.is_finite() {
+            return Err(tower_mcp::Error::tool(format!(
+                "{name} must be a finite Redis decimal"
+            )));
+        }
+        Ok(token)
+    }
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize, JsonSchema)]
+#[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
+enum ZscoreBound {
+    /// Negative infinity (`-inf`).
+    NegativeInfinity,
+    /// Positive infinity (`+inf`).
+    PositiveInfinity,
+    /// Include this finite score.
+    Inclusive { value: RedisDecimalInput },
+    /// Exclude this finite score.
+    Exclusive { value: RedisDecimalInput },
+}
+
+impl ZscoreBound {
+    fn redis_token(&self, name: &str) -> tower_mcp::Result<String> {
+        match self {
+            Self::NegativeInfinity => Ok("-inf".into()),
+            Self::PositiveInfinity => Ok("+inf".into()),
+            Self::Inclusive { value } => value.finite_token(name),
+            Self::Exclusive { value } => Ok(format!("({}", value.finite_token(name)?)),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize, JsonSchema)]
+#[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
+enum ZlexBound {
+    /// Negative infinity (`-`).
+    NegativeInfinity,
+    /// Positive infinity (`+`).
+    PositiveInfinity,
+    /// Include this binary-safe member value.
+    Inclusive {
+        value: String,
+        #[serde(default)]
+        encoding: InputEncoding,
+    },
+    /// Exclude this binary-safe member value.
+    Exclusive {
+        value: String,
+        #[serde(default)]
+        encoding: InputEncoding,
+    },
+}
+
+impl ZlexBound {
+    fn redis_token(&self, name: &str) -> tower_mcp::Result<Vec<u8>> {
+        match self {
+            Self::NegativeInfinity => Ok(vec![b'-']),
+            Self::PositiveInfinity => Ok(vec![b'+']),
+            Self::Inclusive { value, encoding } | Self::Exclusive { value, encoding } => {
+                let mut token = vec![if matches!(self, Self::Inclusive { .. }) {
+                    b'['
+                } else {
+                    b'('
+                }];
+                token.extend(decode_input(value, *encoding, name)?);
+                Ok(token)
+            }
+        }
+    }
+}
+
+fn default_zrange_limit() -> usize {
+    100
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize, JsonSchema)]
+#[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
+enum ZrangeSpec {
+    /// Inclusive zero-based ranks. Negative ranks count from the end.
+    Rank {
+        #[serde(default)]
+        start: i64,
+        #[serde(default = "default_stop")]
+        stop: i64,
+    },
+    /// Score bounds. Inputs remain in natural minimum/maximum order when `rev` is true.
+    Score {
+        min: ZscoreBound,
+        max: ZscoreBound,
+        /// Number of matching members to skip. Follow `page.continuation.offset`.
+        #[serde(default)]
+        offset: u64,
+        /// Maximum members to return.
+        #[serde(default = "default_zrange_limit")]
+        #[schemars(range(min = 1, max = 1000))]
+        limit: usize,
+    },
+    /// Binary lexicographic bounds. This is meaningful when members share the same score.
+    Lex {
+        min: ZlexBound,
+        max: ZlexBound,
+        /// Number of matching members to skip. Follow `page.continuation.offset`.
+        #[serde(default)]
+        offset: u64,
+        /// Maximum members to return.
+        #[serde(default = "default_zrange_limit")]
+        #[schemars(range(min = 1, max = 1000))]
+        limit: usize,
+    },
+}
+
+impl Default for ZrangeSpec {
+    fn default() -> Self {
+        Self::Rank { start: 0, stop: 99 }
+    }
 }
 
 fn default_stop() -> i64 {
@@ -1557,16 +1808,16 @@ fn set_algebra_tool(state: Arc<ToolState>, operation: SetAlgebraOperation) -> To
 struct ZrangeInput {
     /// Redis sorted-set key.
     key: String,
-    /// Zero-based inclusive start rank.
+    /// Encoding of `key`.
     #[serde(default)]
-    start: i64,
-    /// Inclusive stop rank. Negative indexes address from the end.
-    #[serde(default = "default_stop")]
-    stop: i64,
-    /// Include scores in the response.
+    key_encoding: InputEncoding,
+    /// Explicit rank, score, or lexicographic range. Defaults to ranks 0 through 99.
+    #[serde(default)]
+    range: ZrangeSpec,
+    /// Include exact Redis score strings in the response.
     #[serde(default)]
     withscores: bool,
-    /// Return highest scores first.
+    /// Return highest scores or lexicographically greatest members first.
     #[serde(default)]
     rev: bool,
 }
@@ -1576,53 +1827,104 @@ struct ZrangeInput {
 struct ZrangeEntry {
     member: String,
     encoding: ValueEncoding,
-    score: Option<f64>,
+    score: Option<String>,
 }
 
 #[derive(Debug, Serialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 struct ZrangeOutput {
     key: String,
-    start: i64,
-    stop: i64,
+    key_encoding: InputEncoding,
+    exists: bool,
+    range: ZrangeSpec,
     rev: bool,
+    withscores: bool,
     count: usize,
     members: Vec<ZrangeEntry>,
     page: PageMetadata,
+}
+
+enum ZrangePageKind {
+    Rank { start: i64, stop: i64 },
+    Offset { offset: u64 },
 }
 
 fn zrange_tool(state: Arc<ToolState>) -> Tool {
     ToolBuilder::new("redis_zrange")
         .title("Read Redis Sorted Set Range")
         .description(
-            "Read a bounded rank range from a Redis sorted set, optionally with scores. Defaults to ranks 0 through 99. Follow page.continuation.start until page.complete is true.",
+            "Read one bounded rank, score, or binary lexicographic range from a Redis sorted set. Inclusive, exclusive, and infinite bounds are explicit. `rev` changes output order without reversing natural min/max inputs. Follow page.continuation.start for rank pages or page.continuation.offset for score/lex pages. Scores are returned as canonical strings instead of JSON numbers.",
         )
         .output_schema(output_schema::<ZrangeOutput>())
         .annotations(read_annotations())
         .extractor_handler(
             state,
             |State(state): State<Arc<ToolState>>, Json(input): Json<ZrangeInput>| async move {
-                let requested = validate_range(
-                    input.start,
-                    input.stop,
-                    state.max_collection_entries(),
-                )?;
-                let fetch_stop = if input.start >= 0 && requested > 0 {
-                    input.stop.checked_add(1).unwrap_or(input.stop)
-                } else {
-                    input.stop
-                };
+                let key = decode_input(&input.key, input.key_encoding, "key")?;
                 let mut command = command("redis_zrange", AccessMode::ReadOnly, "ZRANGE");
-                command
-                    .arg(input.key.as_str())
-                    .arg(input.start.to_string())
-                    .arg(fetch_stop.to_string());
+                command.arg(key.clone());
+                let (requested, page_kind) = match &input.range {
+                    ZrangeSpec::Rank { start, stop } => {
+                        let requested =
+                            validate_range(*start, *stop, state.max_collection_entries())?;
+                        let fetch_stop = if *start >= 0 && requested > 0 {
+                            stop.checked_add(1).unwrap_or(*stop)
+                        } else {
+                            *stop
+                        };
+                        command.arg(start.to_string()).arg(fetch_stop.to_string());
+                        (requested, ZrangePageKind::Rank { start: *start, stop: *stop })
+                    }
+                    ZrangeSpec::Score {
+                        min,
+                        max,
+                        offset,
+                        limit,
+                    } => {
+                        state.validate_requested_entries(*limit, "range.limit")?;
+                        let min = min.redis_token("range.min.value")?;
+                        let max = max.redis_token("range.max.value")?;
+                        if input.rev {
+                            command.arg(max).arg(min);
+                        } else {
+                            command.arg(min).arg(max);
+                        }
+                        command
+                            .arg("BYSCORE")
+                            .arg("LIMIT")
+                            .arg(offset.to_string())
+                            .arg(limit.saturating_add(1).to_string());
+                        (*limit, ZrangePageKind::Offset { offset: *offset })
+                    }
+                    ZrangeSpec::Lex {
+                        min,
+                        max,
+                        offset,
+                        limit,
+                    } => {
+                        state.validate_requested_entries(*limit, "range.limit")?;
+                        let min = min.redis_token("range.min.value")?;
+                        let max = max.redis_token("range.max.value")?;
+                        if input.rev {
+                            command.arg(max).arg(min);
+                        } else {
+                            command.arg(min).arg(max);
+                        }
+                        command
+                            .arg("BYLEX")
+                            .arg("LIMIT")
+                            .arg(offset.to_string())
+                            .arg(limit.saturating_add(1).to_string());
+                        (*limit, ZrangePageKind::Offset { offset: *offset })
+                    }
+                };
                 if input.rev {
                     command.arg("REV");
                 }
                 let mut members = if input.withscores {
                     command.arg("WITHSCORES");
-                    let values: Vec<(Vec<u8>, f64)> = state.query(command, "ZRANGE failed").await?;
+                    let value = state.raw(command, "ZRANGE failed").await?;
+                    let values = decode_score_pairs(value, "ZRANGE")?;
                     values
                         .into_iter()
                         .map(|(member, score)| {
@@ -1648,23 +1950,338 @@ fn zrange_tool(state: Arc<ToolState>) -> Tool {
                         })
                         .collect::<Vec<_>>()
                 };
-                let has_more = input.start >= 0 && requested > 0 && members.len() > requested;
+                let has_more = members.len() > requested;
                 members.truncate(requested);
-                let next_start = has_more.then(|| input.stop.saturating_add(1));
+                let exists = if members.is_empty() {
+                    key_exists(&state, "redis_zrange", AccessMode::ReadOnly, key).await?
+                } else {
+                    true
+                };
+                let page = match page_kind {
+                    ZrangePageKind::Rank { start, stop } => {
+                        let next_start =
+                            (has_more && start >= 0).then(|| stop.saturating_add(1));
+                        PageMetadata::range(requested, members.len(), next_start)
+                    }
+                    ZrangePageKind::Offset { offset } => {
+                        let next_offset =
+                            has_more.then(|| offset.saturating_add(members.len() as u64));
+                        PageMetadata::offset(requested, members.len(), next_offset)
+                    }
+                };
                 let output = ZrangeOutput {
                     key: input.key,
-                    start: input.start,
-                    stop: input.stop,
+                    key_encoding: input.key_encoding,
+                    exists,
+                    range: input.range,
                     rev: input.rev,
+                    withscores: input.withscores,
                     count: members.len(),
-                    page: PageMetadata::range(requested, members.len(), next_start),
+                    page,
                     members,
                 };
                 state.output_collection(
                     &output,
                     output.count,
-                    "Retry ZRANGE with a smaller start/stop span.",
+                    "Retry ZRANGE with a smaller rank span or range.limit.",
                 )
+            },
+        )
+        .build()
+}
+
+#[derive(Debug, Serialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+struct ZcardOutput {
+    key: String,
+    key_encoding: InputEncoding,
+    exists: bool,
+    cardinality: u64,
+}
+
+fn zcard_tool(state: Arc<ToolState>) -> Tool {
+    ToolBuilder::new("redis_zcard")
+        .title("Read Redis Sorted Set Cardinality")
+        .description(
+            "Return the number of members in a binary-safe Redis sorted-set key. Missing sorted sets have cardinality zero and exists=false.",
+        )
+        .output_schema(output_schema::<ZcardOutput>())
+        .annotations(read_annotations())
+        .extractor_handler(
+            state,
+            |State(state): State<Arc<ToolState>>, Json(input): Json<SetKeyInput>| async move {
+                let mut command = command("redis_zcard", AccessMode::ReadOnly, "ZCARD");
+                command.arg(input.decoded_key()?);
+                let cardinality = state.query(command, "ZCARD failed").await?;
+                state.output(&ZcardOutput {
+                    key: input.key,
+                    key_encoding: input.key_encoding,
+                    exists: cardinality != 0,
+                    cardinality,
+                })
+            },
+        )
+        .build()
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+struct ZcountInput {
+    /// Redis sorted-set key.
+    key: String,
+    /// Encoding of `key`.
+    #[serde(default)]
+    key_encoding: InputEncoding,
+    /// Lower score bound.
+    min: ZscoreBound,
+    /// Upper score bound.
+    max: ZscoreBound,
+}
+
+#[derive(Debug, Serialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+struct ZcountOutput {
+    key: String,
+    key_encoding: InputEncoding,
+    exists: bool,
+    min: ZscoreBound,
+    max: ZscoreBound,
+    count: u64,
+}
+
+fn zcount_tool(state: Arc<ToolState>) -> Tool {
+    ToolBuilder::new("redis_zcount")
+        .title("Count Redis Sorted Set Score Range")
+        .description(
+            "Count members within explicit inclusive, exclusive, or infinite score bounds. Missing sorted sets return exists=false and count zero.",
+        )
+        .output_schema(output_schema::<ZcountOutput>())
+        .annotations(read_annotations())
+        .extractor_handler(
+            state,
+            |State(state): State<Arc<ToolState>>, Json(input): Json<ZcountInput>| async move {
+                let key = decode_input(&input.key, input.key_encoding, "key")?;
+                let mut command = command("redis_zcount", AccessMode::ReadOnly, "ZCOUNT");
+                command
+                    .arg(key.clone())
+                    .arg(input.min.redis_token("min.value")?)
+                    .arg(input.max.redis_token("max.value")?);
+                let count = state.query(command, "ZCOUNT failed").await?;
+                let exists = if count == 0 {
+                    key_exists(&state, "redis_zcount", AccessMode::ReadOnly, key).await?
+                } else {
+                    true
+                };
+                state.output(&ZcountOutput {
+                    key: input.key,
+                    key_encoding: input.key_encoding,
+                    exists,
+                    min: input.min,
+                    max: input.max,
+                    count,
+                })
+            },
+        )
+        .build()
+}
+
+#[derive(Debug, Serialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+struct ZscoreOutput {
+    key: String,
+    key_encoding: InputEncoding,
+    member: String,
+    member_encoding: InputEncoding,
+    zset_exists: bool,
+    member_exists: bool,
+    score: Option<String>,
+}
+
+fn zscore_tool(state: Arc<ToolState>) -> Tool {
+    ToolBuilder::new("redis_zscore")
+        .title("Read Redis Sorted Set Score")
+        .description(
+            "Read one binary-safe member score as a canonical string instead of a JSON number and distinguish a missing sorted set from a missing member.",
+        )
+        .output_schema(output_schema::<ZscoreOutput>())
+        .annotations(read_annotations())
+        .extractor_handler(
+            state,
+            |State(state): State<Arc<ToolState>>, Json(input): Json<SetMemberInput>| async move {
+                let key = decode_input(&input.key, input.key_encoding, "key")?;
+                let mut command = command("redis_zscore", AccessMode::ReadOnly, "ZSCORE");
+                command.arg(key.clone()).arg(decode_input(
+                    &input.member,
+                    input.member_encoding,
+                    "member",
+                )?);
+                let score = decode_score(state.raw(command, "ZSCORE failed").await?, "ZSCORE")?;
+                let member_exists = score.is_some();
+                let zset_exists = if member_exists {
+                    true
+                } else {
+                    key_exists(&state, "redis_zscore", AccessMode::ReadOnly, key).await?
+                };
+                state.output(&ZscoreOutput {
+                    key: input.key,
+                    key_encoding: input.key_encoding,
+                    member: input.member,
+                    member_encoding: input.member_encoding,
+                    zset_exists,
+                    member_exists,
+                    score,
+                })
+            },
+        )
+        .build()
+}
+
+#[derive(Debug, Serialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+struct ZmscoreEntry {
+    member: String,
+    member_encoding: InputEncoding,
+    member_exists: bool,
+    score: Option<String>,
+}
+
+#[derive(Debug, Serialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+struct ZmscoreOutput {
+    key: String,
+    key_encoding: InputEncoding,
+    zset_exists: bool,
+    count: usize,
+    members: Vec<ZmscoreEntry>,
+}
+
+fn zmscore_tool(state: Arc<ToolState>) -> Tool {
+    ToolBuilder::new("redis_zmscore")
+        .title("Read Multiple Redis Sorted Set Scores")
+        .description(
+            "Read 1 to 1000 binary-safe member scores as canonical strings instead of JSON numbers. Results remain aligned with request order and distinguish missing members from a missing sorted set. Requires Redis 6.2 or newer.",
+        )
+        .output_schema(output_schema::<ZmscoreOutput>())
+        .annotations(read_annotations())
+        .extractor_handler(
+            state,
+            |State(state): State<Arc<ToolState>>, Json(input): Json<SetMembersInput>| async move {
+                state.validate_requested_entries(input.members.len(), "members")?;
+                let key = decode_input(&input.key, input.key_encoding, "key")?;
+                let members = decode_set_members(input.members)?;
+                let mut command = command("redis_zmscore", AccessMode::ReadOnly, "ZMSCORE");
+                command.arg(key.clone());
+                for member in &members {
+                    command.arg(member.bytes.clone());
+                }
+                let scores = redis_array(state.raw(command, "ZMSCORE failed").await?, "ZMSCORE")?
+                    .into_iter()
+                    .map(|score| decode_score(score, "ZMSCORE"))
+                    .collect::<tower_mcp::Result<Vec<_>>>()?;
+                if scores.len() != members.len() {
+                    return Err(tower_mcp::Error::tool(format!(
+                        "ZMSCORE returned {} results for {} members",
+                        scores.len(),
+                        members.len()
+                    )));
+                }
+                let zset_exists = if scores.iter().any(Option::is_some) {
+                    true
+                } else {
+                    key_exists(&state, "redis_zmscore", AccessMode::ReadOnly, key).await?
+                };
+                let members = members
+                    .into_iter()
+                    .zip(scores)
+                    .map(|(member, score)| -> tower_mcp::Result<_> {
+                        let member_exists = score.is_some();
+                        Ok(ZmscoreEntry {
+                            member: member.member,
+                            member_encoding: member.member_encoding,
+                            member_exists,
+                            score,
+                        })
+                    })
+                    .collect::<tower_mcp::Result<Vec<_>>>()?;
+                let output = ZmscoreOutput {
+                    key: input.key,
+                    key_encoding: input.key_encoding,
+                    zset_exists,
+                    count: members.len(),
+                    members,
+                };
+                state.output_collection(
+                    &output,
+                    output.count,
+                    "Retry ZMSCORE with fewer members.",
+                )
+            },
+        )
+        .build()
+}
+
+#[derive(Debug, Serialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+struct ZrankOutput {
+    key: String,
+    key_encoding: InputEncoding,
+    member: String,
+    member_encoding: InputEncoding,
+    zset_exists: bool,
+    member_exists: bool,
+    reverse: bool,
+    rank: Option<u64>,
+}
+
+fn zrank_tool(state: Arc<ToolState>, reverse: bool) -> Tool {
+    let (tool_name, command_name, title) = if reverse {
+        (
+            "redis_zrevrank",
+            "ZREVRANK",
+            "Read Redis Sorted Set Reverse Rank",
+        )
+    } else {
+        ("redis_zrank", "ZRANK", "Read Redis Sorted Set Rank")
+    };
+    ToolBuilder::new(tool_name)
+        .title(title)
+        .description(if reverse {
+            "Read a binary-safe member's zero-based rank from highest to lowest score and distinguish a missing sorted set from a missing member."
+        } else {
+            "Read a binary-safe member's zero-based rank from lowest to highest score and distinguish a missing sorted set from a missing member."
+        })
+        .output_schema(output_schema::<ZrankOutput>())
+        .annotations(read_annotations())
+        .extractor_handler(
+            state,
+            move |State(state): State<Arc<ToolState>>,
+                  Json(input): Json<SetMemberInput>| async move {
+                let key = decode_input(&input.key, input.key_encoding, "key")?;
+                let mut command = command(tool_name, AccessMode::ReadOnly, command_name);
+                command.arg(key.clone()).arg(decode_input(
+                    &input.member,
+                    input.member_encoding,
+                    "member",
+                )?);
+                let rank: Option<u64> = state
+                    .query(command, &format!("{command_name} failed"))
+                    .await?;
+                let member_exists = rank.is_some();
+                let zset_exists = if member_exists {
+                    true
+                } else {
+                    key_exists(&state, tool_name, AccessMode::ReadOnly, key).await?
+                };
+                state.output(&ZrankOutput {
+                    key: input.key,
+                    key_encoding: input.key_encoding,
+                    member: input.member,
+                    member_encoding: input.member_encoding,
+                    zset_exists,
+                    member_exists,
+                    reverse,
+                    rank,
+                })
             },
         )
         .build()
@@ -2465,7 +3082,7 @@ fn default_one() -> usize {
 }
 
 fn default_list_returned_bytes() -> usize {
-    DEFAULT_LIST_RETURNED_BYTES
+    DEFAULT_RETURNED_COLLECTION_BYTES
 }
 
 fn default_rank() -> i64 {
@@ -3038,10 +3655,10 @@ fn srem_tool(state: Arc<ToolState>) -> Tool {
 #[derive(Debug, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 struct ScoreMember {
-    /// Finite score.
-    score: f64,
-    /// UTF-8 member.
-    member: String,
+    /// Finite score. Strings preserve every decimal digit sent to Redis.
+    score: RedisDecimalInput,
+    /// Binary-safe member. Strings are UTF-8 shorthand; objects can select base64.
+    member: SetMemberSelector,
 }
 
 #[derive(Debug, Deserialize, JsonSchema)]
@@ -3049,6 +3666,9 @@ struct ScoreMember {
 struct ZaddInput {
     /// Redis sorted-set key.
     key: String,
+    /// Encoding of `key`.
+    #[serde(default)]
+    key_encoding: InputEncoding,
     /// Score-member pairs to add or update.
     #[schemars(length(min = 1, max = 1000))]
     members: Vec<ScoreMember>,
@@ -3083,8 +3703,10 @@ impl ZaddInput {
                 "nx cannot be combined with gt or lt",
             ));
         }
-        if self.members.iter().any(|member| !member.score.is_finite()) {
-            return Err(tower_mcp::Error::tool("scores must be finite numbers"));
+        for (index, member) in self.members.iter().enumerate() {
+            member
+                .score
+                .finite_token(&format!("members[{index}].score"))?;
         }
         Ok(())
     }
@@ -3094,6 +3716,7 @@ impl ZaddInput {
 #[serde(deny_unknown_fields)]
 struct ZaddOutput {
     key: String,
+    key_encoding: InputEncoding,
     requested: usize,
     affected: u64,
     reports_changed: bool,
@@ -3102,7 +3725,9 @@ struct ZaddOutput {
 fn zadd_tool(state: Arc<ToolState>) -> Tool {
     ToolBuilder::new("redis_zadd")
         .title("Add Redis Sorted Set Members")
-        .description("Add or update scored UTF-8 members in a Redis sorted set.")
+        .description(
+            "Add or update 1 to 1000 binary-safe sorted-set members. Scores may be JSON numbers or exact finite decimal strings.",
+        )
         .output_schema(output_schema::<ZaddOutput>())
         .annotations(write_annotations(true))
         .extractor_handler(
@@ -3112,7 +3737,7 @@ fn zadd_tool(state: Arc<ToolState>) -> Tool {
                 input.validate()?;
                 let requested = input.members.len();
                 let mut command = command("redis_zadd", AccessMode::ReadWrite, "ZADD");
-                command.arg(input.key.as_str());
+                command.arg(decode_input(&input.key, input.key_encoding, "key")?);
                 if input.nx {
                     command.arg("NX");
                 }
@@ -3128,15 +3753,322 @@ fn zadd_tool(state: Arc<ToolState>) -> Tool {
                 if input.ch {
                     command.arg("CH");
                 }
-                for member in input.members {
-                    command.arg(member.score.to_string()).arg(member.member);
+                for (index, member) in input.members.into_iter().enumerate() {
+                    command
+                        .arg(
+                            member
+                                .score
+                                .finite_token(&format!("members[{index}].score"))?,
+                        )
+                        .arg(member.member.decode(index)?.bytes);
                 }
                 let affected = state.query(command, "ZADD failed").await?;
                 state.output(&ZaddOutput {
                     key: input.key,
+                    key_encoding: input.key_encoding,
                     requested,
                     affected,
                     reports_changed: input.ch,
+                })
+            },
+        )
+        .build()
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+struct ZincrbyInput {
+    /// Redis sorted-set key.
+    key: String,
+    /// Encoding of `key`.
+    #[serde(default)]
+    key_encoding: InputEncoding,
+    /// Binary-safe member.
+    member: String,
+    /// Encoding of `member`.
+    #[serde(default)]
+    member_encoding: InputEncoding,
+    /// Finite increment. Strings preserve every decimal digit sent to Redis.
+    increment: RedisDecimalInput,
+}
+
+#[derive(Debug, Serialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+struct ZincrbyOutput {
+    key: String,
+    key_encoding: InputEncoding,
+    member: String,
+    member_encoding: InputEncoding,
+    score: String,
+}
+
+fn zincrby_tool(state: Arc<ToolState>) -> Tool {
+    ToolBuilder::new("redis_zincrby")
+        .title("Increment Redis Sorted Set Score")
+        .description(
+            "Increment one binary-safe sorted-set member by an exact finite decimal and return Redis's canonical score string.",
+        )
+        .output_schema(output_schema::<ZincrbyOutput>())
+        .annotations(write_annotations(false))
+        .extractor_handler(
+            state,
+            |State(state): State<Arc<ToolState>>, Json(input): Json<ZincrbyInput>| async move {
+                state.require(AccessMode::ReadWrite, "redis_zincrby")?;
+                let mut command = command("redis_zincrby", AccessMode::ReadWrite, "ZINCRBY");
+                command
+                    .arg(decode_input(&input.key, input.key_encoding, "key")?)
+                    .arg(input.increment.finite_token("increment")?)
+                    .arg(decode_input(
+                        &input.member,
+                        input.member_encoding,
+                        "member",
+                    )?);
+                let score = decode_score(
+                    state.raw(command, "ZINCRBY failed").await?,
+                    "ZINCRBY",
+                )?
+                .ok_or_else(|| tower_mcp::Error::tool("ZINCRBY returned a nil score"))?;
+                state.output(&ZincrbyOutput {
+                    key: input.key,
+                    key_encoding: input.key_encoding,
+                    member: input.member,
+                    member_encoding: input.member_encoding,
+                    score,
+                })
+            },
+        )
+        .build()
+}
+
+#[derive(Debug, Serialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+struct ZremOutput {
+    key: String,
+    key_encoding: InputEncoding,
+    requested: usize,
+    removed: u64,
+}
+
+fn zrem_tool(state: Arc<ToolState>) -> Tool {
+    ToolBuilder::new("redis_zrem")
+        .title("Remove Redis Sorted Set Members")
+        .description(
+            "Permanently remove 1 to 1000 binary-safe members from a Redis sorted set. Requires full access.",
+        )
+        .output_schema(output_schema::<ZremOutput>())
+        .annotations(destructive_annotations(true))
+        .extractor_handler(
+            state,
+            |State(state): State<Arc<ToolState>>, Json(input): Json<SetMembersInput>| async move {
+                state.require(AccessMode::Full, "redis_zrem")?;
+                let members = decode_set_members(input.members)?;
+                let requested = members.len();
+                let mut command = command("redis_zrem", AccessMode::Full, "ZREM");
+                command.arg(decode_input(&input.key, input.key_encoding, "key")?);
+                for member in members {
+                    command.arg(member.bytes);
+                }
+                let removed = state.query(command, "ZREM failed").await?;
+                state.output(&ZremOutput {
+                    key: input.key,
+                    key_encoding: input.key_encoding,
+                    requested,
+                    removed,
+                })
+            },
+        )
+        .build()
+}
+
+#[derive(Debug, Clone, Copy)]
+enum ZpopDirection {
+    Min,
+    Max,
+}
+
+impl ZpopDirection {
+    fn tool_name(self) -> &'static str {
+        match self {
+            Self::Min => "redis_zpopmin",
+            Self::Max => "redis_zpopmax",
+        }
+    }
+
+    fn command_name(self) -> &'static str {
+        match self {
+            Self::Min => "ZPOPMIN",
+            Self::Max => "ZPOPMAX",
+        }
+    }
+}
+
+fn default_pop_count() -> usize {
+    1
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+struct ZpopInput {
+    /// Redis sorted-set key.
+    key: String,
+    /// Encoding of `key`.
+    #[serde(default)]
+    key_encoding: InputEncoding,
+    /// Maximum members to remove and return.
+    #[serde(default = "default_pop_count")]
+    #[schemars(range(min = 1, max = 1000))]
+    count: usize,
+    /// Maximum aggregate member bytes to include. Larger results are reported as omitted so the mutation remains observable.
+    #[serde(default = "default_list_returned_bytes")]
+    #[schemars(range(min = 1))]
+    max_returned_bytes: usize,
+}
+
+#[derive(Debug, Serialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+struct ZpopOutput {
+    key: String,
+    key_encoding: InputEncoding,
+    requested: usize,
+    count: usize,
+    member_bytes: usize,
+    members_omitted: bool,
+    members: Vec<ZrangeEntry>,
+}
+
+fn zpop_tool(state: Arc<ToolState>, direction: ZpopDirection) -> Tool {
+    let tool_name = direction.tool_name();
+    let command_name = direction.command_name();
+    ToolBuilder::new(tool_name)
+        .title(match direction {
+            ZpopDirection::Min => "Pop Lowest Redis Sorted Set Members",
+            ZpopDirection::Max => "Pop Highest Redis Sorted Set Members",
+        })
+        .description(format!(
+            "Permanently remove and return up to 1000 binary-safe members with the {} scores. Scores are returned as canonical strings instead of JSON numbers. Oversized returned members are explicitly omitted after the mutation. Requires full access.",
+            match direction {
+                ZpopDirection::Min => "lowest",
+                ZpopDirection::Max => "highest",
+            }
+        ))
+        .output_schema(output_schema::<ZpopOutput>())
+        .annotations(destructive_annotations(false))
+        .extractor_handler(
+            state,
+            move |State(state): State<Arc<ToolState>>, Json(input): Json<ZpopInput>| async move {
+                state.require(AccessMode::Full, tool_name)?;
+                state.validate_requested_entries(input.count, "count")?;
+                if input.max_returned_bytes == 0 {
+                    return Err(tower_mcp::Error::tool(
+                        "max_returned_bytes must be greater than zero",
+                    ));
+                }
+                let max_returned_bytes =
+                    input.max_returned_bytes.min(state.max_output_bytes());
+                let mut command = command(tool_name, AccessMode::Full, command_name);
+                command
+                    .arg(decode_input(&input.key, input.key_encoding, "key")?)
+                    .arg(input.count.to_string());
+                let value = state
+                    .raw(command, &format!("{command_name} failed"))
+                    .await?;
+                let values = decode_score_pairs(value, command_name)?;
+                let count = values.len();
+                let member_bytes = values.iter().try_fold(0_usize, |total, (member, _)| {
+                    total.checked_add(member.len()).ok_or_else(|| {
+                        tower_mcp::Error::tool("popped sorted-set member byte count overflowed")
+                    })
+                })?;
+                let members_omitted = member_bytes > max_returned_bytes;
+                let members = if members_omitted {
+                    Vec::new()
+                } else {
+                    values
+                        .into_iter()
+                        .map(|(member, score)| {
+                            let member = EncodedValue::from(member);
+                            ZrangeEntry {
+                                member: member.value,
+                                encoding: member.encoding,
+                                score: Some(score),
+                            }
+                        })
+                        .collect::<Vec<_>>()
+                };
+                let output = ZpopOutput {
+                    key: input.key,
+                    key_encoding: input.key_encoding,
+                    requested: input.count,
+                    count,
+                    member_bytes,
+                    members_omitted,
+                    members,
+                };
+                state.output_collection(
+                    &output,
+                    output.members.len(),
+                    "Retry the sorted-set pop with a smaller count.",
+                )
+            },
+        )
+        .build()
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+struct ZremrangebyscoreInput {
+    /// Redis sorted-set key.
+    key: String,
+    /// Encoding of `key`.
+    #[serde(default)]
+    key_encoding: InputEncoding,
+    /// Lower score bound.
+    min: ZscoreBound,
+    /// Upper score bound.
+    max: ZscoreBound,
+}
+
+#[derive(Debug, Serialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+struct ZremrangebyscoreOutput {
+    key: String,
+    key_encoding: InputEncoding,
+    min: ZscoreBound,
+    max: ZscoreBound,
+    removed: u64,
+}
+
+fn zremrangebyscore_tool(state: Arc<ToolState>) -> Tool {
+    ToolBuilder::new("redis_zremrangebyscore")
+        .title("Remove Redis Sorted Set Score Range")
+        .description(
+            "Permanently remove every member within explicit inclusive, exclusive, or infinite score bounds. Requires full access.",
+        )
+        .output_schema(output_schema::<ZremrangebyscoreOutput>())
+        .annotations(destructive_annotations(true))
+        .extractor_handler(
+            state,
+            |State(state): State<Arc<ToolState>>,
+             Json(input): Json<ZremrangebyscoreInput>| async move {
+                state.require(AccessMode::Full, "redis_zremrangebyscore")?;
+                let mut command = command(
+                    "redis_zremrangebyscore",
+                    AccessMode::Full,
+                    "ZREMRANGEBYSCORE",
+                );
+                command
+                    .arg(decode_input(&input.key, input.key_encoding, "key")?)
+                    .arg(input.min.redis_token("min.value")?)
+                    .arg(input.max.redis_token("max.value")?);
+                let removed = state
+                    .query(command, "ZREMRANGEBYSCORE failed")
+                    .await?;
+                state.output(&ZremrangebyscoreOutput {
+                    key: input.key,
+                    key_encoding: input.key_encoding,
+                    min: input.min,
+                    max: input.max,
+                    removed,
                 })
             },
         )
@@ -3172,7 +4104,13 @@ pub(super) fn add_read_tools(mut router: McpRouter, state: Arc<ToolState>) -> Mc
     router = router.tool(smismember_tool(state.clone()));
     router = router.tool(sscan_tool(state.clone()));
     router = router.tool(set_algebra_tool(state.clone(), SetAlgebraOperation::Union));
+    router = router.tool(zcard_tool(state.clone()));
+    router = router.tool(zcount_tool(state.clone()));
+    router = router.tool(zmscore_tool(state.clone()));
     router = router.tool(zrange_tool(state.clone()));
+    router = router.tool(zrank_tool(state.clone(), false));
+    router = router.tool(zrank_tool(state.clone(), true));
+    router = router.tool(zscore_tool(state.clone()));
     router.tool(zscan_tool(state))
 }
 
@@ -3185,7 +4123,8 @@ pub(super) fn add_write_tools(mut router: McpRouter, state: Arc<ToolState>) -> M
     router = router.tool(list_push_tool(state.clone(), true));
     router = router.tool(list_push_tool(state.clone(), false));
     router = router.tool(sadd_tool(state.clone()));
-    router.tool(zadd_tool(state))
+    router = router.tool(zadd_tool(state.clone()));
+    router.tool(zincrby_tool(state))
 }
 
 pub(super) fn add_destructive_tools(mut router: McpRouter, state: Arc<ToolState>) -> McpRouter {
@@ -3196,7 +4135,11 @@ pub(super) fn add_destructive_tools(mut router: McpRouter, state: Arc<ToolState>
     router = router.tool(lset_tool(state.clone()));
     router = router.tool(ltrim_tool(state.clone()));
     router = router.tool(list_pop_tool(state.clone(), false));
-    router.tool(srem_tool(state))
+    router = router.tool(srem_tool(state.clone()));
+    router = router.tool(zpop_tool(state.clone(), ZpopDirection::Max));
+    router = router.tool(zpop_tool(state.clone(), ZpopDirection::Min));
+    router = router.tool(zrem_tool(state.clone()));
+    router.tool(zremrangebyscore_tool(state))
 }
 
 #[cfg(test)]
@@ -3206,9 +4149,10 @@ mod tests {
     fn zadd_input() -> ZaddInput {
         ZaddInput {
             key: "leaders".into(),
+            key_encoding: InputEncoding::Utf8,
             members: vec![ScoreMember {
-                score: 1.0,
-                member: "alice".into(),
+                score: RedisDecimalInput::Number(1.0),
+                member: SetMemberSelector::Utf8("alice".into()),
             }],
             nx: false,
             xx: false,

@@ -135,7 +135,7 @@ which side effects that host permits. These decisions are orthogonal.
 
 The public taxonomy is `essentials`, `data_structures`, `json`, `search`,
 `diagnostics`, `admin`, `bulk`, and `raw`. The curated default enables
-`essentials`, `data_structures`, and `diagnostics`, totaling 78 tools. The
+`essentials`, `data_structures`, and `diagnostics`, totaling 89 tools. The
 module-backed `json` and `search` bundles are explicitly selected so a default
 router never advertises capabilities that its Redis target may not provide.
 Empty bundles are reserved for coherent catalog growth and do not expose
@@ -202,19 +202,22 @@ emits partial JSON. Every catalog entry also exposes its dominant
 budget guarded, or cursor-, range-, or offset-paginated.
 
 `redis_scan`, `redis_hscan`, `redis_sscan`, and `redis_zscan` continue with a
-Redis cursor. `redis_lrange` and `redis_zrange` default to ranks 0 through 99
-and continue with a start index. `redis_ft_search` always emits a LIMIT clause
-and continues with an offset. Whole-collection reads remain available for small
+Redis cursor. `redis_lrange` and rank-mode `redis_zrange` default to ranks 0
+through 99 and continue with a start index; score- and lex-mode `redis_zrange`
+continue with an offset. `redis_ft_search` always emits a LIMIT clause and
+continues with an offset. Whole-collection reads remain available for small
 values, but `redis_hgetall`, `redis_hkeys`, and `redis_hvals` direct oversized
 callers to `redis_hscan`, while `redis_smembers` directs them to `redis_sscan`.
-Bounded multi-field hash reads such as `redis_hmget` and `redis_httl` reject
-requests above the configured entry ceiling before execution.
+Bounded multi-field reads such as `redis_hmget`, `redis_httl`, and
+`redis_zmscore` reject requests above the configured entry ceiling before
+execution.
 
-List searches and counted pops also reject counts above the configured entry
-ceiling before execution. Pop and `LMOVE` results have per-call byte caps;
-when a committed mutation returns an oversized value, the result preserves the
-element count, byte count, and mutation outcome while explicitly marking the
-payload omitted. Blocking list commands are not exposed as ordinary tools.
+List searches and counted list or sorted-set pops also reject counts above the
+configured entry ceiling before execution. Pop and `LMOVE` results have
+per-call byte caps; when a committed mutation returns an oversized value, the
+result preserves the element count, byte count, and mutation outcome while
+explicitly marking the payload omitted. Blocking list commands are not exposed
+as ordinary tools.
 
 Set membership inputs are bounded to the configured entry ceiling and retain
 one result per requested member in request order. Whole-set and algebra results
@@ -224,6 +227,20 @@ sets. Algebra keys are capped at 1,000, stay binary-safe for custom executors,
 and preserve Redis Cluster's native same-slot requirement. Direct cluster
 adapters therefore return stable `CROSSSLOT` errors, while a custom executor
 may implement a different routing policy behind the same crate-owned command.
+
+Sorted-set keys and members are binary-safe, and scores are accepted as JSON
+numbers or finite decimal strings while score results remain strings instead of
+being coerced through JSON numbers. `redis_zrange` uses a tagged rank, score, or
+lexicographic range so incompatible modes cannot be combined; score and lex
+ranges have explicit inclusive, exclusive, and infinite bounds plus bounded
+offset pagination. Multi-member score reads and destructive pops are rejected
+before execution when their requested cardinality exceeds the entry ceiling;
+oversized popped members are explicitly omitted after reporting the committed
+count and aggregate member bytes.
+
+All curated sorted-set operations are single-key. Future union/intersection
+tools must define their same-slot or explicit fan-out behavior before entering
+the catalog; the current surface makes no cluster-wide aggregation promise.
 
 `SDIFFSTORE`, `SINTERSTORE`, and `SUNIONSTORE` are deliberately not curated
 tools. Although their integer replies are small, the destination write can

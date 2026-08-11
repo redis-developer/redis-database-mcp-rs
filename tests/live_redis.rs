@@ -1,8 +1,9 @@
 use std::time::Duration;
 
 use redis_mcp::{
-    AccessMode, CapabilityStatus, DirectRedis, OutputBudget, RedisDeployment, RedisMcp,
-    RedisModule, ToolBundle, tool_names,
+    AccessMode, CapabilityStatus, DirectRedis, NativeRedisInvocation, OutputBudget,
+    RawCommandPolicy, RedisDeployment, RedisInvocationEngine, RedisMcp, RedisModule, RedisValue,
+    ToolBundle, tool_names,
 };
 use tower_mcp::client::{ChannelTransport, McpClient, StdioClientTransport};
 
@@ -623,6 +624,20 @@ async fn live_binary_values_remain_explicit_in_resp2_and_resp3() {
             .await
             .expect("seed binary sorted set");
 
+        let native = RedisInvocationEngine::builder(
+            DirectRedis::connect(&protocol_url)
+                .await
+                .expect("connect native invocation engine"),
+        )
+        .access(AccessMode::ReadOnly)
+        .raw_command_policy(RawCommandPolicy::Classified)
+        .build();
+        let echoed = native
+            .invoke(NativeRedisInvocation::new("ECHO").arg(vec![0xff, 0x00]))
+            .await
+            .expect("native binary ECHO");
+        assert_eq!(echoed, RedisValue::BulkString(vec![0xff, 0x00]));
+
         let client = router_client(&protocol_url, AccessMode::ReadOnly).await;
         let get = client
             .call_tool("redis_get", serde_json::json!({"key": string}))
@@ -809,6 +824,31 @@ async fn live_acl_failures_are_classified_without_leaking_credentials() {
     restricted_url
         .set_password(Some(password))
         .expect("set restricted Redis password");
+    let native = RedisInvocationEngine::builder(
+        DirectRedis::connect(restricted_url.as_str())
+            .await
+            .expect("connect restricted native engine"),
+    )
+    .access(AccessMode::ReadWrite)
+    .raw_command_policy(RawCommandPolicy::Classified)
+    .build();
+    let allowed_native = native
+        .invoke(NativeRedisInvocation::new("GET").arg(test_key("native-acl-readable")))
+        .await
+        .expect("ACL-allowed native GET");
+    assert_eq!(allowed_native, RedisValue::Nil);
+    let denied_native = native
+        .invoke(
+            NativeRedisInvocation::new("SET")
+                .arg(test_key("native-acl-denied"))
+                .arg("blocked-native-value"),
+        )
+        .await
+        .expect_err("ACL-denied native SET");
+    assert_eq!(denied_native.kind(), RedisErrorKind::Authorization);
+    assert!(!denied_native.to_string().contains(password));
+    assert!(!denied_native.to_string().contains("blocked-native-value"));
+
     let client = router_client(restricted_url.as_str(), AccessMode::ReadWrite).await;
     let allowed = client
         .call_tool(

@@ -45,6 +45,44 @@ Every executor future is bounded by the router's command timeout (30 seconds by
 default). A custom executor can apply a shorter transport or command timeout,
 but cannot bypass the library's outer bound.
 
+## Governed native invocation boundary
+
+`RedisInvocationEngine` is the library seam for Redis-style CLI and REPL
+frontends. It accepts a pre-tokenized, binary-safe `NativeRedisInvocation` and
+returns the same crate-owned `RedisValue` or `RedisError` used by MCP tools.
+Frontends retain ownership of tokenization, quoting, history, completion,
+display formatting, and interactive sessions.
+
+`RedisExecutor` is also implemented for `Arc<T>` where `T` is an executor, so
+a combined product can give one shared host adapter to both `RedisMcp` and
+`RedisInvocationEngine` without adding `Clone` to the executor contract.
+
+The engine is not a shortcut around MCP policy. Before execution it:
+
+- normalizes and classifies the command name;
+- enforces `ReadOnly`, `ReadWrite`, or `Full` access for the classified command
+  form;
+- applies `Disabled`, fail-closed `Classified`, or explicitly stronger
+  `Unrestricted` raw-command policy;
+- rejects connection-state, transaction, subscription, streaming,
+  replication-handshake, script, and blocking forms that need dedicated
+  session APIs;
+- checks known command, Redis-version, and module capabilities;
+- applies the same outer executor timeout and Redis error taxonomy as curated
+  tools;
+- redacts custom-executor details at the native boundary while retaining the
+  stable error kind and code; and
+- recursively measures RESP collections and canonical JSON bytes against the
+  configured `OutputBudget`.
+
+Unknown commands in `Unrestricted` mode still require `Full` access. Known
+forms expose `NativeCommandMetadata` so a frontend can report the normalized
+name, access classification, and version/module requirements without
+reimplementing library policy. The MCP `redis_command` handler delegates to
+this engine and then applies its complete-`CallToolResult` byte check, so native
+and MCP consumers share execution policy while retaining their appropriate
+result envelopes. See `examples/native_argv.rs`.
+
 ## Tower-MCP is an intentional public dependency
 
 `RedisMcpBuilder::build` returns `tower_mcp::McpRouter`. This coupling is
@@ -134,23 +172,25 @@ database-wide result those contracts promise. Known cluster snapshots make
 that limitation explicit instead of returning an arbitrary node's answer.
 
 Raw commands remain a separate opt-in even though their metadata belongs to the
-`raw` bundle. They require full access and one of two enabled policies:
+`raw` bundle. The MCP tool requires full access; direct native invocations are
+authorized per classified command. Both use one of two enabled policies:
 
 - `Classified` permits only command names reviewed as bounded
   request/response operations and fails closed for unknown names.
 - `Unrestricted` permits unknown request/response commands, while retaining
   hard blocks for authentication/connection state, transactions, streaming,
   subscriptions, replication handshakes, unbounded scripts, and blocking
-forms.
+  forms.
 
 ## Output budgets and continuation contracts
 
 `OutputBudget` is host policy applied after each typed tool has built its
-result. The byte ceiling measures the complete serialized MCP
+result. For MCP, the byte ceiling measures the complete serialized
 `CallToolResult`, including structured content, text rendering, and base64
 expansion. The entry ceiling applies to typed collection results and recursively
-to collection-shaped raw RESP values. Defaults are 256 KiB and 1,000 entries;
-zero limits are rejected at router construction.
+to collection-shaped raw RESP values. Native invocation measures the canonical
+JSON representation of its crate-owned RESP value before returning it. Defaults
+are 256 KiB and 1,000 entries; zero limits are rejected at construction.
 
 Oversized success candidates are replaced by an MCP error result with stable
 `io.redis.mcp/outputLimit` metadata containing the `output_limit_exceeded` code,

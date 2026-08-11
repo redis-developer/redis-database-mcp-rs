@@ -11,6 +11,7 @@ mod access;
 mod capabilities;
 mod catalog;
 mod executor;
+mod invocation;
 mod output;
 mod raw;
 mod tools;
@@ -29,6 +30,11 @@ pub use catalog::{
 pub use executor::{
     DirectRedis, DirectRedisCluster, RedisCommand, RedisError, RedisErrorKind, RedisExecutor,
     RedisValue,
+};
+pub use invocation::{
+    NativeCommandMetadata, NativeRedisInvocation, NativeRedisResponse, RedisInvocationEngine,
+    RedisInvocationEngineBuildError, RedisInvocationEngineBuilder, RedisOutputLimit,
+    RedisOutputLimitDimension,
 };
 pub use output::{DEFAULT_MAX_OUTPUT_BYTES, DEFAULT_MAX_OUTPUT_ENTRIES, OutputBudget};
 pub use raw::RawCommandPolicy;
@@ -181,13 +187,18 @@ impl RedisMcpBuilder {
             return Err(RedisMcpBuildError::RawCommandsRequireFullAccess);
         }
         let capabilities = Arc::new(self.capabilities);
-        let state = Arc::new(tools::ToolState::new(
+        let invocation_engine = RedisInvocationEngine::from_shared(
             self.executor,
             self.access,
-            self.command_timeout,
             self.raw_command_policy,
+            self.command_timeout,
             self.output_budget,
             capabilities.clone(),
+        );
+        let state = Arc::new(tools::ToolState::new(
+            self.access,
+            self.output_budget,
+            invocation_engine,
         ));
         let mut router = McpRouter::new().server_info(self.server_name, self.server_version);
         router = tools::add_read_only_tools(router, state.clone(), &self.bundles);

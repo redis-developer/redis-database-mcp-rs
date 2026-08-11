@@ -225,7 +225,7 @@
   },
   "current_gate": {
     "met": false,
-    "blockers": [18, 19, 20, 21, 22, 23, 24, 26, 27, 28, 29, 30, 31, 32, 33]
+    "blockers": [18, 19, 20, 21, 22, 23, 26, 27, 28, 29, 30, 31, 32, 33]
   },
   "contract_scorecard": {
     "scale": {
@@ -255,7 +255,7 @@
         "id": "error_semantics",
         "library_score": 3,
         "redis_mcp_score": 1,
-        "library_evidence": ["src/executor.rs", "tests/live_redis.rs"],
+        "library_evidence": ["src/executor.rs", "src/invocation.rs", "tests/native_invocation.rs", "tests/live_redis.rs"],
         "redis_mcp_evidence": ["src/tools"],
         "target": "Preserve stable categories, Redis codes, redaction, and MCP error signaling."
       },
@@ -263,7 +263,7 @@
         "id": "annotations_and_access",
         "library_score": 3,
         "redis_mcp_score": 0,
-        "library_evidence": ["src/access.rs", "src/catalog.rs", "tests/router_contract.rs"],
+        "library_evidence": ["src/access.rs", "src/catalog.rs", "src/raw.rs", "tests/native_invocation.rs", "tests/router_contract.rs"],
         "redis_mcp_evidence": ["src/common/server.py"],
         "target": "Keep discovery, annotations, and handler enforcement derived from one access classification."
       },
@@ -271,7 +271,7 @@
         "id": "output_bounds",
         "library_score": 3,
         "redis_mcp_score": 1,
-        "library_evidence": ["src/output.rs", "src/tools.rs", "tests/router_contract.rs", "tests/live_redis.rs"],
+        "library_evidence": ["src/output.rs", "src/invocation.rs", "src/tools.rs", "tests/native_invocation.rs", "tests/router_contract.rs", "tests/live_redis.rs"],
         "redis_mcp_evidence": ["src/tools/misc.py"],
         "target": "Preserve centralized encoded-byte limits, per-tool entry policies, typed continuations, and boundary coverage as the surface grows."
       },
@@ -279,7 +279,7 @@
         "id": "binary_safety",
         "library_score": 3,
         "redis_mcp_score": 0,
-        "library_evidence": ["src/executor.rs", "tests/live_redis.rs"],
+        "library_evidence": ["src/executor.rs", "src/invocation.rs", "tests/native_invocation.rs", "tests/live_redis.rs"],
         "redis_mcp_evidence": ["src/common/connection.py", "src/tools/hash.py"],
         "target": "Preserve explicit UTF-8/base64 values across every new data type."
       },
@@ -311,7 +311,7 @@
         "id": "embedding_and_host_policy",
         "library_score": 3,
         "redis_mcp_score": 0,
-        "library_evidence": ["src/executor.rs", "examples/custom_executor.rs", "docs/architecture.md"],
+        "library_evidence": ["src/executor.rs", "src/invocation.rs", "examples/custom_executor.rs", "examples/native_argv.rs", "docs/architecture.md"],
         "redis_mcp_evidence": ["src/common/server.py", "src/common/connection.py"],
         "target": "Keep redisctl and future REPL policy outside the Redis tool definitions."
       }
@@ -495,8 +495,7 @@
       "redisctl_tools": ["redis_command"],
       "library_tools": ["redis_command"],
       "disposition": "implemented",
-      "quality_issues": [24],
-      "reason": "The escape hatch requires full access plus explicit policy, retains hard request-response safety blocks, and shares the global response budgets."
+      "reason": "The MCP escape hatch and public binary-safe native invocation engine share access classification, explicit raw policy, hard request-response safety blocks, capabilities, timeout, redaction, and response budgets."
     },
     {
       "id": "hash.get",

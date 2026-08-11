@@ -94,6 +94,13 @@ all ten dimensions. The aggregate is descriptive, not the completion
 test: a high score cannot compensate for a missing strategic capability or an
 unbounded default tool.
 
+The embedding score now includes the public `RedisInvocationEngine`: a
+pre-tokenized Redis-style frontend can invoke binary argv directly while
+retaining the same access classification, raw policy, capability checks,
+timeout, redaction, error taxonomy, and response budgets as the MCP
+`redis_command` path. Terminal parsing and presentation remain outside the
+database library.
+
 ### Output-policy audit
 
 Every successful result is measured as a complete encoded MCP

@@ -50,7 +50,7 @@ a name does not imply an identical contract:
 | `redis_ttl` | `key` matches; redisctl also injects target fields. | Structured TTL plus `exists` and `persistent` flags. |
 | `redis_set` | `key` and `value` match. redisctl uses `ex`, `px`, `nx`, and `xx`; the initial library only has `expires_in_seconds`. | Structured result. Full conditional/expiry compatibility must be decided before catalog migration. |
 | `redis_del` | `keys` matches; redisctl also injects target fields. | Enforces 1–1000 keys and returns requested/deleted counts. |
-| `redis_command` | redisctl uses `args`, `dry_run`, `url`, and `profile`; the library uses `arguments` and fixed-target configuration. | Structured RESP output, a library timeout, classified fail-closed mode, and a separate unrestricted opt-in. This is intentionally not wire-compatible today. |
+| `redis_command` | redisctl uses `args`, `dry_run`, `url`, and `profile`; the library uses `arguments` and fixed-target configuration. | Structured RESP output delegates to the public binary-safe `RedisInvocationEngine`, which centralizes access classification, raw policy, timeout, capabilities, redaction, and output budgets. This is intentionally not wire-compatible today. |
 
 The expanded overlap also includes `redis_exists`, `redis_mget`,
 `redis_strlen`, `redis_memory_usage`, `redis_randomkey`, `redis_expire`,

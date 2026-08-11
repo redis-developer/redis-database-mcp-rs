@@ -98,3 +98,10 @@ server traversal behind one call.
 
 Transactions, Pub/Sub, MONITOR, blocking operations, and a native Redis syntax
 front end remain follow-up experiments rather than extraction blockers.
+
+## 2026-08-10 follow-up
+
+The native frontend seam is now implemented as `RedisInvocationEngine`. It
+accepts pre-tokenized binary argv and deliberately stops before terminal
+syntax or rendering; `redis_command` delegates to the same policy-preserving
+service. Session-oriented operations remain separate future work.

@@ -1,6 +1,6 @@
 //! Redis command execution abstractions.
 
-use std::{error::Error, fmt, time::Duration};
+use std::{error::Error, fmt, sync::Arc, time::Duration};
 
 use async_trait::async_trait;
 use redis::{
@@ -12,7 +12,7 @@ use redis::{
 
 use crate::{
     AccessMode, DEFAULT_CAPABILITY_DISCOVERY_TIMEOUT, RedisCapabilities, RedisDeployment,
-    RedisModule, capabilities::discover_capabilities,
+    RedisModule, RedisOutputLimit, RedisOutputLimitDimension, capabilities::discover_capabilities,
 };
 
 /// A Redis command prepared by one of this crate's tools.
@@ -265,6 +265,8 @@ pub enum RedisErrorKind {
     InvalidResponse,
     CapabilityUnavailable,
     ModuleUnavailable,
+    /// The response exceeded a configured native or MCP output budget.
+    OutputLimit,
     Server,
     Other,
 }
@@ -275,6 +277,7 @@ pub struct RedisError {
     kind: RedisErrorKind,
     message: String,
     code: Option<String>,
+    output_limit: Option<RedisOutputLimit>,
 }
 
 impl RedisError {
@@ -284,6 +287,7 @@ impl RedisError {
             kind,
             message: message.into(),
             code: None,
+            output_limit: None,
         }
     }
 
@@ -303,6 +307,41 @@ impl RedisError {
 
     pub fn code(&self) -> Option<&str> {
         self.code.as_deref()
+    }
+
+    /// Machine-readable output-limit details, when this is an output-limit
+    /// failure.
+    pub fn output_limit(&self) -> Option<RedisOutputLimit> {
+        self.output_limit
+    }
+
+    pub(crate) fn exceeded_output_limit(
+        dimension: RedisOutputLimitDimension,
+        actual: usize,
+        limit: usize,
+    ) -> Self {
+        Self {
+            kind: RedisErrorKind::OutputLimit,
+            message: format!(
+                "{} result size {actual} exceeds configured limit {limit}",
+                dimension.as_str()
+            ),
+            code: Some("OUTPUT_LIMIT_EXCEEDED".to_string()),
+            output_limit: Some(RedisOutputLimit {
+                dimension,
+                actual,
+                limit,
+            }),
+        }
+    }
+
+    pub(crate) fn redact_for_command(self, command_name: &str) -> Self {
+        Self {
+            kind: self.kind,
+            message: format!("{command_name} failed; executor details were redacted"),
+            code: self.code,
+            output_limit: self.output_limit,
+        }
     }
 
     pub(crate) fn classify_module_requirement(
@@ -387,6 +426,16 @@ impl From<redis::RedisError> for RedisError {
 #[async_trait]
 pub trait RedisExecutor: Send + Sync + 'static {
     async fn execute(&self, command: RedisCommand) -> Result<RedisValue, RedisError>;
+}
+
+#[async_trait]
+impl<T> RedisExecutor for Arc<T>
+where
+    T: RedisExecutor + ?Sized,
+{
+    async fn execute(&self, command: RedisCommand) -> Result<RedisValue, RedisError> {
+        self.as_ref().execute(command).await
+    }
 }
 
 async fn execute_redis_command(

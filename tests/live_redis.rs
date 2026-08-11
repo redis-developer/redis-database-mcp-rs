@@ -1108,6 +1108,238 @@ async fn live_list_family_preserves_order_binary_values_and_nil_semantics() {
 }
 
 #[tokio::test]
+async fn live_set_family_preserves_membership_binary_algebra_and_nil_semantics() {
+    let Some(redis) = TestRedis::start().await else {
+        return;
+    };
+    let url = redis.url;
+
+    for protocol in ["resp2", "resp3"] {
+        let client = router_client(&with_protocol(&url, protocol), AccessMode::Full).await;
+        let prefix = test_key(&format!("sets:{protocol}"));
+        let left = format!("{prefix}:{{same}}:left");
+        let right = format!("{prefix}:{{same}}:right");
+        let missing = format!("{prefix}:{{same}}:missing");
+        let wrong_type = format!("{prefix}:wrong-type");
+
+        let added = client
+            .call_tool(
+                "redis_sadd",
+                serde_json::json!({
+                    "key": left,
+                    "members": [
+                        "beta",
+                        "alpha",
+                        {"member": "/w==", "member_encoding": "base64"}
+                    ]
+                }),
+            )
+            .await
+            .expect("SADD left")
+            .structured_content
+            .expect("structured SADD left");
+        assert_eq!(added["requested"], 3);
+        assert_eq!(added["added"], 3);
+
+        client
+            .call_tool(
+                "redis_sadd",
+                serde_json::json!({"key": right, "members": ["beta", "gamma"]}),
+            )
+            .await
+            .expect("SADD right");
+
+        let cardinality = client
+            .call_tool("redis_scard", serde_json::json!({"key": left}))
+            .await
+            .expect("SCARD")
+            .structured_content
+            .expect("structured SCARD");
+        assert_eq!(cardinality["exists"], true);
+        assert_eq!(cardinality["cardinality"], 3);
+
+        let present = client
+            .call_tool(
+                "redis_sismember",
+                serde_json::json!({"key": left, "member": "alpha"}),
+            )
+            .await
+            .expect("present SISMEMBER")
+            .structured_content
+            .expect("structured present SISMEMBER");
+        assert_eq!(present["set_exists"], true);
+        assert_eq!(present["is_member"], true);
+
+        let absent = client
+            .call_tool(
+                "redis_sismember",
+                serde_json::json!({"key": left, "member": "missing"}),
+            )
+            .await
+            .expect("absent SISMEMBER")
+            .structured_content
+            .expect("structured absent SISMEMBER");
+        assert_eq!(absent["set_exists"], true);
+        assert_eq!(absent["is_member"], false);
+
+        let missing_membership = client
+            .call_tool(
+                "redis_sismember",
+                serde_json::json!({"key": missing, "member": "missing"}),
+            )
+            .await
+            .expect("missing-set SISMEMBER")
+            .structured_content
+            .expect("structured missing-set SISMEMBER");
+        assert_eq!(missing_membership["set_exists"], false);
+        assert_eq!(missing_membership["is_member"], false);
+
+        let multiple = client
+            .call_tool(
+                "redis_smismember",
+                serde_json::json!({
+                    "key": left,
+                    "members": [
+                        "alpha",
+                        "missing",
+                        {"member": "/w==", "member_encoding": "base64"}
+                    ]
+                }),
+            )
+            .await
+            .expect("SMISMEMBER")
+            .structured_content
+            .expect("structured SMISMEMBER");
+        assert_eq!(multiple["count"], 3);
+        assert_eq!(multiple["members"][0]["is_member"], true);
+        assert_eq!(multiple["members"][1]["is_member"], false);
+        assert_eq!(multiple["members"][2]["member_encoding"], "base64");
+        assert_eq!(multiple["members"][2]["is_member"], true);
+
+        let members = client
+            .call_tool("redis_smembers", serde_json::json!({"key": left}))
+            .await
+            .expect("SMEMBERS")
+            .structured_content
+            .expect("structured SMEMBERS");
+        assert_eq!(members["ordering"], "byte_sorted");
+        assert_eq!(members["members"][0]["value"], "alpha");
+        assert_eq!(members["members"][1]["value"], "beta");
+        assert_eq!(members["members"][2]["encoding"], "base64");
+
+        let scan = client
+            .call_tool(
+                "redis_sscan",
+                serde_json::json!({"key": left, "cursor": 0, "count": 100}),
+            )
+            .await
+            .expect("SSCAN")
+            .structured_content
+            .expect("structured SSCAN");
+        assert_eq!(scan["exists"], true);
+        assert_eq!(scan["ordering"], "byte_sorted_within_page");
+        assert_eq!(scan["count"], 3);
+
+        let difference = client
+            .call_tool("redis_sdiff", serde_json::json!({"keys": [left, right]}))
+            .await
+            .expect("SDIFF")
+            .structured_content
+            .expect("structured SDIFF");
+        assert_eq!(difference["members"][0]["value"], "alpha");
+        assert_eq!(difference["members"][1]["encoding"], "base64");
+
+        let intersection = client
+            .call_tool("redis_sinter", serde_json::json!({"keys": [left, right]}))
+            .await
+            .expect("SINTER")
+            .structured_content
+            .expect("structured SINTER");
+        assert_eq!(intersection["members"][0]["value"], "beta");
+
+        let union = client
+            .call_tool("redis_sunion", serde_json::json!({"keys": [left, right]}))
+            .await
+            .expect("SUNION")
+            .structured_content
+            .expect("structured SUNION");
+        assert_eq!(union["count"], 4);
+        assert_eq!(union["members"][0]["value"], "alpha");
+        assert_eq!(union["members"][1]["value"], "beta");
+        assert_eq!(union["members"][2]["value"], "gamma");
+        assert_eq!(union["members"][3]["encoding"], "base64");
+
+        let removed = client
+            .call_tool(
+                "redis_srem",
+                serde_json::json!({
+                    "key": left,
+                    "members": ["beta", {"member": "/w==", "member_encoding": "base64"}]
+                }),
+            )
+            .await
+            .expect("SREM")
+            .structured_content
+            .expect("structured SREM");
+        assert_eq!(removed["requested"], 2);
+        assert_eq!(removed["removed"], 2);
+        let repeated = client
+            .call_tool(
+                "redis_srem",
+                serde_json::json!({"key": left, "members": ["beta"]}),
+            )
+            .await
+            .expect("repeated SREM")
+            .structured_content
+            .expect("structured repeated SREM");
+        assert_eq!(repeated["removed"], 0);
+
+        client
+            .call_tool(
+                "redis_set",
+                serde_json::json!({"key": wrong_type, "value": "not-a-set"}),
+            )
+            .await
+            .expect("seed wrong-type value");
+        let wrong_type_result = client
+            .call_tool("redis_scard", serde_json::json!({"key": wrong_type}))
+            .await
+            .expect("wrong-type SCARD is a tool result");
+        assert!(wrong_type_result.is_error);
+        assert!(
+            serde_json::to_string(&wrong_type_result)
+                .expect("serialize wrong-type SCARD")
+                .contains("WRONGTYPE")
+        );
+
+        let missing_members = client
+            .call_tool("redis_smembers", serde_json::json!({"key": missing}))
+            .await
+            .expect("missing SMEMBERS")
+            .structured_content
+            .expect("structured missing SMEMBERS");
+        assert_eq!(missing_members["exists"], false);
+        assert_eq!(missing_members["members"], serde_json::json!([]));
+        let missing_scan = client
+            .call_tool("redis_sscan", serde_json::json!({"key": missing}))
+            .await
+            .expect("missing SSCAN")
+            .structured_content
+            .expect("structured missing SSCAN");
+        assert_eq!(missing_scan["exists"], false);
+        assert_eq!(missing_scan["members"], serde_json::json!([]));
+
+        client
+            .call_tool(
+                "redis_unlink",
+                serde_json::json!({"keys": [left, right, missing, wrong_type]}),
+            )
+            .await
+            .expect("clean up set family");
+    }
+}
+
+#[tokio::test]
 async fn live_hash_family_preserves_semantics_and_binary_data_in_resp2_and_resp3() {
     let Some(redis) = TestRedis::start().await else {
         return;
@@ -1497,6 +1729,7 @@ async fn live_large_collections_are_paged_or_fail_with_stable_budget_errors() {
     let hash = test_key("budget:hash");
     let list = test_key("budget:list");
     let set = test_key("budget:set");
+    let set_other = test_key("budget:set-other");
     let zset = test_key("budget:zset");
 
     let direct = redis::Client::open(redis.url.as_str()).expect("open direct Redis client");
@@ -1514,6 +1747,10 @@ async fn live_large_collections_are_paged_or_fail_with_stable_budget_errors() {
         seed.cmd("SADD")
             .arg(&set)
             .arg(format!("member:{index:04}"))
+            .ignore();
+        seed.cmd("SADD")
+            .arg(&set_other)
+            .arg(format!("other:{index:04}"))
             .ignore();
         if index < 200 {
             seed.cmd("LPUSH")
@@ -1570,6 +1807,36 @@ async fn live_large_collections_are_paged_or_fail_with_stable_budget_errors() {
         assert_eq!(error["dimension"], "collection_entries");
         assert!(error["guidance"].as_str().unwrap().contains(alternative));
     }
+
+    let algebra = client
+        .call_tool(
+            "redis_sunion",
+            serde_json::json!({"keys": [set, set_other]}),
+        )
+        .await
+        .expect("large SUNION");
+    assert!(algebra.is_error);
+    let algebra_error = &algebra.meta.as_ref().unwrap()["io.redis.mcp/outputLimit"];
+    assert_eq!(algebra_error["dimension"], "collection_entries");
+    assert_eq!(algebra_error["actual"], 1200);
+    assert_eq!(algebra_error["limit"], 100);
+
+    let oversized_members = (0..101)
+        .map(|index| format!("member:{index:04}"))
+        .collect::<Vec<_>>();
+    let membership = client
+        .call_tool(
+            "redis_smismember",
+            serde_json::json!({"key": set, "members": oversized_members}),
+        )
+        .await
+        .expect("oversized SMISMEMBER is a tool result");
+    assert!(membership.is_error);
+    assert!(
+        serde_json::to_string(&membership)
+            .expect("serialize oversized SMISMEMBER")
+            .contains("configured output limit of 100 entries")
+    );
 
     for (tool, key) in [
         ("redis_hscan", &hash),
@@ -1633,7 +1900,7 @@ async fn live_large_collections_are_paged_or_fail_with_stable_budget_errors() {
     );
 
     redis::cmd("DEL")
-        .arg(&[&hash, &list, &set, &zset])
+        .arg(&[&hash, &list, &set, &set_other, &zset])
         .query_async::<()>(&mut connection)
         .await
         .expect("clean up large collections");
@@ -1741,6 +2008,40 @@ async fn live_binary_values_remain_explicit_in_resp2_and_resp3() {
             .structured_content
             .expect("structured binary smembers");
         assert_eq!(smembers["members"][0]["encoding"], "base64");
+
+        let membership = client
+            .call_tool(
+                "redis_sismember",
+                serde_json::json!({
+                    "key": set,
+                    "member": "+w==",
+                    "member_encoding": "base64"
+                }),
+            )
+            .await
+            .expect("binary SISMEMBER")
+            .structured_content
+            .expect("structured binary SISMEMBER");
+        assert_eq!(membership["is_member"], true);
+
+        let memberships = client
+            .call_tool(
+                "redis_smismember",
+                serde_json::json!({
+                    "key": set,
+                    "members": [
+                        {"member": "+w==", "member_encoding": "base64"},
+                        "missing"
+                    ]
+                }),
+            )
+            .await
+            .expect("binary SMISMEMBER")
+            .structured_content
+            .expect("structured binary SMISMEMBER");
+        assert_eq!(memberships["members"][0]["member_encoding"], "base64");
+        assert_eq!(memberships["members"][0]["is_member"], true);
+        assert_eq!(memberships["members"][1]["is_member"], false);
 
         let zrange = client
             .call_tool(
@@ -1869,6 +2170,7 @@ async fn live_acl_failures_are_classified_without_leaking_credentials() {
         .expect("connect admin Redis client");
     let readable_hash = test_key("acl-readable-hash");
     let readable_list = test_key("acl-readable-list");
+    let readable_set = test_key("acl-readable-set");
     redis::cmd("HSET")
         .arg(&readable_hash)
         .arg("name")
@@ -1882,6 +2184,12 @@ async fn live_acl_failures_are_classified_without_leaking_credentials() {
         .query_async::<()>(&mut connection)
         .await
         .expect("seed ACL-readable list");
+    redis::cmd("SADD")
+        .arg(&readable_set)
+        .arg("visible")
+        .query_async::<()>(&mut connection)
+        .await
+        .expect("seed ACL-readable set");
     redis::cmd("ACL")
         .arg("SETUSER")
         .arg(&username)
@@ -1894,6 +2202,7 @@ async fn live_acl_failures_are_classified_without_leaking_credentials() {
         .arg("+getrange")
         .arg("+hget")
         .arg("+lindex")
+        .arg("+sismember")
         .arg("+exists")
         .query_async::<()>(&mut connection)
         .await
@@ -1989,6 +2298,19 @@ async fn live_acl_failures_are_classified_without_leaking_credentials() {
         "visible"
     );
 
+    let allowed_set = client
+        .call_tool(
+            "redis_sismember",
+            serde_json::json!({"key": readable_set, "member": "visible"}),
+        )
+        .await
+        .expect("ACL-allowed SISMEMBER");
+    assert!(!allowed_set.is_error);
+    assert_eq!(
+        allowed_set.structured_content.as_ref().unwrap()["is_member"],
+        true
+    );
+
     let full_client = router_client(restricted_url.as_str(), AccessMode::Full).await;
     let denied_list = full_client
         .call_tool(
@@ -2001,6 +2323,38 @@ async fn live_acl_failures_are_classified_without_leaking_credentials() {
     let denied_list = serde_json::to_string(&denied_list).expect("serialize LPOP ACL denial");
     assert!(denied_list.contains("[Authorization]"), "{denied_list}");
     assert!(!denied_list.contains(password));
+
+    let denied_set_membership = client
+        .call_tool(
+            "redis_smismember",
+            serde_json::json!({"key": readable_set, "members": ["visible"]}),
+        )
+        .await
+        .expect("ACL-denied SMISMEMBER is represented as a tool result");
+    assert!(denied_set_membership.is_error);
+    let denied_set_membership =
+        serde_json::to_string(&denied_set_membership).expect("serialize SMISMEMBER ACL denial");
+    assert!(
+        denied_set_membership.contains("[Authorization]"),
+        "{denied_set_membership}"
+    );
+    assert!(!denied_set_membership.contains(password));
+
+    let denied_set_remove = full_client
+        .call_tool(
+            "redis_srem",
+            serde_json::json!({"key": readable_set, "members": ["visible"]}),
+        )
+        .await
+        .expect("ACL-denied SREM is represented as a tool result");
+    assert!(denied_set_remove.is_error);
+    let denied_set_remove =
+        serde_json::to_string(&denied_set_remove).expect("serialize SREM ACL denial");
+    assert!(
+        denied_set_remove.contains("[Authorization]"),
+        "{denied_set_remove}"
+    );
+    assert!(!denied_set_remove.contains(password));
 
     let denied = client
         .call_tool(
@@ -2047,7 +2401,7 @@ async fn live_acl_failures_are_classified_without_leaking_credentials() {
     assert!(!denied_hash.contains("123456789"));
 
     redis::cmd("DEL")
-        .arg(&[&readable_hash, &readable_list])
+        .arg(&[&readable_hash, &readable_list, &readable_set])
         .query_async::<()>(&mut connection)
         .await
         .expect("delete ACL-readable hash");

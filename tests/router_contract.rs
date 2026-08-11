@@ -88,13 +88,22 @@ impl RedisExecutor for StubRedis {
             "LINDEX" => RedisValue::BulkString(b"second".to_vec()),
             "LLEN" => RedisValue::Integer(2),
             "LPOS" => RedisValue::Array(vec![RedisValue::Integer(0)]),
+            "SCARD" => RedisValue::Integer(2),
+            "SDIFF" => RedisValue::Set(vec![RedisValue::BulkString(b"alpha".to_vec())]),
+            "SINTER" => RedisValue::Set(vec![RedisValue::BulkString(b"beta".to_vec())]),
+            "SISMEMBER" => RedisValue::Integer(1),
             "SMEMBERS" => RedisValue::Set(vec![
                 RedisValue::BulkString(b"beta".to_vec()),
                 RedisValue::BulkString(b"alpha".to_vec()),
             ]),
+            "SMISMEMBER" => RedisValue::Array(vec![RedisValue::Integer(1), RedisValue::Integer(0)]),
             "SSCAN" => RedisValue::Array(vec![
                 RedisValue::BulkString(b"0".to_vec()),
                 RedisValue::Array(vec![RedisValue::BulkString(b"alpha".to_vec())]),
+            ]),
+            "SUNION" => RedisValue::Set(vec![
+                RedisValue::BulkString(b"beta".to_vec()),
+                RedisValue::BulkString(b"alpha".to_vec()),
             ]),
             "ZRANGE" => {
                 if command
@@ -125,7 +134,7 @@ impl RedisExecutor for StubRedis {
             "INCRBYFLOAT" => RedisValue::BulkString(b"2.5".to_vec()),
             "SETRANGE" => RedisValue::Integer(5),
             "APPEND" => RedisValue::Integer(5),
-            "HSET" | "SADD" | "ZADD" | "HINCRBY" | "HDEL" => RedisValue::Integer(1),
+            "HSET" | "SADD" | "SREM" | "ZADD" | "HINCRBY" | "HDEL" => RedisValue::Integer(1),
             "HINCRBYFLOAT" => RedisValue::BulkString(b"2.5".to_vec()),
             "HEXPIRE" | "HPERSIST" => RedisValue::Array(vec![RedisValue::Integer(1)]),
             "LPUSH" | "RPUSH" => RedisValue::Integer(2),
@@ -900,14 +909,44 @@ fn structured_cases() -> Vec<(&'static str, serde_json::Value, &'static str)> {
             "elements",
         ),
         (
+            "redis_scard",
+            serde_json::json!({"key": "tags"}),
+            "cardinality",
+        ),
+        (
+            "redis_sdiff",
+            serde_json::json!({"keys": ["tags", "other"]}),
+            "members",
+        ),
+        (
+            "redis_sinter",
+            serde_json::json!({"keys": ["tags", "other"]}),
+            "members",
+        ),
+        (
+            "redis_sismember",
+            serde_json::json!({"key": "tags", "member": "alpha"}),
+            "is_member",
+        ),
+        (
             "redis_smembers",
             serde_json::json!({"key": "tags"}),
+            "members",
+        ),
+        (
+            "redis_smismember",
+            serde_json::json!({"key": "tags", "members": ["alpha", "missing"]}),
             "members",
         ),
         (
             "redis_sscan",
             serde_json::json!({"key": "tags", "count": 10}),
             "page",
+        ),
+        (
+            "redis_sunion",
+            serde_json::json!({"keys": ["tags", "other"]}),
+            "members",
         ),
         (
             "redis_zrange",
@@ -1166,6 +1205,11 @@ fn structured_cases() -> Vec<(&'static str, serde_json::Value, &'static str)> {
             "elements",
         ),
         (
+            "redis_srem",
+            serde_json::json!({"key": "tags", "members": ["alpha"]}),
+            "removed",
+        ),
+        (
             "redis_getdel",
             serde_json::json!({"key": "greeting"}),
             "value",
@@ -1210,8 +1254,8 @@ fn structured_cases() -> Vec<(&'static str, serde_json::Value, &'static str)> {
 
 #[tokio::test]
 async fn access_modes_expose_exactly_the_expected_tools() {
-    assert_eq!(tool_names(AccessMode::Full, false).len(), 71);
-    assert_eq!(tool_names(AccessMode::Full, true).len(), 72);
+    assert_eq!(tool_names(AccessMode::Full, false).len(), 78);
+    assert_eq!(tool_names(AccessMode::Full, true).len(), 79);
     for (access, raw) in [
         (AccessMode::ReadOnly, false),
         (AccessMode::ReadWrite, false),
@@ -1243,6 +1287,51 @@ async fn access_modes_expose_exactly_the_expected_tools() {
             assert!(tool.annotations.is_some(), "{}", tool.name);
         }
     }
+}
+
+#[tokio::test]
+async fn set_annotations_match_read_write_and_destructive_semantics() {
+    let tools = full_catalog_client()
+        .await
+        .list_tools()
+        .await
+        .expect("list annotated set tools")
+        .tools;
+    let annotations = |name: &str| {
+        tools
+            .iter()
+            .find(|tool| tool.name == name)
+            .unwrap_or_else(|| panic!("missing {name}"))
+            .annotations
+            .clone()
+            .unwrap_or_else(|| panic!("missing annotations for {name}"))
+    };
+
+    for name in [
+        "redis_scard",
+        "redis_sdiff",
+        "redis_sinter",
+        "redis_sismember",
+        "redis_smembers",
+        "redis_smismember",
+        "redis_sscan",
+        "redis_sunion",
+    ] {
+        let annotation = annotations(name);
+        assert!(annotation.read_only_hint, "{name}");
+        assert!(!annotation.destructive_hint, "{name}");
+        assert!(annotation.idempotent_hint, "{name}");
+    }
+
+    let add = annotations("redis_sadd");
+    assert!(!add.read_only_hint);
+    assert!(!add.destructive_hint);
+    assert!(add.idempotent_hint);
+
+    let remove = annotations("redis_srem");
+    assert!(!remove.read_only_hint);
+    assert!(remove.destructive_hint);
+    assert!(remove.idempotent_hint);
 }
 
 #[tokio::test]
@@ -1615,6 +1704,22 @@ async fn collection_budget_accepts_exact_limit_and_returns_retry_guidance() {
             .unwrap()
             .contains("redis_sscan")
     );
+
+    let algebra = client_with_budget(AccessMode::ReadOnly, false, OutputBudget::new(1_000_000, 1))
+        .await
+        .call_tool(
+            "redis_sunion",
+            serde_json::json!({"keys": ["tags", "other"]}),
+        )
+        .await
+        .expect("over-limit SUNION");
+    assert_output_limit(&algebra, "collection_entries", 2, 1);
+    assert!(
+        algebra.meta.as_ref().unwrap()["io.redis.mcp/outputLimit"]["guidance"]
+            .as_str()
+            .unwrap()
+            .contains("SSCAN")
+    );
 }
 
 #[tokio::test]
@@ -1764,6 +1869,23 @@ async fn malformed_and_unbounded_inputs_fail_as_tool_results() {
         (
             "redis_sadd",
             serde_json::json!({"key": "tags", "members": []}),
+        ),
+        (
+            "redis_smismember",
+            serde_json::json!({"key": "tags", "members": []}),
+        ),
+        ("redis_sdiff", serde_json::json!({"keys": []})),
+        (
+            "redis_srem",
+            serde_json::json!({"key": "tags", "members": []}),
+        ),
+        (
+            "redis_sismember",
+            serde_json::json!({
+                "key": "tags",
+                "member": "not-base64",
+                "member_encoding": "base64"
+            }),
         ),
         (
             "redis_zadd",
@@ -2276,6 +2398,301 @@ async fn list_reads_and_pops_distinguish_binary_empty_and_missing_results() {
     assert_eq!(moved["value"], serde_json::Value::Null);
 }
 
+#[derive(Clone, Default)]
+struct SetContractRedis {
+    commands: Arc<Mutex<Vec<RedisCommand>>>,
+}
+
+#[async_trait]
+impl RedisExecutor for SetContractRedis {
+    async fn execute(&self, command: RedisCommand) -> Result<RedisValue, RedisError> {
+        let key = command.arguments().first().map(Vec::as_slice);
+        let response = match command.name() {
+            "SCARD" if key == Some(b"missing".as_slice()) => RedisValue::Integer(0),
+            "SCARD" => RedisValue::Integer(2),
+            "SISMEMBER" => RedisValue::Integer(
+                (key != Some(b"missing".as_slice())
+                    && command.arguments().get(1).map(Vec::as_slice) != Some(b"missing".as_slice()))
+                    as i64,
+            ),
+            "SMISMEMBER" => RedisValue::Array(
+                command
+                    .arguments()
+                    .iter()
+                    .skip(1)
+                    .map(|member| {
+                        RedisValue::Integer(
+                            (key != Some(b"missing".as_slice()) && member.as_slice() != b"missing")
+                                as i64,
+                        )
+                    })
+                    .collect(),
+            ),
+            "SMEMBERS" if key == Some(b"missing".as_slice()) => RedisValue::Set(Vec::new()),
+            "SMEMBERS" => RedisValue::Set(vec![
+                RedisValue::BulkString(b"zeta".to_vec()),
+                RedisValue::BulkString(vec![0xff]),
+                RedisValue::BulkString(b"alpha".to_vec()),
+            ]),
+            "SSCAN" if key == Some(b"missing".as_slice()) => RedisValue::Array(vec![
+                RedisValue::BulkString(b"0".to_vec()),
+                RedisValue::Array(Vec::new()),
+            ]),
+            "SSCAN" => RedisValue::Array(vec![
+                RedisValue::BulkString(b"0".to_vec()),
+                RedisValue::Array(vec![
+                    RedisValue::BulkString(b"zeta".to_vec()),
+                    RedisValue::BulkString(b"alpha".to_vec()),
+                ]),
+            ]),
+            "SDIFF" | "SINTER" | "SUNION" if key == Some(b"missing".as_slice()) => {
+                RedisValue::Set(Vec::new())
+            }
+            "SDIFF" | "SINTER" | "SUNION" => RedisValue::Set(vec![
+                RedisValue::BulkString(b"zeta".to_vec()),
+                RedisValue::BulkString(vec![0xff]),
+                RedisValue::BulkString(b"alpha".to_vec()),
+            ]),
+            "SADD" | "SREM" => RedisValue::Integer(1),
+            "EXISTS" if key == Some(b"missing".as_slice()) => RedisValue::Integer(0),
+            "EXISTS" => RedisValue::Integer(1),
+            _ => RedisValue::Nil,
+        };
+        self.commands
+            .lock()
+            .expect("set contract lock")
+            .push(command);
+        Ok(response)
+    }
+}
+
+async fn set_contract_client(executor: SetContractRedis) -> McpClient {
+    let router = RedisMcp::builder(executor)
+        .access(AccessMode::Full)
+        .bundles([ToolBundle::DataStructures])
+        .capabilities(RedisCapabilities::unknown().with_redis_version(RedisVersion::new(8, 2, 0)))
+        .build();
+    let client = McpClient::connect(ChannelTransport::new(router))
+        .await
+        .expect("connect set contract client");
+    client
+        .initialize("redis-mcp-set-contract-test", "0")
+        .await
+        .expect("initialize set contract client");
+    client
+}
+
+#[tokio::test]
+async fn set_commands_preserve_binary_argv_and_ordered_membership_contracts() {
+    let executor = SetContractRedis::default();
+    let commands = executor.commands.clone();
+    let client = set_contract_client(executor).await;
+
+    for tool in ["redis_sadd", "redis_srem"] {
+        let result = client
+            .call_tool(
+                tool,
+                serde_json::json!({
+                    "key": "/wA=",
+                    "key_encoding": "base64",
+                    "members": [
+                        {"member": "/g==", "member_encoding": "base64"},
+                        "tail"
+                    ]
+                }),
+            )
+            .await
+            .unwrap_or_else(|error| panic!("{tool}: {error}"));
+        assert!(!result.is_error, "{tool}: {result:?}");
+    }
+    client
+        .call_tool(
+            "redis_scard",
+            serde_json::json!({"key": "/wA=", "key_encoding": "base64"}),
+        )
+        .await
+        .expect("binary SCARD");
+    client
+        .call_tool(
+            "redis_sismember",
+            serde_json::json!({
+                "key": "/wA=",
+                "key_encoding": "base64",
+                "member": "/g==",
+                "member_encoding": "base64"
+            }),
+        )
+        .await
+        .expect("binary SISMEMBER");
+    let multiple = client
+        .call_tool(
+            "redis_smismember",
+            serde_json::json!({
+                "key": "/wA=",
+                "key_encoding": "base64",
+                "members": [
+                    {"member": "/g==", "member_encoding": "base64"},
+                    "missing"
+                ]
+            }),
+        )
+        .await
+        .expect("binary SMISMEMBER")
+        .structured_content
+        .expect("structured SMISMEMBER");
+    assert_eq!(multiple["members"][0]["member"], "/g==");
+    assert_eq!(multiple["members"][0]["member_encoding"], "base64");
+    assert_eq!(multiple["members"][0]["is_member"], true);
+    assert_eq!(multiple["members"][1]["member"], "missing");
+    assert_eq!(multiple["members"][1]["is_member"], false);
+
+    client
+        .call_tool(
+            "redis_smembers",
+            serde_json::json!({"key": "/wA=", "key_encoding": "base64"}),
+        )
+        .await
+        .expect("binary SMEMBERS");
+    client
+        .call_tool(
+            "redis_sscan",
+            serde_json::json!({
+                "key": "/wA=",
+                "key_encoding": "base64",
+                "cursor": 5,
+                "pattern": "a*",
+                "count": 2
+            }),
+        )
+        .await
+        .expect("binary SSCAN");
+    for tool in ["redis_sdiff", "redis_sinter", "redis_sunion"] {
+        let result = client
+            .call_tool(
+                tool,
+                serde_json::json!({
+                    "keys": [
+                        {"key": "/wA=", "key_encoding": "base64"},
+                        {"key": "/Q==", "key_encoding": "base64"}
+                    ]
+                }),
+            )
+            .await
+            .unwrap_or_else(|error| panic!("{tool}: {error}"))
+            .structured_content
+            .unwrap_or_else(|| panic!("{tool}: structured result"));
+        assert_eq!(result["ordering"], "byte_sorted", "{tool}");
+        assert_eq!(result["members"][0]["value"], "alpha", "{tool}");
+        assert_eq!(result["members"][2]["encoding"], "base64", "{tool}");
+    }
+
+    let commands = commands.lock().expect("recorded set commands");
+    let arguments = |tool: &str| {
+        commands
+            .iter()
+            .find(|command| command.tool_name() == tool)
+            .unwrap_or_else(|| panic!("missing {tool}"))
+            .arguments()
+    };
+    for tool in ["redis_sadd", "redis_srem"] {
+        assert_eq!(
+            arguments(tool),
+            &[vec![0xff, 0x00], vec![0xfe], b"tail".to_vec()]
+        );
+    }
+    assert_eq!(arguments("redis_scard"), &[vec![0xff, 0x00]]);
+    assert_eq!(
+        arguments("redis_sismember"),
+        &[vec![0xff, 0x00], vec![0xfe]]
+    );
+    assert_eq!(
+        arguments("redis_smismember"),
+        &[vec![0xff, 0x00], vec![0xfe], b"missing".to_vec()]
+    );
+    assert_eq!(arguments("redis_smembers"), &[vec![0xff, 0x00]]);
+    assert_eq!(
+        arguments("redis_sscan"),
+        &[
+            vec![0xff, 0x00],
+            b"5".to_vec(),
+            b"MATCH".to_vec(),
+            b"a*".to_vec(),
+            b"COUNT".to_vec(),
+            b"2".to_vec(),
+        ]
+    );
+    for tool in ["redis_sdiff", "redis_sinter", "redis_sunion"] {
+        assert_eq!(arguments(tool), &[vec![0xff, 0x00], vec![0xfd]]);
+    }
+}
+
+#[tokio::test]
+async fn set_reads_distinguish_missing_sets_and_empty_algebra_results() {
+    let client = set_contract_client(SetContractRedis::default()).await;
+
+    let cardinality = client
+        .call_tool("redis_scard", serde_json::json!({"key": "missing"}))
+        .await
+        .expect("missing SCARD")
+        .structured_content
+        .expect("structured missing SCARD");
+    assert_eq!(cardinality["exists"], false);
+    assert_eq!(cardinality["cardinality"], 0);
+
+    let one = client
+        .call_tool(
+            "redis_sismember",
+            serde_json::json!({"key": "missing", "member": "missing"}),
+        )
+        .await
+        .expect("missing SISMEMBER")
+        .structured_content
+        .expect("structured missing SISMEMBER");
+    assert_eq!(one["set_exists"], false);
+    assert_eq!(one["is_member"], false);
+
+    let multiple = client
+        .call_tool(
+            "redis_smismember",
+            serde_json::json!({"key": "missing", "members": ["missing", "missing"]}),
+        )
+        .await
+        .expect("missing SMISMEMBER")
+        .structured_content
+        .expect("structured missing SMISMEMBER");
+    assert_eq!(multiple["set_exists"], false);
+    assert_eq!(multiple["count"], 2);
+    assert!(
+        multiple["members"]
+            .as_array()
+            .expect("membership array")
+            .iter()
+            .all(|member| member["is_member"] == false)
+    );
+
+    for tool in ["redis_smembers", "redis_sscan"] {
+        let result = client
+            .call_tool(tool, serde_json::json!({"key": "missing"}))
+            .await
+            .unwrap_or_else(|error| panic!("{tool}: {error}"))
+            .structured_content
+            .unwrap_or_else(|| panic!("{tool}: structured result"));
+        assert_eq!(result["exists"], false, "{tool}");
+        assert_eq!(result["members"], serde_json::json!([]), "{tool}");
+    }
+
+    for tool in ["redis_sdiff", "redis_sinter", "redis_sunion"] {
+        let result = client
+            .call_tool(tool, serde_json::json!({"keys": ["missing"]}))
+            .await
+            .unwrap_or_else(|error| panic!("{tool}: {error}"))
+            .structured_content
+            .unwrap_or_else(|| panic!("{tool}: structured result"));
+        assert_eq!(result["count"], 0, "{tool}");
+        assert_eq!(result["members"], serde_json::json!([]), "{tool}");
+    }
+}
+
 #[derive(Clone, Copy)]
 struct HashEdgeRedis;
 
@@ -2650,6 +3067,7 @@ async fn known_old_redis_can_hide_only_version_incompatible_tools() {
     for name in ["redis_lpos", "redis_lpop", "redis_lmove", "redis_rpop"] {
         assert!(!names.iter().any(|candidate| candidate == name), "{name}");
     }
+    assert!(!names.iter().any(|name| name == "redis_smismember"));
 
     let helper_names = tool_names_for_capabilities(
         AccessMode::Full,
@@ -2686,6 +3104,7 @@ async fn known_old_redis_can_hide_only_version_incompatible_tools() {
     for name in ["redis_lpop", "redis_lmove", "redis_rpop"] {
         assert!(!redis_six_list_names.contains(&name), "{name}");
     }
+    assert!(!redis_six_list_names.contains(&"redis_smismember"));
     let supported_names = tool_names_for_capabilities(
         AccessMode::Full,
         [ToolBundle::Essentials],
@@ -2709,7 +3128,13 @@ async fn known_old_redis_can_hide_only_version_incompatible_tools() {
         &supported,
         UnavailableToolPolicy::Hide,
     );
-    for name in ["redis_lpos", "redis_lpop", "redis_lmove", "redis_rpop"] {
+    for name in [
+        "redis_lpos",
+        "redis_lpop",
+        "redis_lmove",
+        "redis_rpop",
+        "redis_smismember",
+    ] {
         assert!(supported_list_names.contains(&name), "{name}");
     }
 

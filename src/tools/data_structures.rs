@@ -826,12 +826,42 @@ struct CollectionScanInput {
     count: usize,
 }
 
+#[derive(Debug, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+struct SetScanInput {
+    /// Redis set key.
+    key: String,
+    /// Encoding of `key`.
+    #[serde(default)]
+    key_encoding: InputEncoding,
+    /// Cursor returned by the previous page. Start with zero.
+    #[serde(default)]
+    cursor: u64,
+    /// Glob-style member pattern. The pattern itself is UTF-8.
+    #[serde(default = "default_pattern")]
+    pattern: String,
+    /// Approximate number of members Redis should inspect.
+    #[serde(default = "default_scan_count")]
+    #[schemars(range(min = 1, max = 1000))]
+    count: usize,
+}
+
+#[derive(Debug, Clone, Copy, Serialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+enum SetResultOrdering {
+    ByteSorted,
+    ByteSortedWithinPage,
+}
+
 #[derive(Debug, Serialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 struct SscanOutput {
     key: String,
+    key_encoding: InputEncoding,
+    exists: bool,
     cursor: u64,
     count: usize,
+    ordering: SetResultOrdering,
     members: Vec<EncodedValue>,
     page: PageMetadata,
 }
@@ -840,18 +870,19 @@ fn sscan_tool(state: Arc<ToolState>) -> Tool {
     ToolBuilder::new("redis_sscan")
         .title("Scan Redis Set")
         .description(
-            "Read one bounded SSCAN page. Pass page.continuation.cursor as cursor until page.complete is true. Members are binary-safe.",
+            "Read one bounded SSCAN page. Pass page.continuation.cursor as cursor until page.complete is true. Members are binary-safe and byte-sorted within each page for deterministic structured output; Redis sets and cursor traversal remain unordered and may repeat members.",
         )
         .output_schema(output_schema::<SscanOutput>())
         .annotations(read_annotations())
         .extractor_handler(
             state,
             |State(state): State<Arc<ToolState>>,
-             Json(input): Json<CollectionScanInput>| async move {
+             Json(input): Json<SetScanInput>| async move {
                 state.validate_requested_entries(input.count, "count")?;
+                let key = decode_input(&input.key, input.key_encoding, "key")?;
                 let mut command = command("redis_sscan", AccessMode::ReadOnly, "SSCAN");
                 command
-                    .arg(input.key.as_str())
+                    .arg(key.clone())
                     .arg(input.cursor.to_string())
                     .arg("MATCH")
                     .arg(input.pattern.as_str())
@@ -859,14 +890,24 @@ fn sscan_tool(state: Arc<ToolState>) -> Tool {
                     .arg(input.count.to_string());
                 let (cursor, values): (u64, Vec<Vec<u8>>) =
                     state.query(command, "SSCAN failed").await?;
+                let exists = if values.is_empty() {
+                    key_exists(&state, "redis_sscan", AccessMode::ReadOnly, key).await?
+                } else {
+                    true
+                };
+                let mut values = values;
+                values.sort_unstable();
                 let members = values
                     .into_iter()
                     .map(EncodedValue::from)
                     .collect::<Vec<_>>();
                 let output = SscanOutput {
                     key: input.key,
+                    key_encoding: input.key_encoding,
+                    exists,
                     cursor,
                     count: members.len(),
+                    ordering: SetResultOrdering::ByteSortedWithinPage,
                     page: PageMetadata::cursor(input.count, members.len(), cursor),
                     members,
                 };
@@ -1074,23 +1115,188 @@ fn lrange_tool(state: Arc<ToolState>) -> Tool {
 #[serde(deny_unknown_fields)]
 struct SmembersOutput {
     key: String,
+    key_encoding: InputEncoding,
     exists: bool,
     count: usize,
+    ordering: SetResultOrdering,
     members: Vec<EncodedValue>,
 }
 
-#[derive(Debug, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 struct SetKeyInput {
     /// Redis set key.
     key: String,
+    /// Encoding of `key`.
+    #[serde(default)]
+    key_encoding: InputEncoding,
+}
+
+impl SetKeyInput {
+    fn decoded_key(&self) -> tower_mcp::Result<Vec<u8>> {
+        decode_input(&self.key, self.key_encoding, "key")
+    }
+}
+
+#[derive(Debug, Clone, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+struct EncodedSetMemberInput {
+    /// Redis set member.
+    member: String,
+    /// Encoding of `member`.
+    #[serde(default)]
+    member_encoding: InputEncoding,
+}
+
+#[derive(Debug, Clone, Deserialize, JsonSchema)]
+#[serde(untagged)]
+enum SetMemberSelector {
+    /// UTF-8 set member shorthand.
+    Utf8(String),
+    /// Explicitly encoded set member.
+    Encoded(EncodedSetMemberInput),
+}
+
+#[derive(Debug)]
+struct DecodedSetMember {
+    member: String,
+    member_encoding: InputEncoding,
+    bytes: Vec<u8>,
+}
+
+impl SetMemberSelector {
+    fn decode(self, index: usize) -> tower_mcp::Result<DecodedSetMember> {
+        match self {
+            Self::Utf8(member) => Ok(DecodedSetMember {
+                bytes: member.as_bytes().to_vec(),
+                member,
+                member_encoding: InputEncoding::Utf8,
+            }),
+            Self::Encoded(member) => Ok(DecodedSetMember {
+                bytes: decode_input(
+                    &member.member,
+                    member.member_encoding,
+                    &format!("members[{index}].member"),
+                )?,
+                member: member.member,
+                member_encoding: member.member_encoding,
+            }),
+        }
+    }
+}
+
+fn decode_set_members(members: Vec<SetMemberSelector>) -> tower_mcp::Result<Vec<DecodedSetMember>> {
+    validate_items(&members, "members")?;
+    members
+        .into_iter()
+        .enumerate()
+        .map(|(index, member)| member.decode(index))
+        .collect()
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+struct SetMemberInput {
+    /// Redis set key.
+    key: String,
+    /// Encoding of `key`.
+    #[serde(default)]
+    key_encoding: InputEncoding,
+    /// Redis set member.
+    member: String,
+    /// Encoding of `member`.
+    #[serde(default)]
+    member_encoding: InputEncoding,
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+struct SetMembersInput {
+    /// Redis set key.
+    key: String,
+    /// Encoding of `key`.
+    #[serde(default)]
+    key_encoding: InputEncoding,
+    /// One to 1000 members. Strings are UTF-8 shorthand; objects can select base64.
+    #[schemars(length(min = 1, max = 1000))]
+    members: Vec<SetMemberSelector>,
+}
+
+#[derive(Debug, Clone, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+struct EncodedSetKeyInput {
+    /// Redis set key.
+    key: String,
+    /// Encoding of `key`.
+    #[serde(default)]
+    key_encoding: InputEncoding,
+}
+
+#[derive(Debug, Clone, Deserialize, JsonSchema)]
+#[serde(untagged)]
+enum SetKeySelector {
+    /// UTF-8 Redis set key shorthand.
+    Utf8(String),
+    /// Explicitly encoded Redis set key.
+    Encoded(EncodedSetKeyInput),
+}
+
+impl SetKeySelector {
+    fn decode(self, index: usize) -> tower_mcp::Result<Vec<u8>> {
+        match self {
+            Self::Utf8(key) => Ok(key.into_bytes()),
+            Self::Encoded(key) => {
+                decode_input(&key.key, key.key_encoding, &format!("keys[{index}].key"))
+            }
+        }
+    }
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+struct SetAlgebraInput {
+    /// One to 1000 set keys. Strings are UTF-8 shorthand; objects can select base64.
+    #[schemars(length(min = 1, max = 1000))]
+    keys: Vec<SetKeySelector>,
+}
+
+#[derive(Debug, Serialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+struct ScardOutput {
+    key: String,
+    key_encoding: InputEncoding,
+    exists: bool,
+    cardinality: u64,
+}
+
+fn scard_tool(state: Arc<ToolState>) -> Tool {
+    ToolBuilder::new("redis_scard")
+        .title("Read Redis Set Cardinality")
+        .description("Return the number of members in a binary-safe Redis set key. Missing sets have cardinality zero and exists=false.")
+        .output_schema(output_schema::<ScardOutput>())
+        .annotations(read_annotations())
+        .extractor_handler(
+            state,
+            |State(state): State<Arc<ToolState>>, Json(input): Json<SetKeyInput>| async move {
+                let mut command = command("redis_scard", AccessMode::ReadOnly, "SCARD");
+                command.arg(input.decoded_key()?);
+                let cardinality = state.query(command, "SCARD failed").await?;
+                state.output(&ScardOutput {
+                    key: input.key,
+                    key_encoding: input.key_encoding,
+                    exists: cardinality != 0,
+                    cardinality,
+                })
+            },
+        )
+        .build()
 }
 
 fn smembers_tool(state: Arc<ToolState>) -> Tool {
     ToolBuilder::new("redis_smembers")
         .title("Read Redis Set")
         .description(
-            "Read all Redis set members in deterministic byte order. The configured output budget is enforced; use redis_sscan for large sets. Binary members are base64.",
+            "Read all Redis set members in deterministic byte order. Redis sets themselves are unordered. The configured output budget is enforced; use redis_sscan for large sets. Keys and members are binary-safe.",
         )
         .output_schema(output_schema::<SmembersOutput>())
         .annotations(read_annotations())
@@ -1098,7 +1304,7 @@ fn smembers_tool(state: Arc<ToolState>) -> Tool {
             state,
             |State(state): State<Arc<ToolState>>, Json(input): Json<SetKeyInput>| async move {
                 let mut command = command("redis_smembers", AccessMode::ReadOnly, "SMEMBERS");
-                command.arg(input.key.as_str());
+                command.arg(input.decoded_key()?);
                 let mut values: Vec<Vec<u8>> = state.query(command, "SMEMBERS failed").await?;
                 values.sort_unstable();
                 let members = values
@@ -1107,14 +1313,239 @@ fn smembers_tool(state: Arc<ToolState>) -> Tool {
                     .collect::<Vec<_>>();
                 let output = SmembersOutput {
                     key: input.key,
+                    key_encoding: input.key_encoding,
                     exists: !members.is_empty(),
                     count: members.len(),
+                    ordering: SetResultOrdering::ByteSorted,
                     members,
                 };
                 state.output_collection(
                     &output,
                     output.count,
                     "Use redis_sscan to read the set incrementally.",
+                )
+            },
+        )
+        .build()
+}
+
+#[derive(Debug, Serialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+struct SismemberOutput {
+    key: String,
+    key_encoding: InputEncoding,
+    member: String,
+    member_encoding: InputEncoding,
+    set_exists: bool,
+    is_member: bool,
+}
+
+fn sismember_tool(state: Arc<ToolState>) -> Tool {
+    ToolBuilder::new("redis_sismember")
+        .title("Check Redis Set Membership")
+        .description(
+            "Check one binary-safe set member and distinguish a missing set from a non-member.",
+        )
+        .output_schema(output_schema::<SismemberOutput>())
+        .annotations(read_annotations())
+        .extractor_handler(
+            state,
+            |State(state): State<Arc<ToolState>>, Json(input): Json<SetMemberInput>| async move {
+                let key = decode_input(&input.key, input.key_encoding, "key")?;
+                let mut command = command("redis_sismember", AccessMode::ReadOnly, "SISMEMBER");
+                command.arg(key.clone()).arg(decode_input(
+                    &input.member,
+                    input.member_encoding,
+                    "member",
+                )?);
+                let is_member = state.query(command, "SISMEMBER failed").await?;
+                let set_exists = if is_member {
+                    true
+                } else {
+                    key_exists(&state, "redis_sismember", AccessMode::ReadOnly, key).await?
+                };
+                state.output(&SismemberOutput {
+                    key: input.key,
+                    key_encoding: input.key_encoding,
+                    member: input.member,
+                    member_encoding: input.member_encoding,
+                    set_exists,
+                    is_member,
+                })
+            },
+        )
+        .build()
+}
+
+#[derive(Debug, Serialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+struct SetMembershipEntry {
+    member: String,
+    member_encoding: InputEncoding,
+    is_member: bool,
+}
+
+#[derive(Debug, Serialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+struct SmismemberOutput {
+    key: String,
+    key_encoding: InputEncoding,
+    set_exists: bool,
+    count: usize,
+    members: Vec<SetMembershipEntry>,
+}
+
+fn smismember_tool(state: Arc<ToolState>) -> Tool {
+    ToolBuilder::new("redis_smismember")
+        .title("Check Multiple Redis Set Members")
+        .description(
+            "Check 1 to 1000 binary-safe members in one Redis set. Results remain aligned one-to-one with the requested member order. Requires Redis 6.2 or newer.",
+        )
+        .output_schema(output_schema::<SmismemberOutput>())
+        .annotations(read_annotations())
+        .extractor_handler(
+            state,
+            |State(state): State<Arc<ToolState>>, Json(input): Json<SetMembersInput>| async move {
+                state.validate_requested_entries(input.members.len(), "members")?;
+                let key = decode_input(&input.key, input.key_encoding, "key")?;
+                let members = decode_set_members(input.members)?;
+                let mut command =
+                    command("redis_smismember", AccessMode::ReadOnly, "SMISMEMBER");
+                command.arg(key.clone());
+                for member in &members {
+                    command.arg(member.bytes.clone());
+                }
+                let membership: Vec<bool> = state.query(command, "SMISMEMBER failed").await?;
+                if membership.len() != members.len() {
+                    return Err(tower_mcp::Error::tool(format!(
+                        "SMISMEMBER returned {} results for {} members",
+                        membership.len(),
+                        members.len()
+                    )));
+                }
+                let set_exists = if membership.iter().any(|is_member| *is_member) {
+                    true
+                } else {
+                    key_exists(&state, "redis_smismember", AccessMode::ReadOnly, key).await?
+                };
+                let members = members
+                    .into_iter()
+                    .zip(membership)
+                    .map(|(member, is_member)| SetMembershipEntry {
+                        member: member.member,
+                        member_encoding: member.member_encoding,
+                        is_member,
+                    })
+                    .collect::<Vec<_>>();
+                let output = SmismemberOutput {
+                    key: input.key,
+                    key_encoding: input.key_encoding,
+                    set_exists,
+                    count: members.len(),
+                    members,
+                };
+                state.output_collection(
+                    &output,
+                    output.count,
+                    "Retry SMISMEMBER with fewer members.",
+                )
+            },
+        )
+        .build()
+}
+
+#[derive(Debug, Clone, Copy, Serialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+enum SetAlgebraOperation {
+    Difference,
+    Intersection,
+    Union,
+}
+
+impl SetAlgebraOperation {
+    fn tool_name(self) -> &'static str {
+        match self {
+            Self::Difference => "redis_sdiff",
+            Self::Intersection => "redis_sinter",
+            Self::Union => "redis_sunion",
+        }
+    }
+
+    fn command_name(self) -> &'static str {
+        match self {
+            Self::Difference => "SDIFF",
+            Self::Intersection => "SINTER",
+            Self::Union => "SUNION",
+        }
+    }
+
+    fn title(self) -> &'static str {
+        match self {
+            Self::Difference => "Read Redis Set Difference",
+            Self::Intersection => "Read Redis Set Intersection",
+            Self::Union => "Read Redis Set Union",
+        }
+    }
+}
+
+#[derive(Debug, Serialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+struct SetAlgebraOutput {
+    operation: SetAlgebraOperation,
+    requested_keys: usize,
+    count: usize,
+    ordering: SetResultOrdering,
+    members: Vec<EncodedValue>,
+}
+
+fn set_algebra_tool(state: Arc<ToolState>, operation: SetAlgebraOperation) -> Tool {
+    let tool_name = operation.tool_name();
+    let command_name = operation.command_name();
+    ToolBuilder::new(tool_name)
+        .title(operation.title())
+        .description(format!(
+            "Compute a binary-safe, output-budgeted Redis set {} across 1 to 1000 keys. Results are byte-sorted for deterministic structured output even though Redis sets are unordered. On Redis Cluster, every key must share a hash slot.",
+            match operation {
+                SetAlgebraOperation::Difference => "difference",
+                SetAlgebraOperation::Intersection => "intersection",
+                SetAlgebraOperation::Union => "union",
+            }
+        ))
+        .output_schema(output_schema::<SetAlgebraOutput>())
+        .annotations(read_annotations())
+        .extractor_handler(
+            state,
+            move |State(state): State<Arc<ToolState>>,
+                  Json(input): Json<SetAlgebraInput>| async move {
+                validate_items(&input.keys, "keys")?;
+                let requested_keys = input.keys.len();
+                let keys = input
+                    .keys
+                    .into_iter()
+                    .enumerate()
+                    .map(|(index, key)| key.decode(index))
+                    .collect::<tower_mcp::Result<Vec<_>>>()?;
+                let mut command = command(tool_name, AccessMode::ReadOnly, command_name);
+                command.args(keys);
+                let mut values: Vec<Vec<u8>> = state
+                    .query(command, &format!("{command_name} failed"))
+                    .await?;
+                values.sort_unstable();
+                let members = values
+                    .into_iter()
+                    .map(EncodedValue::from)
+                    .collect::<Vec<_>>();
+                let output = SetAlgebraOutput {
+                    operation,
+                    requested_keys,
+                    count: members.len(),
+                    ordering: SetResultOrdering::ByteSorted,
+                    members,
+                };
+                state.output_collection(
+                    &output,
+                    output.count,
+                    "Reduce the key set or use SSCAN on source sets to perform bounded client-side algebra.",
                 )
             },
         )
@@ -2526,20 +2957,11 @@ fn lmove_tool(state: Arc<ToolState>) -> Tool {
         .build()
 }
 
-#[derive(Debug, Deserialize, JsonSchema)]
-#[serde(deny_unknown_fields)]
-struct SetAddInput {
-    /// Redis set key.
-    key: String,
-    /// UTF-8 members to add.
-    #[schemars(length(min = 1, max = 1000))]
-    members: Vec<String>,
-}
-
 #[derive(Debug, Serialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 struct SaddOutput {
     key: String,
+    key_encoding: InputEncoding,
     requested: usize,
     added: u64,
 }
@@ -2547,22 +2969,66 @@ struct SaddOutput {
 fn sadd_tool(state: Arc<ToolState>) -> Tool {
     ToolBuilder::new("redis_sadd")
         .title("Add Redis Set Members")
-        .description("Add between 1 and 1000 UTF-8 members to a Redis set.")
+        .description("Add between 1 and 1000 binary-safe members to a Redis set.")
         .output_schema(output_schema::<SaddOutput>())
         .annotations(write_annotations(true))
         .extractor_handler(
             state,
-            |State(state): State<Arc<ToolState>>, Json(input): Json<SetAddInput>| async move {
+            |State(state): State<Arc<ToolState>>, Json(input): Json<SetMembersInput>| async move {
                 state.require(AccessMode::ReadWrite, "redis_sadd")?;
-                validate_items(&input.members, "members")?;
-                let requested = input.members.len();
+                let members = decode_set_members(input.members)?;
+                let requested = members.len();
                 let mut command = command("redis_sadd", AccessMode::ReadWrite, "SADD");
-                command.arg(input.key.as_str()).args(input.members);
+                command.arg(decode_input(&input.key, input.key_encoding, "key")?);
+                for member in members {
+                    command.arg(member.bytes);
+                }
                 let added = state.query(command, "SADD failed").await?;
                 state.output(&SaddOutput {
                     key: input.key,
+                    key_encoding: input.key_encoding,
                     requested,
                     added,
+                })
+            },
+        )
+        .build()
+}
+
+#[derive(Debug, Serialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+struct SremOutput {
+    key: String,
+    key_encoding: InputEncoding,
+    requested: usize,
+    removed: u64,
+}
+
+fn srem_tool(state: Arc<ToolState>) -> Tool {
+    ToolBuilder::new("redis_srem")
+        .title("Remove Redis Set Members")
+        .description(
+            "Permanently remove 1 to 1000 binary-safe members from a Redis set. Requires full access.",
+        )
+        .output_schema(output_schema::<SremOutput>())
+        .annotations(destructive_annotations(true))
+        .extractor_handler(
+            state,
+            |State(state): State<Arc<ToolState>>, Json(input): Json<SetMembersInput>| async move {
+                state.require(AccessMode::Full, "redis_srem")?;
+                let members = decode_set_members(input.members)?;
+                let requested = members.len();
+                let mut command = command("redis_srem", AccessMode::Full, "SREM");
+                command.arg(decode_input(&input.key, input.key_encoding, "key")?);
+                for member in members {
+                    command.arg(member.bytes);
+                }
+                let removed = state.query(command, "SREM failed").await?;
+                state.output(&SremOutput {
+                    key: input.key,
+                    key_encoding: input.key_encoding,
+                    requested,
+                    removed,
                 })
             },
         )
@@ -2692,8 +3158,20 @@ pub(super) fn add_read_tools(mut router: McpRouter, state: Arc<ToolState>) -> Mc
     router = router.tool(llen_tool(state.clone()));
     router = router.tool(lpos_tool(state.clone()));
     router = router.tool(lrange_tool(state.clone()));
+    router = router.tool(scard_tool(state.clone()));
+    router = router.tool(set_algebra_tool(
+        state.clone(),
+        SetAlgebraOperation::Difference,
+    ));
+    router = router.tool(set_algebra_tool(
+        state.clone(),
+        SetAlgebraOperation::Intersection,
+    ));
+    router = router.tool(sismember_tool(state.clone()));
     router = router.tool(smembers_tool(state.clone()));
+    router = router.tool(smismember_tool(state.clone()));
     router = router.tool(sscan_tool(state.clone()));
+    router = router.tool(set_algebra_tool(state.clone(), SetAlgebraOperation::Union));
     router = router.tool(zrange_tool(state.clone()));
     router.tool(zscan_tool(state))
 }
@@ -2717,7 +3195,8 @@ pub(super) fn add_destructive_tools(mut router: McpRouter, state: Arc<ToolState>
     router = router.tool(lrem_tool(state.clone()));
     router = router.tool(lset_tool(state.clone()));
     router = router.tool(ltrim_tool(state.clone()));
-    router.tool(list_pop_tool(state, false))
+    router = router.tool(list_pop_tool(state.clone(), false));
+    router.tool(srem_tool(state))
 }
 
 #[cfg(test)]

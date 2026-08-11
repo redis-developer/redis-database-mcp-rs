@@ -135,7 +135,7 @@ which side effects that host permits. These decisions are orthogonal.
 
 The public taxonomy is `essentials`, `data_structures`, `json`, `search`,
 `diagnostics`, `admin`, `bulk`, and `raw`. The curated default enables
-`essentials`, `data_structures`, and `diagnostics`, totaling 71 tools. The
+`essentials`, `data_structures`, and `diagnostics`, totaling 78 tools. The
 module-backed `json` and `search` bundles are explicitly selected so a default
 router never advertises capabilities that its Redis target may not provide.
 Empty bundles are reserved for coherent catalog growth and do not expose
@@ -215,6 +215,22 @@ ceiling before execution. Pop and `LMOVE` results have per-call byte caps;
 when a committed mutation returns an oversized value, the result preserves the
 element count, byte count, and mutation outcome while explicitly marking the
 payload omitted. Blocking list commands are not exposed as ordinary tools.
+
+Set membership inputs are bounded to the configured entry ceiling and retain
+one result per requested member in request order. Whole-set and algebra results
+are byte-sorted for deterministic structured output, then checked against both
+output ceilings; `redis_sscan` remains the cursor alternative for large source
+sets. Algebra keys are capped at 1,000, stay binary-safe for custom executors,
+and preserve Redis Cluster's native same-slot requirement. Direct cluster
+adapters therefore return stable `CROSSSLOT` errors, while a custom executor
+may implement a different routing policy behind the same crate-owned command.
+
+`SDIFFSTORE`, `SINTERSTORE`, and `SUNIONSTORE` are deliberately not curated
+tools. Although their integer replies are small, the destination write can
+materialize and overwrite an unbounded set, so the MCP output budget does not
+bound their effect. They remain reachable only through the explicitly stronger
+full-access unrestricted invocation policy rather than being advertised as
+ordinary bounded set operations.
 
 Redis ACLs remain the ultimate authorization boundary. Bundle selection, access
 mode, annotations, raw policy, and timeouts are defense-in-depth and product

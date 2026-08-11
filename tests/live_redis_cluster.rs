@@ -264,6 +264,7 @@ async fn cluster_routes_curated_and_raw_tools_across_three_masters() {
             .collect::<Vec<_>>();
         let (keys, remote_key) = keys_on_three_masters(&seed_urls[0], protocol).await;
         let remote_hash = format!("{remote_key}:hash");
+        let remote_set = format!("{remote_key}:set");
 
         let direct = router_client(
             DirectRedis::connect(&seed_urls[0])
@@ -370,6 +371,35 @@ async fn cluster_routes_curated_and_raw_tools_across_three_masters() {
             .expect("structured remote-slot HDEL");
         assert_eq!(hash_deleted["deleted"], 2);
 
+        routed
+            .call_tool(
+                "redis_sadd",
+                serde_json::json!({"key": remote_set, "members": ["alpha", "beta"]}),
+            )
+            .await
+            .expect("remote-slot SADD");
+        let remote_membership = routed
+            .call_tool(
+                "redis_smismember",
+                serde_json::json!({"key": remote_set, "members": ["beta", "missing"]}),
+            )
+            .await
+            .expect("remote-slot SMISMEMBER")
+            .structured_content
+            .expect("structured remote-slot SMISMEMBER");
+        assert_eq!(remote_membership["members"][0]["is_member"], true);
+        assert_eq!(remote_membership["members"][1]["is_member"], false);
+        let remote_removed = routed
+            .call_tool(
+                "redis_srem",
+                serde_json::json!({"key": remote_set, "members": ["beta"]}),
+            )
+            .await
+            .expect("remote-slot SREM")
+            .structured_content
+            .expect("structured remote-slot SREM");
+        assert_eq!(remote_removed["removed"], 1);
+
         let same_source = format!(
             "redis-mcp:test:{}:{{issue18-{protocol}}}:source",
             std::process::id()
@@ -392,6 +422,16 @@ async fn cluster_routes_curated_and_raw_tools_across_three_masters() {
         );
         let cross_list_source = format!("{}:list-source", keys[0]);
         let cross_list_destination = format!("{}:list-destination", keys[1]);
+        let same_set_left = format!(
+            "redis-mcp:test:{}:{{issue21-{protocol}}}:set-left",
+            std::process::id()
+        );
+        let same_set_right = format!(
+            "redis-mcp:test:{}:{{issue21-{protocol}}}:set-right",
+            std::process::id()
+        );
+        let cross_set_left = format!("{}:set-left", keys[0]);
+        let cross_set_right = format!("{}:set-right", keys[1]);
         routed
             .call_tool(
                 "redis_set",
@@ -468,6 +508,62 @@ async fn cluster_routes_curated_and_raw_tools_across_three_masters() {
             serde_json::to_string(&cross_list_move).expect("serialize LMOVE CROSSSLOT");
         assert!(cross_list_move.contains("CROSSSLOT"), "{cross_list_move}");
 
+        routed
+            .call_tool(
+                "redis_sadd",
+                serde_json::json!({"key": same_set_left, "members": ["alpha", "beta"]}),
+            )
+            .await
+            .expect("same-slot left SADD");
+        routed
+            .call_tool(
+                "redis_sadd",
+                serde_json::json!({"key": same_set_right, "members": ["beta", "gamma"]}),
+            )
+            .await
+            .expect("same-slot right SADD");
+        for (tool, expected_count) in [("redis_sdiff", 1), ("redis_sinter", 1), ("redis_sunion", 3)]
+        {
+            let result = routed
+                .call_tool(
+                    tool,
+                    serde_json::json!({"keys": [same_set_left, same_set_right]}),
+                )
+                .await
+                .unwrap_or_else(|error| panic!("same-slot {tool}: {error}"))
+                .structured_content
+                .unwrap_or_else(|| panic!("same-slot {tool}: structured result"));
+            assert_eq!(result["count"], expected_count, "{tool}");
+        }
+
+        routed
+            .call_tool(
+                "redis_sadd",
+                serde_json::json!({"key": cross_set_left, "members": ["alpha"]}),
+            )
+            .await
+            .expect("cross-slot left SADD");
+        routed
+            .call_tool(
+                "redis_sadd",
+                serde_json::json!({"key": cross_set_right, "members": ["beta"]}),
+            )
+            .await
+            .expect("cross-slot right SADD");
+        for tool in ["redis_sdiff", "redis_sinter", "redis_sunion"] {
+            let cross_slot = routed
+                .call_tool(
+                    tool,
+                    serde_json::json!({"keys": [cross_set_left, cross_set_right]}),
+                )
+                .await
+                .unwrap_or_else(|error| panic!("cross-slot {tool}: {error}"));
+            assert!(cross_slot.is_error, "{tool}: {cross_slot:?}");
+            let cross_slot = serde_json::to_string(&cross_slot)
+                .unwrap_or_else(|error| panic!("serialize {tool} CROSSSLOT: {error}"));
+            assert!(cross_slot.contains("CROSSSLOT"), "{tool}: {cross_slot}");
+        }
+
         for tool in ["redis_copy", "redis_rename", "redis_renamenx"] {
             let cross_slot = routed
                 .call_tool(
@@ -512,7 +608,12 @@ async fn cluster_routes_curated_and_raw_tools_across_three_masters() {
                         same_list_source,
                         same_list_destination,
                         cross_list_source,
-                        cross_list_destination
+                        cross_list_destination,
+                        remote_set,
+                        same_set_left,
+                        same_set_right,
+                        cross_set_left,
+                        cross_set_right
                     ]
                 }),
             )
@@ -520,7 +621,7 @@ async fn cluster_routes_curated_and_raw_tools_across_three_masters() {
             .expect("delete same-slot keys")
             .structured_content
             .expect("structured same-slot DEL");
-        assert_eq!(same_slot_deleted["deleted"], 4);
+        assert_eq!(same_slot_deleted["deleted"], 9);
     }
 
     let binary = env!("CARGO_BIN_EXE_redis-mcp-server");

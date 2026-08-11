@@ -105,6 +105,14 @@ impl RedisExecutor for StubRedis {
                 RedisValue::BulkString(b"beta".to_vec()),
                 RedisValue::BulkString(b"alpha".to_vec()),
             ]),
+            "ZCARD" => RedisValue::Integer(2),
+            "ZCOUNT" => RedisValue::Integer(1),
+            "ZSCORE" => RedisValue::BulkString(b"1.5".to_vec()),
+            "ZMSCORE" => RedisValue::Array(vec![
+                RedisValue::BulkString(b"1.5".to_vec()),
+                RedisValue::Nil,
+            ]),
+            "ZRANK" | "ZREVRANK" => RedisValue::Integer(0),
             "ZRANGE" => {
                 if command
                     .arguments()
@@ -126,6 +134,11 @@ impl RedisExecutor for StubRedis {
                     RedisValue::BulkString(b"1.5".to_vec()),
                 ]),
             ]),
+            "ZINCRBY" => RedisValue::BulkString(b"2.5".to_vec()),
+            "ZPOPMIN" | "ZPOPMAX" => RedisValue::Array(vec![
+                RedisValue::BulkString(b"alice".to_vec()),
+                RedisValue::BulkString(b"1.5".to_vec()),
+            ]),
             "TYPE" => RedisValue::SimpleString("string".into()),
             "TTL" => RedisValue::Integer(-1),
             "SET" | "MSET" | "RENAME" | "RESTORE" | "LSET" | "LTRIM" => RedisValue::Okay,
@@ -134,7 +147,8 @@ impl RedisExecutor for StubRedis {
             "INCRBYFLOAT" => RedisValue::BulkString(b"2.5".to_vec()),
             "SETRANGE" => RedisValue::Integer(5),
             "APPEND" => RedisValue::Integer(5),
-            "HSET" | "SADD" | "SREM" | "ZADD" | "HINCRBY" | "HDEL" => RedisValue::Integer(1),
+            "HSET" | "SADD" | "SREM" | "ZADD" | "ZREM" | "ZREMRANGEBYSCORE" | "HINCRBY"
+            | "HDEL" => RedisValue::Integer(1),
             "HINCRBYFLOAT" => RedisValue::BulkString(b"2.5".to_vec()),
             "HEXPIRE" | "HPERSIST" => RedisValue::Array(vec![RedisValue::Integer(1)]),
             "LPUSH" | "RPUSH" => RedisValue::Integer(2),
@@ -470,6 +484,32 @@ async fn side_effectful_value_returns_omit_oversized_payloads_but_report_outcome
         assert_eq!(result["value_omitted"], true, "{tool}");
         assert_eq!(result["value"], serde_json::Value::Null, "{tool}");
     }
+
+    let client = fixed_client(
+        FixedRedis::new(RedisValue::Array(vec![
+            RedisValue::BulkString(prior),
+            RedisValue::BulkString(b"1.25".to_vec()),
+        ])),
+        RedisCapabilities::unknown().with_redis_version(RedisVersion::new(7, 0, 0)),
+    )
+    .await;
+    let popped = client
+        .call_tool(
+            "redis_zpopmin",
+            serde_json::json!({
+                "key": "bounded-zpop",
+                "count": 1,
+                "max_returned_bytes": 8
+            }),
+        )
+        .await
+        .expect("bounded ZPOPMIN")
+        .structured_content
+        .expect("structured bounded ZPOPMIN");
+    assert_eq!(popped["count"], 1);
+    assert_eq!(popped["member_bytes"], 16);
+    assert_eq!(popped["members_omitted"], true);
+    assert_eq!(popped["members"], serde_json::json!([]));
 }
 
 #[tokio::test]
@@ -949,14 +989,52 @@ fn structured_cases() -> Vec<(&'static str, serde_json::Value, &'static str)> {
             "members",
         ),
         (
-            "redis_zrange",
-            serde_json::json!({"key": "leaders", "start": 0, "stop": 0, "withscores": true}),
+            "redis_zcard",
+            serde_json::json!({"key": "leaders"}),
+            "cardinality",
+        ),
+        (
+            "redis_zcount",
+            serde_json::json!({
+                "key": "leaders",
+                "min": {"kind": "negative_infinity"},
+                "max": {"kind": "inclusive", "value": "2.0"}
+            }),
+            "count",
+        ),
+        (
+            "redis_zmscore",
+            serde_json::json!({"key": "leaders", "members": ["alice", "missing"]}),
             "members",
+        ),
+        (
+            "redis_zrange",
+            serde_json::json!({
+                "key": "leaders",
+                "range": {"kind": "rank", "start": 0, "stop": 0},
+                "withscores": true
+            }),
+            "members",
+        ),
+        (
+            "redis_zrank",
+            serde_json::json!({"key": "leaders", "member": "alice"}),
+            "rank",
+        ),
+        (
+            "redis_zrevrank",
+            serde_json::json!({"key": "leaders", "member": "alice"}),
+            "rank",
         ),
         (
             "redis_zscan",
             serde_json::json!({"key": "leaders", "count": 10}),
             "page",
+        ),
+        (
+            "redis_zscore",
+            serde_json::json!({"key": "leaders", "member": "alice"}),
+            "score",
         ),
         (
             "redis_json_get",
@@ -1135,6 +1213,11 @@ fn structured_cases() -> Vec<(&'static str, serde_json::Value, &'static str)> {
             "affected",
         ),
         (
+            "redis_zincrby",
+            serde_json::json!({"key": "leaders", "member": "alice", "increment": "0.25"}),
+            "score",
+        ),
+        (
             "redis_json_set",
             serde_json::json!({"key": "doc:1", "value": {"name": "Ada"}}),
             "stored",
@@ -1210,6 +1293,30 @@ fn structured_cases() -> Vec<(&'static str, serde_json::Value, &'static str)> {
             "removed",
         ),
         (
+            "redis_zpopmax",
+            serde_json::json!({"key": "leaders", "count": 1}),
+            "members",
+        ),
+        (
+            "redis_zpopmin",
+            serde_json::json!({"key": "leaders", "count": 1}),
+            "members",
+        ),
+        (
+            "redis_zrem",
+            serde_json::json!({"key": "leaders", "members": ["alice"]}),
+            "removed",
+        ),
+        (
+            "redis_zremrangebyscore",
+            serde_json::json!({
+                "key": "leaders",
+                "min": {"kind": "exclusive", "value": "0"},
+                "max": {"kind": "positive_infinity"}
+            }),
+            "removed",
+        ),
+        (
             "redis_getdel",
             serde_json::json!({"key": "greeting"}),
             "value",
@@ -1254,8 +1361,8 @@ fn structured_cases() -> Vec<(&'static str, serde_json::Value, &'static str)> {
 
 #[tokio::test]
 async fn access_modes_expose_exactly_the_expected_tools() {
-    assert_eq!(tool_names(AccessMode::Full, false).len(), 78);
-    assert_eq!(tool_names(AccessMode::Full, true).len(), 79);
+    assert_eq!(tool_names(AccessMode::Full, false).len(), 89);
+    assert_eq!(tool_names(AccessMode::Full, true).len(), 90);
     for (access, raw) in [
         (AccessMode::ReadOnly, false),
         (AccessMode::ReadWrite, false),
@@ -1332,6 +1439,66 @@ async fn set_annotations_match_read_write_and_destructive_semantics() {
     assert!(!remove.read_only_hint);
     assert!(remove.destructive_hint);
     assert!(remove.idempotent_hint);
+}
+
+#[tokio::test]
+async fn sorted_set_annotations_match_read_write_and_destructive_semantics() {
+    let tools = full_catalog_client()
+        .await
+        .list_tools()
+        .await
+        .expect("list annotated sorted-set tools")
+        .tools;
+    let annotations = |name: &str| {
+        tools
+            .iter()
+            .find(|tool| tool.name == name)
+            .unwrap_or_else(|| panic!("missing {name}"))
+            .annotations
+            .clone()
+            .unwrap_or_else(|| panic!("missing annotations for {name}"))
+    };
+
+    for name in [
+        "redis_zcard",
+        "redis_zcount",
+        "redis_zmscore",
+        "redis_zrange",
+        "redis_zrank",
+        "redis_zrevrank",
+        "redis_zscan",
+        "redis_zscore",
+    ] {
+        let annotation = annotations(name);
+        assert!(annotation.read_only_hint, "{name}");
+        assert!(!annotation.destructive_hint, "{name}");
+        assert!(annotation.idempotent_hint, "{name}");
+    }
+
+    let add = annotations("redis_zadd");
+    assert!(!add.read_only_hint);
+    assert!(!add.destructive_hint);
+    assert!(add.idempotent_hint);
+
+    let increment = annotations("redis_zincrby");
+    assert!(!increment.read_only_hint);
+    assert!(!increment.destructive_hint);
+    assert!(!increment.idempotent_hint);
+
+    for name in [
+        "redis_zpopmax",
+        "redis_zpopmin",
+        "redis_zrem",
+        "redis_zremrangebyscore",
+    ] {
+        let annotation = annotations(name);
+        assert!(!annotation.read_only_hint, "{name}");
+        assert!(annotation.destructive_hint, "{name}");
+    }
+    assert!(!annotations("redis_zpopmax").idempotent_hint);
+    assert!(!annotations("redis_zpopmin").idempotent_hint);
+    assert!(annotations("redis_zrem").idempotent_hint);
+    assert!(annotations("redis_zremrangebyscore").idempotent_hint);
 }
 
 #[tokio::test]
@@ -1723,6 +1890,45 @@ async fn collection_budget_accepts_exact_limit_and_returns_retry_guidance() {
 }
 
 #[tokio::test]
+async fn sorted_set_collection_inputs_are_bounded_before_reads_or_destructive_pops() {
+    let client = client_with_budget(AccessMode::Full, false, OutputBudget::new(1_000_000, 1)).await;
+    for (tool, arguments) in [
+        (
+            "redis_zmscore",
+            serde_json::json!({"key": "leaders", "members": ["alice", "bob"]}),
+        ),
+        (
+            "redis_zrange",
+            serde_json::json!({
+                "key": "leaders",
+                "range": {
+                    "kind": "score",
+                    "min": {"kind": "negative_infinity"},
+                    "max": {"kind": "positive_infinity"},
+                    "limit": 2
+                }
+            }),
+        ),
+        (
+            "redis_zpopmin",
+            serde_json::json!({"key": "leaders", "count": 2}),
+        ),
+    ] {
+        let result = client
+            .call_tool(tool, arguments)
+            .await
+            .unwrap_or_else(|error| panic!("{tool}: {error}"));
+        assert!(result.is_error, "{tool}");
+        assert!(
+            serde_json::to_string(&result)
+                .expect("serialize bounded sorted-set result")
+                .contains("configured output limit of 1 entries"),
+            "{tool}: {result:?}"
+        );
+    }
+}
+
+#[tokio::test]
 async fn raw_commands_share_the_hard_encoded_response_budget() {
     let arguments = serde_json::json!({"command": "ECHO", "arguments": ["hello"]});
     let baseline = client_with_budget(AccessMode::Full, true, OutputBudget::new(1_000_000, 1_000))
@@ -1834,6 +2040,33 @@ async fn malformed_and_unbounded_inputs_fail_as_tool_results() {
             }),
         ),
         (
+            "redis_zadd",
+            serde_json::json!({
+                "key": "leaders",
+                "members": [{"score": "NaN", "member": "alice"}]
+            }),
+        ),
+        (
+            "redis_zmscore",
+            serde_json::json!({"key": "leaders", "members": []}),
+        ),
+        (
+            "redis_zincrby",
+            serde_json::json!({"key": "leaders", "member": "alice", "increment": "+inf"}),
+        ),
+        (
+            "redis_zrem",
+            serde_json::json!({"key": "leaders", "members": []}),
+        ),
+        (
+            "redis_zpopmin",
+            serde_json::json!({"key": "leaders", "count": 0}),
+        ),
+        (
+            "redis_zpopmin",
+            serde_json::json!({"key": "leaders", "max_returned_bytes": 0}),
+        ),
+        (
             "redis_hset",
             serde_json::json!({
                 "key": "hash",
@@ -1911,6 +2144,31 @@ async fn malformed_and_unbounded_inputs_fail_as_tool_results() {
         (
             "redis_zrange",
             serde_json::json!({"key": "leaders", "start": 0, "stop": 1000}),
+        ),
+        (
+            "redis_zrange",
+            serde_json::json!({
+                "key": "leaders",
+                "range": {
+                    "kind": "score",
+                    "min": {"kind": "negative_infinity"},
+                    "max": {"kind": "positive_infinity"},
+                    "start": 0,
+                    "limit": 10
+                }
+            }),
+        ),
+        (
+            "redis_zrange",
+            serde_json::json!({
+                "key": "leaders",
+                "range": {
+                    "kind": "lex",
+                    "min": {"kind": "inclusive", "value": "not-base64", "encoding": "base64"},
+                    "max": {"kind": "positive_infinity"},
+                    "limit": 10
+                }
+            }),
         ),
         (
             "redis_get",
@@ -2693,6 +2951,442 @@ async fn set_reads_distinguish_missing_sets_and_empty_algebra_results() {
     }
 }
 
+#[derive(Clone, Default)]
+struct SortedSetContractRedis {
+    commands: Arc<Mutex<Vec<RedisCommand>>>,
+}
+
+#[async_trait]
+impl RedisExecutor for SortedSetContractRedis {
+    async fn execute(&self, command: RedisCommand) -> Result<RedisValue, RedisError> {
+        let key = command.arguments().first().map(Vec::as_slice);
+        let missing_key = key == Some(b"missing".as_slice());
+        let response = match command.name() {
+            "ZCARD" if missing_key => RedisValue::Integer(0),
+            "ZCARD" => RedisValue::Integer(3),
+            "ZCOUNT" if missing_key => RedisValue::Integer(0),
+            "ZCOUNT" => RedisValue::Integer(2),
+            "ZSCORE"
+                if missing_key
+                    || command.arguments().get(1).map(Vec::as_slice)
+                        == Some(b"missing".as_slice()) =>
+            {
+                RedisValue::Nil
+            }
+            "ZSCORE" => RedisValue::BulkString(b"0.10000000000000001".to_vec()),
+            "ZMSCORE" => RedisValue::Array(
+                command
+                    .arguments()
+                    .iter()
+                    .skip(1)
+                    .map(|member| {
+                        if missing_key || member.as_slice() == b"missing" {
+                            RedisValue::Nil
+                        } else {
+                            RedisValue::BulkString(b"0.10000000000000001".to_vec())
+                        }
+                    })
+                    .collect(),
+            ),
+            "ZRANK" | "ZREVRANK"
+                if missing_key
+                    || command.arguments().get(1).map(Vec::as_slice)
+                        == Some(b"missing".as_slice()) =>
+            {
+                RedisValue::Nil
+            }
+            "ZRANK" => RedisValue::Integer(1),
+            "ZREVRANK" => RedisValue::Integer(2),
+            "ZRANGE" if command.arguments().iter().any(|arg| arg == b"WITHSCORES") => {
+                RedisValue::Array(vec![
+                    RedisValue::BulkString(vec![0xfe]),
+                    RedisValue::BulkString(b"0.10000000000000001".to_vec()),
+                    RedisValue::BulkString(b"middle".to_vec()),
+                    RedisValue::BulkString(b"1.5".to_vec()),
+                    RedisValue::BulkString(b"tail".to_vec()),
+                    RedisValue::BulkString(b"2".to_vec()),
+                ])
+            }
+            "ZRANGE" if missing_key => RedisValue::Array(Vec::new()),
+            "ZRANGE" => RedisValue::Array(vec![
+                RedisValue::BulkString(vec![0xfe]),
+                RedisValue::BulkString(b"middle".to_vec()),
+                RedisValue::BulkString(b"tail".to_vec()),
+            ]),
+            "ZSCAN" if missing_key => RedisValue::Array(vec![
+                RedisValue::BulkString(b"0".to_vec()),
+                RedisValue::Array(Vec::new()),
+            ]),
+            "ZSCAN" => RedisValue::Array(vec![
+                RedisValue::BulkString(b"0".to_vec()),
+                RedisValue::Array(vec![
+                    RedisValue::BulkString(vec![0xfe]),
+                    RedisValue::BulkString(b"0.10000000000000001".to_vec()),
+                ]),
+            ]),
+            "ZADD" | "ZREM" | "ZREMRANGEBYSCORE" => RedisValue::Integer(1),
+            "ZINCRBY" => RedisValue::BulkString(b"0.30000000000000002".to_vec()),
+            "ZPOPMIN" | "ZPOPMAX" => RedisValue::Array(vec![
+                RedisValue::BulkString(vec![0xfe]),
+                RedisValue::BulkString(b"0.10000000000000001".to_vec()),
+            ]),
+            "EXISTS" if missing_key => RedisValue::Integer(0),
+            "EXISTS" => RedisValue::Integer(1),
+            _ => RedisValue::Nil,
+        };
+        self.commands
+            .lock()
+            .expect("sorted-set contract lock")
+            .push(command);
+        Ok(response)
+    }
+}
+
+async fn sorted_set_contract_client(executor: SortedSetContractRedis) -> McpClient {
+    let router = RedisMcp::builder(executor)
+        .access(AccessMode::Full)
+        .bundles([ToolBundle::DataStructures])
+        .capabilities(RedisCapabilities::unknown().with_redis_version(RedisVersion::new(8, 2, 0)))
+        .build();
+    let client = McpClient::connect(ChannelTransport::new(router))
+        .await
+        .expect("connect sorted-set contract client");
+    client
+        .initialize("redis-mcp-sorted-set-contract-test", "0")
+        .await
+        .expect("initialize sorted-set contract client");
+    client
+}
+
+#[tokio::test]
+async fn sorted_set_commands_preserve_binary_argv_exact_scores_and_range_modes() {
+    let executor = SortedSetContractRedis::default();
+    let commands = executor.commands.clone();
+    let client = sorted_set_contract_client(executor).await;
+    let binary_key = serde_json::json!({"key": "/wA=", "key_encoding": "base64"});
+
+    client
+        .call_tool("redis_zcard", binary_key.clone())
+        .await
+        .expect("binary ZCARD");
+    client
+        .call_tool(
+            "redis_zcount",
+            serde_json::json!({
+                "key": "/wA=", "key_encoding": "base64",
+                "min": {"kind": "exclusive", "value": "0.10000000000000001"},
+                "max": {"kind": "positive_infinity"}
+            }),
+        )
+        .await
+        .expect("binary ZCOUNT");
+    let score = client
+        .call_tool(
+            "redis_zscore",
+            serde_json::json!({
+                "key": "/wA=", "key_encoding": "base64",
+                "member": "/g==", "member_encoding": "base64"
+            }),
+        )
+        .await
+        .expect("binary ZSCORE")
+        .structured_content
+        .expect("structured ZSCORE");
+    assert_eq!(score["score"], "0.10000000000000001");
+    let scores = client
+        .call_tool(
+            "redis_zmscore",
+            serde_json::json!({
+                "key": "/wA=", "key_encoding": "base64",
+                "members": [{"member": "/g==", "member_encoding": "base64"}, "missing"]
+            }),
+        )
+        .await
+        .expect("binary ZMSCORE")
+        .structured_content
+        .expect("structured ZMSCORE");
+    assert_eq!(scores["members"][0]["score"], "0.10000000000000001");
+    assert_eq!(scores["members"][1]["score"], serde_json::Value::Null);
+    for tool in ["redis_zrank", "redis_zrevrank"] {
+        client
+            .call_tool(
+                tool,
+                serde_json::json!({
+                    "key": "/wA=", "key_encoding": "base64",
+                    "member": "/g==", "member_encoding": "base64"
+                }),
+            )
+            .await
+            .unwrap_or_else(|error| panic!("{tool}: {error}"));
+    }
+    let rank_page = client
+        .call_tool(
+            "redis_zrange",
+            serde_json::json!({
+                "key": "/wA=", "key_encoding": "base64", "withscores": true,
+                "range": {"kind": "rank", "start": 0, "stop": 1}
+            }),
+        )
+        .await
+        .expect("rank ZRANGE")
+        .structured_content
+        .expect("structured rank ZRANGE");
+    assert_eq!(rank_page["count"], 2);
+    assert_eq!(rank_page["page"]["continuation"]["start"], 2);
+    assert_eq!(rank_page["members"][0]["encoding"], "base64");
+    assert_eq!(rank_page["members"][0]["score"], "0.10000000000000001");
+
+    let score_page = client
+        .call_tool(
+            "redis_zrange",
+            serde_json::json!({
+                "key": "/wA=", "key_encoding": "base64", "rev": true,
+                "range": {
+                    "kind": "score",
+                    "min": {"kind": "negative_infinity"},
+                    "max": {"kind": "exclusive", "value": "1.5"},
+                    "offset": 2,
+                    "limit": 2
+                }
+            }),
+        )
+        .await
+        .expect("score ZRANGE")
+        .structured_content
+        .expect("structured score ZRANGE");
+    assert_eq!(score_page["page"]["continuation"]["offset"], 4);
+
+    client
+        .call_tool(
+            "redis_zrange",
+            serde_json::json!({
+                "key": "/wA=", "key_encoding": "base64",
+                "range": {
+                    "kind": "lex",
+                    "min": {"kind": "inclusive", "value": "/g==", "encoding": "base64"},
+                    "max": {"kind": "positive_infinity"},
+                    "limit": 2
+                }
+            }),
+        )
+        .await
+        .expect("lex ZRANGE");
+    client
+        .call_tool(
+            "redis_zscan",
+            serde_json::json!({
+                "key": "/wA=", "key_encoding": "base64", "cursor": 5,
+                "pattern": "*", "count": 2
+            }),
+        )
+        .await
+        .expect("binary ZSCAN");
+    client
+        .call_tool(
+            "redis_zadd",
+            serde_json::json!({
+                "key": "/wA=", "key_encoding": "base64",
+                "members": [{
+                    "score": "0.10000000000000001",
+                    "member": {"member": "/g==", "member_encoding": "base64"}
+                }]
+            }),
+        )
+        .await
+        .expect("binary ZADD");
+    client
+        .call_tool(
+            "redis_zincrby",
+            serde_json::json!({
+                "key": "/wA=", "key_encoding": "base64",
+                "member": "/g==", "member_encoding": "base64",
+                "increment": "0.20000000000000001"
+            }),
+        )
+        .await
+        .expect("binary ZINCRBY");
+    client
+        .call_tool(
+            "redis_zrem",
+            serde_json::json!({
+                "key": "/wA=", "key_encoding": "base64",
+                "members": [{"member": "/g==", "member_encoding": "base64"}]
+            }),
+        )
+        .await
+        .expect("binary ZREM");
+    for tool in ["redis_zpopmin", "redis_zpopmax"] {
+        client
+            .call_tool(
+                tool,
+                serde_json::json!({"key": "/wA=", "key_encoding": "base64", "count": 2}),
+            )
+            .await
+            .unwrap_or_else(|error| panic!("{tool}: {error}"));
+    }
+    client
+        .call_tool(
+            "redis_zremrangebyscore",
+            serde_json::json!({
+                "key": "/wA=", "key_encoding": "base64",
+                "min": {"kind": "exclusive", "value": "-2"},
+                "max": {"kind": "inclusive", "value": "3"}
+            }),
+        )
+        .await
+        .expect("binary ZREMRANGEBYSCORE");
+
+    let commands = commands.lock().expect("recorded sorted-set commands");
+    let arguments = |tool: &str, occurrence: usize| {
+        commands
+            .iter()
+            .filter(|command| command.tool_name() == tool)
+            .nth(occurrence)
+            .unwrap_or_else(|| panic!("missing {tool} occurrence {occurrence}"))
+            .arguments()
+    };
+    assert_eq!(arguments("redis_zcard", 0), &[vec![0xff, 0x00]]);
+    assert_eq!(
+        arguments("redis_zcount", 0),
+        &[
+            vec![0xff, 0x00],
+            b"(0.10000000000000001".to_vec(),
+            b"+inf".to_vec()
+        ]
+    );
+    assert_eq!(
+        arguments("redis_zscore", 0),
+        &[vec![0xff, 0x00], vec![0xfe]]
+    );
+    assert_eq!(
+        arguments("redis_zmscore", 0),
+        &[vec![0xff, 0x00], vec![0xfe], b"missing".to_vec()]
+    );
+    assert_eq!(arguments("redis_zrank", 0), &[vec![0xff, 0x00], vec![0xfe]]);
+    assert_eq!(
+        arguments("redis_zrevrank", 0),
+        &[vec![0xff, 0x00], vec![0xfe]]
+    );
+    assert_eq!(
+        arguments("redis_zrange", 0),
+        &[
+            vec![0xff, 0x00],
+            b"0".to_vec(),
+            b"2".to_vec(),
+            b"WITHSCORES".to_vec()
+        ]
+    );
+    assert_eq!(
+        arguments("redis_zrange", 1),
+        &[
+            vec![0xff, 0x00],
+            b"(1.5".to_vec(),
+            b"-inf".to_vec(),
+            b"BYSCORE".to_vec(),
+            b"LIMIT".to_vec(),
+            b"2".to_vec(),
+            b"3".to_vec(),
+            b"REV".to_vec()
+        ]
+    );
+    assert_eq!(
+        arguments("redis_zrange", 2),
+        &[
+            vec![0xff, 0x00],
+            vec![b'[', 0xfe],
+            b"+".to_vec(),
+            b"BYLEX".to_vec(),
+            b"LIMIT".to_vec(),
+            b"0".to_vec(),
+            b"3".to_vec()
+        ]
+    );
+    assert_eq!(
+        arguments("redis_zscan", 0),
+        &[
+            vec![0xff, 0x00],
+            b"5".to_vec(),
+            b"MATCH".to_vec(),
+            b"*".to_vec(),
+            b"COUNT".to_vec(),
+            b"2".to_vec()
+        ]
+    );
+    assert_eq!(
+        arguments("redis_zadd", 0),
+        &[
+            vec![0xff, 0x00],
+            b"0.10000000000000001".to_vec(),
+            vec![0xfe]
+        ]
+    );
+    assert_eq!(
+        arguments("redis_zincrby", 0),
+        &[
+            vec![0xff, 0x00],
+            b"0.20000000000000001".to_vec(),
+            vec![0xfe]
+        ]
+    );
+    assert_eq!(arguments("redis_zrem", 0), &[vec![0xff, 0x00], vec![0xfe]]);
+    for tool in ["redis_zpopmin", "redis_zpopmax"] {
+        assert_eq!(arguments(tool, 0), &[vec![0xff, 0x00], b"2".to_vec()]);
+    }
+    assert_eq!(
+        arguments("redis_zremrangebyscore", 0),
+        &[vec![0xff, 0x00], b"(-2".to_vec(), b"3".to_vec()]
+    );
+}
+
+#[tokio::test]
+async fn sorted_set_reads_distinguish_missing_keys_members_and_nil_scores() {
+    let client = sorted_set_contract_client(SortedSetContractRedis::default()).await;
+    let card = client
+        .call_tool("redis_zcard", serde_json::json!({"key": "missing"}))
+        .await
+        .expect("missing ZCARD")
+        .structured_content
+        .expect("structured missing ZCARD");
+    assert_eq!(card["exists"], false);
+    assert_eq!(card["cardinality"], 0);
+
+    for tool in ["redis_zscore", "redis_zrank", "redis_zrevrank"] {
+        let result = client
+            .call_tool(
+                tool,
+                serde_json::json!({"key": "missing", "member": "missing"}),
+            )
+            .await
+            .unwrap_or_else(|error| panic!("{tool}: {error}"))
+            .structured_content
+            .unwrap_or_else(|| panic!("{tool}: structured result"));
+        assert_eq!(result["zset_exists"], false, "{tool}");
+        assert_eq!(result["member_exists"], false, "{tool}");
+    }
+    let scores = client
+        .call_tool(
+            "redis_zmscore",
+            serde_json::json!({"key": "missing", "members": ["missing", "missing"]}),
+        )
+        .await
+        .expect("missing ZMSCORE")
+        .structured_content
+        .expect("structured missing ZMSCORE");
+    assert_eq!(scores["zset_exists"], false);
+    assert_eq!(scores["members"][0]["score"], serde_json::Value::Null);
+
+    for tool in ["redis_zrange", "redis_zscan"] {
+        let result = client
+            .call_tool(tool, serde_json::json!({"key": "missing"}))
+            .await
+            .unwrap_or_else(|error| panic!("{tool}: {error}"))
+            .structured_content
+            .unwrap_or_else(|| panic!("{tool}: structured result"));
+        assert_eq!(result["exists"], false, "{tool}");
+        assert_eq!(result["members"], serde_json::json!([]), "{tool}");
+    }
+}
+
 #[derive(Clone, Copy)]
 struct HashEdgeRedis;
 
@@ -3068,6 +3762,9 @@ async fn known_old_redis_can_hide_only_version_incompatible_tools() {
         assert!(!names.iter().any(|candidate| candidate == name), "{name}");
     }
     assert!(!names.iter().any(|name| name == "redis_smismember"));
+    for name in ["redis_zpopmax", "redis_zpopmin"] {
+        assert!(!names.iter().any(|candidate| candidate == name), "{name}");
+    }
 
     let helper_names = tool_names_for_capabilities(
         AccessMode::Full,
@@ -3105,6 +3802,12 @@ async fn known_old_redis_can_hide_only_version_incompatible_tools() {
         assert!(!redis_six_list_names.contains(&name), "{name}");
     }
     assert!(!redis_six_list_names.contains(&"redis_smismember"));
+    for name in ["redis_zadd", "redis_zmscore", "redis_zrange"] {
+        assert!(!redis_six_list_names.contains(&name), "{name}");
+    }
+    for name in ["redis_zpopmax", "redis_zpopmin"] {
+        assert!(redis_six_list_names.contains(&name), "{name}");
+    }
     let supported_names = tool_names_for_capabilities(
         AccessMode::Full,
         [ToolBundle::Essentials],
@@ -3134,6 +3837,11 @@ async fn known_old_redis_can_hide_only_version_incompatible_tools() {
         "redis_lmove",
         "redis_rpop",
         "redis_smismember",
+        "redis_zadd",
+        "redis_zmscore",
+        "redis_zrange",
+        "redis_zpopmax",
+        "redis_zpopmin",
     ] {
         assert!(supported_list_names.contains(&name), "{name}");
     }

@@ -19,7 +19,7 @@ matrix.
 | --- | --- | ---: | ---: |
 | [`redis/mcp-redis`](https://github.com/redis/mcp-redis) | `5945b0b5b098c9a1882075a161a6a58f23de81ed` | 0.5.1 | 53 |
 | [`redisctl`](https://github.com/redis/redisctl) | `955f4b18f4266c332bc640cada67d125d23edde8` | read-only inventory | 132 |
-| `redis-mcp` | current catalog | 0.1 development line | 75 |
+| `redis-mcp` | current catalog | 0.1 development line | 85 |
 
 The redisctl baseline is a compatibility and breadth reference, not a promise
 to copy application-specific profile fields, aliases, or weak contracts.
@@ -28,8 +28,8 @@ to copy application-specific profile fields, aliases, or weak contracts.
 
 | Baseline | Implemented | Planned | Superseded | Excluded |
 | --- | ---: | ---: | ---: | ---: |
-| `redis/mcp-redis` | 31 | 20 | 1 | 1 |
-| redisctl | 59 | 67 | 1 | 5 |
+| `redis/mcp-redis` | 36 | 15 | 1 | 1 |
+| redisctl | 64 | 62 | 1 | 5 |
 
 The dispositions mean:
 
@@ -50,7 +50,6 @@ and `redis_zscan`.
 
 | Capability | Competitor tools | Library issue |
 | --- | --- | ---: |
-| lists | `llen`, `lpop`, `lrem`, `rpop`, `rpush` | #20 |
 | sets | `srem` | #21 |
 | sorted sets | `zrem` | #22 |
 | Streams and consumer groups | `xack`, `xadd`, `xdel`, `xgroup_create`, `xgroup_destroy`, `xrange`, `xreadgroup` | #23 |
@@ -122,6 +121,16 @@ gated and exposes typed HEXPIRE, HTTL, and HPERSIST per-field statuses. Contract
 tests pin exact binary argv and schemas; live tests cover RESP2/RESP3, ACLs,
 large hashes, wrong types, version gates, and remote Cluster slots.
 
+Lists now do as well. The library covers binary-safe head and tail pushes,
+indexed reads, length, bounded position searches and ranges, counted
+non-blocking pops, removal, replacement, trimming, and atomic edge-to-edge
+movement. Results distinguish missing lists, out-of-range indexes, empty
+values, and empty result arrays. Destructive operations require full access;
+Redis 6.0/6.2 features are capability-gated; oversized pop and move payloads
+are explicitly omitted without losing the committed outcome; and `LMOVE`
+preserves the native same-slot Cluster contract. Blocking commands remain
+outside the ordinary MCP tool surface.
+
 ### Output-policy audit
 
 Every successful result is measured as a complete encoded MCP
@@ -135,17 +144,17 @@ also applied to collection results and raw RESP collections.
 | range paginated | `redis_lrange`, `redis_zrange` |
 | offset paginated | `redis_ft_search`, `redis_ft_vector_search`, `redis_ft_hybrid_search` |
 | budget guarded | `redis_info`, `redis_get`, `redis_getdel`, `redis_getex`, `redis_getrange`, `redis_dump`, `redis_set`, `redis_mget`, `redis_randomkey`, `redis_hget`, `redis_hgetall`, `redis_hkeys`, `redis_hmget`, `redis_hvals`, `redis_smembers`, `redis_json_get`, `redis_json_type`, `redis_ft_list`, `redis_ft_info`, `redis_vector_get_hash`, `redis_command` |
-| intrinsically bounded | `redis_ping`, `redis_dbsize`, `redis_type`, `redis_ttl`, `redis_exists`, `redis_strlen`, `redis_memory_usage`, `redis_object_inspect`, `redis_expire`, `redis_persist`, `redis_mset`, `redis_incr`, `redis_append`, `redis_setrange`, `redis_decr`, `redis_decrby`, `redis_incrby`, `redis_incrbyfloat`, `redis_copy`, `redis_touch`, `redis_restore`, `redis_hset`, `redis_hexists`, `redis_hlen`, `redis_hstrlen`, `redis_httl`, `redis_hincrby`, `redis_hincrbyfloat`, `redis_hexpire`, `redis_hpersist`, `redis_hdel`, `redis_lpush`, `redis_sadd`, `redis_zadd`, `redis_json_set`, `redis_ft_create`, `redis_vector_set_hash`, `redis_del`, `redis_unlink`, `redis_copy_replace`, `redis_rename`, `redis_renamenx`, `redis_restore_replace`, `redis_json_del`, `redis_ft_dropindex` |
+| intrinsically bounded | `redis_ping`, `redis_dbsize`, `redis_type`, `redis_ttl`, `redis_exists`, `redis_strlen`, `redis_memory_usage`, `redis_object_inspect`, `redis_expire`, `redis_persist`, `redis_mset`, `redis_incr`, `redis_append`, `redis_setrange`, `redis_decr`, `redis_decrby`, `redis_incrby`, `redis_incrbyfloat`, `redis_copy`, `redis_touch`, `redis_restore`, `redis_hset`, `redis_hexists`, `redis_hlen`, `redis_hstrlen`, `redis_httl`, `redis_hincrby`, `redis_hincrbyfloat`, `redis_hexpire`, `redis_hpersist`, `redis_hdel`, `redis_lindex`, `redis_llen`, `redis_lpos`, `redis_lpush`, `redis_rpush`, `redis_lpop`, `redis_rpop`, `redis_lmove`, `redis_lrem`, `redis_lset`, `redis_ltrim`, `redis_sadd`, `redis_zadd`, `redis_json_set`, `redis_ft_create`, `redis_vector_set_hash`, `redis_del`, `redis_unlink`, `redis_copy_replace`, `redis_rename`, `redis_renamenx`, `redis_restore_replace`, `redis_json_del`, `redis_ft_dropindex` |
 
 Budget-guarded whole-collection reads fail with an `output_limit_exceeded`
 reason and machine-readable `io.redis.mcp/outputLimit` metadata instead of
 emitting partial JSON. `redis_hgetall`, `redis_hkeys`, `redis_hvals`, and
 `redis_smembers` point callers to their cursor alternatives. INFO can be
 narrowed by section, Search continues by offset, ranges continue by start, and
-cursor tools continue using the returned Redis cursor. `SET GET`, `GETEX`, and
-`GETDEL` additionally accept per-call byte caps so a committed side effect can
-return an explicit omitted value and byte count instead of losing the mutation
-outcome to an output error.
+cursor tools continue using the returned Redis cursor. `SET GET`, `GETEX`,
+`GETDEL`, counted list pops, and `LMOVE` additionally accept per-call byte caps
+so a committed side effect can return an explicit omitted value and byte count
+instead of losing the mutation outcome to an output error.
 
 ## Objective completion gate
 
@@ -161,8 +170,8 @@ The roadmap is complete only when all of these are true:
 5. The checked-in `current_gate.met` value agrees with the gate calculated by
    the test.
 
-The gate is currently **not met**. That is expected: this file establishes the
-baseline from which backlog work is measured.
+The gate is currently **not met**. Ten roadmap blockers remain after completing
+the list family.
 
 ## Updating the scorecard
 

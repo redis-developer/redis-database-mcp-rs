@@ -135,7 +135,7 @@ which side effects that host permits. These decisions are orthogonal.
 
 The public taxonomy is `essentials`, `data_structures`, `json`, `search`,
 `diagnostics`, `admin`, `bulk`, and `raw`. The curated default enables
-`essentials`, `data_structures`, and `diagnostics`, totaling 61 tools. The
+`essentials`, `data_structures`, and `diagnostics`, totaling 71 tools. The
 module-backed `json` and `search` bundles are explicitly selected so a default
 router never advertises capabilities that its Redis target may not provide.
 Empty bundles are reserved for coherent catalog growth and do not expose
@@ -209,6 +209,12 @@ values, but `redis_hgetall`, `redis_hkeys`, and `redis_hvals` direct oversized
 callers to `redis_hscan`, while `redis_smembers` directs them to `redis_sscan`.
 Bounded multi-field hash reads such as `redis_hmget` and `redis_httl` reject
 requests above the configured entry ceiling before execution.
+
+List searches and counted pops also reject counts above the configured entry
+ceiling before execution. Pop and `LMOVE` results have per-call byte caps;
+when a committed mutation returns an oversized value, the result preserves the
+element count, byte count, and mutation outcome while explicitly marking the
+payload omitted. Blocking list commands are not exposed as ordinary tools.
 
 Redis ACLs remain the ultimate authorization boundary. Bundle selection, access
 mode, annotations, raw policy, and timeouts are defense-in-depth and product

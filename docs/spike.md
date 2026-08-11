@@ -113,3 +113,13 @@ contracts preserve binary fields and values, distinguish nil from empty data,
 separate read-write mutations from full-access deletion, and capability-gate
 field expiration to Redis 7.4 or newer. The surface is exercised through
 RESP2, RESP3, restricted ACLs, output-budget failures, and remote Cluster slots.
+
+## 2026-08-11 list-surface follow-up
+
+The curated default now includes the complete non-blocking list command family:
+binary-safe pushes, indexes, lengths, bounded ranges and position searches,
+counted pops, removal, replacement, trimming, and atomic movement. Destructive
+operations require full access, Redis 6.0/6.2 features are capability-gated,
+oversized values preserve mutation outcomes through explicit omission metadata,
+and `LMOVE` retains Redis Cluster's same-slot rule. Blocking list commands stay
+outside ordinary request/response tools.

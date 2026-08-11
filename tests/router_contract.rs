@@ -85,6 +85,9 @@ impl RedisExecutor for StubRedis {
                 RedisValue::BulkString(b"second".to_vec()),
                 RedisValue::BulkString(b"first".to_vec()),
             ]),
+            "LINDEX" => RedisValue::BulkString(b"second".to_vec()),
+            "LLEN" => RedisValue::Integer(2),
+            "LPOS" => RedisValue::Array(vec![RedisValue::Integer(0)]),
             "SMEMBERS" => RedisValue::Set(vec![
                 RedisValue::BulkString(b"beta".to_vec()),
                 RedisValue::BulkString(b"alpha".to_vec()),
@@ -116,7 +119,7 @@ impl RedisExecutor for StubRedis {
             ]),
             "TYPE" => RedisValue::SimpleString("string".into()),
             "TTL" => RedisValue::Integer(-1),
-            "SET" | "MSET" | "RENAME" | "RESTORE" => RedisValue::Okay,
+            "SET" | "MSET" | "RENAME" | "RESTORE" | "LSET" | "LTRIM" => RedisValue::Okay,
             "EXPIRE" | "PERSIST" | "COPY" | "TOUCH" | "RENAMENX" => RedisValue::Integer(1),
             "INCR" | "DECR" | "DECRBY" | "INCRBY" => RedisValue::Integer(2),
             "INCRBYFLOAT" => RedisValue::BulkString(b"2.5".to_vec()),
@@ -125,7 +128,10 @@ impl RedisExecutor for StubRedis {
             "HSET" | "SADD" | "ZADD" | "HINCRBY" | "HDEL" => RedisValue::Integer(1),
             "HINCRBYFLOAT" => RedisValue::BulkString(b"2.5".to_vec()),
             "HEXPIRE" | "HPERSIST" => RedisValue::Array(vec![RedisValue::Integer(1)]),
-            "LPUSH" => RedisValue::Integer(2),
+            "LPUSH" | "RPUSH" => RedisValue::Integer(2),
+            "LPOP" | "RPOP" => RedisValue::Array(vec![RedisValue::BulkString(b"first".to_vec())]),
+            "LMOVE" => RedisValue::BulkString(b"first".to_vec()),
+            "LREM" => RedisValue::Integer(1),
             "DEL" | "UNLINK" => RedisValue::Integer(1),
             "JSON.GET" => RedisValue::BulkString(br#"[{"name":"Ada"}]"#.to_vec()),
             "JSON.TYPE" => RedisValue::Array(vec![RedisValue::BulkString(b"object".to_vec())]),
@@ -878,6 +884,17 @@ fn structured_cases() -> Vec<(&'static str, serde_json::Value, &'static str)> {
             "values",
         ),
         (
+            "redis_lindex",
+            serde_json::json!({"key": "queue", "index": -1}),
+            "value",
+        ),
+        ("redis_llen", serde_json::json!({"key": "queue"}), "length"),
+        (
+            "redis_lpos",
+            serde_json::json!({"key": "queue", "value": "second", "count": 2}),
+            "positions",
+        ),
+        (
             "redis_lrange",
             serde_json::json!({"key": "queue", "start": 0, "stop": 1}),
             "elements",
@@ -1064,6 +1081,11 @@ fn structured_cases() -> Vec<(&'static str, serde_json::Value, &'static str)> {
             "length",
         ),
         (
+            "redis_rpush",
+            serde_json::json!({"key": "queue", "elements": ["first", "second"]}),
+            "length",
+        ),
+        (
             "redis_sadd",
             serde_json::json!({"key": "tags", "members": ["alpha", "beta"]}),
             "added",
@@ -1114,6 +1136,36 @@ fn structured_cases() -> Vec<(&'static str, serde_json::Value, &'static str)> {
             "deleted",
         ),
         (
+            "redis_lpop",
+            serde_json::json!({"key": "queue", "count": 1}),
+            "elements",
+        ),
+        (
+            "redis_lmove",
+            serde_json::json!({"source": "queue", "destination": "archive", "from": "left", "to": "right"}),
+            "moved",
+        ),
+        (
+            "redis_lrem",
+            serde_json::json!({"key": "queue", "count": 1, "value": "first"}),
+            "removed",
+        ),
+        (
+            "redis_lset",
+            serde_json::json!({"key": "queue", "index": -1, "value": "last"}),
+            "replaced",
+        ),
+        (
+            "redis_ltrim",
+            serde_json::json!({"key": "queue", "start": 0, "stop": 9}),
+            "trimmed",
+        ),
+        (
+            "redis_rpop",
+            serde_json::json!({"key": "queue", "count": 1}),
+            "elements",
+        ),
+        (
             "redis_getdel",
             serde_json::json!({"key": "greeting"}),
             "value",
@@ -1158,8 +1210,8 @@ fn structured_cases() -> Vec<(&'static str, serde_json::Value, &'static str)> {
 
 #[tokio::test]
 async fn access_modes_expose_exactly_the_expected_tools() {
-    assert_eq!(tool_names(AccessMode::Full, false).len(), 61);
-    assert_eq!(tool_names(AccessMode::Full, true).len(), 62);
+    assert_eq!(tool_names(AccessMode::Full, false).len(), 71);
+    assert_eq!(tool_names(AccessMode::Full, true).len(), 72);
     for (access, raw) in [
         (AccessMode::ReadOnly, false),
         (AccessMode::ReadWrite, false),
@@ -1291,6 +1343,55 @@ async fn hash_annotations_match_read_write_and_destructive_semantics() {
     assert!(!delete.read_only_hint);
     assert!(delete.destructive_hint);
     assert!(delete.idempotent_hint);
+}
+
+#[tokio::test]
+async fn list_annotations_match_read_write_and_destructive_semantics() {
+    let tools = full_catalog_client()
+        .await
+        .list_tools()
+        .await
+        .expect("list annotated list tools")
+        .tools;
+    let annotations = |name: &str| {
+        tools
+            .iter()
+            .find(|tool| tool.name == name)
+            .unwrap_or_else(|| panic!("missing {name}"))
+            .annotations
+            .clone()
+            .unwrap_or_else(|| panic!("missing annotations for {name}"))
+    };
+
+    for name in ["redis_lindex", "redis_llen", "redis_lpos", "redis_lrange"] {
+        let annotation = annotations(name);
+        assert!(annotation.read_only_hint, "{name}");
+        assert!(!annotation.destructive_hint, "{name}");
+        assert!(annotation.idempotent_hint, "{name}");
+    }
+
+    for name in ["redis_lpush", "redis_rpush"] {
+        let annotation = annotations(name);
+        assert!(!annotation.read_only_hint, "{name}");
+        assert!(!annotation.destructive_hint, "{name}");
+        assert!(!annotation.idempotent_hint, "{name}");
+    }
+
+    for name in [
+        "redis_lpop",
+        "redis_lmove",
+        "redis_lrem",
+        "redis_lset",
+        "redis_ltrim",
+        "redis_rpop",
+    ] {
+        let annotation = annotations(name);
+        assert!(!annotation.read_only_hint, "{name}");
+        assert!(annotation.destructive_hint, "{name}");
+    }
+    assert!(annotations("redis_lset").idempotent_hint);
+    assert!(!annotations("redis_ltrim").idempotent_hint);
+    assert!(!annotations("redis_lmove").idempotent_hint);
 }
 
 #[tokio::test]
@@ -1599,6 +1700,18 @@ async fn malformed_and_unbounded_inputs_fail_as_tool_results() {
             serde_json::json!({"key": "queue", "elements": []}),
         ),
         (
+            "redis_rpush",
+            serde_json::json!({"key": "queue", "elements": []}),
+        ),
+        (
+            "redis_lpop",
+            serde_json::json!({"key": "queue", "count": 0}),
+        ),
+        (
+            "redis_lpos",
+            serde_json::json!({"key": "queue", "value": "item", "rank": 0}),
+        ),
+        (
             "redis_hmget",
             serde_json::json!({"key": "hash", "fields": []}),
         ),
@@ -1847,6 +1960,320 @@ impl RedisExecutor for BinaryRedis {
             _ => RedisValue::Nil,
         })
     }
+}
+
+#[derive(Clone, Default)]
+struct ListContractRedis {
+    commands: Arc<Mutex<Vec<RedisCommand>>>,
+}
+
+#[async_trait]
+impl RedisExecutor for ListContractRedis {
+    async fn execute(&self, command: RedisCommand) -> Result<RedisValue, RedisError> {
+        let key = command.arguments().first().map(Vec::as_slice);
+        let response = match command.name() {
+            "LPUSH" | "RPUSH" => RedisValue::Integer(2),
+            "LLEN" if key == Some(b"missing".as_slice()) => RedisValue::Integer(0),
+            "LLEN" => RedisValue::Integer(2),
+            "LINDEX" if key == Some(b"missing".as_slice()) => RedisValue::Nil,
+            "LINDEX" if key == Some(b"empty-value".as_slice()) => {
+                RedisValue::BulkString(Vec::new())
+            }
+            "LINDEX" => RedisValue::BulkString(vec![0xff]),
+            "LRANGE" if key == Some(b"missing".as_slice()) => RedisValue::Array(Vec::new()),
+            "LRANGE" => RedisValue::Array(vec![RedisValue::BulkString(vec![0xff])]),
+            "LPOS" if key == Some(b"missing".as_slice()) => RedisValue::Array(Vec::new()),
+            "LPOS" => RedisValue::Array(vec![RedisValue::Integer(1)]),
+            "LPOP" | "RPOP" if key == Some(b"missing".as_slice()) => RedisValue::Nil,
+            "LPOP" | "RPOP" => RedisValue::Array(vec![RedisValue::BulkString(vec![0xff])]),
+            "LMOVE" if key == Some(b"missing".as_slice()) => RedisValue::Nil,
+            "LMOVE" => RedisValue::BulkString(vec![0xff]),
+            "LREM" => RedisValue::Integer(1),
+            "LSET" | "LTRIM" => RedisValue::Okay,
+            "EXISTS" if key == Some(b"missing".as_slice()) => RedisValue::Integer(0),
+            "EXISTS" => RedisValue::Integer(1),
+            _ => RedisValue::Nil,
+        };
+        self.commands
+            .lock()
+            .expect("list contract lock")
+            .push(command);
+        Ok(response)
+    }
+}
+
+async fn list_contract_client(executor: ListContractRedis) -> McpClient {
+    let router = RedisMcp::builder(executor)
+        .access(AccessMode::Full)
+        .bundles([ToolBundle::DataStructures])
+        .capabilities(RedisCapabilities::unknown().with_redis_version(RedisVersion::new(8, 2, 0)))
+        .build();
+    let client = McpClient::connect(ChannelTransport::new(router))
+        .await
+        .expect("connect list contract client");
+    client
+        .initialize("redis-mcp-list-contract-test", "0")
+        .await
+        .expect("initialize list contract client");
+    client
+}
+
+#[tokio::test]
+async fn list_commands_preserve_binary_argv_and_native_ordering_options() {
+    let executor = ListContractRedis::default();
+    let commands = executor.commands.clone();
+    let client = list_contract_client(executor).await;
+
+    for tool in ["redis_lpush", "redis_rpush"] {
+        let result = client
+            .call_tool(
+                tool,
+                serde_json::json!({
+                    "key": "/wA=",
+                    "key_encoding": "base64",
+                    "elements": [
+                        {"value": "/g==", "value_encoding": "base64"},
+                        "tail"
+                    ]
+                }),
+            )
+            .await
+            .unwrap_or_else(|error| panic!("{tool}: {error}"));
+        assert!(!result.is_error, "{tool}: {result:?}");
+    }
+    client
+        .call_tool(
+            "redis_lindex",
+            serde_json::json!({"key": "/wA=", "key_encoding": "base64", "index": -1}),
+        )
+        .await
+        .expect("binary LINDEX");
+    client
+        .call_tool(
+            "redis_lpos",
+            serde_json::json!({
+                "key": "/wA=",
+                "key_encoding": "base64",
+                "value": "/g==",
+                "value_encoding": "base64",
+                "rank": -1,
+                "count": 2,
+                "max_len": 10
+            }),
+        )
+        .await
+        .expect("binary LPOS");
+    client
+        .call_tool(
+            "redis_lpop",
+            serde_json::json!({"key": "/wA=", "key_encoding": "base64", "count": 2}),
+        )
+        .await
+        .expect("binary LPOP");
+    client
+        .call_tool(
+            "redis_lrem",
+            serde_json::json!({
+                "key": "/wA=",
+                "key_encoding": "base64",
+                "count": -1,
+                "value": "/g==",
+                "value_encoding": "base64"
+            }),
+        )
+        .await
+        .expect("binary LREM");
+    client
+        .call_tool(
+            "redis_lset",
+            serde_json::json!({
+                "key": "/wA=",
+                "key_encoding": "base64",
+                "index": -1,
+                "value": "/g==",
+                "value_encoding": "base64"
+            }),
+        )
+        .await
+        .expect("binary LSET");
+    client
+        .call_tool(
+            "redis_ltrim",
+            serde_json::json!({"key": "/wA=", "key_encoding": "base64", "start": -2, "stop": -1}),
+        )
+        .await
+        .expect("binary LTRIM");
+    client
+        .call_tool(
+            "redis_lmove",
+            serde_json::json!({
+                "source": "/wA=",
+                "source_encoding": "base64",
+                "destination": "/Q==",
+                "destination_encoding": "base64",
+                "from": "right",
+                "to": "left"
+            }),
+        )
+        .await
+        .expect("binary LMOVE");
+    client
+        .call_tool(
+            "redis_rpop",
+            serde_json::json!({"key": "/wA=", "key_encoding": "base64", "count": 2}),
+        )
+        .await
+        .expect("binary RPOP");
+
+    let commands = commands.lock().expect("recorded list commands");
+    let arguments = |tool: &str| {
+        commands
+            .iter()
+            .find(|command| command.tool_name() == tool)
+            .unwrap_or_else(|| panic!("missing {tool}"))
+            .arguments()
+    };
+    for tool in ["redis_lpush", "redis_rpush"] {
+        assert_eq!(
+            arguments(tool),
+            &[vec![0xff, 0x00], vec![0xfe], b"tail".to_vec()]
+        );
+    }
+    assert_eq!(
+        arguments("redis_lindex"),
+        &[vec![0xff, 0x00], b"-1".to_vec()]
+    );
+    assert_eq!(
+        arguments("redis_lpos"),
+        &[
+            vec![0xff, 0x00],
+            vec![0xfe],
+            b"RANK".to_vec(),
+            b"-1".to_vec(),
+            b"COUNT".to_vec(),
+            b"2".to_vec(),
+            b"MAXLEN".to_vec(),
+            b"10".to_vec(),
+        ]
+    );
+    assert_eq!(arguments("redis_lpop"), &[vec![0xff, 0x00], b"2".to_vec()]);
+    assert_eq!(
+        arguments("redis_lrem"),
+        &[vec![0xff, 0x00], b"-1".to_vec(), vec![0xfe]]
+    );
+    assert_eq!(
+        arguments("redis_lset"),
+        &[vec![0xff, 0x00], b"-1".to_vec(), vec![0xfe]]
+    );
+    assert_eq!(
+        arguments("redis_ltrim"),
+        &[vec![0xff, 0x00], b"-2".to_vec(), b"-1".to_vec()]
+    );
+    assert_eq!(
+        arguments("redis_lmove"),
+        &[
+            vec![0xff, 0x00],
+            vec![0xfd],
+            b"RIGHT".to_vec(),
+            b"LEFT".to_vec(),
+        ]
+    );
+    assert_eq!(arguments("redis_rpop"), &[vec![0xff, 0x00], b"2".to_vec()]);
+}
+
+#[tokio::test]
+async fn list_reads_and_pops_distinguish_binary_empty_and_missing_results() {
+    let client = list_contract_client(ListContractRedis::default()).await;
+
+    let binary = client
+        .call_tool(
+            "redis_lindex",
+            serde_json::json!({"key": "present", "index": -1}),
+        )
+        .await
+        .expect("binary LINDEX")
+        .structured_content
+        .expect("structured binary LINDEX");
+    assert_eq!(binary["list_exists"], true);
+    assert_eq!(binary["element_exists"], true);
+    assert_eq!(binary["value"], "/w==");
+    assert_eq!(binary["encoding"], "base64");
+
+    let empty = client
+        .call_tool(
+            "redis_lindex",
+            serde_json::json!({"key": "empty-value", "index": 0}),
+        )
+        .await
+        .expect("empty-value LINDEX")
+        .structured_content
+        .expect("structured empty-value LINDEX");
+    assert_eq!(empty["element_exists"], true);
+    assert_eq!(empty["value"], "");
+    assert_eq!(empty["encoding"], "utf8");
+
+    let missing = client
+        .call_tool(
+            "redis_lindex",
+            serde_json::json!({"key": "missing", "index": 0}),
+        )
+        .await
+        .expect("missing LINDEX")
+        .structured_content
+        .expect("structured missing LINDEX");
+    assert_eq!(missing["list_exists"], false);
+    assert_eq!(missing["element_exists"], false);
+    assert_eq!(missing["value"], serde_json::Value::Null);
+
+    let range = client
+        .call_tool("redis_lrange", serde_json::json!({"key": "missing"}))
+        .await
+        .expect("missing LRANGE")
+        .structured_content
+        .expect("structured missing LRANGE");
+    assert_eq!(range["exists"], false);
+    assert_eq!(range["elements"], serde_json::json!([]));
+
+    let positions = client
+        .call_tool(
+            "redis_lpos",
+            serde_json::json!({"key": "missing", "value": "needle"}),
+        )
+        .await
+        .expect("missing LPOS")
+        .structured_content
+        .expect("structured missing LPOS");
+    assert_eq!(positions["exists"], false);
+    assert_eq!(positions["positions"], serde_json::json!([]));
+
+    for tool in ["redis_lpop", "redis_rpop"] {
+        let popped = client
+            .call_tool(tool, serde_json::json!({"key": "missing", "count": 2}))
+            .await
+            .unwrap_or_else(|error| panic!("{tool}: {error}"))
+            .structured_content
+            .unwrap_or_else(|| panic!("{tool}: no structured content"));
+        assert_eq!(popped["found"], false, "{tool}");
+        assert_eq!(popped["popped"], 0, "{tool}");
+        assert_eq!(popped["elements"], serde_json::json!([]), "{tool}");
+    }
+
+    let moved = client
+        .call_tool(
+            "redis_lmove",
+            serde_json::json!({
+                "source": "missing",
+                "destination": "archive",
+                "from": "left",
+                "to": "right"
+            }),
+        )
+        .await
+        .expect("missing LMOVE")
+        .structured_content
+        .expect("structured missing LMOVE");
+    assert_eq!(moved["moved"], false);
+    assert_eq!(moved["value"], serde_json::Value::Null);
 }
 
 #[derive(Clone, Copy)]
@@ -2219,6 +2646,10 @@ async fn known_old_redis_can_hide_only_version_incompatible_tools() {
     assert!(names.iter().any(|name| name == "redis_get"));
     assert!(names.iter().any(|name| name == "redis_dump"));
     assert!(names.iter().any(|name| name == "redis_touch"));
+    assert!(names.iter().any(|name| name == "redis_lindex"));
+    for name in ["redis_lpos", "redis_lpop", "redis_lmove", "redis_rpop"] {
+        assert!(!names.iter().any(|candidate| candidate == name), "{name}");
+    }
 
     let helper_names = tool_names_for_capabilities(
         AccessMode::Full,
@@ -2243,6 +2674,18 @@ async fn known_old_redis_can_hide_only_version_incompatible_tools() {
     assert!(!new_names.contains(&"redis_restore"));
 
     let supported = RedisCapabilities::unknown().with_redis_version(RedisVersion::new(6, 2, 0));
+    let redis_six = RedisCapabilities::unknown().with_redis_version(RedisVersion::new(6, 0, 0));
+    let redis_six_list_names = tool_names_for_capabilities(
+        AccessMode::Full,
+        [ToolBundle::DataStructures],
+        false,
+        &redis_six,
+        UnavailableToolPolicy::Hide,
+    );
+    assert!(redis_six_list_names.contains(&"redis_lpos"));
+    for name in ["redis_lpop", "redis_lmove", "redis_rpop"] {
+        assert!(!redis_six_list_names.contains(&name), "{name}");
+    }
     let supported_names = tool_names_for_capabilities(
         AccessMode::Full,
         [ToolBundle::Essentials],
@@ -2258,6 +2701,16 @@ async fn known_old_redis_can_hide_only_version_incompatible_tools() {
         "redis_restore_replace",
     ] {
         assert!(supported_names.contains(&name), "{name}");
+    }
+    let supported_list_names = tool_names_for_capabilities(
+        AccessMode::Full,
+        [ToolBundle::DataStructures],
+        false,
+        &supported,
+        UnavailableToolPolicy::Hide,
+    );
+    for name in ["redis_lpos", "redis_lpop", "redis_lmove", "redis_rpop"] {
+        assert!(supported_list_names.contains(&name), "{name}");
     }
 
     let pre_field_expiration =

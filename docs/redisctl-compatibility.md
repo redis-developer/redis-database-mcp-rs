@@ -35,7 +35,7 @@ Redis Stack behavior is covered primarily by `tests/redis_tools.rs` and
 
 ## Current overlap
 
-The library implements 55 names from the baseline: 45 default tools, nine
+The library implements 60 names from the baseline: 50 default tools, nine
 optional RedisJSON/Search tools, and the separately enabled raw tool. One typed
 `redis_object_inspect` additionally covers three redisctl OBJECT tools without
 copying their names. Matching a name does not imply an identical contract:
@@ -60,13 +60,15 @@ The expanded overlap also includes `redis_exists`, `redis_mget`,
 `redis_restore`, `redis_setrange`, `redis_touch`,
 `redis_hdel`, `redis_hexists`, `redis_hexpire`, `redis_hget`, `redis_hgetall`,
 `redis_hincrby`, `redis_hkeys`, `redis_hlen`, `redis_hmget`, `redis_hset`,
-`redis_hvals`, `redis_lrange`, `redis_lpush`, `redis_smembers`, `redis_sadd`,
+`redis_hvals`, `redis_lindex`, `redis_llen`, `redis_lpop`, `redis_lrange`,
+`redis_lpush`, `redis_rpop`, `redis_rpush`, `redis_smembers`, `redis_sadd`,
 `redis_zrange`, and `redis_zadd`.
 
 The library additionally exposes `redis_hscan`, `redis_hincrbyfloat`,
-`redis_hpersist`, `redis_hstrlen`, `redis_httl`, `redis_sscan`, and
-`redis_zscan`. These are command-surface improvements rather than redisctl name
-overlap. Hash reads distinguish a missing hash, missing field, and empty value;
+`redis_hpersist`, `redis_hstrlen`, `redis_httl`, `redis_lmove`, `redis_lpos`,
+`redis_lrem`, `redis_lset`, `redis_ltrim`, `redis_sscan`, and `redis_zscan`.
+These are command-surface improvements rather than redisctl name overlap. Hash
+reads distinguish a missing hash, missing field, and empty value;
 field-expiration tools are capability-gated to Redis 7.4 or newer and return
 typed per-field statuses; scan tools return one bounded Redis cursor page with
 typed continuation metadata.
@@ -92,6 +94,11 @@ typed continuation metadata.
   without collapsing nil and empty values.
 - Hash deletion is full-access and destructive; increments and field-expiration
   mutations are read-write and independently ACL-enforced by Redis.
+- List reads, pushes, searches, and counted pops are bounded and binary-safe.
+  Missing lists, out-of-range indexes, empty element values, and empty result
+  arrays remain distinct. Removal, pop, replacement, trim, and movement require
+  full access; `LMOVE` documents and tests its same-slot Cluster contract, and
+  blocking list commands remain outside ordinary request/response tools.
 - Outputs are structured rather than preserving redisctl's prose rendering.
 
 The optional module-backed overlap adds `redis_json_get`, `redis_json_type`,

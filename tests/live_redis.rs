@@ -781,6 +781,333 @@ async fn live_curated_catalog_round_trip_in_resp2_and_resp3() {
 }
 
 #[tokio::test]
+async fn live_list_family_preserves_order_binary_values_and_nil_semantics() {
+    let Some(redis) = TestRedis::start().await else {
+        return;
+    };
+    let url = redis.url;
+
+    for protocol in ["resp2", "resp3"] {
+        let client = router_client(&with_protocol(&url, protocol), AccessMode::Full).await;
+        let prefix = test_key(&format!("lists:{protocol}"));
+        let list = format!("{prefix}:list");
+        let archive = format!("{prefix}:archive");
+        let missing = format!("{prefix}:missing");
+        let large_pop = format!("{prefix}:large-pop");
+        let large_move_source = format!("{prefix}:large-move-source");
+        let large_move_destination = format!("{prefix}:large-move-destination");
+        let wrong_type = format!("{prefix}:wrong-type");
+
+        let pushed = client
+            .call_tool(
+                "redis_rpush",
+                serde_json::json!({
+                    "key": list,
+                    "elements": ["a", "needle", "b", "needle"]
+                }),
+            )
+            .await
+            .expect("RPUSH")
+            .structured_content
+            .expect("structured RPUSH");
+        assert_eq!(pushed["pushed"], 4);
+        assert_eq!(pushed["length"], 4);
+
+        let length = client
+            .call_tool("redis_llen", serde_json::json!({"key": list}))
+            .await
+            .expect("LLEN")
+            .structured_content
+            .expect("structured LLEN");
+        assert_eq!(length["exists"], true);
+        assert_eq!(length["length"], 4);
+
+        let indexed = client
+            .call_tool(
+                "redis_lindex",
+                serde_json::json!({"key": list, "index": -1}),
+            )
+            .await
+            .expect("negative LINDEX")
+            .structured_content
+            .expect("structured LINDEX");
+        assert_eq!(indexed["value"], "needle");
+
+        let positions = client
+            .call_tool(
+                "redis_lpos",
+                serde_json::json!({"key": list, "value": "needle", "count": 2}),
+            )
+            .await
+            .expect("LPOS")
+            .structured_content
+            .expect("structured LPOS");
+        assert_eq!(positions["positions"], serde_json::json!([1, 3]));
+
+        let tail = client
+            .call_tool(
+                "redis_lrange",
+                serde_json::json!({"key": list, "start": -2, "stop": -1}),
+            )
+            .await
+            .expect("negative LRANGE")
+            .structured_content
+            .expect("structured negative LRANGE");
+        assert_eq!(tail["elements"][0]["value"], "b");
+        assert_eq!(tail["elements"][1]["value"], "needle");
+        assert_eq!(tail["page"]["complete"], true);
+
+        let replaced = client
+            .call_tool(
+                "redis_lset",
+                serde_json::json!({
+                    "key": list,
+                    "index": -2,
+                    "value": "/wA=",
+                    "value_encoding": "base64"
+                }),
+            )
+            .await
+            .expect("binary LSET")
+            .structured_content
+            .expect("structured LSET");
+        assert_eq!(replaced["replaced"], true);
+        let binary = client
+            .call_tool(
+                "redis_lindex",
+                serde_json::json!({"key": list, "index": -2}),
+            )
+            .await
+            .expect("binary LINDEX")
+            .structured_content
+            .expect("structured binary LINDEX");
+        assert_eq!(binary["value"], "/wA=");
+        assert_eq!(binary["encoding"], "base64");
+
+        let removed = client
+            .call_tool(
+                "redis_lrem",
+                serde_json::json!({"key": list, "count": -1, "value": "needle"}),
+            )
+            .await
+            .expect("negative LREM")
+            .structured_content
+            .expect("structured LREM");
+        assert_eq!(removed["removed"], 1);
+
+        let popped = client
+            .call_tool("redis_lpop", serde_json::json!({"key": list, "count": 2}))
+            .await
+            .expect("counted LPOP")
+            .structured_content
+            .expect("structured LPOP");
+        assert_eq!(popped["popped"], 2);
+        assert_eq!(popped["elements"][0]["value"], "a");
+        assert_eq!(popped["elements"][1]["value"], "needle");
+
+        client
+            .call_tool(
+                "redis_rpush",
+                serde_json::json!({"key": list, "elements": ["tail-1", "tail-2"]}),
+            )
+            .await
+            .expect("second RPUSH");
+        let right = client
+            .call_tool("redis_rpop", serde_json::json!({"key": list, "count": 2}))
+            .await
+            .expect("counted RPOP")
+            .structured_content
+            .expect("structured RPOP");
+        assert_eq!(right["elements"][0]["value"], "tail-2");
+        assert_eq!(right["elements"][1]["value"], "tail-1");
+
+        let moved = client
+            .call_tool(
+                "redis_lmove",
+                serde_json::json!({
+                    "source": list,
+                    "destination": archive,
+                    "from": "left",
+                    "to": "right"
+                }),
+            )
+            .await
+            .expect("LMOVE")
+            .structured_content
+            .expect("structured LMOVE");
+        assert_eq!(moved["moved"], true);
+        assert_eq!(moved["value"], "/wA=");
+        assert_eq!(moved["encoding"], "base64");
+
+        let trimmed = client
+            .call_tool(
+                "redis_ltrim",
+                serde_json::json!({"key": archive, "start": 1, "stop": 0}),
+            )
+            .await
+            .expect("empty-range LTRIM")
+            .structured_content
+            .expect("structured LTRIM");
+        assert_eq!(trimmed["exists"], false);
+
+        let missing_length = client
+            .call_tool("redis_llen", serde_json::json!({"key": missing}))
+            .await
+            .expect("missing LLEN")
+            .structured_content
+            .expect("structured missing LLEN");
+        assert_eq!(missing_length["exists"], false);
+        assert_eq!(missing_length["length"], 0);
+        let missing_range = client
+            .call_tool("redis_lrange", serde_json::json!({"key": missing}))
+            .await
+            .expect("missing LRANGE")
+            .structured_content
+            .expect("structured missing LRANGE");
+        assert_eq!(missing_range["exists"], false);
+        assert_eq!(missing_range["elements"], serde_json::json!([]));
+        let missing_index = client
+            .call_tool(
+                "redis_lindex",
+                serde_json::json!({"key": missing, "index": 0}),
+            )
+            .await
+            .expect("missing LINDEX")
+            .structured_content
+            .expect("structured missing LINDEX");
+        assert_eq!(missing_index["list_exists"], false);
+        assert_eq!(missing_index["element_exists"], false);
+        let missing_positions = client
+            .call_tool(
+                "redis_lpos",
+                serde_json::json!({"key": missing, "value": "needle"}),
+            )
+            .await
+            .expect("missing LPOS")
+            .structured_content
+            .expect("structured missing LPOS");
+        assert_eq!(missing_positions["exists"], false);
+        assert_eq!(missing_positions["positions"], serde_json::json!([]));
+        let missing_pop = client
+            .call_tool(
+                "redis_lpop",
+                serde_json::json!({"key": missing, "count": 2}),
+            )
+            .await
+            .expect("missing LPOP")
+            .structured_content
+            .expect("structured missing LPOP");
+        assert_eq!(missing_pop["found"], false);
+        assert_eq!(missing_pop["elements"], serde_json::json!([]));
+        let missing_move = client
+            .call_tool(
+                "redis_lmove",
+                serde_json::json!({
+                    "source": missing,
+                    "destination": archive,
+                    "from": "left",
+                    "to": "right"
+                }),
+            )
+            .await
+            .expect("missing LMOVE")
+            .structured_content
+            .expect("structured missing LMOVE");
+        assert_eq!(missing_move["moved"], false);
+        assert_eq!(missing_move["value"], serde_json::Value::Null);
+
+        let large_value = "x".repeat(128);
+        client
+            .call_tool(
+                "redis_rpush",
+                serde_json::json!({"key": large_pop, "elements": [large_value]}),
+            )
+            .await
+            .expect("seed oversized pop");
+        let omitted_pop = client
+            .call_tool(
+                "redis_lpop",
+                serde_json::json!({
+                    "key": large_pop,
+                    "count": 1,
+                    "max_returned_bytes": 8
+                }),
+            )
+            .await
+            .expect("oversized LPOP")
+            .structured_content
+            .expect("structured oversized LPOP");
+        assert_eq!(omitted_pop["popped"], 1);
+        assert_eq!(omitted_pop["element_bytes"], 128);
+        assert_eq!(omitted_pop["elements_omitted"], true);
+        assert_eq!(omitted_pop["elements"], serde_json::json!([]));
+
+        client
+            .call_tool(
+                "redis_rpush",
+                serde_json::json!({"key": large_move_source, "elements": [large_value]}),
+            )
+            .await
+            .expect("seed oversized move");
+        let omitted_move = client
+            .call_tool(
+                "redis_lmove",
+                serde_json::json!({
+                    "source": large_move_source,
+                    "destination": large_move_destination,
+                    "from": "left",
+                    "to": "right",
+                    "max_value_bytes": 8
+                }),
+            )
+            .await
+            .expect("oversized LMOVE")
+            .structured_content
+            .expect("structured oversized LMOVE");
+        assert_eq!(omitted_move["moved"], true);
+        assert_eq!(omitted_move["value_bytes"], 128);
+        assert_eq!(omitted_move["value_omitted"], true);
+        assert_eq!(omitted_move["value"], serde_json::Value::Null);
+
+        client
+            .call_tool(
+                "redis_set",
+                serde_json::json!({"key": wrong_type, "value": "not-a-list"}),
+            )
+            .await
+            .expect("seed wrong-type value");
+        let wrong_type_result = client
+            .call_tool("redis_llen", serde_json::json!({"key": wrong_type}))
+            .await
+            .expect("wrong-type LLEN is a tool result");
+        assert!(wrong_type_result.is_error);
+        assert!(
+            serde_json::to_string(&wrong_type_result)
+                .expect("serialize wrong-type LLEN")
+                .contains("WRONGTYPE")
+        );
+
+        client
+            .call_tool(
+                "redis_unlink",
+                serde_json::json!({
+                    "keys": [
+                        list,
+                        archive,
+                        missing,
+                        large_pop,
+                        large_move_source,
+                        large_move_destination,
+                        wrong_type
+                    ]
+                }),
+            )
+            .await
+            .expect("clean up list family");
+    }
+}
+
+#[tokio::test]
 async fn live_hash_family_preserves_semantics_and_binary_data_in_resp2_and_resp3() {
     let Some(redis) = TestRedis::start().await else {
         return;
@@ -1274,6 +1601,24 @@ async fn live_large_collections_are_paged_or_fail_with_stable_budget_errors() {
         assert_eq!(page["page"]["continuation"]["start"], 10);
     }
 
+    let oversized_pop = client
+        .call_tool("redis_lpop", serde_json::json!({"key": list, "count": 101}))
+        .await
+        .expect("oversized LPOP is a tool result");
+    assert!(oversized_pop.is_error);
+    assert!(
+        serde_json::to_string(&oversized_pop)
+            .expect("serialize oversized LPOP")
+            .contains("configured output limit of 100 entries")
+    );
+    let length = client
+        .call_tool("redis_llen", serde_json::json!({"key": list}))
+        .await
+        .expect("LLEN after rejected LPOP")
+        .structured_content
+        .expect("structured LLEN after rejected LPOP");
+    assert_eq!(length["length"], 200);
+
     let raw = client
         .call_tool(
             "redis_command",
@@ -1523,6 +1868,7 @@ async fn live_acl_failures_are_classified_without_leaking_credentials() {
         .await
         .expect("connect admin Redis client");
     let readable_hash = test_key("acl-readable-hash");
+    let readable_list = test_key("acl-readable-list");
     redis::cmd("HSET")
         .arg(&readable_hash)
         .arg("name")
@@ -1530,6 +1876,12 @@ async fn live_acl_failures_are_classified_without_leaking_credentials() {
         .query_async::<()>(&mut connection)
         .await
         .expect("seed ACL-readable hash");
+    redis::cmd("RPUSH")
+        .arg(&readable_list)
+        .arg("visible")
+        .query_async::<()>(&mut connection)
+        .await
+        .expect("seed ACL-readable list");
     redis::cmd("ACL")
         .arg("SETUSER")
         .arg(&username)
@@ -1541,6 +1893,7 @@ async fn live_acl_failures_are_classified_without_leaking_credentials() {
         .arg("+get")
         .arg("+getrange")
         .arg("+hget")
+        .arg("+lindex")
         .arg("+exists")
         .query_async::<()>(&mut connection)
         .await
@@ -1623,6 +1976,32 @@ async fn live_acl_failures_are_classified_without_leaking_credentials() {
         "Ada"
     );
 
+    let allowed_list = client
+        .call_tool(
+            "redis_lindex",
+            serde_json::json!({"key": readable_list, "index": 0}),
+        )
+        .await
+        .expect("ACL-allowed LINDEX");
+    assert!(!allowed_list.is_error);
+    assert_eq!(
+        allowed_list.structured_content.as_ref().unwrap()["value"],
+        "visible"
+    );
+
+    let full_client = router_client(restricted_url.as_str(), AccessMode::Full).await;
+    let denied_list = full_client
+        .call_tool(
+            "redis_lpop",
+            serde_json::json!({"key": readable_list, "count": 1}),
+        )
+        .await
+        .expect("ACL-denied LPOP is represented as a tool result");
+    assert!(denied_list.is_error);
+    let denied_list = serde_json::to_string(&denied_list).expect("serialize LPOP ACL denial");
+    assert!(denied_list.contains("[Authorization]"), "{denied_list}");
+    assert!(!denied_list.contains(password));
+
     let denied = client
         .call_tool(
             "redis_set",
@@ -1668,7 +2047,7 @@ async fn live_acl_failures_are_classified_without_leaking_credentials() {
     assert!(!denied_hash.contains("123456789"));
 
     redis::cmd("DEL")
-        .arg(&readable_hash)
+        .arg(&[&readable_hash, &readable_list])
         .query_async::<()>(&mut connection)
         .await
         .expect("delete ACL-readable hash");

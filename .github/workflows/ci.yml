@@ -24,8 +24,8 @@ jobs:
     env:
       REDIS_URL: redis://127.0.0.1:6379
     steps:
-      - uses: actions/checkout@v6
-      - uses: dtolnay/rust-toolchain@1.90.0
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@1.100.0
         with:
           components: rustfmt, clippy
       - uses: Swatinem/rust-cache@v2
@@ -53,8 +53,8 @@ jobs:
     env:
       REDIS_URL: redis://127.0.0.1:6379
     steps:
-      - uses: actions/checkout@v6
-      - uses: dtolnay/rust-toolchain@1.90.0
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@1.100.0
       - uses: Swatinem/rust-cache@v2
         with:
           key: redis-${{ matrix.redis }}
@@ -76,8 +76,8 @@ jobs:
     env:
       REDIS_STACK_URL: redis://127.0.0.1:6379
     steps:
-      - uses: actions/checkout@v6
-      - uses: dtolnay/rust-toolchain@1.90.0
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@1.100.0
       - uses: Swatinem/rust-cache@v2
         with:
           key: redis-stack-7.4.0-v8
@@ -93,8 +93,8 @@ jobs:
     env:
       REDIS_CLUSTER_URLS: redis://127.0.0.1:7000,redis://127.0.0.1:7001,redis://127.0.0.1:7002
     steps:
-      - uses: actions/checkout@v6
-      - uses: dtolnay/rust-toolchain@1.90.0
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@1.100.0
       - uses: Swatinem/rust-cache@v2
         with:
           key: redis-cluster-${{ matrix.redis }}

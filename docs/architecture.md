@@ -166,10 +166,11 @@ when discovery was not available. Other module errors, such as a missing index
 or malformed query, remain ordinary server errors.
 
 Deployment requirements are catalog data too. `redis_info`, `redis_dbsize`,
-`redis_scan`, and `redis_randomkey` are currently standalone-only: the cluster
-adapter cannot yet aggregate their node-local or fan-out responses into the
-database-wide result those contracts promise. Known cluster snapshots make
-that limitation explicit instead of returning an arbitrary node's answer.
+`redis_scan`, `redis_randomkey`, and `redis_ft_list` are currently
+standalone-only: the cluster adapter cannot yet aggregate their node-local or
+fan-out responses into the database-wide result those contracts promise. Known
+cluster snapshots make that limitation explicit instead of returning an
+arbitrary node's answer.
 
 The RedisJSON bundle contains 17 structured tools. Enhanced JSONPath is the
 default, while legacy paths remain an explicit mode because RedisJSON changes
@@ -181,6 +182,19 @@ because an unknown module command cannot safely inherit redis-rs' built-in
 multi-key routing metadata; cross-slot requests therefore fail with the stable
 `CROSSSLOT` invalid-request classification instead of reaching one arbitrary
 node.
+
+The Search bundle contains 24 structured tools. It covers the complete
+redisctl Query Engine baseline, typed HASH/JSON vector indexing and search,
+and explicit aggregate cursor read/delete operations. Search and aggregate
+pages are capped at 100 rows; structured document and row values preserve
+UTF-8/base64 encodings. Whole-result index, dictionary, synonym, profile,
+explain, and deprecated tag-value reads are budget guarded. Alias replacement,
+alias/dictionary deletion, index deletion, and cursor cleanup are separately
+classified from additive schema, synonym, dictionary, alias, and vector writes.
+Known module versions preflight whole-tool requirements and dialect/vector
+options add conditional version checks. Same-slot index names, prefixes, and
+documents are live-tested through the cluster adapter without promising
+cross-node Search aggregation.
 
 Raw commands remain a separate opt-in even though their metadata belongs to the
 `raw` bundle. The MCP tool requires full access; direct native invocations are
@@ -217,11 +231,13 @@ Redis cursor. `redis_lrange` and rank-mode `redis_zrange` default to ranks 0
 through 99 and continue with a start index; score- and lex-mode `redis_zrange`
 continue with an offset. `redis_xrange` and `redis_xrevrange` fetch one bounded
 page and continue from the last returned stream ID using an exclusive bound.
-`redis_ft_search` always emits a LIMIT clause and
-continues with an offset. Whole-collection reads remain available for small
-values, but `redis_hgetall`, `redis_hkeys`, and `redis_hvals` direct oversized
-callers to `redis_hscan`, while `redis_smembers` directs them to `redis_sscan`.
-Bounded multi-field reads such as `redis_hmget`, `redis_httl`, and
+`redis_ft_search` always emits a LIMIT clause and continues with an offset.
+`redis_ft_aggregate` can create a bounded server cursor, and
+`redis_ft_cursor_read` continues one bounded page at a time. Whole-collection
+reads remain available for small values, but `redis_hgetall`, `redis_hkeys`,
+and `redis_hvals` direct oversized callers to `redis_hscan`, while
+`redis_smembers` directs them to `redis_sscan`. Bounded multi-field reads such
+as `redis_hmget`, `redis_httl`, and
 `redis_zmscore` reject requests above the configured entry ceiling before
 execution.
 

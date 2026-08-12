@@ -886,6 +886,964 @@
       "bundle": "search",
       "capability_requirements": {
         "deployment": "any",
+        "minimum_module_version": "1.1.0",
+        "minimum_redis_version": null,
+        "required_commands": [
+          "FT.AGGREGATE"
+        ],
+        "required_module": "search"
+      },
+      "name": "redis_ft_aggregate",
+      "output_policy": "cursor_paginated",
+      "protocol": {
+        "annotations": {
+          "destructiveHint": false,
+          "readOnlyHint": true
+        },
+        "description": "Run a typed, bounded FT.AGGREGATE pipeline. GROUPBY reducers, sorting, expressions, parameters, and cursor continuation are explicit schema fields.",
+        "inputSchema": {
+          "$defs": {
+            "AggregateCursorOptions": {
+              "additionalProperties": false,
+              "properties": {
+                "count": {
+                  "default": null,
+                  "description": "Rows requested per FT.CURSOR page.",
+                  "format": "uint64",
+                  "maximum": 100,
+                  "minimum": 1,
+                  "type": [
+                    "integer",
+                    "null"
+                  ]
+                },
+                "max_idle_ms": {
+                  "default": null,
+                  "description": "Cursor idle expiry in milliseconds.",
+                  "format": "uint64",
+                  "minimum": 0,
+                  "type": [
+                    "integer",
+                    "null"
+                  ]
+                }
+              },
+              "type": "object"
+            },
+            "AggregateReducer": {
+              "additionalProperties": false,
+              "properties": {
+                "alias": {
+                  "default": null,
+                  "description": "Stable output field name for this reducer.",
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "arguments": {
+                  "default": [],
+                  "description": "Function arguments, normally aggregate properties such as `@price`.",
+                  "items": {
+                    "type": "string"
+                  },
+                  "maxItems": 16,
+                  "type": "array"
+                },
+                "function": {
+                  "$ref": "#/$defs/AggregateReducerFunction"
+                }
+              },
+              "required": [
+                "function"
+              ],
+              "type": "object"
+            },
+            "AggregateReducerFunction": {
+              "enum": [
+                "count",
+                "count_distinct",
+                "count_distinctish",
+                "sum",
+                "min",
+                "max",
+                "avg",
+                "stddev",
+                "quantile",
+                "to_list",
+                "first_value",
+                "random_sample"
+              ],
+              "type": "string"
+            },
+            "AggregateSortField": {
+              "additionalProperties": false,
+              "properties": {
+                "order": {
+                  "$ref": "#/$defs/SortOrder"
+                },
+                "property": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "property",
+                "order"
+              ],
+              "type": "object"
+            },
+            "AggregateStage": {
+              "oneOf": [
+                {
+                  "additionalProperties": false,
+                  "description": "Group by zero or more properties and apply typed reducers.",
+                  "properties": {
+                    "properties": {
+                      "default": [],
+                      "items": {
+                        "type": "string"
+                      },
+                      "maxItems": 100,
+                      "type": "array"
+                    },
+                    "reducers": {
+                      "items": {
+                        "$ref": "#/$defs/AggregateReducer"
+                      },
+                      "maxItems": 100,
+                      "type": "array"
+                    },
+                    "type": {
+                      "const": "group_by",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "type"
+                  ],
+                  "type": "object"
+                },
+                {
+                  "additionalProperties": false,
+                  "description": "Sort rows by one or more properties.",
+                  "properties": {
+                    "fields": {
+                      "items": {
+                        "$ref": "#/$defs/AggregateSortField"
+                      },
+                      "maxItems": 100,
+                      "minItems": 1,
+                      "type": "array"
+                    },
+                    "max": {
+                      "default": null,
+                      "format": "uint64",
+                      "minimum": 0,
+                      "type": [
+                        "integer",
+                        "null"
+                      ]
+                    },
+                    "type": {
+                      "const": "sort_by",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "type",
+                    "fields"
+                  ],
+                  "type": "object"
+                },
+                {
+                  "additionalProperties": false,
+                  "description": "Compute a new field from an aggregate expression.",
+                  "properties": {
+                    "alias": {
+                      "type": "string"
+                    },
+                    "expression": {
+                      "type": "string"
+                    },
+                    "type": {
+                      "const": "apply",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "type",
+                    "expression",
+                    "alias"
+                  ],
+                  "type": "object"
+                },
+                {
+                  "additionalProperties": false,
+                  "description": "Filter rows using an aggregate expression.",
+                  "properties": {
+                    "expression": {
+                      "type": "string"
+                    },
+                    "type": {
+                      "const": "filter",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "type",
+                    "expression"
+                  ],
+                  "type": "object"
+                },
+                {
+                  "additionalProperties": false,
+                  "description": "Bound an intermediate pipeline stage. A final bounded LIMIT is always added too.",
+                  "properties": {
+                    "count": {
+                      "format": "uint64",
+                      "maximum": 100,
+                      "minimum": 1,
+                      "type": "integer"
+                    },
+                    "offset": {
+                      "default": 0,
+                      "format": "uint64",
+                      "minimum": 0,
+                      "type": "integer"
+                    },
+                    "type": {
+                      "const": "limit",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "type",
+                    "count"
+                  ],
+                  "type": "object"
+                }
+              ]
+            },
+            "SearchParameter": {
+              "additionalProperties": false,
+              "properties": {
+                "name": {
+                  "description": "Parameter name without the leading `$`.",
+                  "type": "string"
+                },
+                "value": {
+                  "description": "Parameter value sent as one binary-safe Redis argument.",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "name",
+                "value"
+              ],
+              "type": "object"
+            },
+            "SortOrder": {
+              "enum": [
+                "asc",
+                "desc"
+              ],
+              "type": "string"
+            }
+          },
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "cursor": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/AggregateCursorOptions"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Create a server cursor and return its continuation identifier."
+            },
+            "dialect": {
+              "default": null,
+              "format": "uint64",
+              "minimum": 0,
+              "type": [
+                "integer",
+                "null"
+              ]
+            },
+            "index": {
+              "type": "string"
+            },
+            "limit_num": {
+              "default": null,
+              "description": "Final result count, bounded to 100.",
+              "format": "uint64",
+              "maximum": 100,
+              "minimum": 1,
+              "type": [
+                "integer",
+                "null"
+              ]
+            },
+            "limit_offset": {
+              "default": null,
+              "description": "Final result offset; a final LIMIT is always emitted.",
+              "format": "uint64",
+              "minimum": 0,
+              "type": [
+                "integer",
+                "null"
+              ]
+            },
+            "load_all": {
+              "default": false,
+              "description": "Load every document property. Mutually exclusive with load_fields.",
+              "type": "boolean"
+            },
+            "load_fields": {
+              "default": [],
+              "description": "Load these document properties before processing the pipeline.",
+              "items": {
+                "type": "string"
+              },
+              "maxItems": 100,
+              "type": "array"
+            },
+            "params": {
+              "items": {
+                "$ref": "#/$defs/SearchParameter"
+              },
+              "maxItems": 100,
+              "type": "array"
+            },
+            "query": {
+              "type": "string"
+            },
+            "stages": {
+              "description": "Ordered aggregate stages.",
+              "items": {
+                "$ref": "#/$defs/AggregateStage"
+              },
+              "maxItems": 100,
+              "type": "array"
+            },
+            "timeout_ms": {
+              "default": null,
+              "description": "Server-side execution timeout in milliseconds.",
+              "format": "uint64",
+              "minimum": 0,
+              "type": [
+                "integer",
+                "null"
+              ]
+            },
+            "verbatim": {
+              "default": false,
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "index",
+            "query"
+          ],
+          "title": "FtAggregateInput",
+          "type": "object"
+        },
+        "name": "redis_ft_aggregate",
+        "outputSchema": {
+          "$defs": {
+            "AggregateRow": {
+              "additionalProperties": false,
+              "properties": {
+                "fields": {
+                  "items": {
+                    "$ref": "#/$defs/SearchFieldValue"
+                  },
+                  "type": "array"
+                }
+              },
+              "required": [
+                "fields"
+              ],
+              "type": "object"
+            },
+            "PageContinuation": {
+              "additionalProperties": false,
+              "properties": {
+                "cursor": {
+                  "format": "uint64",
+                  "minimum": 0,
+                  "type": [
+                    "integer",
+                    "null"
+                  ]
+                },
+                "offset": {
+                  "format": "uint64",
+                  "minimum": 0,
+                  "type": [
+                    "integer",
+                    "null"
+                  ]
+                },
+                "start": {
+                  "format": "int64",
+                  "type": [
+                    "integer",
+                    "null"
+                  ]
+                }
+              },
+              "type": "object"
+            },
+            "PageMetadata": {
+              "additionalProperties": false,
+              "properties": {
+                "complete": {
+                  "type": "boolean"
+                },
+                "continuation": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/$defs/PageContinuation"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "requested": {
+                  "format": "uint",
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                "returned": {
+                  "format": "uint",
+                  "minimum": 0,
+                  "type": "integer"
+                }
+              },
+              "required": [
+                "requested",
+                "returned",
+                "complete"
+              ],
+              "type": "object"
+            },
+            "SearchFieldValue": {
+              "additionalProperties": false,
+              "properties": {
+                "name": {
+                  "type": "string"
+                },
+                "name_encoding": {
+                  "$ref": "#/$defs/ValueEncoding"
+                },
+                "value": true
+              },
+              "required": [
+                "name",
+                "name_encoding",
+                "value"
+              ],
+              "type": "object"
+            },
+            "ValueEncoding": {
+              "enum": [
+                "utf8",
+                "base64"
+              ],
+              "type": "string"
+            }
+          },
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "count": {
+              "format": "uint",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "cursor_id": {
+              "format": "uint64",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "index": {
+              "type": "string"
+            },
+            "page": {
+              "$ref": "#/$defs/PageMetadata"
+            },
+            "query": {
+              "type": "string"
+            },
+            "rows": {
+              "items": {
+                "$ref": "#/$defs/AggregateRow"
+              },
+              "type": "array"
+            },
+            "total": {
+              "format": "uint64",
+              "minimum": 0,
+              "type": "integer"
+            }
+          },
+          "required": [
+            "index",
+            "query",
+            "total",
+            "count",
+            "rows",
+            "cursor_id",
+            "page"
+          ],
+          "title": "FtAggregateOutput",
+          "type": "object"
+        },
+        "title": "Aggregate Redis Search Results"
+      },
+      "required_access": "read_only",
+      "required_module": "search",
+      "requires_raw_opt_in": false
+    },
+    {
+      "bundle": "search",
+      "capability_requirements": {
+        "deployment": "any",
+        "minimum_module_version": null,
+        "minimum_redis_version": null,
+        "required_commands": [
+          "FT.ALIASADD"
+        ],
+        "required_module": "search"
+      },
+      "name": "redis_ft_aliasadd",
+      "output_policy": "intrinsically_bounded",
+      "protocol": {
+        "annotations": {
+          "destructiveHint": false
+        },
+        "description": "Create a new alias for a Query Engine index.",
+        "inputSchema": {
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "alias": {
+              "type": "string"
+            },
+            "index": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "alias",
+            "index"
+          ],
+          "title": "AliasTargetInput",
+          "type": "object"
+        },
+        "name": "redis_ft_aliasadd",
+        "outputSchema": {
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "action": {
+              "type": "string"
+            },
+            "alias": {
+              "type": "string"
+            },
+            "index": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          "required": [
+            "alias",
+            "action"
+          ],
+          "title": "AliasOutput",
+          "type": "object"
+        },
+        "title": "Add Redis Search Index Alias"
+      },
+      "required_access": "read_write",
+      "required_module": "search",
+      "requires_raw_opt_in": false
+    },
+    {
+      "bundle": "search",
+      "capability_requirements": {
+        "deployment": "any",
+        "minimum_module_version": null,
+        "minimum_redis_version": null,
+        "required_commands": [
+          "FT.ALIASDEL"
+        ],
+        "required_module": "search"
+      },
+      "name": "redis_ft_aliasdel",
+      "output_policy": "intrinsically_bounded",
+      "protocol": {
+        "annotations": {
+          "idempotentHint": true
+        },
+        "description": "Delete an index alias; requires full access.",
+        "inputSchema": {
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "alias": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "alias"
+          ],
+          "title": "AliasInput",
+          "type": "object"
+        },
+        "name": "redis_ft_aliasdel",
+        "outputSchema": {
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "action": {
+              "type": "string"
+            },
+            "alias": {
+              "type": "string"
+            },
+            "index": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          "required": [
+            "alias",
+            "action"
+          ],
+          "title": "AliasOutput",
+          "type": "object"
+        },
+        "title": "Delete Redis Search Index Alias"
+      },
+      "required_access": "full",
+      "required_module": "search",
+      "requires_raw_opt_in": false
+    },
+    {
+      "bundle": "search",
+      "capability_requirements": {
+        "deployment": "any",
+        "minimum_module_version": null,
+        "minimum_redis_version": null,
+        "required_commands": [
+          "FT.ALIASUPDATE"
+        ],
+        "required_module": "search"
+      },
+      "name": "redis_ft_aliasupdate",
+      "output_policy": "intrinsically_bounded",
+      "protocol": {
+        "annotations": {},
+        "description": "Repoint an existing index alias; requires full access because the old target is replaced.",
+        "inputSchema": {
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "alias": {
+              "type": "string"
+            },
+            "index": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "alias",
+            "index"
+          ],
+          "title": "AliasTargetInput",
+          "type": "object"
+        },
+        "name": "redis_ft_aliasupdate",
+        "outputSchema": {
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "action": {
+              "type": "string"
+            },
+            "alias": {
+              "type": "string"
+            },
+            "index": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          "required": [
+            "alias",
+            "action"
+          ],
+          "title": "AliasOutput",
+          "type": "object"
+        },
+        "title": "Update Redis Search Index Alias"
+      },
+      "required_access": "full",
+      "required_module": "search",
+      "requires_raw_opt_in": false
+    },
+    {
+      "bundle": "search",
+      "capability_requirements": {
+        "deployment": "any",
+        "minimum_module_version": null,
+        "minimum_redis_version": null,
+        "required_commands": [
+          "FT.ALTER"
+        ],
+        "required_module": "search"
+      },
+      "name": "redis_ft_alter",
+      "output_policy": "intrinsically_bounded",
+      "protocol": {
+        "annotations": {
+          "destructiveHint": false
+        },
+        "description": "Add one typed field to an existing Query Engine index.",
+        "inputSchema": {
+          "$defs": {
+            "SearchField": {
+              "additionalProperties": false,
+              "properties": {
+                "alias": {
+                  "default": null,
+                  "description": "Query-facing field alias, strongly recommended for JSON indexes.",
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "field_type": {
+                  "description": "TEXT, TAG, NUMERIC, GEO, or VECTOR.",
+                  "type": "string"
+                },
+                "name": {
+                  "description": "Hash field name or JSONPath expression.",
+                  "type": "string"
+                },
+                "noindex": {
+                  "default": false,
+                  "description": "Store the field without indexing it.",
+                  "type": "boolean"
+                },
+                "nostem": {
+                  "default": false,
+                  "description": "Disable stemming for a TEXT field.",
+                  "type": "boolean"
+                },
+                "sortable": {
+                  "default": false,
+                  "description": "Make the field available to SORTBY.",
+                  "type": "boolean"
+                },
+                "vector": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/$defs/VectorFieldOptions"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ],
+                  "description": "Required VECTOR algorithm, type, dimension, metric, and tuning options."
+                }
+              },
+              "required": [
+                "name",
+                "field_type"
+              ],
+              "type": "object"
+            },
+            "VectorAlgorithm": {
+              "enum": [
+                "FLAT",
+                "HNSW"
+              ],
+              "type": "string"
+            },
+            "VectorDataType": {
+              "enum": [
+                "FLOAT32",
+                "FLOAT64"
+              ],
+              "type": "string"
+            },
+            "VectorFieldOptions": {
+              "additionalProperties": false,
+              "properties": {
+                "algorithm": {
+                  "$ref": "#/$defs/VectorAlgorithm",
+                  "description": "Vector index algorithm: FLAT for exact search or HNSW for approximate search."
+                },
+                "block_size": {
+                  "default": null,
+                  "description": "Optional FLAT allocation block size.",
+                  "format": "uint64",
+                  "minimum": 0,
+                  "type": [
+                    "integer",
+                    "null"
+                  ]
+                },
+                "data_type": {
+                  "$ref": "#/$defs/VectorDataType",
+                  "description": "Element representation used in Redis: FLOAT32 or FLOAT64."
+                },
+                "dimensions": {
+                  "description": "Number of elements in each vector.",
+                  "format": "uint",
+                  "maximum": 16384,
+                  "minimum": 1,
+                  "type": "integer"
+                },
+                "distance_metric": {
+                  "description": "Distance metric: L2, IP, or COSINE.",
+                  "type": "string"
+                },
+                "ef_construction": {
+                  "default": null,
+                  "description": "Optional HNSW construction candidate count.",
+                  "format": "uint64",
+                  "minimum": 0,
+                  "type": [
+                    "integer",
+                    "null"
+                  ]
+                },
+                "ef_runtime": {
+                  "default": null,
+                  "description": "Optional default HNSW runtime candidate count.",
+                  "format": "uint64",
+                  "minimum": 0,
+                  "type": [
+                    "integer",
+                    "null"
+                  ]
+                },
+                "epsilon": {
+                  "default": null,
+                  "description": "Optional HNSW range-query relative distance factor.",
+                  "format": "double",
+                  "type": [
+                    "number",
+                    "null"
+                  ]
+                },
+                "initial_capacity": {
+                  "default": null,
+                  "description": "Optional initial index capacity.",
+                  "format": "uint64",
+                  "minimum": 0,
+                  "type": [
+                    "integer",
+                    "null"
+                  ]
+                },
+                "m": {
+                  "default": null,
+                  "description": "Optional HNSW maximum outgoing edges per node.",
+                  "format": "uint64",
+                  "minimum": 0,
+                  "type": [
+                    "integer",
+                    "null"
+                  ]
+                }
+              },
+              "required": [
+                "algorithm",
+                "data_type",
+                "dimensions",
+                "distance_metric"
+              ],
+              "type": "object"
+            }
+          },
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "field": {
+              "$ref": "#/$defs/SearchField"
+            },
+            "index": {
+              "type": "string"
+            },
+            "skip_initial_scan": {
+              "default": false,
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "index",
+            "field"
+          ],
+          "title": "FtAlterInput",
+          "type": "object"
+        },
+        "name": "redis_ft_alter",
+        "outputSchema": {
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "added": {
+              "type": "boolean"
+            },
+            "field": {
+              "type": "string"
+            },
+            "field_type": {
+              "type": "string"
+            },
+            "index": {
+              "type": "string"
+            },
+            "skip_initial_scan": {
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "index",
+            "field",
+            "field_type",
+            "skip_initial_scan",
+            "added"
+          ],
+          "title": "FtAlterOutput",
+          "type": "object"
+        },
+        "title": "Alter Redis Search Index"
+      },
+      "required_access": "read_write",
+      "required_module": "search",
+      "requires_raw_opt_in": false
+    },
+    {
+      "bundle": "search",
+      "capability_requirements": {
+        "deployment": "any",
         "minimum_module_version": null,
         "minimum_redis_version": null,
         "required_commands": [
@@ -1145,6 +2103,521 @@
       "bundle": "search",
       "capability_requirements": {
         "deployment": "any",
+        "minimum_module_version": "1.1.0",
+        "minimum_redis_version": null,
+        "required_commands": [
+          "FT.CURSOR"
+        ],
+        "required_module": "search"
+      },
+      "name": "redis_ft_cursor_del",
+      "output_policy": "intrinsically_bounded",
+      "protocol": {
+        "annotations": {
+          "idempotentHint": true
+        },
+        "description": "Release an FT.AGGREGATE cursor before its idle expiry.",
+        "inputSchema": {
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "cursor_id": {
+              "format": "uint64",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "index": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "index",
+            "cursor_id"
+          ],
+          "title": "FtCursorDelInput",
+          "type": "object"
+        },
+        "name": "redis_ft_cursor_del",
+        "outputSchema": {
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "cursor_id": {
+              "format": "uint64",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "deleted": {
+              "type": "boolean"
+            },
+            "index": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "index",
+            "cursor_id",
+            "deleted"
+          ],
+          "title": "FtCursorDelOutput",
+          "type": "object"
+        },
+        "title": "Delete Redis Search Aggregation Cursor"
+      },
+      "required_access": "read_write",
+      "required_module": "search",
+      "requires_raw_opt_in": false
+    },
+    {
+      "bundle": "search",
+      "capability_requirements": {
+        "deployment": "any",
+        "minimum_module_version": "1.1.0",
+        "minimum_redis_version": null,
+        "required_commands": [
+          "FT.CURSOR"
+        ],
+        "required_module": "search"
+      },
+      "name": "redis_ft_cursor_read",
+      "output_policy": "cursor_paginated",
+      "protocol": {
+        "annotations": {
+          "destructiveHint": false,
+          "readOnlyHint": true
+        },
+        "description": "Read one bounded page from an FT.AGGREGATE cursor.",
+        "inputSchema": {
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "count": {
+              "default": null,
+              "format": "uint64",
+              "maximum": 100,
+              "minimum": 1,
+              "type": [
+                "integer",
+                "null"
+              ]
+            },
+            "cursor_id": {
+              "format": "uint64",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "index": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "index",
+            "cursor_id"
+          ],
+          "title": "FtCursorReadInput",
+          "type": "object"
+        },
+        "name": "redis_ft_cursor_read",
+        "outputSchema": {
+          "$defs": {
+            "AggregateRow": {
+              "additionalProperties": false,
+              "properties": {
+                "fields": {
+                  "items": {
+                    "$ref": "#/$defs/SearchFieldValue"
+                  },
+                  "type": "array"
+                }
+              },
+              "required": [
+                "fields"
+              ],
+              "type": "object"
+            },
+            "PageContinuation": {
+              "additionalProperties": false,
+              "properties": {
+                "cursor": {
+                  "format": "uint64",
+                  "minimum": 0,
+                  "type": [
+                    "integer",
+                    "null"
+                  ]
+                },
+                "offset": {
+                  "format": "uint64",
+                  "minimum": 0,
+                  "type": [
+                    "integer",
+                    "null"
+                  ]
+                },
+                "start": {
+                  "format": "int64",
+                  "type": [
+                    "integer",
+                    "null"
+                  ]
+                }
+              },
+              "type": "object"
+            },
+            "PageMetadata": {
+              "additionalProperties": false,
+              "properties": {
+                "complete": {
+                  "type": "boolean"
+                },
+                "continuation": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/$defs/PageContinuation"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "requested": {
+                  "format": "uint",
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                "returned": {
+                  "format": "uint",
+                  "minimum": 0,
+                  "type": "integer"
+                }
+              },
+              "required": [
+                "requested",
+                "returned",
+                "complete"
+              ],
+              "type": "object"
+            },
+            "SearchFieldValue": {
+              "additionalProperties": false,
+              "properties": {
+                "name": {
+                  "type": "string"
+                },
+                "name_encoding": {
+                  "$ref": "#/$defs/ValueEncoding"
+                },
+                "value": true
+              },
+              "required": [
+                "name",
+                "name_encoding",
+                "value"
+              ],
+              "type": "object"
+            },
+            "ValueEncoding": {
+              "enum": [
+                "utf8",
+                "base64"
+              ],
+              "type": "string"
+            }
+          },
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "count": {
+              "format": "uint",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "cursor_id": {
+              "format": "uint64",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "index": {
+              "type": "string"
+            },
+            "page": {
+              "$ref": "#/$defs/PageMetadata"
+            },
+            "rows": {
+              "items": {
+                "$ref": "#/$defs/AggregateRow"
+              },
+              "type": "array"
+            },
+            "total": {
+              "format": "uint64",
+              "minimum": 0,
+              "type": "integer"
+            }
+          },
+          "required": [
+            "index",
+            "total",
+            "count",
+            "rows",
+            "cursor_id",
+            "page"
+          ],
+          "title": "FtCursorReadOutput",
+          "type": "object"
+        },
+        "title": "Continue Redis Search Aggregation Cursor"
+      },
+      "required_access": "read_only",
+      "required_module": "search",
+      "requires_raw_opt_in": false
+    },
+    {
+      "bundle": "search",
+      "capability_requirements": {
+        "deployment": "any",
+        "minimum_module_version": "1.4.0",
+        "minimum_redis_version": null,
+        "required_commands": [
+          "FT.DICTADD"
+        ],
+        "required_module": "search"
+      },
+      "name": "redis_ft_dictadd",
+      "output_policy": "intrinsically_bounded",
+      "protocol": {
+        "annotations": {
+          "destructiveHint": false,
+          "idempotentHint": true
+        },
+        "description": "Add one or more terms to a Query Engine dictionary.",
+        "inputSchema": {
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "dict": {
+              "type": "string"
+            },
+            "terms": {
+              "items": {
+                "type": "string"
+              },
+              "maxItems": 100,
+              "minItems": 1,
+              "type": "array"
+            }
+          },
+          "required": [
+            "dict",
+            "terms"
+          ],
+          "title": "DictionaryTermsInput",
+          "type": "object"
+        },
+        "name": "redis_ft_dictadd",
+        "outputSchema": {
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "changed": {
+              "format": "uint64",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "dict": {
+              "type": "string"
+            },
+            "requested": {
+              "format": "uint",
+              "minimum": 0,
+              "type": "integer"
+            }
+          },
+          "required": [
+            "dict",
+            "requested",
+            "changed"
+          ],
+          "title": "DictionaryMutationOutput",
+          "type": "object"
+        },
+        "title": "Add Redis Search Dictionary Terms"
+      },
+      "required_access": "read_write",
+      "required_module": "search",
+      "requires_raw_opt_in": false
+    },
+    {
+      "bundle": "search",
+      "capability_requirements": {
+        "deployment": "any",
+        "minimum_module_version": "1.4.0",
+        "minimum_redis_version": null,
+        "required_commands": [
+          "FT.DICTDEL"
+        ],
+        "required_module": "search"
+      },
+      "name": "redis_ft_dictdel",
+      "output_policy": "intrinsically_bounded",
+      "protocol": {
+        "annotations": {
+          "idempotentHint": true
+        },
+        "description": "Remove one or more terms from a Query Engine dictionary; requires full access.",
+        "inputSchema": {
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "dict": {
+              "type": "string"
+            },
+            "terms": {
+              "items": {
+                "type": "string"
+              },
+              "maxItems": 100,
+              "minItems": 1,
+              "type": "array"
+            }
+          },
+          "required": [
+            "dict",
+            "terms"
+          ],
+          "title": "DictionaryTermsInput",
+          "type": "object"
+        },
+        "name": "redis_ft_dictdel",
+        "outputSchema": {
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "changed": {
+              "format": "uint64",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "dict": {
+              "type": "string"
+            },
+            "requested": {
+              "format": "uint",
+              "minimum": 0,
+              "type": "integer"
+            }
+          },
+          "required": [
+            "dict",
+            "requested",
+            "changed"
+          ],
+          "title": "DictionaryMutationOutput",
+          "type": "object"
+        },
+        "title": "Delete Redis Search Dictionary Terms"
+      },
+      "required_access": "full",
+      "required_module": "search",
+      "requires_raw_opt_in": false
+    },
+    {
+      "bundle": "search",
+      "capability_requirements": {
+        "deployment": "any",
+        "minimum_module_version": "1.4.0",
+        "minimum_redis_version": null,
+        "required_commands": [
+          "FT.DICTDUMP"
+        ],
+        "required_module": "search"
+      },
+      "name": "redis_ft_dictdump",
+      "output_policy": "budget_guarded",
+      "protocol": {
+        "annotations": {
+          "destructiveHint": false,
+          "idempotentHint": true,
+          "readOnlyHint": true
+        },
+        "description": "Return every term in a Query Engine dictionary with explicit value encoding.",
+        "inputSchema": {
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "dict": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "dict"
+          ],
+          "title": "DictionaryInput",
+          "type": "object"
+        },
+        "name": "redis_ft_dictdump",
+        "outputSchema": {
+          "$defs": {
+            "EncodedSearchValue": {
+              "additionalProperties": false,
+              "properties": {
+                "encoding": {
+                  "$ref": "#/$defs/ValueEncoding"
+                },
+                "value": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "value",
+                "encoding"
+              ],
+              "type": "object"
+            },
+            "ValueEncoding": {
+              "enum": [
+                "utf8",
+                "base64"
+              ],
+              "type": "string"
+            }
+          },
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "count": {
+              "format": "uint",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "dict": {
+              "type": "string"
+            },
+            "terms": {
+              "items": {
+                "$ref": "#/$defs/EncodedSearchValue"
+              },
+              "type": "array"
+            }
+          },
+          "required": [
+            "dict",
+            "count",
+            "terms"
+          ],
+          "title": "DictionaryDumpOutput",
+          "type": "object"
+        },
+        "title": "Dump Redis Search Dictionary"
+      },
+      "required_access": "read_only",
+      "required_module": "search",
+      "requires_raw_opt_in": false
+    },
+    {
+      "bundle": "search",
+      "capability_requirements": {
+        "deployment": "any",
         "minimum_module_version": null,
         "minimum_redis_version": null,
         "required_commands": [
@@ -1203,6 +2676,90 @@
         "title": "Drop Redis Search Index"
       },
       "required_access": "full",
+      "required_module": "search",
+      "requires_raw_opt_in": false
+    },
+    {
+      "bundle": "search",
+      "capability_requirements": {
+        "deployment": "any",
+        "minimum_module_version": null,
+        "minimum_redis_version": null,
+        "required_commands": [
+          "FT.EXPLAIN"
+        ],
+        "required_module": "search"
+      },
+      "name": "redis_ft_explain",
+      "output_policy": "budget_guarded",
+      "protocol": {
+        "annotations": {
+          "destructiveHint": false,
+          "idempotentHint": true,
+          "readOnlyHint": true
+        },
+        "description": "Return the Query Engine execution plan for a search query.",
+        "inputSchema": {
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "dialect": {
+              "default": null,
+              "format": "uint64",
+              "minimum": 0,
+              "type": [
+                "integer",
+                "null"
+              ]
+            },
+            "index": {
+              "type": "string"
+            },
+            "query": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "index",
+            "query"
+          ],
+          "title": "FtExplainInput",
+          "type": "object"
+        },
+        "name": "redis_ft_explain",
+        "outputSchema": {
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "dialect": {
+              "format": "uint64",
+              "minimum": 0,
+              "type": [
+                "integer",
+                "null"
+              ]
+            },
+            "index": {
+              "type": "string"
+            },
+            "plan": {
+              "type": "string"
+            },
+            "query": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "index",
+            "query",
+            "plan"
+          ],
+          "title": "FtExplainOutput",
+          "type": "object"
+        },
+        "title": "Explain Redis Search Query"
+      },
+      "required_access": "read_only",
       "required_module": "search",
       "requires_raw_opt_in": false
     },
@@ -1791,7 +3348,7 @@
     {
       "bundle": "search",
       "capability_requirements": {
-        "deployment": "any",
+        "deployment": "standalone",
         "minimum_module_version": "2.0.0",
         "minimum_redis_version": null,
         "required_commands": [
@@ -1846,6 +3403,118 @@
       "bundle": "search",
       "capability_requirements": {
         "deployment": "any",
+        "minimum_module_version": "2.2.0",
+        "minimum_redis_version": null,
+        "required_commands": [
+          "FT.PROFILE"
+        ],
+        "required_module": "search"
+      },
+      "name": "redis_ft_profile",
+      "output_policy": "budget_guarded",
+      "protocol": {
+        "annotations": {
+          "destructiveHint": false,
+          "idempotentHint": true,
+          "readOnlyHint": true
+        },
+        "description": "Profile a bounded SEARCH or AGGREGATE query and return separate result and execution-profile sections.",
+        "inputSchema": {
+          "$defs": {
+            "ProfileCommand": {
+              "enum": [
+                "search",
+                "aggregate"
+              ],
+              "type": "string"
+            }
+          },
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "command": {
+              "$ref": "#/$defs/ProfileCommand"
+            },
+            "index": {
+              "type": "string"
+            },
+            "limit_num": {
+              "default": null,
+              "format": "uint64",
+              "maximum": 100,
+              "minimum": 1,
+              "type": [
+                "integer",
+                "null"
+              ]
+            },
+            "limited": {
+              "default": true,
+              "description": "Limit profile detail as well as query results.",
+              "type": "boolean"
+            },
+            "query": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "index",
+            "command",
+            "query"
+          ],
+          "title": "FtProfileInput",
+          "type": "object"
+        },
+        "name": "redis_ft_profile",
+        "outputSchema": {
+          "$defs": {
+            "ProfileCommand": {
+              "enum": [
+                "search",
+                "aggregate"
+              ],
+              "type": "string"
+            }
+          },
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "command": {
+              "$ref": "#/$defs/ProfileCommand"
+            },
+            "index": {
+              "type": "string"
+            },
+            "limited": {
+              "type": "boolean"
+            },
+            "profile": true,
+            "query": {
+              "type": "string"
+            },
+            "results": true
+          },
+          "required": [
+            "index",
+            "command",
+            "query",
+            "limited",
+            "results",
+            "profile"
+          ],
+          "title": "FtProfileOutput",
+          "type": "object"
+        },
+        "title": "Profile Redis Search Query"
+      },
+      "required_access": "read_only",
+      "required_module": "search",
+      "requires_raw_opt_in": false
+    },
+    {
+      "bundle": "search",
+      "capability_requirements": {
+        "deployment": "any",
         "minimum_module_version": null,
         "minimum_redis_version": null,
         "required_commands": [
@@ -1863,12 +3532,247 @@
         },
         "description": "Run a bounded Redis Query Engine search. Pass page.continuation.offset as limit_offset until page.complete is true. Binary response values retain explicit encodings.",
         "inputSchema": {
+          "$defs": {
+            "GeoUnit": {
+              "enum": [
+                "m",
+                "km",
+                "ft",
+                "mi"
+              ],
+              "type": "string"
+            },
+            "SearchGeoFilter": {
+              "additionalProperties": false,
+              "properties": {
+                "field": {
+                  "description": "GEO field name without the leading `@`.",
+                  "type": "string"
+                },
+                "latitude": {
+                  "format": "double",
+                  "type": "number"
+                },
+                "longitude": {
+                  "format": "double",
+                  "type": "number"
+                },
+                "radius": {
+                  "description": "Positive radius around the longitude and latitude.",
+                  "format": "double",
+                  "type": "number"
+                },
+                "unit": {
+                  "$ref": "#/$defs/GeoUnit"
+                }
+              },
+              "required": [
+                "field",
+                "longitude",
+                "latitude",
+                "radius",
+                "unit"
+              ],
+              "type": "object"
+            },
+            "SearchHighlight": {
+              "additionalProperties": false,
+              "properties": {
+                "fields": {
+                  "default": [],
+                  "description": "Fields to highlight. An empty list lets Redis choose fields.",
+                  "items": {
+                    "type": "string"
+                  },
+                  "maxItems": 100,
+                  "type": "array"
+                },
+                "tags": {
+                  "default": null,
+                  "description": "Opening and closing highlight tags.",
+                  "items": {
+                    "type": "string"
+                  },
+                  "maxItems": 2,
+                  "minItems": 2,
+                  "type": [
+                    "array",
+                    "null"
+                  ]
+                }
+              },
+              "type": "object"
+            },
+            "SearchNumericFilter": {
+              "additionalProperties": false,
+              "properties": {
+                "field": {
+                  "description": "NUMERIC field name without the leading `@`.",
+                  "type": "string"
+                },
+                "maximum": {
+                  "description": "Redis range upper bound, such as `100`, `(100`, or `+inf`.",
+                  "type": "string"
+                },
+                "minimum": {
+                  "description": "Redis range lower bound, such as `0`, `(0`, or `-inf`.",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "field",
+                "minimum",
+                "maximum"
+              ],
+              "type": "object"
+            },
+            "SearchParameter": {
+              "additionalProperties": false,
+              "properties": {
+                "name": {
+                  "description": "Parameter name without the leading `$`.",
+                  "type": "string"
+                },
+                "value": {
+                  "description": "Parameter value sent as one binary-safe Redis argument.",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "name",
+                "value"
+              ],
+              "type": "object"
+            },
+            "SearchSummarize": {
+              "additionalProperties": false,
+              "properties": {
+                "fields": {
+                  "default": [],
+                  "description": "Fields to summarize. An empty list lets Redis choose fields.",
+                  "items": {
+                    "type": "string"
+                  },
+                  "maxItems": 100,
+                  "type": "array"
+                },
+                "fragments": {
+                  "default": null,
+                  "description": "Maximum fragments per field.",
+                  "format": "uint64",
+                  "minimum": 0,
+                  "type": [
+                    "integer",
+                    "null"
+                  ]
+                },
+                "length": {
+                  "default": null,
+                  "description": "Approximate fragment size in words.",
+                  "format": "uint64",
+                  "minimum": 0,
+                  "type": [
+                    "integer",
+                    "null"
+                  ]
+                },
+                "separator": {
+                  "default": null,
+                  "description": "Separator inserted between fragments.",
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                }
+              },
+              "type": "object"
+            }
+          },
           "$schema": "https://json-schema.org/draft/2020-12/schema",
           "additionalProperties": false,
           "properties": {
+            "dialect": {
+              "default": null,
+              "description": "Query dialect version. PARAMS requires dialect 2 or newer.",
+              "format": "uint64",
+              "minimum": 0,
+              "type": [
+                "integer",
+                "null"
+              ]
+            },
+            "expander": {
+              "default": null,
+              "description": "Named Query Engine expander.",
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "explainscore": {
+              "default": false,
+              "description": "Include a score explanation. Requires withscores=true.",
+              "type": "boolean"
+            },
+            "geo_filters": {
+              "description": "Legacy geo-radius filters.",
+              "items": {
+                "$ref": "#/$defs/SearchGeoFilter"
+              },
+              "maxItems": 100,
+              "type": "array"
+            },
+            "highlight": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/SearchHighlight"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Highlight matching text fields."
+            },
+            "in_fields": {
+              "default": null,
+              "description": "Restrict matching to these indexed fields.",
+              "items": {
+                "type": "string"
+              },
+              "maxItems": 100,
+              "type": [
+                "array",
+                "null"
+              ]
+            },
+            "in_keys": {
+              "default": null,
+              "description": "Restrict results to these document keys.",
+              "items": {
+                "type": "string"
+              },
+              "maxItems": 100,
+              "type": [
+                "array",
+                "null"
+              ]
+            },
             "index": {
               "description": "Search index name.",
               "type": "string"
+            },
+            "inorder": {
+              "default": false,
+              "description": "Require query terms to appear in order.",
+              "type": "boolean"
+            },
+            "language": {
+              "default": null,
+              "description": "Query language used for stemming and stop words.",
+              "type": [
+                "string",
+                "null"
+              ]
             },
             "limit_num": {
               "default": null,
@@ -1896,6 +3800,27 @@
               "description": "Return document identifiers without fields.",
               "type": "boolean"
             },
+            "nostopwords": {
+              "default": false,
+              "description": "Disable stop-word filtering.",
+              "type": "boolean"
+            },
+            "numeric_filters": {
+              "description": "Legacy numeric range filters. Prefer expressing filters in query syntax for dialect 2+.",
+              "items": {
+                "$ref": "#/$defs/SearchNumericFilter"
+              },
+              "maxItems": 100,
+              "type": "array"
+            },
+            "params": {
+              "description": "Query parameters referenced as `$name` in the query.",
+              "items": {
+                "$ref": "#/$defs/SearchParameter"
+              },
+              "maxItems": 100,
+              "type": "array"
+            },
             "query": {
               "description": "Query expression. Use `*` to match all indexed documents.",
               "type": "string"
@@ -1912,6 +3837,24 @@
                 "null"
               ]
             },
+            "scorer": {
+              "default": null,
+              "description": "Named Query Engine scorer.",
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "slop": {
+              "default": null,
+              "description": "Maximum intervening terms between query phrases.",
+              "format": "uint64",
+              "minimum": 0,
+              "type": [
+                "integer",
+                "null"
+              ]
+            },
             "sortby": {
               "default": null,
               "description": "Sortable field name.",
@@ -1925,6 +3868,27 @@
               "description": "Sort order, ASC or DESC.",
               "type": [
                 "string",
+                "null"
+              ]
+            },
+            "summarize": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/SearchSummarize"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Summarize matching text fields."
+            },
+            "timeout_ms": {
+              "default": null,
+              "description": "Server-side query timeout in milliseconds.",
+              "format": "uint64",
+              "minimum": 0,
+              "type": [
+                "integer",
                 "null"
               ]
             },
@@ -2011,11 +3975,78 @@
                 "complete"
               ],
               "type": "object"
+            },
+            "SearchDocument": {
+              "additionalProperties": false,
+              "properties": {
+                "fields": {
+                  "items": {
+                    "$ref": "#/$defs/SearchFieldValue"
+                  },
+                  "type": "array"
+                },
+                "id": {
+                  "type": "string"
+                },
+                "id_encoding": {
+                  "$ref": "#/$defs/ValueEncoding"
+                },
+                "score": {
+                  "format": "double",
+                  "type": [
+                    "number",
+                    "null"
+                  ]
+                },
+                "score_explanation": true
+              },
+              "required": [
+                "id",
+                "id_encoding",
+                "fields"
+              ],
+              "type": "object"
+            },
+            "SearchFieldValue": {
+              "additionalProperties": false,
+              "properties": {
+                "name": {
+                  "type": "string"
+                },
+                "name_encoding": {
+                  "$ref": "#/$defs/ValueEncoding"
+                },
+                "value": true
+              },
+              "required": [
+                "name",
+                "name_encoding",
+                "value"
+              ],
+              "type": "object"
+            },
+            "ValueEncoding": {
+              "enum": [
+                "utf8",
+                "base64"
+              ],
+              "type": "string"
             }
           },
           "$schema": "https://json-schema.org/draft/2020-12/schema",
           "additionalProperties": false,
           "properties": {
+            "count": {
+              "format": "uint",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "documents": {
+              "items": {
+                "$ref": "#/$defs/SearchDocument"
+              },
+              "type": "array"
+            },
             "index": {
               "type": "string"
             },
@@ -2049,6 +4080,8 @@
             "index",
             "query",
             "response",
+            "count",
+            "documents",
             "limit_offset",
             "limit_num",
             "page"
@@ -2057,6 +4090,312 @@
           "type": "object"
         },
         "title": "Search Redis Index"
+      },
+      "required_access": "read_only",
+      "required_module": "search",
+      "requires_raw_opt_in": false
+    },
+    {
+      "bundle": "search",
+      "capability_requirements": {
+        "deployment": "any",
+        "minimum_module_version": "1.2.0",
+        "minimum_redis_version": null,
+        "required_commands": [
+          "FT.SYNDUMP"
+        ],
+        "required_module": "search"
+      },
+      "name": "redis_ft_syndump",
+      "output_policy": "budget_guarded",
+      "protocol": {
+        "annotations": {
+          "destructiveHint": false,
+          "idempotentHint": true,
+          "readOnlyHint": true
+        },
+        "description": "Return structured term-to-group synonym mappings for an index.",
+        "inputSchema": {
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "index": {
+              "description": "Search index name.",
+              "type": "string"
+            }
+          },
+          "required": [
+            "index"
+          ],
+          "title": "IndexInput",
+          "type": "object"
+        },
+        "name": "redis_ft_syndump",
+        "outputSchema": {
+          "$defs": {
+            "EncodedSearchValue": {
+              "additionalProperties": false,
+              "properties": {
+                "encoding": {
+                  "$ref": "#/$defs/ValueEncoding"
+                },
+                "value": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "value",
+                "encoding"
+              ],
+              "type": "object"
+            },
+            "SynonymEntry": {
+              "additionalProperties": false,
+              "properties": {
+                "group_ids": {
+                  "items": {
+                    "$ref": "#/$defs/EncodedSearchValue"
+                  },
+                  "type": "array"
+                },
+                "term": {
+                  "$ref": "#/$defs/EncodedSearchValue"
+                }
+              },
+              "required": [
+                "term",
+                "group_ids"
+              ],
+              "type": "object"
+            },
+            "ValueEncoding": {
+              "enum": [
+                "utf8",
+                "base64"
+              ],
+              "type": "string"
+            }
+          },
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "count": {
+              "format": "uint",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "entries": {
+              "items": {
+                "$ref": "#/$defs/SynonymEntry"
+              },
+              "type": "array"
+            },
+            "index": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "index",
+            "count",
+            "entries"
+          ],
+          "title": "FtSyndumpOutput",
+          "type": "object"
+        },
+        "title": "Dump Redis Search Synonyms"
+      },
+      "required_access": "read_only",
+      "required_module": "search",
+      "requires_raw_opt_in": false
+    },
+    {
+      "bundle": "search",
+      "capability_requirements": {
+        "deployment": "any",
+        "minimum_module_version": "1.2.0",
+        "minimum_redis_version": null,
+        "required_commands": [
+          "FT.SYNUPDATE"
+        ],
+        "required_module": "search"
+      },
+      "name": "redis_ft_synupdate",
+      "output_policy": "intrinsically_bounded",
+      "protocol": {
+        "annotations": {
+          "destructiveHint": false
+        },
+        "description": "Create or extend an index synonym group with bounded terms.",
+        "inputSchema": {
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "group_id": {
+              "type": "string"
+            },
+            "index": {
+              "type": "string"
+            },
+            "skip_initial_scan": {
+              "default": false,
+              "type": "boolean"
+            },
+            "terms": {
+              "items": {
+                "type": "string"
+              },
+              "maxItems": 100,
+              "minItems": 1,
+              "type": "array"
+            }
+          },
+          "required": [
+            "index",
+            "group_id",
+            "terms"
+          ],
+          "title": "FtSynupdateInput",
+          "type": "object"
+        },
+        "name": "redis_ft_synupdate",
+        "outputSchema": {
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "group_id": {
+              "type": "string"
+            },
+            "index": {
+              "type": "string"
+            },
+            "skip_initial_scan": {
+              "type": "boolean"
+            },
+            "terms": {
+              "format": "uint",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "updated": {
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "index",
+            "group_id",
+            "terms",
+            "skip_initial_scan",
+            "updated"
+          ],
+          "title": "FtSynupdateOutput",
+          "type": "object"
+        },
+        "title": "Update Redis Search Synonym Group"
+      },
+      "required_access": "read_write",
+      "required_module": "search",
+      "requires_raw_opt_in": false
+    },
+    {
+      "bundle": "search",
+      "capability_requirements": {
+        "deployment": "any",
+        "minimum_module_version": null,
+        "minimum_redis_version": null,
+        "required_commands": [
+          "FT.TAGVALS"
+        ],
+        "required_module": "search"
+      },
+      "name": "redis_ft_tagvals",
+      "output_policy": "budget_guarded",
+      "protocol": {
+        "annotations": {
+          "destructiveHint": false,
+          "idempotentHint": true,
+          "readOnlyHint": true
+        },
+        "description": "Return all distinct indexed TAG values. FT.TAGVALS is deprecated, potentially expensive, and whole-result budget guarded.",
+        "inputSchema": {
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "field": {
+              "type": "string"
+            },
+            "index": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "index",
+            "field"
+          ],
+          "title": "FtTagvalsInput",
+          "type": "object"
+        },
+        "name": "redis_ft_tagvals",
+        "outputSchema": {
+          "$defs": {
+            "EncodedSearchValue": {
+              "additionalProperties": false,
+              "properties": {
+                "encoding": {
+                  "$ref": "#/$defs/ValueEncoding"
+                },
+                "value": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "value",
+                "encoding"
+              ],
+              "type": "object"
+            },
+            "ValueEncoding": {
+              "enum": [
+                "utf8",
+                "base64"
+              ],
+              "type": "string"
+            }
+          },
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "count": {
+              "format": "uint",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "deprecated": {
+              "type": "boolean"
+            },
+            "field": {
+              "type": "string"
+            },
+            "index": {
+              "type": "string"
+            },
+            "values": {
+              "items": {
+                "$ref": "#/$defs/EncodedSearchValue"
+              },
+              "type": "array"
+            }
+          },
+          "required": [
+            "index",
+            "field",
+            "deprecated",
+            "count",
+            "values"
+          ],
+          "title": "FtTagvalsOutput",
+          "type": "object"
+        },
+        "title": "List Redis Search Tag Values"
       },
       "required_access": "read_only",
       "required_module": "search",
@@ -20267,6 +22606,63 @@
       "key": "greeting",
       "seconds": 60
     },
+    "redis_ft_aggregate": {
+      "count": 1,
+      "cursor_id": 0,
+      "index": "idx:docs",
+      "page": {
+        "complete": true,
+        "continuation": null,
+        "requested": 10,
+        "returned": 1
+      },
+      "query": "*",
+      "rows": [
+        {
+          "fields": [
+            {
+              "name": "category",
+              "name_encoding": "utf8",
+              "value": {
+                "encoding": "utf8",
+                "value": "docs"
+              }
+            },
+            {
+              "name": "count",
+              "name_encoding": "utf8",
+              "value": {
+                "encoding": "utf8",
+                "value": "1"
+              }
+            }
+          ]
+        }
+      ],
+      "total": 1
+    },
+    "redis_ft_aliasadd": {
+      "action": "added",
+      "alias": "docs",
+      "index": "idx:docs"
+    },
+    "redis_ft_aliasdel": {
+      "action": "deleted",
+      "alias": "docs",
+      "index": null
+    },
+    "redis_ft_aliasupdate": {
+      "action": "updated",
+      "alias": "docs",
+      "index": "idx:docs-v2"
+    },
+    "redis_ft_alter": {
+      "added": true,
+      "field": "category",
+      "field_type": "TAG",
+      "index": "idx:docs",
+      "skip_initial_scan": false
+    },
     "redis_ft_create": {
       "created": true,
       "fields": 1,
@@ -20274,10 +22670,71 @@
       "on": "JSON",
       "vector_fields": 0
     },
+    "redis_ft_cursor_del": {
+      "cursor_id": 7,
+      "deleted": true,
+      "index": "idx:docs"
+    },
+    "redis_ft_cursor_read": {
+      "count": 1,
+      "cursor_id": 0,
+      "index": "idx:docs",
+      "page": {
+        "complete": true,
+        "continuation": null,
+        "requested": 10,
+        "returned": 1
+      },
+      "rows": [
+        {
+          "fields": [
+            {
+              "name": "category",
+              "name_encoding": "utf8",
+              "value": {
+                "encoding": "utf8",
+                "value": "docs"
+              }
+            }
+          ]
+        }
+      ],
+      "total": 1
+    },
+    "redis_ft_dictadd": {
+      "changed": 1,
+      "dict": "terms",
+      "requested": 1
+    },
+    "redis_ft_dictdel": {
+      "changed": 1,
+      "dict": "terms",
+      "requested": 1
+    },
+    "redis_ft_dictdump": {
+      "count": 2,
+      "dict": "terms",
+      "terms": [
+        {
+          "encoding": "utf8",
+          "value": "redis"
+        },
+        {
+          "encoding": "utf8",
+          "value": "valkey"
+        }
+      ]
+    },
     "redis_ft_dropindex": {
       "documents_deleted": false,
       "dropped": true,
       "index": "idx:docs"
+    },
+    "redis_ft_explain": {
+      "dialect": null,
+      "index": "idx:docs",
+      "plan": "INTERSECT { redis }",
+      "query": "redis"
     },
     "redis_ft_hybrid_search": {
       "count": 1,
@@ -20331,7 +22788,42 @@
         "idx:docs"
       ]
     },
+    "redis_ft_profile": {
+      "command": "search",
+      "index": "idx:docs",
+      "limited": true,
+      "profile": [
+        {
+          "encoding": "utf8",
+          "value": "Total profile time"
+        },
+        0.25
+      ],
+      "query": "redis",
+      "results": [
+        0
+      ]
+    },
     "redis_ft_search": {
+      "count": 1,
+      "documents": [
+        {
+          "fields": [
+            {
+              "name": "title",
+              "name_encoding": "utf8",
+              "value": {
+                "encoding": "utf8",
+                "value": "Redis guide"
+              }
+            }
+          ],
+          "id": "doc:1",
+          "id_encoding": "utf8",
+          "score": null,
+          "score_explanation": null
+        }
+      ],
       "index": "idx:docs",
       "limit_num": 10,
       "limit_offset": 0,
@@ -20359,6 +22851,47 @@
         ]
       ],
       "total": 1
+    },
+    "redis_ft_syndump": {
+      "count": 1,
+      "entries": [
+        {
+          "group_ids": [
+            {
+              "encoding": "utf8",
+              "value": "speed"
+            }
+          ],
+          "term": {
+            "encoding": "utf8",
+            "value": "fast"
+          }
+        }
+      ],
+      "index": "idx:docs"
+    },
+    "redis_ft_synupdate": {
+      "group_id": "speed",
+      "index": "idx:docs",
+      "skip_initial_scan": false,
+      "terms": 2,
+      "updated": true
+    },
+    "redis_ft_tagvals": {
+      "count": 2,
+      "deprecated": true,
+      "field": "category",
+      "index": "idx:docs",
+      "values": [
+        {
+          "encoding": "utf8",
+          "value": "database"
+        },
+        {
+          "encoding": "utf8",
+          "value": "search"
+        }
+      ]
     },
     "redis_ft_vector_search": {
       "count": 1,

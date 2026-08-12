@@ -1,5 +1,7 @@
 //! Optional Redis Query Engine index and search operations.
 
+mod extra;
+
 use std::{
     collections::{BTreeMap, BTreeSet},
     sync::Arc,
@@ -21,8 +23,24 @@ use crate::{AccessMode, RedisModule, RedisValue};
 
 const MAX_SEARCH_RESULTS: u64 = 100;
 const MAX_SCHEMA_FIELDS: usize = 100;
+const MAX_SEARCH_PARAMETERS: usize = 100;
 const MAX_VECTOR_DIMENSIONS: usize = 16_384;
 const DEFAULT_VECTOR_SCORE_ALIAS: &str = "vector_distance";
+
+fn require_search_version(
+    state: &ToolState,
+    minimum: crate::RedisVersion,
+    feature: &str,
+) -> tower_mcp::Result<()> {
+    if let Some(version) = state.module_version(RedisModule::Search)
+        && version < minimum
+    {
+        return Err(tower_mcp::Error::tool(format!(
+            "{feature} requires Redis Query Engine {minimum} or newer; target reports {version}"
+        )));
+    }
+    Ok(())
+}
 
 #[derive(Debug, Clone, Copy, Deserialize, Serialize, JsonSchema, PartialEq, Eq)]
 enum VectorDataType {
@@ -400,6 +418,68 @@ fn ft_info_tool(state: Arc<ToolState>) -> Tool {
 
 #[derive(Debug, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
+struct SearchParameter {
+    /// Parameter name without the leading `$`.
+    name: String,
+    /// Parameter value sent as one binary-safe Redis argument.
+    value: String,
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+struct SearchNumericFilter {
+    /// NUMERIC field name without the leading `@`.
+    field: String,
+    /// Redis range lower bound, such as `0`, `(0`, or `-inf`.
+    minimum: String,
+    /// Redis range upper bound, such as `100`, `(100`, or `+inf`.
+    maximum: String,
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+struct SearchGeoFilter {
+    /// GEO field name without the leading `@`.
+    field: String,
+    longitude: f64,
+    latitude: f64,
+    /// Positive radius around the longitude and latitude.
+    radius: f64,
+    unit: GeoUnit,
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+struct SearchSummarize {
+    /// Fields to summarize. An empty list lets Redis choose fields.
+    #[serde(default)]
+    #[schemars(length(max = 100))]
+    fields: Vec<String>,
+    /// Maximum fragments per field.
+    #[serde(default)]
+    fragments: Option<u64>,
+    /// Approximate fragment size in words.
+    #[serde(default)]
+    length: Option<u64>,
+    /// Separator inserted between fragments.
+    #[serde(default)]
+    separator: Option<String>,
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+struct SearchHighlight {
+    /// Fields to highlight. An empty list lets Redis choose fields.
+    #[serde(default)]
+    #[schemars(length(max = 100))]
+    fields: Vec<String>,
+    /// Opening and closing highlight tags.
+    #[serde(default)]
+    tags: Option<[String; 2]>,
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
 struct FtSearchInput {
     /// Search index name.
     index: String,
@@ -431,6 +511,59 @@ struct FtSearchInput {
     /// Include match scores in the raw response sequence.
     #[serde(default)]
     withscores: bool,
+    /// Include a score explanation. Requires withscores=true.
+    #[serde(default)]
+    explainscore: bool,
+    /// Disable stop-word filtering.
+    #[serde(default)]
+    nostopwords: bool,
+    /// Require query terms to appear in order.
+    #[serde(default)]
+    inorder: bool,
+    /// Maximum intervening terms between query phrases.
+    #[serde(default)]
+    slop: Option<u64>,
+    /// Server-side query timeout in milliseconds.
+    #[serde(default)]
+    timeout_ms: Option<u64>,
+    /// Restrict results to these document keys.
+    #[serde(default)]
+    #[schemars(length(max = 100))]
+    in_keys: Option<Vec<String>>,
+    /// Restrict matching to these indexed fields.
+    #[serde(default)]
+    #[schemars(length(max = 100))]
+    in_fields: Option<Vec<String>>,
+    /// Legacy numeric range filters. Prefer expressing filters in query syntax for dialect 2+.
+    #[serde(default)]
+    #[schemars(length(max = 100))]
+    numeric_filters: Vec<SearchNumericFilter>,
+    /// Legacy geo-radius filters.
+    #[serde(default)]
+    #[schemars(length(max = 100))]
+    geo_filters: Vec<SearchGeoFilter>,
+    /// Summarize matching text fields.
+    #[serde(default)]
+    summarize: Option<SearchSummarize>,
+    /// Highlight matching text fields.
+    #[serde(default)]
+    highlight: Option<SearchHighlight>,
+    /// Query language used for stemming and stop words.
+    #[serde(default)]
+    language: Option<String>,
+    /// Named Query Engine expander.
+    #[serde(default)]
+    expander: Option<String>,
+    /// Named Query Engine scorer.
+    #[serde(default)]
+    scorer: Option<String>,
+    /// Query parameters referenced as `$name` in the query.
+    #[serde(default)]
+    #[schemars(length(max = 100))]
+    params: Vec<SearchParameter>,
+    /// Query dialect version. PARAMS requires dialect 2 or newer.
+    #[serde(default)]
+    dialect: Option<u64>,
 }
 
 impl FtSearchInput {
@@ -460,8 +593,60 @@ impl FtSearchInput {
         {
             return Err(tower_mcp::Error::tool("sortby_order must be ASC or DESC"));
         }
+        if self.explainscore && !self.withscores {
+            return Err(tower_mcp::Error::tool(
+                "explainscore requires withscores=true",
+            ));
+        }
+        if self.timeout_ms == Some(0) {
+            return Err(tower_mcp::Error::tool(
+                "timeout_ms must be greater than zero",
+            ));
+        }
+        for filter in &self.geo_filters {
+            if !filter.longitude.is_finite()
+                || !filter.latitude.is_finite()
+                || !filter.radius.is_finite()
+                || filter.radius <= 0.0
+                || !(-180.0..=180.0).contains(&filter.longitude)
+                || !(-90.0..=90.0).contains(&filter.latitude)
+            {
+                return Err(tower_mcp::Error::tool(
+                    "geo filters require finite longitude [-180, 180], latitude [-90, 90], and a positive radius",
+                ));
+            }
+        }
+        if self.params.len() > MAX_SEARCH_PARAMETERS {
+            return Err(tower_mcp::Error::tool(format!(
+                "params must contain at most {MAX_SEARCH_PARAMETERS} items"
+            )));
+        }
+        let mut parameter_names = BTreeSet::new();
+        for parameter in &self.params {
+            if parameter.name.is_empty() || !parameter_names.insert(parameter.name.as_str()) {
+                return Err(tower_mcp::Error::tool(
+                    "parameter names must be non-empty and unique",
+                ));
+            }
+        }
+        if !self.params.is_empty() && self.dialect.is_none_or(|dialect| dialect < 2) {
+            return Err(tower_mcp::Error::tool("params require dialect 2 or newer"));
+        }
+        if self.dialect == Some(0) {
+            return Err(tower_mcp::Error::tool("dialect must be greater than zero"));
+        }
         Ok(())
     }
+}
+
+#[derive(Debug, Serialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+struct SearchDocument {
+    id: String,
+    id_encoding: ValueEncoding,
+    score: Option<f64>,
+    score_explanation: Option<JsonValue>,
+    fields: Vec<SearchFieldValue>,
 }
 
 #[derive(Debug, Serialize, JsonSchema)]
@@ -471,28 +656,233 @@ struct FtSearchOutput {
     query: String,
     total: Option<u64>,
     response: JsonValue,
+    count: usize,
+    documents: Vec<SearchDocument>,
     limit_offset: u64,
     limit_num: u64,
     page: PageMetadata,
 }
 
-fn search_response(value: RedisValue) -> (Option<u64>, JsonValue) {
-    match value {
-        RedisValue::Array(mut values) if !values.is_empty() => {
-            let total = match values.remove(0) {
-                RedisValue::Integer(total) => u64::try_from(total).ok(),
-                RedisValue::BulkString(total) => std::str::from_utf8(&total)
-                    .ok()
-                    .and_then(|total| total.parse().ok()),
-                _ => None,
-            };
-            (
-                total,
-                JsonValue::Array(values.iter().map(redis_value_to_json).collect()),
-            )
+fn search_field_pairs(
+    value: RedisValue,
+    context: &str,
+) -> tower_mcp::Result<Vec<SearchFieldValue>> {
+    let pairs = match value {
+        RedisValue::Array(values) => {
+            if !values.len().is_multiple_of(2) {
+                return Err(tower_mcp::Error::tool(format!(
+                    "{context} returned an odd number of field elements"
+                )));
+            }
+            values
+                .chunks_exact(2)
+                .map(|pair| (pair[0].clone(), pair[1].clone()))
+                .collect()
         }
-        value => (None, redis_value_to_json(&value)),
+        RedisValue::Map(pairs) => pairs,
+        RedisValue::Nil => Vec::new(),
+        other => {
+            return Err(tower_mcp::Error::tool(format!(
+                "{context} returned invalid document fields: {other:?}"
+            )));
+        }
+    };
+    pairs
+        .into_iter()
+        .map(|(name, value)| {
+            let (name, name_encoding) =
+                super::encode_bytes(redis_text(name, "FT.SEARCH field name")?);
+            Ok(SearchFieldValue {
+                name,
+                name_encoding,
+                value: redis_value_to_json(&value),
+            })
+        })
+        .collect()
+}
+
+fn search_map_key(value: &RedisValue, expected: &str) -> bool {
+    match value {
+        RedisValue::BulkString(value) => value == expected.as_bytes(),
+        RedisValue::SimpleString(value) => value == expected,
+        _ => false,
     }
+}
+
+fn take_search_map_value(
+    pairs: &mut Vec<(RedisValue, RedisValue)>,
+    key: &str,
+) -> Option<RedisValue> {
+    pairs
+        .iter()
+        .position(|(candidate, _)| search_map_key(candidate, key))
+        .map(|index| pairs.remove(index).1)
+}
+
+fn search_total(value: RedisValue) -> tower_mcp::Result<u64> {
+    match value {
+        RedisValue::Integer(total) => u64::try_from(total)
+            .map_err(|_| tower_mcp::Error::tool("FT.SEARCH returned a negative total")),
+        RedisValue::BulkString(total) => std::str::from_utf8(&total)
+            .ok()
+            .and_then(|total| total.parse().ok())
+            .ok_or_else(|| tower_mcp::Error::tool("FT.SEARCH returned an invalid total")),
+        other => Err(tower_mcp::Error::tool(format!(
+            "FT.SEARCH returned an invalid total: {other:?}"
+        ))),
+    }
+}
+
+fn resp3_search_response(
+    mut pairs: Vec<(RedisValue, RedisValue)>,
+    nocontent: bool,
+    withscores: bool,
+    explainscore: bool,
+) -> tower_mcp::Result<(u64, JsonValue, Vec<SearchDocument>)> {
+    let response = redis_value_to_json(&RedisValue::Map(pairs.clone()));
+    let total = search_total(
+        take_search_map_value(&mut pairs, "total_results")
+            .ok_or_else(|| tower_mcp::Error::tool("FT.SEARCH returned no total_results field"))?,
+    )?;
+    let results = match take_search_map_value(&mut pairs, "results") {
+        Some(RedisValue::Array(results)) => results,
+        Some(other) => {
+            return Err(tower_mcp::Error::tool(format!(
+                "FT.SEARCH returned invalid RESP3 results: {other:?}"
+            )));
+        }
+        None if total == 0 => Vec::new(),
+        None => {
+            return Err(tower_mcp::Error::tool(
+                "FT.SEARCH returned no RESP3 results field",
+            ));
+        }
+    };
+    let mut documents = Vec::with_capacity(results.len());
+    for result in results {
+        let mut result = match result {
+            RedisValue::Map(result) => result,
+            RedisValue::Attribute { data, .. } => match *data {
+                RedisValue::Map(result) => result,
+                other => {
+                    return Err(tower_mcp::Error::tool(format!(
+                        "FT.SEARCH returned an invalid attributed result: {other:?}"
+                    )));
+                }
+            },
+            other => {
+                return Err(tower_mcp::Error::tool(format!(
+                    "FT.SEARCH returned an invalid RESP3 result: {other:?}"
+                )));
+            }
+        };
+        let id = take_search_map_value(&mut result, "id")
+            .ok_or_else(|| tower_mcp::Error::tool("FT.SEARCH result omitted its id"))?;
+        let (id, id_encoding) = super::encode_bytes(redis_text(id, "FT.SEARCH document id")?);
+        let score = if withscores {
+            Some(redis_number(
+                take_search_map_value(&mut result, "score")
+                    .ok_or_else(|| tower_mcp::Error::tool("FT.SEARCH omitted a requested score"))?,
+                "FT.SEARCH score",
+            )?)
+        } else {
+            None
+        };
+        let score_explanation = if explainscore {
+            Some(redis_value_to_json(
+                &take_search_map_value(&mut result, "score_explanation").ok_or_else(|| {
+                    tower_mcp::Error::tool("FT.SEARCH omitted a requested score explanation")
+                })?,
+            ))
+        } else {
+            None
+        };
+        let fields = if nocontent {
+            Vec::new()
+        } else {
+            search_field_pairs(
+                take_search_map_value(&mut result, "extra_attributes").unwrap_or(RedisValue::Nil),
+                "FT.SEARCH",
+            )?
+        };
+        documents.push(SearchDocument {
+            id,
+            id_encoding,
+            score,
+            score_explanation,
+            fields,
+        });
+    }
+    Ok((total, response, documents))
+}
+
+fn search_response(
+    value: RedisValue,
+    nocontent: bool,
+    withscores: bool,
+    explainscore: bool,
+) -> tower_mcp::Result<(u64, JsonValue, Vec<SearchDocument>)> {
+    let mut values = match value {
+        RedisValue::Array(values) => values,
+        RedisValue::Map(pairs) => {
+            return resp3_search_response(pairs, nocontent, withscores, explainscore);
+        }
+        RedisValue::Attribute { data, .. } => {
+            return search_response(*data, nocontent, withscores, explainscore);
+        }
+        other => {
+            return Err(tower_mcp::Error::tool(format!(
+                "FT.SEARCH returned an unsupported response: {other:?}"
+            )));
+        }
+    };
+    if values.is_empty() {
+        return Err(tower_mcp::Error::tool(
+            "FT.SEARCH returned no total result count",
+        ));
+    }
+    let total = search_total(values.remove(0))?;
+    let response = JsonValue::Array(values.iter().map(redis_value_to_json).collect());
+    let mut values = values.into_iter();
+    let mut documents = Vec::new();
+    while let Some(id) = values.next() {
+        let (id, id_encoding) = super::encode_bytes(redis_text(id, "FT.SEARCH document id")?);
+        let score = if withscores {
+            Some(redis_number(
+                values
+                    .next()
+                    .ok_or_else(|| tower_mcp::Error::tool("FT.SEARCH omitted a requested score"))?,
+                "FT.SEARCH score",
+            )?)
+        } else {
+            None
+        };
+        let score_explanation = if explainscore {
+            Some(redis_value_to_json(&values.next().ok_or_else(|| {
+                tower_mcp::Error::tool("FT.SEARCH omitted a requested score explanation")
+            })?))
+        } else {
+            None
+        };
+        let fields = if nocontent {
+            Vec::new()
+        } else {
+            search_field_pairs(
+                values
+                    .next()
+                    .ok_or_else(|| tower_mcp::Error::tool("FT.SEARCH omitted document fields"))?,
+                "FT.SEARCH",
+            )?
+        };
+        documents.push(SearchDocument {
+            id,
+            id_encoding,
+            score,
+            score_explanation,
+            fields,
+        });
+    }
+    Ok((total, response, documents))
 }
 
 fn ft_search_tool(state: Arc<ToolState>) -> Tool {
@@ -507,6 +897,13 @@ fn ft_search_tool(state: Arc<ToolState>) -> Tool {
             state,
             |State(state): State<Arc<ToolState>>, Json(input): Json<FtSearchInput>| async move {
                 input.validate()?;
+                if input.dialect.is_some() {
+                    require_search_version(
+                        &state,
+                        crate::RedisVersion::new(2, 4, 3),
+                        "FT.SEARCH DIALECT",
+                    )?;
+                }
                 let limit_offset = input.limit_offset.unwrap_or(0);
                 let limit_num = input.limit_num.unwrap_or(10);
                 state.validate_requested_entries(limit_num as usize, "limit_num")?;
@@ -526,9 +923,90 @@ fn ft_search_tool(state: Arc<ToolState>) -> Tool {
                 if input.withscores {
                     command.arg("WITHSCORES");
                 }
+                if input.explainscore {
+                    command.arg("EXPLAINSCORE");
+                }
+                if input.nostopwords {
+                    command.arg("NOSTOPWORDS");
+                }
+                for filter in &input.numeric_filters {
+                    command
+                        .arg("FILTER")
+                        .arg(filter.field.as_str())
+                        .arg(filter.minimum.as_str())
+                        .arg(filter.maximum.as_str());
+                }
+                for filter in &input.geo_filters {
+                    command
+                        .arg("GEOFILTER")
+                        .arg(filter.field.as_str())
+                        .arg(filter.longitude.to_string())
+                        .arg(filter.latitude.to_string())
+                        .arg(filter.radius.to_string())
+                        .arg(filter.unit.as_str());
+                }
+                if let Some(keys) = &input.in_keys {
+                    command.arg("INKEYS").arg(keys.len().to_string());
+                    command.args(keys.iter().map(String::as_str));
+                }
+                if let Some(fields) = &input.in_fields {
+                    command.arg("INFIELDS").arg(fields.len().to_string());
+                    command.args(fields.iter().map(String::as_str));
+                }
                 if let Some(fields) = &input.return_fields {
                     command.arg("RETURN").arg(fields.len().to_string());
                     command.args(fields.iter().map(String::as_str));
+                }
+                if let Some(summarize) = &input.summarize {
+                    command.arg("SUMMARIZE");
+                    if !summarize.fields.is_empty() {
+                        command
+                            .arg("FIELDS")
+                            .arg(summarize.fields.len().to_string());
+                        command.args(summarize.fields.iter().map(String::as_str));
+                    }
+                    if let Some(fragments) = summarize.fragments {
+                        command.arg("FRAGS").arg(fragments.to_string());
+                    }
+                    if let Some(length) = summarize.length {
+                        command.arg("LEN").arg(length.to_string());
+                    }
+                    if let Some(separator) = &summarize.separator {
+                        command.arg("SEPARATOR").arg(separator.as_str());
+                    }
+                }
+                if let Some(highlight) = &input.highlight {
+                    command.arg("HIGHLIGHT");
+                    if !highlight.fields.is_empty() {
+                        command
+                            .arg("FIELDS")
+                            .arg(highlight.fields.len().to_string());
+                        command.args(highlight.fields.iter().map(String::as_str));
+                    }
+                    if let Some(tags) = &highlight.tags {
+                        command
+                            .arg("TAGS")
+                            .arg(tags[0].as_str())
+                            .arg(tags[1].as_str());
+                    }
+                }
+                if let Some(slop) = input.slop {
+                    command.arg("SLOP").arg(slop.to_string());
+                }
+                if let Some(timeout) = input.timeout_ms {
+                    command.arg("TIMEOUT").arg(timeout.to_string());
+                }
+                if input.inorder {
+                    command.arg("INORDER");
+                }
+                if let Some(language) = &input.language {
+                    command.arg("LANGUAGE").arg(language.as_str());
+                }
+                if let Some(expander) = &input.expander {
+                    command.arg("EXPANDER").arg(expander.as_str());
+                }
+                if let Some(scorer) = &input.scorer {
+                    command.arg("SCORER").arg(scorer.as_str());
                 }
                 if let Some(field) = &input.sortby {
                     command.arg("SORTBY").arg(field.as_str());
@@ -540,24 +1018,36 @@ fn ft_search_tool(state: Arc<ToolState>) -> Tool {
                     .arg("LIMIT")
                     .arg(limit_offset.to_string())
                     .arg(limit_num.to_string());
+                if !input.params.is_empty() {
+                    command
+                        .arg("PARAMS")
+                        .arg((input.params.len() * 2).to_string());
+                    for parameter in &input.params {
+                        command
+                            .arg(parameter.name.as_str())
+                            .arg(parameter.value.as_str());
+                    }
+                }
+                if let Some(dialect) = input.dialect {
+                    command.arg("DIALECT").arg(dialect.to_string());
+                }
                 let value = state.raw(command, "FT.SEARCH failed").await?;
-                let (total, response) = search_response(value);
-                let returned = total
-                    .map(|total| total.saturating_sub(limit_offset).min(limit_num) as usize)
-                    .unwrap_or_else(|| {
-                        response
-                            .as_array()
-                            .map_or(0, |values| values.len().min(limit_num as usize))
-                    });
-                let next_offset = total.and_then(|total| {
-                    let next = limit_offset.saturating_add(returned as u64);
-                    (next < total).then_some(next)
-                });
+                let (total, response, documents) = search_response(
+                    value,
+                    input.nocontent,
+                    input.withscores,
+                    input.explainscore,
+                )?;
+                let returned = documents.len();
+                let next = limit_offset.saturating_add(returned as u64);
+                let next_offset = (next < total).then_some(next);
                 let output = FtSearchOutput {
                     index: input.index,
                     query: input.query,
-                    total,
+                    total: Some(total),
                     response,
+                    count: returned,
+                    documents,
                     limit_offset,
                     limit_num,
                     page: PageMetadata::offset(limit_num as usize, returned, next_offset),
@@ -1115,82 +1605,38 @@ fn vector_search_response(
     value: RedisValue,
     score_alias: &str,
 ) -> tower_mcp::Result<(u64, Vec<VectorSearchDocument>)> {
-    let RedisValue::Array(values) = value else {
-        return Err(tower_mcp::Error::tool(
-            "FT.SEARCH vector query returned a non-array response",
-        ));
-    };
-    let mut values = values.into_iter();
-    let total = match values.next() {
-        Some(RedisValue::Integer(total)) => u64::try_from(total)
-            .map_err(|_| tower_mcp::Error::tool("FT.SEARCH returned a negative total"))?,
-        Some(RedisValue::BulkString(total)) => std::str::from_utf8(&total)
-            .ok()
-            .and_then(|total| total.parse().ok())
-            .ok_or_else(|| tower_mcp::Error::tool("FT.SEARCH returned an invalid total"))?,
-        _ => {
-            return Err(tower_mcp::Error::tool(
-                "FT.SEARCH returned no numeric total",
-            ));
+    let (total, _, search_documents) = search_response(value, false, false, false)?;
+    let mut documents = Vec::with_capacity(search_documents.len());
+    for document in search_documents {
+        let mut fields = document.fields;
+        let distance_index = fields
+            .iter()
+            .position(|field| field.name == score_alias)
+            .ok_or_else(|| {
+                tower_mcp::Error::tool(format!(
+                    "FT.SEARCH response omitted distance field '{score_alias}'"
+                ))
+            })?;
+        let distance = match fields.remove(distance_index).value {
+            JsonValue::Number(value) => value.as_f64(),
+            JsonValue::String(value) => value.parse().ok(),
+            JsonValue::Object(value)
+                if value.get("encoding").and_then(JsonValue::as_str) == Some("utf8") =>
+            {
+                value
+                    .get("value")
+                    .and_then(JsonValue::as_str)
+                    .and_then(|value| value.parse().ok())
+            }
+            _ => None,
         }
-    };
-    let remaining = values.collect::<Vec<_>>();
-    if !remaining.len().is_multiple_of(2) {
-        return Err(tower_mcp::Error::tool(
-            "FT.SEARCH vector response did not contain document/field pairs",
-        ));
-    }
-    let mut documents = Vec::with_capacity(remaining.len() / 2);
-    let mut remaining = remaining.into_iter();
-    while let (Some(id), Some(fields)) = (remaining.next(), remaining.next()) {
-        let (id, id_encoding) = super::encode_bytes(redis_text(id, "FT.SEARCH document id")?);
-        let pairs = match fields {
-            RedisValue::Array(fields) => {
-                if !fields.len().is_multiple_of(2) {
-                    return Err(tower_mcp::Error::tool(
-                        "FT.SEARCH returned an odd number of document field elements",
-                    ));
-                }
-                let mut pairs = Vec::with_capacity(fields.len() / 2);
-                let mut fields = fields.into_iter();
-                while let (Some(name), Some(value)) = (fields.next(), fields.next()) {
-                    pairs.push((name, value));
-                }
-                pairs
-            }
-            RedisValue::Map(fields) => fields,
-            RedisValue::Nil => Vec::new(),
-            other => {
-                return Err(tower_mcp::Error::tool(format!(
-                    "FT.SEARCH returned invalid document fields: {other:?}"
-                )));
-            }
-        };
-        let mut distance = None;
-        let mut output_fields = Vec::with_capacity(pairs.len().saturating_sub(1));
-        for (name, value) in pairs {
-            let name = redis_text(name, "FT.SEARCH field name")?;
-            if name == score_alias.as_bytes() {
-                distance = Some(redis_number(value, "FT.SEARCH vector distance")?);
-            } else {
-                let (name, name_encoding) = super::encode_bytes(name);
-                output_fields.push(SearchFieldValue {
-                    name,
-                    name_encoding,
-                    value: redis_value_to_json(&value),
-                });
-            }
-        }
-        let distance = distance.ok_or_else(|| {
-            tower_mcp::Error::tool(format!(
-                "FT.SEARCH response omitted distance field '{score_alias}'"
-            ))
-        })?;
+        .filter(|value: &f64| value.is_finite())
+        .ok_or_else(|| tower_mcp::Error::tool("FT.SEARCH vector distance was not numeric"))?;
         documents.push(VectorSearchDocument {
-            id,
-            id_encoding,
+            id: document.id,
+            id_encoding: document.id_encoding,
             distance,
-            fields: output_fields,
+            fields,
         });
     }
     Ok((total, documents))
@@ -1412,6 +1858,35 @@ impl SearchField {
     }
 }
 
+fn append_search_field(
+    command: &mut crate::RedisCommand,
+    field: &SearchField,
+) -> tower_mcp::Result<()> {
+    command.arg(field.name.as_str());
+    if let Some(alias) = &field.alias {
+        command.arg("AS").arg(alias.as_str());
+    }
+    let field_type = field.normalized_type()?;
+    command.arg(field_type.as_str());
+    if let Some(vector) = &field.vector {
+        let arguments = vector.arguments()?;
+        command
+            .arg(vector.algorithm.as_str())
+            .arg(arguments.len().to_string())
+            .args(arguments);
+    }
+    if field.sortable {
+        command.arg("SORTABLE");
+    }
+    if field.noindex {
+        command.arg("NOINDEX");
+    }
+    if field.nostem {
+        command.arg("NOSTEM");
+    }
+    Ok(())
+}
+
 #[derive(Debug, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 struct FtCreateInput {
@@ -1480,6 +1955,13 @@ fn ft_create_tool(state: Arc<ToolState>) -> Tool {
             |State(state): State<Arc<ToolState>>, Json(input): Json<FtCreateInput>| async move {
                 state.require(AccessMode::ReadWrite, "redis_ft_create")?;
                 let on = input.validate()?;
+                if input.schema.iter().any(|field| field.vector.is_some()) {
+                    require_search_version(
+                        &state,
+                        crate::RedisVersion::new(2, 4, 0),
+                        "VECTOR index fields",
+                    )?;
+                }
                 let mut command = module_command(
                     "redis_ft_create",
                     AccessMode::ReadWrite,
@@ -1495,28 +1977,7 @@ fn ft_create_tool(state: Arc<ToolState>) -> Tool {
                 }
                 command.arg("SCHEMA");
                 for field in &input.schema {
-                    command.arg(field.name.as_str());
-                    if let Some(alias) = &field.alias {
-                        command.arg("AS").arg(alias.as_str());
-                    }
-                    let field_type = field.normalized_type()?;
-                    command.arg(field_type.as_str());
-                    if let Some(vector) = &field.vector {
-                        let arguments = vector.arguments()?;
-                        command
-                            .arg(vector.algorithm.as_str())
-                            .arg(arguments.len().to_string())
-                            .args(arguments);
-                    }
-                    if field.sortable {
-                        command.arg("SORTABLE");
-                    }
-                    if field.noindex {
-                        command.arg("NOINDEX");
-                    }
-                    if field.nostem {
-                        command.arg("NOSTEM");
-                    }
+                    append_search_field(&mut command, field)?;
                 }
                 let _: String = state.query(command, "FT.CREATE failed").await?;
                 state.output(&FtCreateOutput {
@@ -1592,16 +2053,19 @@ pub(super) fn add_read_tools(mut router: McpRouter, state: Arc<ToolState>) -> Mc
     router = router.tool(ft_search_tool(state.clone()));
     router = router.tool(vector_get_hash_tool(state.clone()));
     router = router.tool(ft_vector_search_tool(state.clone()));
-    router.tool(ft_hybrid_search_tool(state))
+    router = router.tool(ft_hybrid_search_tool(state.clone()));
+    extra::add_read_tools(router, state)
 }
 
 pub(super) fn add_write_tools(mut router: McpRouter, state: Arc<ToolState>) -> McpRouter {
     router = router.tool(ft_create_tool(state.clone()));
-    router.tool(vector_set_hash_tool(state))
+    router = router.tool(vector_set_hash_tool(state.clone()));
+    extra::add_write_tools(router, state)
 }
 
-pub(super) fn add_destructive_tools(router: McpRouter, state: Arc<ToolState>) -> McpRouter {
-    router.tool(ft_dropindex_tool(state))
+pub(super) fn add_destructive_tools(mut router: McpRouter, state: Arc<ToolState>) -> McpRouter {
+    router = router.tool(ft_dropindex_tool(state.clone()));
+    extra::add_destructive_tools(router, state)
 }
 
 #[cfg(test)]
@@ -1621,6 +2085,22 @@ mod tests {
             nocontent: false,
             verbatim: false,
             withscores: false,
+            explainscore: false,
+            nostopwords: false,
+            inorder: false,
+            slop: None,
+            timeout_ms: None,
+            in_keys: None,
+            in_fields: None,
+            numeric_filters: Vec::new(),
+            geo_filters: Vec::new(),
+            summarize: None,
+            highlight: None,
+            language: None,
+            expander: None,
+            scorer: None,
+            params: Vec::new(),
+            dialect: None,
         };
         assert!(input.validate().is_err());
 
@@ -1721,5 +2201,56 @@ mod tests {
             maximum_exclusive: false,
         };
         assert!(numeric.query().is_err());
+    }
+
+    #[test]
+    fn resp3_search_envelopes_are_structured_and_feed_vector_results() {
+        let response = RedisValue::Map(vec![
+            (
+                RedisValue::SimpleString("total_results".into()),
+                RedisValue::Integer(1),
+            ),
+            (
+                RedisValue::SimpleString("results".into()),
+                RedisValue::Array(vec![RedisValue::Map(vec![
+                    (
+                        RedisValue::SimpleString("id".into()),
+                        RedisValue::BulkString(b"doc:1".to_vec()),
+                    ),
+                    (
+                        RedisValue::SimpleString("score".into()),
+                        RedisValue::Double(0.75),
+                    ),
+                    (
+                        RedisValue::SimpleString("score_explanation".into()),
+                        RedisValue::Array(vec![RedisValue::SimpleString("explanation".into())]),
+                    ),
+                    (
+                        RedisValue::SimpleString("extra_attributes".into()),
+                        RedisValue::Map(vec![
+                            (
+                                RedisValue::BulkString(b"title".to_vec()),
+                                RedisValue::BulkString(b"Redis".to_vec()),
+                            ),
+                            (
+                                RedisValue::BulkString(b"distance".to_vec()),
+                                RedisValue::BulkString(b"0.25".to_vec()),
+                            ),
+                        ]),
+                    ),
+                ])]),
+            ),
+        ]);
+
+        let (total, _, documents) = search_response(response.clone(), false, true, true).unwrap();
+        assert_eq!(total, 1);
+        assert_eq!(documents[0].id, "doc:1");
+        assert_eq!(documents[0].score, Some(0.75));
+        assert_eq!(documents[0].fields.len(), 2);
+
+        let (total, documents) = vector_search_response(response, "distance").unwrap();
+        assert_eq!(total, 1);
+        assert_eq!(documents[0].distance, 0.25);
+        assert_eq!(documents[0].fields.len(), 1);
     }
 }

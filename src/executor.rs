@@ -572,32 +572,124 @@ impl DirectRedisCluster {
 }
 
 fn validate_cluster_command_slots(command: &RedisCommand) -> Result<(), RedisError> {
-    if !command.name().eq_ignore_ascii_case("JSON.MGET") || command.arguments().len() < 3 {
-        return Ok(());
-    }
-
-    let keys = &command.arguments()[..command.arguments().len() - 1];
-    let first =
-        redis::cluster_routing::Route::with_key(&keys[0], redis::cluster_routing::SlotAddr::Master);
-    if keys.iter().skip(1).any(|key| {
+    let route = |key: &[u8]| {
         redis::cluster_routing::Route::with_key(key, redis::cluster_routing::SlotAddr::Master)
-            != first
-    }) {
-        Err(RedisError::new(
-            RedisErrorKind::InvalidRequest,
-            "keys in JSON.MGET must hash to the same Redis Cluster slot",
-        )
-        .with_code("CROSSSLOT"))
-    } else {
-        Ok(())
+    };
+    if command.name().eq_ignore_ascii_case("JSON.MGET") && command.arguments().len() >= 3 {
+        let keys = &command.arguments()[..command.arguments().len() - 1];
+        let first = route(&keys[0]);
+        if keys.iter().skip(1).any(|key| route(key) != first) {
+            return Err(RedisError::new(
+                RedisErrorKind::InvalidRequest,
+                "keys in JSON.MGET must hash to the same Redis Cluster slot",
+            )
+            .with_code("CROSSSLOT"));
+        }
     }
+    if matches!(
+        command.name().to_ascii_uppercase().as_str(),
+        "FT.ALIASADD" | "FT.ALIASUPDATE"
+    ) && command.arguments().len() >= 2
+        && route(&command.arguments()[0]) != route(&command.arguments()[1])
+    {
+        return Err(RedisError::new(
+            RedisErrorKind::InvalidRequest,
+            "the alias and index must hash to the same Redis Cluster slot",
+        )
+        .with_code("CROSSSLOT"));
+    }
+    if command.name().eq_ignore_ascii_case("FT.CREATE") && !command.arguments().is_empty() {
+        let Some(prefix_position) = command
+            .arguments()
+            .iter()
+            .position(|argument| argument.eq_ignore_ascii_case(b"PREFIX"))
+        else {
+            return Err(RedisError::new(
+                RedisErrorKind::InvalidRequest,
+                "FT.CREATE on Redis Cluster requires explicit prefixes sharing the index hash slot",
+            )
+            .with_code("CLUSTER_SEARCH_PREFIX_REQUIRED"));
+        };
+        let count = command
+            .arguments()
+            .get(prefix_position + 1)
+            .and_then(|count| std::str::from_utf8(count).ok())
+            .and_then(|count| count.parse::<usize>().ok())
+            .ok_or_else(|| {
+                RedisError::new(
+                    RedisErrorKind::InvalidRequest,
+                    "FT.CREATE contained an invalid PREFIX count",
+                )
+            })?;
+        let prefixes = command
+            .arguments()
+            .get(prefix_position + 2..prefix_position + 2 + count)
+            .ok_or_else(|| {
+                RedisError::new(
+                    RedisErrorKind::InvalidRequest,
+                    "FT.CREATE PREFIX count exceeded the supplied arguments",
+                )
+            })?;
+        let index_route = route(&command.arguments()[0]);
+        if prefixes.iter().any(|prefix| route(prefix) != index_route) {
+            return Err(RedisError::new(
+                RedisErrorKind::InvalidRequest,
+                "FT.CREATE prefixes must hash to the same Redis Cluster slot as the index",
+            )
+            .with_code("CROSSSLOT"));
+        }
+    }
+    Ok(())
+}
+
+fn cluster_routing_key(command: &RedisCommand) -> Option<&[u8]> {
+    if command.name().eq_ignore_ascii_case("FT.CURSOR") {
+        return command.arguments().get(1).map(Vec::as_slice);
+    }
+    if command.required_module() == Some(RedisModule::Search)
+        && !command.name().eq_ignore_ascii_case("FT._LIST")
+    {
+        return command.arguments().first().map(Vec::as_slice);
+    }
+    None
+}
+
+async fn execute_cluster_command(
+    mut connection: ClusterConnection,
+    command: RedisCommand,
+) -> Result<RedisValue, RedisError> {
+    let required_module = command.required_module();
+    let command_name = command.name().to_string();
+    let routing_key = cluster_routing_key(&command).map(Vec::from);
+    let mut redis_command = redis::cmd(command.name());
+    for argument in command.arguments() {
+        redis_command.arg(argument);
+    }
+    let result = if let Some(key) = routing_key {
+        let route =
+            redis::cluster_routing::Route::with_key(&key, redis::cluster_routing::SlotAddr::Master);
+        connection
+            .route_command(
+                redis_command,
+                redis::cluster_routing::RoutingInfo::SingleNode(
+                    redis::cluster_routing::SingleNodeRoutingInfo::SpecificNode(route),
+                ),
+            )
+            .await
+    } else {
+        redis_command.query_async(&mut connection).await
+    };
+    let value = result
+        .map_err(RedisError::from)
+        .map_err(|error| error.classify_module_requirement(required_module, &command_name))?;
+    Ok(RedisValue::from(value))
 }
 
 #[async_trait]
 impl RedisExecutor for DirectRedisCluster {
     async fn execute(&self, command: RedisCommand) -> Result<RedisValue, RedisError> {
         validate_cluster_command_slots(&command)?;
-        execute_redis_command(self.connection.clone(), command).await
+        execute_cluster_command(self.connection.clone(), command).await
     }
 }
 
@@ -647,6 +739,62 @@ mod tests {
         let error = validate_cluster_command_slots(&cross_slot).unwrap_err();
         assert_eq!(error.kind(), RedisErrorKind::InvalidRequest);
         assert_eq!(error.code(), Some("CROSSSLOT"));
+    }
+
+    #[test]
+    fn search_cluster_indexes_aliases_and_prefixes_share_one_slot() {
+        let mut create = RedisCommand::new("redis_ft_create", AccessMode::ReadWrite, "FT.CREATE");
+        create
+            .require_module(RedisModule::Search)
+            .arg("idx:{tenant}")
+            .arg("PREFIX")
+            .arg("1")
+            .arg("doc:{tenant}:")
+            .arg("SCHEMA")
+            .arg("title")
+            .arg("TEXT");
+        assert!(validate_cluster_command_slots(&create).is_ok());
+
+        let mut missing_prefix =
+            RedisCommand::new("redis_ft_create", AccessMode::ReadWrite, "FT.CREATE");
+        missing_prefix
+            .require_module(RedisModule::Search)
+            .arg("idx:{tenant}")
+            .arg("SCHEMA")
+            .arg("title")
+            .arg("TEXT");
+        assert_eq!(
+            validate_cluster_command_slots(&missing_prefix)
+                .unwrap_err()
+                .code(),
+            Some("CLUSTER_SEARCH_PREFIX_REQUIRED")
+        );
+
+        let mut alias =
+            RedisCommand::new("redis_ft_aliasadd", AccessMode::ReadWrite, "FT.ALIASADD");
+        alias
+            .require_module(RedisModule::Search)
+            .arg("alias:{tenant}")
+            .arg("idx:{other}");
+        assert_eq!(
+            validate_cluster_command_slots(&alias).unwrap_err().code(),
+            Some("CROSSSLOT")
+        );
+    }
+
+    #[test]
+    fn search_cluster_cursor_routes_by_index_not_subcommand() {
+        let mut cursor =
+            RedisCommand::new("redis_ft_cursor_read", AccessMode::ReadOnly, "FT.CURSOR");
+        cursor
+            .require_module(RedisModule::Search)
+            .arg("READ")
+            .arg("idx:{tenant}")
+            .arg("7");
+        assert_eq!(
+            cluster_routing_key(&cursor),
+            Some(b"idx:{tenant}".as_slice())
+        );
     }
 
     #[test]

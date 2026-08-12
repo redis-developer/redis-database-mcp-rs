@@ -225,7 +225,7 @@
   },
   "current_gate": {
     "met": false,
-    "blockers": [28, 29, 30, 31, 32, 33]
+    "blockers": [29, 30, 31, 32, 33]
   },
   "contract_scorecard": {
     "scale": {
@@ -645,8 +645,7 @@
       "redisctl_tools": ["redis_ft_search"],
       "library_tools": ["redis_ft_search"],
       "disposition": "implemented",
-      "quality_issues": [28],
-      "reason": "Bounded structured search always emits LIMIT and exposes a typed continuation offset; advanced non-vector query options are tracked separately."
+      "reason": "Bounded structured search always emits LIMIT and exposes typed documents plus a continuation offset. Sorting, return fields, scores and explanations, legacy numeric/geo filters, key and field restrictions, summarization, highlighting, language/scorer/expander controls, timeouts, parameters, and dialects are explicit schema options."
     },
     {
       "id": "search.create_index",
@@ -878,10 +877,25 @@
         "redis_ft_synupdate",
         "redis_ft_tagvals"
       ],
-      "library_tools": [],
-      "disposition": "planned",
-      "issue": 28,
-      "reason": "Issue #28 adds aggregate, alias, alter, explain, profile, dictionary, synonym, and tag-value operations."
+      "library_tools": [
+        "redis_ft_aggregate",
+        "redis_ft_aliasadd",
+        "redis_ft_aliasdel",
+        "redis_ft_aliasupdate",
+        "redis_ft_alter",
+        "redis_ft_cursor_del",
+        "redis_ft_cursor_read",
+        "redis_ft_dictadd",
+        "redis_ft_dictdel",
+        "redis_ft_dictdump",
+        "redis_ft_explain",
+        "redis_ft_profile",
+        "redis_ft_syndump",
+        "redis_ft_synupdate",
+        "redis_ft_tagvals"
+      ],
+      "disposition": "implemented",
+      "reason": "The library covers the complete redisctl Search baseline and adds explicit aggregate cursor read/delete tools. Search and aggregate inputs are typed and bounded; document, row, dictionary, synonym, and tag outputs are structured and binary-safe; aliases, dictionaries, schema changes, and cursor cleanup use explicit access and destructive annotations; module versions, ACL failures, RESP shapes, output ceilings, and same-slot Cluster routing are tested."
     },
     {
       "id": "pubsub.request_response",

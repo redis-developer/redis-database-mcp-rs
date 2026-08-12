@@ -65,6 +65,13 @@ impl ToolState {
         self.invocation_engine.capabilities().redis_version()
     }
 
+    fn module_version(&self, module: RedisModule) -> Option<RedisVersion> {
+        self.invocation_engine
+            .capabilities()
+            .module(module)
+            .version()
+    }
+
     fn command_timeout(&self) -> Duration {
         self.invocation_engine.command_timeout()
     }

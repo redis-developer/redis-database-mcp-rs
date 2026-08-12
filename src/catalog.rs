@@ -256,6 +256,14 @@ impl ToolMetadata {
             | "redis_json_arrtrim" => Some(RedisVersion::new(2, 0, 0)),
             "redis_json_merge" => Some(RedisVersion::new(2, 6, 0)),
             "redis_ft_list" => Some(RedisVersion::new(2, 0, 0)),
+            "redis_ft_aggregate" | "redis_ft_cursor_read" | "redis_ft_cursor_del" => {
+                Some(RedisVersion::new(1, 1, 0))
+            }
+            "redis_ft_synupdate" | "redis_ft_syndump" => Some(RedisVersion::new(1, 2, 0)),
+            "redis_ft_dictadd" | "redis_ft_dictdel" | "redis_ft_dictdump" => {
+                Some(RedisVersion::new(1, 4, 0))
+            }
+            "redis_ft_profile" => Some(RedisVersion::new(2, 2, 0)),
             "redis_vector_get_hash"
             | "redis_vector_set_hash"
             | "redis_ft_vector_search"
@@ -324,6 +332,13 @@ impl ToolMetadata {
             "redis_ft_list" => &["FT._LIST"],
             "redis_ft_info" => &["FT.INFO"],
             "redis_ft_search" => &["FT.SEARCH"],
+            "redis_ft_aggregate" => &["FT.AGGREGATE"],
+            "redis_ft_cursor_read" | "redis_ft_cursor_del" => &["FT.CURSOR"],
+            "redis_ft_explain" => &["FT.EXPLAIN"],
+            "redis_ft_profile" => &["FT.PROFILE"],
+            "redis_ft_tagvals" => &["FT.TAGVALS"],
+            "redis_ft_dictdump" => &["FT.DICTDUMP"],
+            "redis_ft_syndump" => &["FT.SYNDUMP"],
             "redis_vector_get_hash" => &["HGET"],
             "redis_ft_vector_search" | "redis_ft_hybrid_search" => &["FT.SEARCH"],
             "redis_set" => &["SET"],
@@ -365,6 +380,10 @@ impl ToolMetadata {
             "redis_json_arrappend" => &["JSON.ARRAPPEND", "JSON.TYPE", "EXISTS"],
             "redis_json_arrinsert" => &["JSON.ARRINSERT", "JSON.TYPE", "EXISTS"],
             "redis_ft_create" => &["FT.CREATE"],
+            "redis_ft_alter" => &["FT.ALTER"],
+            "redis_ft_synupdate" => &["FT.SYNUPDATE"],
+            "redis_ft_dictadd" => &["FT.DICTADD"],
+            "redis_ft_aliasadd" => &["FT.ALIASADD"],
             "redis_vector_set_hash" => &["HSET"],
             "redis_del" => &["DEL"],
             "redis_hdel" => &["HDEL"],
@@ -392,6 +411,9 @@ impl ToolMetadata {
             "redis_json_arrtrim" => &["JSON.ARRTRIM", "JSON.TYPE", "EXISTS"],
             "redis_json_merge" => &["JSON.MERGE", "EXISTS"],
             "redis_ft_dropindex" => &["FT.DROPINDEX"],
+            "redis_ft_aliasupdate" => &["FT.ALIASUPDATE"],
+            "redis_ft_aliasdel" => &["FT.ALIASDEL"],
+            "redis_ft_dictdel" => &["FT.DICTDEL"],
             "redis_command" => &[],
             _ => &[],
         };
@@ -399,7 +421,7 @@ impl ToolMetadata {
             // redis-rs routes these no-key or cursor commands to one node, or
             // returns a fan-out shape the tool does not aggregate. Advertising
             // database-wide semantics on Cluster would therefore mislead.
-            "redis_info" | "redis_dbsize" | "redis_scan" | "redis_randomkey" => {
+            "redis_info" | "redis_dbsize" | "redis_scan" | "redis_randomkey" | "redis_ft_list" => {
                 ToolDeploymentRequirement::Standalone
             }
             _ => ToolDeploymentRequirement::Any,
@@ -419,6 +441,7 @@ impl ToolMetadata {
             "redis_scan" | "redis_hscan" | "redis_sscan" | "redis_zscan" => {
                 ToolOutputPolicy::CursorPaginated
             }
+            "redis_ft_aggregate" | "redis_ft_cursor_read" => ToolOutputPolicy::CursorPaginated,
             "redis_lrange" | "redis_zrange" | "redis_xrange" | "redis_xrevrange" => {
                 ToolOutputPolicy::RangePaginated
             }
@@ -464,6 +487,11 @@ impl ToolMetadata {
             | "redis_json_arrtrim"
             | "redis_ft_list"
             | "redis_ft_info"
+            | "redis_ft_explain"
+            | "redis_ft_profile"
+            | "redis_ft_tagvals"
+            | "redis_ft_dictdump"
+            | "redis_ft_syndump"
             | "redis_vector_get_hash"
             | "redis_command" => ToolOutputPolicy::BudgetGuarded,
             _ => ToolOutputPolicy::IntrinsicallyBounded,
@@ -869,6 +897,48 @@ pub(crate) const CATALOG: &[ToolMetadata] = &[
         requires_raw_opt_in: false,
     },
     ToolMetadata {
+        name: "redis_ft_aggregate",
+        bundle: ToolBundle::Search,
+        required_access: AccessMode::ReadOnly,
+        requires_raw_opt_in: false,
+    },
+    ToolMetadata {
+        name: "redis_ft_cursor_read",
+        bundle: ToolBundle::Search,
+        required_access: AccessMode::ReadOnly,
+        requires_raw_opt_in: false,
+    },
+    ToolMetadata {
+        name: "redis_ft_explain",
+        bundle: ToolBundle::Search,
+        required_access: AccessMode::ReadOnly,
+        requires_raw_opt_in: false,
+    },
+    ToolMetadata {
+        name: "redis_ft_profile",
+        bundle: ToolBundle::Search,
+        required_access: AccessMode::ReadOnly,
+        requires_raw_opt_in: false,
+    },
+    ToolMetadata {
+        name: "redis_ft_tagvals",
+        bundle: ToolBundle::Search,
+        required_access: AccessMode::ReadOnly,
+        requires_raw_opt_in: false,
+    },
+    ToolMetadata {
+        name: "redis_ft_dictdump",
+        bundle: ToolBundle::Search,
+        required_access: AccessMode::ReadOnly,
+        requires_raw_opt_in: false,
+    },
+    ToolMetadata {
+        name: "redis_ft_syndump",
+        bundle: ToolBundle::Search,
+        required_access: AccessMode::ReadOnly,
+        requires_raw_opt_in: false,
+    },
+    ToolMetadata {
         name: "redis_set",
         bundle: ToolBundle::Essentials,
         required_access: AccessMode::ReadWrite,
@@ -1109,6 +1179,36 @@ pub(crate) const CATALOG: &[ToolMetadata] = &[
         requires_raw_opt_in: false,
     },
     ToolMetadata {
+        name: "redis_ft_cursor_del",
+        bundle: ToolBundle::Search,
+        required_access: AccessMode::ReadWrite,
+        requires_raw_opt_in: false,
+    },
+    ToolMetadata {
+        name: "redis_ft_alter",
+        bundle: ToolBundle::Search,
+        required_access: AccessMode::ReadWrite,
+        requires_raw_opt_in: false,
+    },
+    ToolMetadata {
+        name: "redis_ft_synupdate",
+        bundle: ToolBundle::Search,
+        required_access: AccessMode::ReadWrite,
+        requires_raw_opt_in: false,
+    },
+    ToolMetadata {
+        name: "redis_ft_dictadd",
+        bundle: ToolBundle::Search,
+        required_access: AccessMode::ReadWrite,
+        requires_raw_opt_in: false,
+    },
+    ToolMetadata {
+        name: "redis_ft_aliasadd",
+        bundle: ToolBundle::Search,
+        required_access: AccessMode::ReadWrite,
+        requires_raw_opt_in: false,
+    },
+    ToolMetadata {
         name: "redis_del",
         bundle: ToolBundle::Essentials,
         required_access: AccessMode::Full,
@@ -1278,6 +1378,24 @@ pub(crate) const CATALOG: &[ToolMetadata] = &[
     },
     ToolMetadata {
         name: "redis_ft_dropindex",
+        bundle: ToolBundle::Search,
+        required_access: AccessMode::Full,
+        requires_raw_opt_in: false,
+    },
+    ToolMetadata {
+        name: "redis_ft_aliasupdate",
+        bundle: ToolBundle::Search,
+        required_access: AccessMode::Full,
+        requires_raw_opt_in: false,
+    },
+    ToolMetadata {
+        name: "redis_ft_aliasdel",
+        bundle: ToolBundle::Search,
+        required_access: AccessMode::Full,
+        requires_raw_opt_in: false,
+    },
+    ToolMetadata {
+        name: "redis_ft_dictdel",
         bundle: ToolBundle::Search,
         required_access: AccessMode::Full,
         requires_raw_opt_in: false,

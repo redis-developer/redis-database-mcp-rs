@@ -17,6 +17,11 @@ struct TestRedisStack {
     _managed: Option<ManagedRedisStack>,
 }
 
+fn with_protocol(url: &str, protocol: &str) -> String {
+    let separator = if url.contains('?') { '&' } else { '?' };
+    format!("{url}{separator}protocol={protocol}")
+}
+
 impl TestRedisStack {
     async fn start() -> Option<Self> {
         if let Ok(url) = std::env::var("REDIS_STACK_URL") {
@@ -99,6 +104,7 @@ async fn stack_client(url: &str) -> McpClient {
     let router = RedisMcp::builder(executor)
         .access(AccessMode::Full)
         .bundles([
+            ToolBundle::Essentials,
             ToolBundle::DataStructures,
             ToolBundle::Json,
             ToolBundle::Search,
@@ -130,6 +136,25 @@ async fn stack_client_with_budget(url: &str, output_budget: OutputBudget) -> Mcp
         .initialize("redis-mcp-stack-budget-test", "0")
         .await
         .expect("initialize budget Stack MCP client");
+    client
+}
+
+async fn stack_search_client_with_budget(url: &str, output_budget: OutputBudget) -> McpClient {
+    let executor = DirectRedis::connect(url)
+        .await
+        .expect("connect to Redis Stack");
+    let router = RedisMcp::builder(executor)
+        .access(AccessMode::Full)
+        .bundles([ToolBundle::Search])
+        .output_budget(output_budget)
+        .build();
+    let client = McpClient::connect(ChannelTransport::new(router))
+        .await
+        .expect("connect budget Search MCP client");
+    client
+        .initialize("redis-mcp-search-budget-test", "0")
+        .await
+        .expect("initialize budget Search MCP client");
     client
 }
 
@@ -717,6 +742,642 @@ async fn redis_json_and_search_lifecycle_through_router() {
         );
         assert_eq!(deleted["deleted"], 1);
     }
+}
+
+#[tokio::test]
+async fn complete_search_family_is_structured_bounded_and_stateful() {
+    let Some(redis) = TestRedisStack::start().await else {
+        return;
+    };
+    let client = stack_client(&redis.url).await;
+    let suffix = std::process::id();
+    let prefix = format!("redis-mcp:search:{suffix}:doc:");
+    let first_index = format!("redis-mcp-search-{suffix}-v1");
+    let second_index = format!("redis-mcp-search-{suffix}-v2");
+    let alias = format!("redis-mcp-search-{suffix}-current");
+    let dictionary = format!("redis-mcp-search-{suffix}-dictionary");
+
+    for number in 0..12 {
+        call(
+            &client,
+            "redis_hset",
+            serde_json::json!({
+                "key": format!("{prefix}{number}"),
+                "fields": {
+                    "title": format!("Redis search guide {number}"),
+                    "category": format!("category-{}", number % 4),
+                    "score": number.to_string()
+                }
+            }),
+        )
+        .await;
+    }
+    call(
+        &client,
+        "redis_hset",
+        serde_json::json!({
+            "key": format!("{prefix}11"),
+            "entries": [{
+                "field": "blob",
+                "value": "/wA=",
+                "value_encoding": "base64"
+            }]
+        }),
+    )
+    .await;
+
+    let schema = serde_json::json!([
+        {"name": "title", "field_type": "TEXT"},
+        {"name": "category", "field_type": "TAG", "sortable": true}
+    ]);
+    call(
+        &client,
+        "redis_ft_create",
+        serde_json::json!({
+            "index": first_index,
+            "on": "HASH",
+            "prefixes": [prefix],
+            "schema": schema
+        }),
+    )
+    .await;
+    let altered = structured(
+        call(
+            &client,
+            "redis_ft_alter",
+            serde_json::json!({
+                "index": first_index,
+                "field": {"name": "score", "field_type": "NUMERIC", "sortable": true}
+            }),
+        )
+        .await,
+    );
+    assert_eq!(altered["added"], true);
+
+    let mut searched = None;
+    for _ in 0..40 {
+        let result = structured(
+            call(
+                &client,
+                "redis_ft_search",
+                serde_json::json!({
+                    "index": first_index,
+                    "query": "@title:$term",
+                    "params": [{"name": "term", "value": "redis"}],
+                    "dialect": 2,
+                    "return_fields": ["title", "category", "score"],
+                    "sortby": "score",
+                    "sortby_order": "DESC",
+                    "withscores": true,
+                    "limit_num": 4
+                }),
+            )
+            .await,
+        );
+        if result["total"].as_u64().is_some_and(|total| total == 12) {
+            searched = Some(result);
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(50)).await;
+    }
+    let searched = searched.expect("all HASH documents become searchable");
+    assert_eq!(searched["count"], 4);
+    assert!(searched["documents"][0]["score"].as_f64().is_some());
+    assert!(
+        searched["documents"][0]["fields"]
+            .to_string()
+            .contains("score")
+    );
+    assert_eq!(searched["page"]["continuation"]["offset"], 4);
+
+    let binary = structured(
+        call(
+            &client,
+            "redis_ft_search",
+            serde_json::json!({
+                "index": first_index,
+                "query": "@score:[11 11]",
+                "return_fields": ["blob"],
+                "limit_num": 1
+            }),
+        )
+        .await,
+    );
+    assert_eq!(
+        binary["documents"][0]["fields"][0]["value"]["encoding"],
+        "base64"
+    );
+    assert_eq!(
+        binary["documents"][0]["fields"][0]["value"]["value"],
+        "/wA="
+    );
+
+    let aggregate = structured(
+        call(
+            &client,
+            "redis_ft_aggregate",
+            serde_json::json!({
+                "index": first_index,
+                "query": "*",
+                "stages": [
+                    {
+                        "type": "group_by",
+                        "properties": ["@category"],
+                        "reducers": [{"function": "count", "alias": "count"}]
+                    },
+                    {
+                        "type": "sort_by",
+                        "fields": [{"property": "@count", "order": "desc"}]
+                    }
+                ],
+                "limit_num": 10,
+                "cursor": {"count": 1, "max_idle_ms": 5000}
+            }),
+        )
+        .await,
+    );
+    assert!(aggregate["total"].as_u64().is_some_and(|total| total >= 1));
+    assert!(aggregate["rows"].is_array());
+    let cursor_id = aggregate["cursor_id"]
+        .as_u64()
+        .filter(|cursor| *cursor != 0)
+        .expect("WITHCURSOR returns a continuation for four groups");
+    let continued = structured(
+        call(
+            &client,
+            "redis_ft_cursor_read",
+            serde_json::json!({
+                "index": first_index,
+                "cursor_id": cursor_id,
+                "count": 1
+            }),
+        )
+        .await,
+    );
+    let cursor_id = continued["cursor_id"]
+        .as_u64()
+        .filter(|cursor| *cursor != 0)
+        .expect("cursor remains after a second one-row page");
+    let deleted = structured(
+        call(
+            &client,
+            "redis_ft_cursor_del",
+            serde_json::json!({"index": first_index, "cursor_id": cursor_id}),
+        )
+        .await,
+    );
+    assert_eq!(deleted["deleted"], true);
+
+    let explained = structured(
+        call(
+            &client,
+            "redis_ft_explain",
+            serde_json::json!({"index": first_index, "query": "redis", "dialect": 2}),
+        )
+        .await,
+    );
+    assert!(
+        explained["plan"]
+            .as_str()
+            .is_some_and(|plan| !plan.is_empty())
+    );
+
+    let profile = structured(
+        call(
+            &client,
+            "redis_ft_profile",
+            serde_json::json!({
+                "index": first_index,
+                "command": "search",
+                "query": "redis",
+                "limit_num": 2
+            }),
+        )
+        .await,
+    );
+    assert!(profile["results"].is_array());
+    assert!(profile["profile"].is_array());
+
+    let tags = structured(
+        call(
+            &client,
+            "redis_ft_tagvals",
+            serde_json::json!({"index": first_index, "field": "category"}),
+        )
+        .await,
+    );
+    assert_eq!(tags["count"], 4);
+    assert_eq!(tags["deprecated"], true);
+    let budget_client =
+        stack_search_client_with_budget(&redis.url, OutputBudget::new(256 * 1024, 1)).await;
+    let bounded = budget_client
+        .call_tool(
+            "redis_ft_tagvals",
+            serde_json::json!({"index": first_index, "field": "category"}),
+        )
+        .await
+        .expect("bounded FT.TAGVALS result");
+    assert!(bounded.is_error);
+    assert!(format!("{bounded:?}").contains("output_limit_exceeded"));
+
+    let synonyms = structured(
+        call(
+            &client,
+            "redis_ft_synupdate",
+            serde_json::json!({
+                "index": first_index,
+                "group_id": "speed",
+                "terms": ["fast", "quick"]
+            }),
+        )
+        .await,
+    );
+    assert_eq!(synonyms["updated"], true);
+    let synonyms = structured(
+        call(
+            &client,
+            "redis_ft_syndump",
+            serde_json::json!({"index": first_index}),
+        )
+        .await,
+    );
+    assert!(synonyms["entries"].to_string().contains("speed"));
+
+    let added = structured(
+        call(
+            &client,
+            "redis_ft_dictadd",
+            serde_json::json!({"dict": dictionary, "terms": ["redis", "valkey"]}),
+        )
+        .await,
+    );
+    assert_eq!(added["changed"], 2);
+    let terms = structured(
+        call(
+            &client,
+            "redis_ft_dictdump",
+            serde_json::json!({"dict": dictionary}),
+        )
+        .await,
+    );
+    assert_eq!(terms["count"], 2);
+    let removed = structured(
+        call(
+            &client,
+            "redis_ft_dictdel",
+            serde_json::json!({"dict": dictionary, "terms": ["redis", "valkey"]}),
+        )
+        .await,
+    );
+    assert_eq!(removed["changed"], 2);
+
+    call(
+        &client,
+        "redis_ft_aliasadd",
+        serde_json::json!({"alias": alias, "index": first_index}),
+    )
+    .await;
+    let alias_search = structured(
+        call(
+            &client,
+            "redis_ft_search",
+            serde_json::json!({"index": alias, "query": "redis", "nocontent": true}),
+        )
+        .await,
+    );
+    assert_eq!(alias_search["total"], 12);
+
+    call(
+        &client,
+        "redis_ft_create",
+        serde_json::json!({
+            "index": second_index,
+            "on": "HASH",
+            "prefixes": [prefix],
+            "schema": [
+                {"name": "title", "field_type": "TEXT"},
+                {"name": "category", "field_type": "TAG"},
+                {"name": "score", "field_type": "NUMERIC"}
+            ]
+        }),
+    )
+    .await;
+    call(
+        &client,
+        "redis_ft_aliasupdate",
+        serde_json::json!({"alias": alias, "index": second_index}),
+    )
+    .await;
+    call(
+        &client,
+        "redis_ft_aliasdel",
+        serde_json::json!({"alias": alias}),
+    )
+    .await;
+
+    let missing_index = client
+        .call_tool(
+            "redis_ft_search",
+            serde_json::json!({"index": format!("{first_index}-missing"), "query": "*"}),
+        )
+        .await
+        .expect("missing Search index result");
+    let malformed_query = client
+        .call_tool(
+            "redis_ft_search",
+            serde_json::json!({"index": first_index, "query": "@title:["}),
+        )
+        .await
+        .expect("malformed Search query result");
+    assert!(missing_index.is_error);
+    assert!(malformed_query.is_error);
+    assert_ne!(format!("{missing_index:?}"), format!("{malformed_query:?}"));
+
+    for index in [first_index, second_index] {
+        call(
+            &client,
+            "redis_ft_dropindex",
+            serde_json::json!({"index": index}),
+        )
+        .await;
+    }
+    for number in 0..12 {
+        call(
+            &client,
+            "redis_del",
+            serde_json::json!({"keys": [format!("{prefix}{number}")]}),
+        )
+        .await;
+    }
+}
+
+#[tokio::test]
+async fn search_acl_commands_are_enforced_without_leaking_credentials() {
+    let Some(redis) = TestRedisStack::start().await else {
+        return;
+    };
+    let suffix = std::process::id();
+    let username = format!("redis-mcp-search-{suffix}");
+    let password = "mcp-search-secret";
+    let key = format!("redis-mcp:search:{suffix}:acl:doc");
+    let prefix = format!("redis-mcp:search:{suffix}:acl:");
+    let index = format!("redis-mcp-search-{suffix}-acl");
+
+    let admin = redis::Client::open(redis.url.as_str()).expect("open Stack admin client");
+    let mut connection = admin
+        .get_multiplexed_async_connection()
+        .await
+        .expect("connect Stack admin client");
+    redis::cmd("HSET")
+        .arg(&key)
+        .arg("title")
+        .arg("Redis ACL guide")
+        .query_async::<()>(&mut connection)
+        .await
+        .expect("seed Search ACL document");
+    redis::cmd("FT.CREATE")
+        .arg(&index)
+        .arg("ON")
+        .arg("HASH")
+        .arg("PREFIX")
+        .arg(1)
+        .arg(&prefix)
+        .arg("SCHEMA")
+        .arg("title")
+        .arg("TEXT")
+        .query_async::<()>(&mut connection)
+        .await
+        .expect("create Search ACL index");
+    redis::cmd("ACL")
+        .arg("SETUSER")
+        .arg(&username)
+        .arg("on")
+        .arg(format!(">{password}"))
+        .arg("resetkeys")
+        .arg("~*")
+        .arg("-@all")
+        .arg("+ft.search")
+        .query_async::<()>(&mut connection)
+        .await
+        .expect("create restricted Search user");
+
+    let authenticated_url =
+        redis
+            .url
+            .replacen("redis://", &format!("redis://{username}:{password}@"), 1);
+    let client = stack_client(&authenticated_url).await;
+    let mut allowed = None;
+    for _ in 0..20 {
+        let result = client
+            .call_tool(
+                "redis_ft_search",
+                serde_json::json!({"index": index, "query": "redis", "nocontent": true}),
+            )
+            .await
+            .expect("allowed FT.SEARCH result");
+        if !result.is_error
+            && result
+                .structured_content
+                .as_ref()
+                .and_then(|output| output["total"].as_u64())
+                == Some(1)
+        {
+            allowed = Some(result);
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(50)).await;
+    }
+    assert!(allowed.is_some(), "FT.SEARCH is allowed by ACL");
+
+    let denied = client
+        .call_tool("redis_ft_info", serde_json::json!({"index": index}))
+        .await
+        .expect("denied FT.INFO result");
+    assert!(denied.is_error);
+    assert!(!format!("{denied:?}").contains(password));
+
+    redis::cmd("ACL")
+        .arg("DELUSER")
+        .arg(&username)
+        .query_async::<()>(&mut connection)
+        .await
+        .expect("delete restricted Search user");
+    redis::cmd("FT.DROPINDEX")
+        .arg(&index)
+        .query_async::<()>(&mut connection)
+        .await
+        .expect("drop Search ACL index");
+    redis::cmd("DEL")
+        .arg(&key)
+        .query_async::<()>(&mut connection)
+        .await
+        .expect("delete Search ACL document");
+}
+
+#[tokio::test]
+async fn search_structured_replies_work_with_resp3() {
+    let Some(redis) = TestRedisStack::start().await else {
+        return;
+    };
+    let client = stack_client(&with_protocol(&redis.url, "3")).await;
+    let suffix = std::process::id();
+    let key = format!("redis-mcp:search:{suffix}:resp3:doc");
+    let second_key = format!("redis-mcp:search:{suffix}:resp3:other");
+    let prefix = format!("redis-mcp:search:{suffix}:resp3:");
+    let index = format!("redis-mcp-search-{suffix}-resp3");
+    call(
+        &client,
+        "redis_hset",
+        serde_json::json!({
+            "key": key,
+            "fields": {"title": "Redis RESP3 search", "category": "database"}
+        }),
+    )
+    .await;
+    call(
+        &client,
+        "redis_vector_set_hash",
+        serde_json::json!({
+            "key": key, "field": "embedding", "data_type": "FLOAT32", "vector": [1.0, 0.0]
+        }),
+    )
+    .await;
+    call(
+        &client,
+        "redis_hset",
+        serde_json::json!({
+            "key": second_key,
+            "fields": {"title": "Other cache", "category": "cache"}
+        }),
+    )
+    .await;
+    call(
+        &client,
+        "redis_vector_set_hash",
+        serde_json::json!({
+            "key": second_key, "field": "embedding", "data_type": "FLOAT32", "vector": [0.0, 1.0]
+        }),
+    )
+    .await;
+    call(
+        &client,
+        "redis_ft_create",
+        serde_json::json!({
+            "index": index,
+            "prefixes": [prefix],
+            "schema": [
+                {"name": "title", "field_type": "TEXT"},
+                {"name": "category", "field_type": "TAG"},
+                {
+                    "name": "embedding",
+                    "field_type": "VECTOR",
+                    "vector": {
+                        "algorithm": "FLAT", "data_type": "FLOAT32", "dimensions": 2,
+                        "distance_metric": "L2"
+                    }
+                }
+            ]
+        }),
+    )
+    .await;
+
+    let mut search = None;
+    let mut last_search_error = None;
+    for _ in 0..20 {
+        let result = client
+            .call_tool(
+                "redis_ft_search",
+                serde_json::json!({"index": index, "query": "redis", "limit_num": 1}),
+            )
+            .await
+            .expect("RESP3 FT.SEARCH result");
+        if !result.is_error {
+            let structured = result.structured_content.clone();
+            if structured
+                .as_ref()
+                .and_then(|output| output["total"].as_u64())
+                == Some(1)
+            {
+                search = structured;
+                break;
+            }
+        }
+        last_search_error = Some(result);
+        tokio::time::sleep(Duration::from_millis(50)).await;
+    }
+    let search = search.unwrap_or_else(|| {
+        panic!("structured RESP3 FT.SEARCH result; last error: {last_search_error:?}")
+    });
+    assert_eq!(search["total"], 1);
+    assert_eq!(search["documents"][0]["id"], key);
+
+    let vector = structured(
+        call(
+            &client,
+            "redis_ft_vector_search",
+            serde_json::json!({
+                "index": index,
+                "vector_field": "embedding",
+                "data_type": "FLOAT32",
+                "vector": [1.0, 0.0],
+                "top_k": 2,
+                "limit_num": 2,
+                "return_fields": ["title"]
+            }),
+        )
+        .await,
+    );
+    assert_eq!(vector["results"][0]["id"], key);
+
+    let aggregate = structured(
+        call(
+            &client,
+            "redis_ft_aggregate",
+            serde_json::json!({
+                "index": index,
+                "query": "*",
+                "stages": [{
+                    "type": "group_by",
+                    "properties": ["@category"],
+                    "reducers": [{"function": "count", "alias": "count"}]
+                }],
+                "limit_num": 10,
+                "cursor": {"count": 1}
+            }),
+        )
+        .await,
+    );
+    assert_eq!(aggregate["count"], 1);
+    let cursor_id = aggregate["cursor_id"].as_u64().expect("RESP3 cursor id");
+    assert!(cursor_id > 0);
+    let cursor_page = structured(
+        call(
+            &client,
+            "redis_ft_cursor_read",
+            serde_json::json!({"index": index, "cursor_id": cursor_id, "count": 1}),
+        )
+        .await,
+    );
+    assert_eq!(cursor_page["count"], 1);
+
+    let profile = structured(
+        call(
+            &client,
+            "redis_ft_profile",
+            serde_json::json!({
+                "index": index, "command": "search", "query": "redis", "limit_num": 1
+            }),
+        )
+        .await,
+    );
+    assert!(profile["profile"].is_array() || profile["profile"].is_object());
+
+    call(
+        &client,
+        "redis_ft_dropindex",
+        serde_json::json!({"index": index, "delete_docs": true}),
+    )
+    .await;
 }
 
 #[tokio::test]

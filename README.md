@@ -237,12 +237,12 @@ stable capability error by default; `UnavailableToolPolicy::Hide` removes them
 from `tools/list` instead. Every catalog entry exposes its minimum Redis/module
 versions and required command names.
 
-The current catalog marks `redis_info`, `redis_dbsize`, `redis_scan`, and
-`redis_randomkey` as standalone-only because redis-rs otherwise routes them to
-one cluster node or returns a fan-out shape without the database-wide
-aggregation their contracts imply. A discovered cluster snapshot therefore
-hides or rejects those tools instead of silently reporting one node as the
-whole database.
+The current catalog marks `redis_info`, `redis_dbsize`, `redis_scan`,
+`redis_randomkey`, and `redis_ft_list` as standalone-only because redis-rs
+otherwise routes them to one cluster node or returns a fan-out shape without
+the database-wide aggregation their contracts imply. A discovered cluster
+snapshot therefore hides or rejects those tools instead of silently reporting
+one node as the whole database.
 
 The curated default enables the `essentials`, `data_structures`, and
 `diagnostics` bundles. The module-backed `json` and `search` bundles are
@@ -274,7 +274,12 @@ is also exercised to keep missing-module errors stable and actionable. Stack
 coverage includes the complete RedisJSON family, JSONPath and legacy-path
 semantics, nil and wrong-type results, output bounds, ACL key patterns, FLOAT32
 HASH and FLOAT64 JSON vectors, FLAT and HNSW indexes, binary-safe hash round
-trips, KNN pagination, and typed text/tag/numeric/geo hybrid filters.
+trips, KNN pagination, and typed text/tag/numeric/geo hybrid filters. It also
+covers the complete redisctl Search baseline: structured advanced search,
+typed aggregate pipelines and cursor lifecycle, aliases, schema alteration,
+explain/profile, dictionaries, synonyms, deprecated tag values, binary fields,
+output limits, ACL command restrictions, module versions, and same-slot
+three-node Cluster routing.
 
 CI runs the complete suite on Redis 8.8 and the live router/stdio contract on
 every currently supported Redis Open Source series: 6.2, 7.2, 7.4, 8.0, 8.2,

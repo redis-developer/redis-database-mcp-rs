@@ -35,7 +35,7 @@ Redis Stack behavior is covered primarily by `tests/redis_tools.rs` and
 
 ## Current overlap
 
-The library implements 89 names from the baseline: 67 default tools, 21
+The library implements 102 names from the baseline: 67 default tools, 34
 optional RedisJSON/Search tools, and the separately enabled raw tool. One typed
 `redis_object_inspect` additionally covers three redisctl OBJECT tools without
 copying their names. Matching a name does not imply an identical contract:
@@ -139,9 +139,15 @@ The optional module-backed overlap adds all 16 redisctl JSON names:
 `redis_json_objkeys`, `redis_json_objlen`, `redis_json_set`,
 `redis_json_strlen`, `redis_json_toggle`, and `redis_json_type`. The library's
 `redis_json_merge` is a deliberate additional JSON capability. Search adds
-`redis_ft_list`, `redis_ft_info`, `redis_ft_search`, `redis_ft_create`,
-`redis_ft_dropindex`, `redis_vector_get_hash`, `redis_vector_set_hash`,
-`redis_ft_vector_search`, and `redis_ft_hybrid_search`.
+all 18 redisctl Search names: `redis_ft_aggregate`, `redis_ft_aliasadd`,
+`redis_ft_aliasdel`, `redis_ft_aliasupdate`, `redis_ft_alter`,
+`redis_ft_create`, `redis_ft_dictadd`, `redis_ft_dictdel`,
+`redis_ft_dictdump`, `redis_ft_dropindex`, `redis_ft_explain`,
+`redis_ft_info`, `redis_ft_list`, `redis_ft_profile`, `redis_ft_search`,
+`redis_ft_syndump`, `redis_ft_synupdate`, and `redis_ft_tagvals`. The Search
+bundle additionally provides binary-safe vector helpers and typed vector and
+hybrid search, plus explicit `redis_ft_cursor_read` and
+`redis_ft_cursor_del` lifecycle tools.
 
 - Tool names and Redis-domain field names remain aligned where practical.
 - `redis_json_set.value` accepts structured JSON directly. redisctl accepts a
@@ -159,9 +165,18 @@ The optional module-backed overlap adds all 16 redisctl JSON names:
   Deprecated `JSON.NUMMULTBY` is intentionally omitted in favor of
   `JSON.NUMINCRBY`.
 - Search pagination is bounded to 100 results per call, always emits LIMIT, and
-  returns a typed continuation offset. Search result payloads retain their
-  protocol sequence with explicit binary encodings while exposing the total
-  separately.
+  returns a typed continuation offset. Responses expose structured binary-safe
+  documents and retain the protocol sequence for compatibility. Sorting,
+  scores and explanations, legacy numeric/geo filters, key/field restrictions,
+  highlighting, summarization, language, scorer, expander, timeout, parameters,
+  and dialect selection are explicit schema fields.
+- Aggregation uses ordered typed GROUPBY/reducer, SORTBY, APPLY, FILTER, and
+  LIMIT stages. Result rows are structured and binary-safe; optional server
+  cursors have bounded read pages and explicit early deletion. Explain/profile,
+  aliases, schema alteration, dictionaries, synonyms, and the deprecated
+  whole-result `FT.TAGVALS` surface all have structured results, output
+  ceilings, access annotations, command/version requirements, ACL coverage,
+  and live standalone and same-slot Cluster tests.
 - `redis_ft_create` supports HASH and JSON indexes with TEXT, TAG, NUMERIC,
   GEO, and typed FLAT/HNSW VECTOR fields. Focused vector tools encode numeric
   arrays as binary-safe FLOAT32/FLOAT64 values, return structured distances and

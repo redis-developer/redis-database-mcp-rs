@@ -400,7 +400,50 @@ impl RedisExecutor for StubRedis {
                     RedisValue::BulkString(b"Redis guide".to_vec()),
                 ]),
             ]),
-            "FT.CREATE" | "FT.DROPINDEX" => RedisValue::Okay,
+            "FT.AGGREGATE" => RedisValue::Array(vec![
+                RedisValue::Integer(1),
+                RedisValue::Array(vec![
+                    RedisValue::BulkString(b"category".to_vec()),
+                    RedisValue::BulkString(b"docs".to_vec()),
+                    RedisValue::BulkString(b"count".to_vec()),
+                    RedisValue::BulkString(b"1".to_vec()),
+                ]),
+            ]),
+            "FT.CURSOR" if command.tool_name() == "redis_ft_cursor_read" => {
+                RedisValue::Array(vec![
+                    RedisValue::Array(vec![
+                        RedisValue::Integer(1),
+                        RedisValue::Array(vec![
+                            RedisValue::BulkString(b"category".to_vec()),
+                            RedisValue::BulkString(b"docs".to_vec()),
+                        ]),
+                    ]),
+                    RedisValue::Integer(0),
+                ])
+            }
+            "FT.EXPLAIN" => RedisValue::BulkString(b"INTERSECT { redis }".to_vec()),
+            "FT.PROFILE" => RedisValue::Array(vec![
+                RedisValue::Array(vec![RedisValue::Integer(0)]),
+                RedisValue::Array(vec![
+                    RedisValue::BulkString(b"Total profile time".to_vec()),
+                    RedisValue::Double(0.25),
+                ]),
+            ]),
+            "FT.TAGVALS" => RedisValue::Array(vec![
+                RedisValue::BulkString(b"database".to_vec()),
+                RedisValue::BulkString(b"search".to_vec()),
+            ]),
+            "FT.DICTDUMP" => RedisValue::Array(vec![
+                RedisValue::BulkString(b"redis".to_vec()),
+                RedisValue::BulkString(b"valkey".to_vec()),
+            ]),
+            "FT.SYNDUMP" => RedisValue::Array(vec![
+                RedisValue::BulkString(b"fast".to_vec()),
+                RedisValue::Array(vec![RedisValue::BulkString(b"speed".to_vec())]),
+            ]),
+            "FT.DICTADD" | "FT.DICTDEL" => RedisValue::Integer(1),
+            "FT.CREATE" | "FT.DROPINDEX" | "FT.ALTER" | "FT.SYNUPDATE" | "FT.ALIASADD"
+            | "FT.ALIASUPDATE" | "FT.ALIASDEL" | "FT.CURSOR" => RedisValue::Okay,
             "ECHO" => RedisValue::BulkString(b"hello".to_vec()),
             _ => RedisValue::Nil,
         };
@@ -1361,6 +1404,49 @@ fn structured_cases() -> Vec<(&'static str, serde_json::Value, &'static str)> {
             "results",
         ),
         (
+            "redis_ft_aggregate",
+            serde_json::json!({
+                "index": "idx:docs",
+                "query": "*",
+                "stages": [{
+                    "type": "group_by",
+                    "properties": ["@category"],
+                    "reducers": [{"function": "count", "alias": "count"}]
+                }]
+            }),
+            "rows",
+        ),
+        (
+            "redis_ft_cursor_read",
+            serde_json::json!({"index": "idx:docs", "cursor_id": 7}),
+            "rows",
+        ),
+        (
+            "redis_ft_explain",
+            serde_json::json!({"index": "idx:docs", "query": "redis"}),
+            "plan",
+        ),
+        (
+            "redis_ft_profile",
+            serde_json::json!({"index": "idx:docs", "command": "search", "query": "redis"}),
+            "profile",
+        ),
+        (
+            "redis_ft_tagvals",
+            serde_json::json!({"index": "idx:docs", "field": "category"}),
+            "values",
+        ),
+        (
+            "redis_ft_dictdump",
+            serde_json::json!({"dict": "terms"}),
+            "terms",
+        ),
+        (
+            "redis_ft_syndump",
+            serde_json::json!({"index": "idx:docs"}),
+            "entries",
+        ),
+        (
             "redis_set",
             serde_json::json!({"key": "greeting", "value": "hello"}),
             "applied",
@@ -1603,6 +1689,36 @@ fn structured_cases() -> Vec<(&'static str, serde_json::Value, &'static str)> {
             "stored",
         ),
         (
+            "redis_ft_cursor_del",
+            serde_json::json!({"index": "idx:docs", "cursor_id": 7}),
+            "deleted",
+        ),
+        (
+            "redis_ft_alter",
+            serde_json::json!({
+                "index": "idx:docs",
+                "field": {"name": "category", "field_type": "TAG"}
+            }),
+            "added",
+        ),
+        (
+            "redis_ft_synupdate",
+            serde_json::json!({
+                "index": "idx:docs", "group_id": "speed", "terms": ["fast", "quick"]
+            }),
+            "updated",
+        ),
+        (
+            "redis_ft_dictadd",
+            serde_json::json!({"dict": "terms", "terms": ["redis"]}),
+            "changed",
+        ),
+        (
+            "redis_ft_aliasadd",
+            serde_json::json!({"alias": "docs", "index": "idx:docs"}),
+            "action",
+        ),
+        (
             "redis_del",
             serde_json::json!({"keys": ["greeting"]}),
             "deleted",
@@ -1756,6 +1872,21 @@ fn structured_cases() -> Vec<(&'static str, serde_json::Value, &'static str)> {
             "redis_ft_dropindex",
             serde_json::json!({"index": "idx:docs"}),
             "dropped",
+        ),
+        (
+            "redis_ft_aliasupdate",
+            serde_json::json!({"alias": "docs", "index": "idx:docs-v2"}),
+            "action",
+        ),
+        (
+            "redis_ft_aliasdel",
+            serde_json::json!({"alias": "docs"}),
+            "action",
+        ),
+        (
+            "redis_ft_dictdel",
+            serde_json::json!({"dict": "terms", "terms": ["redis"]}),
+            "changed",
         ),
         (
             "redis_command",
@@ -2172,11 +2303,23 @@ async fn bundles_are_composable_and_raw_remains_a_separate_opt_in() {
     assert_eq!(
         search_read_write,
         vec![
+            "redis_ft_aggregate",
+            "redis_ft_aliasadd",
+            "redis_ft_alter",
             "redis_ft_create",
+            "redis_ft_cursor_del",
+            "redis_ft_cursor_read",
+            "redis_ft_dictadd",
+            "redis_ft_dictdump",
+            "redis_ft_explain",
             "redis_ft_hybrid_search",
             "redis_ft_info",
             "redis_ft_list",
+            "redis_ft_profile",
             "redis_ft_search",
+            "redis_ft_syndump",
+            "redis_ft_synupdate",
+            "redis_ft_tagvals",
             "redis_ft_vector_search",
             "redis_vector_get_hash",
             "redis_vector_set_hash",
@@ -2616,6 +2759,45 @@ async fn malformed_and_unbounded_inputs_fail_as_tool_results() {
         (
             "redis_ft_search",
             serde_json::json!({"index": "idx", "query": "*", "limit_num": 101}),
+        ),
+        (
+            "redis_ft_search",
+            serde_json::json!({"index": "idx", "query": "*", "explainscore": true}),
+        ),
+        (
+            "redis_ft_search",
+            serde_json::json!({
+                "index": "idx", "query": "@title:$term",
+                "params": [{"name": "term", "value": "redis"}]
+            }),
+        ),
+        (
+            "redis_ft_aggregate",
+            serde_json::json!({
+                "index": "idx", "query": "*", "load_all": true, "load_fields": ["@title"]
+            }),
+        ),
+        (
+            "redis_ft_aggregate",
+            serde_json::json!({
+                "index": "idx", "query": "*",
+                "stages": [{
+                    "type": "group_by", "properties": [],
+                    "reducers": [{"function": "count", "arguments": ["@title"]}]
+                }]
+            }),
+        ),
+        (
+            "redis_ft_cursor_read",
+            serde_json::json!({"index": "idx", "cursor_id": 0}),
+        ),
+        (
+            "redis_ft_dictadd",
+            serde_json::json!({"dict": "terms", "terms": []}),
+        ),
+        (
+            "redis_ft_synupdate",
+            serde_json::json!({"index": "idx", "group_id": "group", "terms": []}),
         ),
         (
             "redis_ft_create",
@@ -4400,6 +4582,37 @@ async fn known_missing_modules_commands_and_module_versions_filter_precisely() {
     assert!(names.iter().any(|name| name == "redis_ft_list"));
     assert!(names.iter().any(|name| name == "redis_ft_search"));
     assert!(!names.iter().any(|name| name == "redis_ft_vector_search"));
+
+    let pre_dialect_search = RedisCapabilities::unknown().with_module(
+        RedisModule::Search,
+        RedisModuleCapability::available(Some(RedisVersion::new(2, 4, 2))),
+    );
+    let client = capability_client(pre_dialect_search, UnavailableToolPolicy::Advertise).await;
+    let result = client
+        .call_tool(
+            "redis_ft_search",
+            serde_json::json!({"index": "idx", "query": "*", "dialect": 2}),
+        )
+        .await
+        .expect("conditional Search dialect version result");
+    assert!(result.is_error);
+    assert!(format!("{result:?}").contains("2.4.3"));
+
+    let pre_profile_search = RedisCapabilities::unknown().with_module(
+        RedisModule::Search,
+        RedisModuleCapability::available(Some(RedisVersion::new(2, 0, 0))),
+    );
+    let client = capability_client(pre_profile_search, UnavailableToolPolicy::Hide).await;
+    let names = client
+        .list_tools()
+        .await
+        .expect("list pre-profile Search tools")
+        .tools
+        .into_iter()
+        .map(|tool| tool.name)
+        .collect::<Vec<_>>();
+    assert!(!names.iter().any(|name| name == "redis_ft_profile"));
+    assert!(names.iter().any(|name| name == "redis_ft_aggregate"));
 }
 
 #[tokio::test]
@@ -4419,6 +4632,7 @@ async fn known_cluster_mode_hides_tools_with_unimplemented_cluster_wide_semantic
         "redis_dbsize",
         "redis_scan",
         "redis_randomkey",
+        "redis_ft_list",
     ] {
         assert!(!names.iter().any(|name| name == standalone_only));
     }
@@ -4882,6 +5096,73 @@ async fn redis_json_annotations_match_access_and_destructive_semantics() {
         assert!(!annotation.read_only_hint, "{name}");
         assert!(annotation.destructive_hint, "{name}");
         assert_eq!(annotation.idempotent_hint, idempotent, "{name}");
+    }
+}
+
+#[tokio::test]
+async fn search_annotations_match_data_and_cursor_semantics() {
+    let tools = full_catalog_client()
+        .await
+        .list_tools()
+        .await
+        .expect("list annotated Search tools")
+        .tools;
+    let annotations = |name: &str| {
+        tools
+            .iter()
+            .find(|tool| tool.name == name)
+            .unwrap_or_else(|| panic!("missing {name}"))
+            .annotations
+            .clone()
+            .unwrap_or_else(|| panic!("missing annotations for {name}"))
+    };
+
+    for name in [
+        "redis_ft_list",
+        "redis_ft_info",
+        "redis_ft_search",
+        "redis_vector_get_hash",
+        "redis_ft_vector_search",
+        "redis_ft_hybrid_search",
+        "redis_ft_explain",
+        "redis_ft_profile",
+        "redis_ft_tagvals",
+        "redis_ft_dictdump",
+        "redis_ft_syndump",
+    ] {
+        let annotation = annotations(name);
+        assert!(annotation.read_only_hint, "{name}");
+        assert!(!annotation.destructive_hint, "{name}");
+        assert!(annotation.idempotent_hint, "{name}");
+    }
+    for name in ["redis_ft_aggregate", "redis_ft_cursor_read"] {
+        let annotation = annotations(name);
+        assert!(annotation.read_only_hint, "{name}");
+        assert!(!annotation.destructive_hint, "{name}");
+        assert!(!annotation.idempotent_hint, "{name}");
+    }
+    for name in [
+        "redis_ft_create",
+        "redis_vector_set_hash",
+        "redis_ft_alter",
+        "redis_ft_synupdate",
+        "redis_ft_dictadd",
+        "redis_ft_aliasadd",
+    ] {
+        let annotation = annotations(name);
+        assert!(!annotation.read_only_hint, "{name}");
+        assert!(!annotation.destructive_hint, "{name}");
+    }
+    for name in [
+        "redis_ft_cursor_del",
+        "redis_ft_dropindex",
+        "redis_ft_aliasupdate",
+        "redis_ft_aliasdel",
+        "redis_ft_dictdel",
+    ] {
+        let annotation = annotations(name);
+        assert!(!annotation.read_only_hint, "{name}");
+        assert!(annotation.destructive_hint, "{name}");
     }
 }
 

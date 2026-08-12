@@ -19,7 +19,7 @@ matrix.
 | --- | --- | ---: | ---: |
 | [`redis/mcp-redis`](https://github.com/redis/mcp-redis) | `5945b0b5b098c9a1882075a161a6a58f23de81ed` | 0.5.1 | 53 |
 | [`redisctl`](https://github.com/redis/redisctl) | `955f4b18f4266c332bc640cada67d125d23edde8` | read-only inventory | 132 |
-| `redis-mcp` | current catalog | 0.1 development line | 136 |
+| `redis-mcp` | current catalog | 0.1 development line | 151 |
 
 The redisctl baseline is a compatibility and breadth reference, not a promise
 to copy application-specific profile fields, aliases, or weak contracts.
@@ -29,7 +29,7 @@ to copy application-specific profile fields, aliases, or weak contracts.
 | Baseline | Implemented | Planned | Superseded | Excluded |
 | --- | ---: | ---: | ---: | ---: |
 | `redis/mcp-redis` | 45 | 6 | 1 | 1 |
-| redisctl | 94 | 32 | 1 | 5 |
+| redisctl | 107 | 19 | 1 | 5 |
 
 The dispositions mean:
 
@@ -45,6 +45,16 @@ subsumes both `get_index_info` and `get_indexed_keys_number`. Conversely, name
 overlap does not imply equivalent quality. The library now adds three bounded
 cursor tools absent from both pinned inventories: `redis_hscan`, `redis_sscan`,
 and `redis_zscan`.
+
+The Search bundle now covers the complete redisctl Query Engine baseline and
+adds first-class `redis_ft_cursor_read` and `redis_ft_cursor_del` lifecycle
+tools. `redis_ft_search` exposes structured documents plus sorting, scores,
+filters, highlighting, summarization, parameters, dialects, and execution
+controls. `redis_ft_aggregate` models ordered GROUPBY/reducer, sort, apply,
+filter, limit, parameter, and cursor stages without a raw argument escape
+hatch. Alias, dictionary, synonym, schema-alteration, explain, profile, and
+deprecated tag-value operations carry explicit access, capability, output, and
+binary-encoding contracts.
 
 ### Remaining `redis/mcp-redis` gaps
 
@@ -181,11 +191,11 @@ also applied to collection results and raw RESP collections.
 
 | Policy | Tools |
 | --- | --- |
-| cursor paginated | `redis_scan`, `redis_hscan`, `redis_sscan`, `redis_zscan` |
+| cursor paginated | `redis_scan`, `redis_hscan`, `redis_sscan`, `redis_zscan`, `redis_ft_aggregate`, `redis_ft_cursor_read` |
 | range paginated | `redis_lrange`, `redis_zrange`, `redis_xrange`, `redis_xrevrange` |
 | offset paginated | `redis_ft_search`, `redis_ft_vector_search`, `redis_ft_hybrid_search` |
-| budget guarded | `redis_command`, `redis_dump`, `redis_ft_info`, `redis_ft_list`, `redis_get`, `redis_getdel`, `redis_getex`, `redis_getrange`, `redis_hget`, `redis_hgetall`, `redis_hkeys`, `redis_hmget`, `redis_hvals`, `redis_info`, `redis_json_arrappend`, `redis_json_arrinsert`, `redis_json_arrlen`, `redis_json_arrpop`, `redis_json_arrtrim`, `redis_json_get`, `redis_json_mget`, `redis_json_numincrby`, `redis_json_objkeys`, `redis_json_objlen`, `redis_json_strlen`, `redis_json_toggle`, `redis_json_type`, `redis_mget`, `redis_randomkey`, `redis_sdiff`, `redis_set`, `redis_sinter`, `redis_smembers`, `redis_smismember`, `redis_sunion`, `redis_vector_get_hash`, `redis_xinfo_consumers`, `redis_xinfo_groups`, `redis_xinfo_stream`, `redis_xpending`, `redis_zmscore` |
-| intrinsically bounded | `redis_append`, `redis_copy`, `redis_copy_replace`, `redis_dbsize`, `redis_decr`, `redis_decrby`, `redis_del`, `redis_exists`, `redis_expire`, `redis_ft_create`, `redis_ft_dropindex`, `redis_hdel`, `redis_hexists`, `redis_hexpire`, `redis_hincrby`, `redis_hincrbyfloat`, `redis_hlen`, `redis_hpersist`, `redis_hset`, `redis_hstrlen`, `redis_httl`, `redis_incr`, `redis_incrby`, `redis_incrbyfloat`, `redis_json_clear`, `redis_json_del`, `redis_json_merge`, `redis_json_set`, `redis_lindex`, `redis_llen`, `redis_lmove`, `redis_lpop`, `redis_lpos`, `redis_lpush`, `redis_lrem`, `redis_lset`, `redis_ltrim`, `redis_memory_usage`, `redis_mset`, `redis_object_inspect`, `redis_persist`, `redis_ping`, `redis_rename`, `redis_renamenx`, `redis_restore`, `redis_restore_replace`, `redis_rpop`, `redis_rpush`, `redis_sadd`, `redis_scard`, `redis_setrange`, `redis_sismember`, `redis_srem`, `redis_strlen`, `redis_touch`, `redis_ttl`, `redis_type`, `redis_unlink`, `redis_vector_set_hash`, `redis_xack`, `redis_xadd`, `redis_xautoclaim`, `redis_xclaim`, `redis_xdel`, `redis_xgroup_create`, `redis_xgroup_createconsumer`, `redis_xgroup_delconsumer`, `redis_xgroup_destroy`, `redis_xgroup_setid`, `redis_xlen`, `redis_xread`, `redis_xreadgroup`, `redis_xtrim`, `redis_zadd`, `redis_zcard`, `redis_zcount`, `redis_zincrby`, `redis_zpopmax`, `redis_zpopmin`, `redis_zrank`, `redis_zrem`, `redis_zremrangebyscore`, `redis_zrevrank`, `redis_zscore` |
+| budget guarded | `redis_command`, `redis_dump`, `redis_ft_dictdump`, `redis_ft_explain`, `redis_ft_info`, `redis_ft_list`, `redis_ft_profile`, `redis_ft_syndump`, `redis_ft_tagvals`, `redis_get`, `redis_getdel`, `redis_getex`, `redis_getrange`, `redis_hget`, `redis_hgetall`, `redis_hkeys`, `redis_hmget`, `redis_hvals`, `redis_info`, `redis_json_arrappend`, `redis_json_arrinsert`, `redis_json_arrlen`, `redis_json_arrpop`, `redis_json_arrtrim`, `redis_json_get`, `redis_json_mget`, `redis_json_numincrby`, `redis_json_objkeys`, `redis_json_objlen`, `redis_json_strlen`, `redis_json_toggle`, `redis_json_type`, `redis_mget`, `redis_randomkey`, `redis_sdiff`, `redis_set`, `redis_sinter`, `redis_smembers`, `redis_smismember`, `redis_sunion`, `redis_vector_get_hash`, `redis_xinfo_consumers`, `redis_xinfo_groups`, `redis_xinfo_stream`, `redis_xpending`, `redis_zmscore` |
+| intrinsically bounded | `redis_append`, `redis_copy`, `redis_copy_replace`, `redis_dbsize`, `redis_decr`, `redis_decrby`, `redis_del`, `redis_exists`, `redis_expire`, `redis_ft_aliasadd`, `redis_ft_aliasdel`, `redis_ft_aliasupdate`, `redis_ft_alter`, `redis_ft_create`, `redis_ft_cursor_del`, `redis_ft_dictadd`, `redis_ft_dictdel`, `redis_ft_dropindex`, `redis_ft_synupdate`, `redis_hdel`, `redis_hexists`, `redis_hexpire`, `redis_hincrby`, `redis_hincrbyfloat`, `redis_hlen`, `redis_hpersist`, `redis_hset`, `redis_hstrlen`, `redis_httl`, `redis_incr`, `redis_incrby`, `redis_incrbyfloat`, `redis_json_clear`, `redis_json_del`, `redis_json_merge`, `redis_json_set`, `redis_lindex`, `redis_llen`, `redis_lmove`, `redis_lpop`, `redis_lpos`, `redis_lpush`, `redis_lrem`, `redis_lset`, `redis_ltrim`, `redis_memory_usage`, `redis_mset`, `redis_object_inspect`, `redis_persist`, `redis_ping`, `redis_rename`, `redis_renamenx`, `redis_restore`, `redis_restore_replace`, `redis_rpop`, `redis_rpush`, `redis_sadd`, `redis_scard`, `redis_setrange`, `redis_sismember`, `redis_srem`, `redis_strlen`, `redis_touch`, `redis_ttl`, `redis_type`, `redis_unlink`, `redis_vector_set_hash`, `redis_xack`, `redis_xadd`, `redis_xautoclaim`, `redis_xclaim`, `redis_xdel`, `redis_xgroup_create`, `redis_xgroup_createconsumer`, `redis_xgroup_delconsumer`, `redis_xgroup_destroy`, `redis_xgroup_setid`, `redis_xlen`, `redis_xread`, `redis_xreadgroup`, `redis_xtrim`, `redis_zadd`, `redis_zcard`, `redis_zcount`, `redis_zincrby`, `redis_zpopmax`, `redis_zpopmin`, `redis_zrank`, `redis_zrem`, `redis_zremrangebyscore`, `redis_zrevrank`, `redis_zscore` |
 
 Budget-guarded whole-collection reads fail with an `output_limit_exceeded`
 reason and machine-readable `io.redis.mcp/outputLimit` metadata instead of
@@ -213,8 +223,8 @@ The roadmap is complete only when all of these are true:
 5. The checked-in `current_gate.met` value agrees with the gate calculated by
    the test.
 
-The gate is currently **not met**. Six roadmap blockers remain after completing
-the Streams and RedisJSON families.
+The gate is currently **not met**. Five roadmap blockers remain after completing
+the Streams, RedisJSON, and Search families.
 
 ## Updating the scorecard
 

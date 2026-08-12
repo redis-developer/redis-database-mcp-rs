@@ -110,6 +110,16 @@ impl TestJsonCluster {
             );
             return None;
         };
+        let search_module = module_args
+            .windows(2)
+            .find(|pair| pair[0] == "--loadmodule" && pair[1].ends_with("redisearch.so"))
+            .map(|pair| pair[1].clone());
+        let Some(_search_module) = search_module else {
+            eprintln!(
+                "skipping live Redis Stack Cluster test: REDIS_STACK_CLUSTER_URLS is not set and no local redisearch.so was detected"
+            );
+            return None;
+        };
 
         let directory = tempfile::tempdir().expect("create RedisJSON Cluster test directory");
         let base_port = available_cluster_base_port(3)
@@ -137,6 +147,10 @@ impl TestJsonCluster {
             .require_module_on_all_nodes("ReJSON")
             .await
             .expect("RedisJSON is loaded on every cluster node");
+        cluster
+            .require_module_on_all_nodes("search")
+            .await
+            .expect("Redis Query Engine is loaded on every cluster node");
         let managed = ManagedCluster {
             cluster,
             _directory: directory,
@@ -245,6 +259,21 @@ async fn json_router_client(executor: impl RedisExecutor) -> McpClient {
         .initialize("redis-mcp-json-cluster-test", "0")
         .await
         .expect("initialize RedisJSON Cluster MCP client");
+    client
+}
+
+async fn search_router_client(executor: impl RedisExecutor) -> McpClient {
+    let router = RedisMcp::builder(executor)
+        .access(AccessMode::Full)
+        .bundles([ToolBundle::DataStructures, ToolBundle::Search])
+        .build();
+    let client = McpClient::connect(ChannelTransport::new(router))
+        .await
+        .expect("connect Search Cluster MCP client");
+    client
+        .initialize("redis-mcp-search-cluster-test", "0")
+        .await
+        .expect("initialize Search Cluster MCP client");
     client
 }
 
@@ -425,6 +454,177 @@ async fn redis_json_mget_enforces_the_native_cluster_same_slot_contract() {
         serde_json::to_string(&cross_slot).expect("serialize JSON.MGET CROSSSLOT result");
     assert!(cross_slot.contains("[InvalidRequest]"), "{cross_slot}");
     assert!(cross_slot.contains("CROSSSLOT"), "{cross_slot}");
+}
+
+#[tokio::test]
+async fn search_routes_same_slot_index_documents_and_aggregates_in_cluster() {
+    let _cluster_guard = CLUSTER_TEST_LOCK.lock().await;
+    let Some(cluster) = TestJsonCluster::start().await else {
+        return;
+    };
+    let executor = DirectRedisCluster::connect(&cluster.seed_urls)
+        .await
+        .expect("connect Search cluster-aware adapter");
+    let capabilities = executor
+        .discover_capabilities()
+        .await
+        .expect("discover Search Cluster capabilities");
+    assert_eq!(capabilities.deployment(), RedisDeployment::Cluster);
+    assert_eq!(
+        capabilities.module(RedisModule::Search).status(),
+        CapabilityStatus::Available
+    );
+    let client = search_router_client(executor).await;
+
+    let suffix = std::process::id();
+    let index = format!("redis-mcp:{{search-{suffix}}}:index");
+    let prefix = format!("redis-mcp:{{search-{suffix}}}:doc:");
+    for number in 0..4 {
+        let set = client
+            .call_tool(
+                "redis_hset",
+                serde_json::json!({
+                    "key": format!("{prefix}{number}"),
+                    "fields": {
+                        "title": format!("Redis cluster search {number}"),
+                        "category": format!("category-{number}")
+                    }
+                }),
+            )
+            .await
+            .expect("route Cluster HSET");
+        assert!(!set.is_error, "{set:?}");
+    }
+
+    let created = client
+        .call_tool(
+            "redis_ft_create",
+            serde_json::json!({
+                "index": index,
+                "on": "HASH",
+                "prefixes": [prefix],
+                "schema": [
+                    {"name": "title", "field_type": "TEXT"},
+                    {"name": "category", "field_type": "TAG"}
+                ]
+            }),
+        )
+        .await
+        .expect("route Cluster FT.CREATE");
+    assert!(!created.is_error, "{created:?}");
+
+    let mut searched = None;
+    for _ in 0..20 {
+        let result = client
+            .call_tool(
+                "redis_ft_search",
+                serde_json::json!({"index": index, "query": "redis", "limit_num": 1}),
+            )
+            .await
+            .expect("route Cluster FT.SEARCH");
+        if !result.is_error
+            && result
+                .structured_content
+                .as_ref()
+                .and_then(|output| output["total"].as_u64())
+                == Some(4)
+        {
+            searched = result.structured_content;
+            break;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+    }
+    let searched = searched.expect("same-slot Cluster document becomes searchable");
+    assert!(
+        searched["documents"][0]["id"]
+            .as_str()
+            .is_some_and(|id| id.starts_with(&prefix))
+    );
+
+    let aggregate = client
+        .call_tool(
+            "redis_ft_aggregate",
+            serde_json::json!({
+                "index": index,
+                "query": "*",
+                "stages": [{
+                    "type": "group_by",
+                    "properties": ["@category"],
+                    "reducers": [{"function": "count", "alias": "count"}]
+                }],
+                "limit_num": 10,
+                "cursor": {"count": 1, "max_idle_ms": 5000}
+            }),
+        )
+        .await
+        .expect("route Cluster FT.AGGREGATE");
+    assert!(!aggregate.is_error, "{aggregate:?}");
+    let aggregate = aggregate
+        .structured_content
+        .expect("structured Cluster aggregate");
+    assert_eq!(aggregate["count"], 1);
+    let cursor_id = aggregate["cursor_id"]
+        .as_u64()
+        .filter(|cursor| *cursor != 0)
+        .expect("Cluster aggregate cursor continuation");
+    let continued = client
+        .call_tool(
+            "redis_ft_cursor_read",
+            serde_json::json!({"index": index, "cursor_id": cursor_id, "count": 1}),
+        )
+        .await
+        .expect("route Cluster FT.CURSOR READ");
+    assert!(!continued.is_error, "{continued:?}");
+    let cursor_id = continued
+        .structured_content
+        .expect("structured Cluster cursor page")["cursor_id"]
+        .as_u64()
+        .filter(|cursor| *cursor != 0)
+        .expect("Cluster cursor has more rows");
+    let deleted = client
+        .call_tool(
+            "redis_ft_cursor_del",
+            serde_json::json!({"index": index, "cursor_id": cursor_id}),
+        )
+        .await
+        .expect("route Cluster FT.CURSOR DEL");
+    assert!(!deleted.is_error, "{deleted:?}");
+
+    let alias = format!("redis-mcp:{{search-{suffix}}}:alias");
+    let added = client
+        .call_tool(
+            "redis_ft_aliasadd",
+            serde_json::json!({"alias": alias, "index": index}),
+        )
+        .await
+        .expect("route same-slot Cluster FT.ALIASADD");
+    assert!(!added.is_error, "{added:?}");
+    let cross_slot = client
+        .call_tool(
+            "redis_ft_aliasupdate",
+            serde_json::json!({
+                "alias": format!("redis-mcp:{{other-{suffix}}}:alias"),
+                "index": index
+            }),
+        )
+        .await
+        .expect("cross-slot Cluster alias result");
+    assert!(cross_slot.is_error);
+    assert!(format!("{cross_slot:?}").contains("CROSSSLOT"));
+    let deleted = client
+        .call_tool("redis_ft_aliasdel", serde_json::json!({"alias": alias}))
+        .await
+        .expect("route Cluster FT.ALIASDEL");
+    assert!(!deleted.is_error, "{deleted:?}");
+
+    let dropped = client
+        .call_tool(
+            "redis_ft_dropindex",
+            serde_json::json!({"index": index, "delete_docs": true}),
+        )
+        .await
+        .expect("route Cluster FT.DROPINDEX");
+    assert!(!dropped.is_error, "{dropped:?}");
 }
 
 #[tokio::test]

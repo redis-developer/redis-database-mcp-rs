@@ -225,7 +225,7 @@
   },
   "current_gate": {
     "met": false,
-    "blockers": [23, 27, 28, 29, 30, 31, 32, 33]
+    "blockers": [28, 29, 30, 31, 32, 33]
   },
   "contract_scorecard": {
     "scale": {
@@ -613,7 +613,6 @@
       "redisctl_tools": ["redis_json_set"],
       "library_tools": ["redis_json_set"],
       "disposition": "implemented",
-      "quality_issues": [27],
       "reason": "The library accepts structured JSON directly and avoids a second JSON string encoding."
     },
     {
@@ -843,10 +842,23 @@
         "redis_json_strlen",
         "redis_json_toggle"
       ],
-      "library_tools": [],
-      "disposition": "planned",
-      "issue": 27,
-      "reason": "Issue #27 completes bounded array, object, numeric, string, and multi-key JSON operations."
+      "library_tools": [
+        "redis_json_arrappend",
+        "redis_json_arrinsert",
+        "redis_json_arrlen",
+        "redis_json_arrpop",
+        "redis_json_arrtrim",
+        "redis_json_clear",
+        "redis_json_merge",
+        "redis_json_mget",
+        "redis_json_numincrby",
+        "redis_json_objkeys",
+        "redis_json_objlen",
+        "redis_json_strlen",
+        "redis_json_toggle"
+      ],
+      "disposition": "implemented",
+      "reason": "The library is a structured RedisJSON superset: enhanced and legacy paths remain explicit, nil and wrong-type results stay aligned, array values and merge patches are direct JSON, collection and returned-value budgets are enforced, destructive mutations require full access, and RedisJSON 2.0/2.6 capability gates are declared. Deprecated JSON.NUMMULTBY is intentionally omitted in favor of JSON.NUMINCRBY."
     },
     {
       "id": "search.expansion",

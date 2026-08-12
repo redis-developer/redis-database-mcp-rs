@@ -1,6 +1,6 @@
 # redisctl database-tool compatibility inventory
 
-Date: 2026-08-05
+Date: 2026-08-12
 
 Read-only source: redisctl commit
 `955f4b18f4266c332bc640cada67d125d23edde8`
@@ -35,7 +35,7 @@ Redis Stack behavior is covered primarily by `tests/redis_tools.rs` and
 
 ## Current overlap
 
-The library implements 77 names from the baseline: 67 default tools, nine
+The library implements 89 names from the baseline: 67 default tools, 21
 optional RedisJSON/Search tools, and the separately enabled raw tool. One typed
 `redis_object_inspect` additionally covers three redisctl OBJECT tools without
 copying their names. Matching a name does not imply an identical contract:
@@ -132,18 +132,32 @@ typed per-field statuses; scan tools return one bounded Redis cursor page with
   normal Cluster routing is live-tested without implying multi-key fan-out.
 - Outputs are structured rather than preserving redisctl's prose rendering.
 
-The optional module-backed overlap adds `redis_json_get`, `redis_json_type`,
-`redis_json_set`, `redis_json_del`, `redis_ft_list`, `redis_ft_info`,
-`redis_ft_search`, `redis_ft_create`, `redis_ft_dropindex`,
-`redis_vector_get_hash`, `redis_vector_set_hash`, `redis_ft_vector_search`, and
-`redis_ft_hybrid_search`.
+The optional module-backed overlap adds all 16 redisctl JSON names:
+`redis_json_arrappend`, `redis_json_arrinsert`, `redis_json_arrlen`,
+`redis_json_arrpop`, `redis_json_arrtrim`, `redis_json_clear`, `redis_json_del`,
+`redis_json_get`, `redis_json_mget`, `redis_json_numincrby`,
+`redis_json_objkeys`, `redis_json_objlen`, `redis_json_set`,
+`redis_json_strlen`, `redis_json_toggle`, and `redis_json_type`. The library's
+`redis_json_merge` is a deliberate additional JSON capability. Search adds
+`redis_ft_list`, `redis_ft_info`, `redis_ft_search`, `redis_ft_create`,
+`redis_ft_dropindex`, `redis_vector_get_hash`, `redis_vector_set_hash`,
+`redis_ft_vector_search`, and `redis_ft_hybrid_search`.
 
 - Tool names and Redis-domain field names remain aligned where practical.
 - `redis_json_set.value` accepts structured JSON directly. redisctl accepts a
   string containing another layer of JSON; the library intentionally removes
   that double encoding.
-- JSON reads normalize enhanced JSONPath results into structured JSON and type
-  arrays rather than prose.
+- JSON tools default to enhanced JSONPath and accept an explicit legacy mode
+  where reply shape differs. Reads preserve aligned nil and wrong-type results,
+  distinguish missing keys from missing paths, and bound both encoded bytes and
+  nested JSON entries.
+- Read-write operations accept structured JSON values, preserve conditional SET
+  no-ops, and report matched paths or array outcomes. Deletion, clearing, array
+  pop/trim, and RFC 7396 merge require full access; `redis_json_arrpop` can omit
+  an oversized committed value without obscuring the pop outcome.
+- RedisJSON 2.0 gates the enhanced-path family and RedisJSON 2.6 gates MERGE.
+  Deprecated `JSON.NUMMULTBY` is intentionally omitted in favor of
+  `JSON.NUMINCRBY`.
 - Search pagination is bounded to 100 results per call, always emits LIMIT, and
   returns a typed continuation offset. Search result payloads retain their
   protocol sequence with explicit binary encodings while exposing the total

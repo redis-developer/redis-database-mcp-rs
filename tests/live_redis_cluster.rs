@@ -4,10 +4,12 @@ use std::{collections::BTreeMap, io, net::TcpListener};
 
 use redis_mcp::{
     AccessMode, CapabilityStatus, DirectRedis, DirectRedisCluster, RawCommandPolicy,
-    RedisDeployment, RedisExecutor, RedisMcp,
+    RedisDeployment, RedisExecutor, RedisMcp, RedisModule, ToolBundle,
 };
 use redis_server_wrapper::{Error as RedisServerError, RedisCluster, RedisClusterHandle};
 use tower_mcp::client::{ChannelTransport, McpClient, StdioClientTransport};
+
+static CLUSTER_TEST_LOCK: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
 
 struct TestCluster {
     seed_urls: Vec<String>,
@@ -77,6 +79,75 @@ impl ManagedCluster {
     }
 }
 
+struct TestJsonCluster {
+    seed_urls: Vec<String>,
+    _managed: Option<ManagedCluster>,
+}
+
+impl TestJsonCluster {
+    async fn start() -> Option<Self> {
+        if let Ok(seed_urls) = std::env::var("REDIS_STACK_CLUSTER_URLS") {
+            let seed_urls = parse_seed_urls(&seed_urls);
+            assert!(
+                !seed_urls.is_empty(),
+                "REDIS_STACK_CLUSTER_URLS must contain at least one URL"
+            );
+            return Some(Self {
+                seed_urls,
+                _managed: None,
+            });
+        }
+
+        let server_bin = redis_server_wrapper::stack::detect_server_bin();
+        let module_args = redis_server_wrapper::stack::detect_stack_modules(&server_bin);
+        let json_module = module_args
+            .windows(2)
+            .find(|pair| pair[0] == "--loadmodule" && pair[1].ends_with("rejson.so"))
+            .map(|pair| pair[1].clone());
+        let Some(_json_module) = json_module else {
+            eprintln!(
+                "skipping live RedisJSON Cluster test: REDIS_STACK_CLUSTER_URLS is not set and no local rejson.so was detected"
+            );
+            return None;
+        };
+
+        let directory = tempfile::tempdir().expect("create RedisJSON Cluster test directory");
+        let base_port = available_cluster_base_port(3)
+            .expect("find available RedisJSON Cluster client and bus port ranges");
+        let cluster = match RedisCluster::builder()
+            .masters(3)
+            .replicas_per_master(0)
+            .base_port(base_port)
+            .bind("127.0.0.1")
+            .dir(directory.path())
+            .redis_server_bin(server_bin)
+            .start()
+            .await
+        {
+            Ok(cluster) => cluster,
+            Err(RedisServerError::BinaryNotFound { binary, .. }) => {
+                eprintln!(
+                    "skipping live RedisJSON Cluster test: REDIS_STACK_CLUSTER_URLS is not set and {binary} is not on PATH"
+                );
+                return None;
+            }
+            Err(error) => panic!("start wrapper-managed RedisJSON Cluster: {error}"),
+        };
+        cluster
+            .require_module_on_all_nodes("ReJSON")
+            .await
+            .expect("RedisJSON is loaded on every cluster node");
+        let managed = ManagedCluster {
+            cluster,
+            _directory: directory,
+        };
+        Some(Self {
+            seed_urls: managed.seed_urls(),
+            _managed: Some(managed),
+        })
+    }
+}
+
 fn parse_seed_urls(seed_urls: &str) -> Vec<String> {
     seed_urls
         .split(',')
@@ -84,6 +155,15 @@ fn parse_seed_urls(seed_urls: &str) -> Vec<String> {
         .filter(|url| !url.is_empty())
         .map(str::to_string)
         .collect()
+}
+
+async fn cluster_key_slot(connection: &mut redis::aio::MultiplexedConnection, key: &str) -> u16 {
+    redis::cmd("CLUSTER")
+        .arg("KEYSLOT")
+        .arg(key)
+        .query_async(connection)
+        .await
+        .unwrap_or_else(|error| panic!("calculate Redis Cluster slot for {key}: {error}"))
 }
 
 // redis-server-wrapper 0.5 can allocate standalone ports, but cluster fixtures
@@ -150,6 +230,21 @@ async fn router_client(executor: impl RedisExecutor) -> McpClient {
         .initialize("redis-mcp-cluster-test", "0")
         .await
         .expect("initialize cluster MCP client");
+    client
+}
+
+async fn json_router_client(executor: impl RedisExecutor) -> McpClient {
+    let router = RedisMcp::builder(executor)
+        .access(AccessMode::Full)
+        .bundles([ToolBundle::Json])
+        .build();
+    let client = McpClient::connect(ChannelTransport::new(router))
+        .await
+        .expect("connect RedisJSON Cluster MCP client");
+    client
+        .initialize("redis-mcp-json-cluster-test", "0")
+        .await
+        .expect("initialize RedisJSON Cluster MCP client");
     client
 }
 
@@ -251,7 +346,90 @@ async fn keys_on_three_masters(seed_url: &str, protocol: &str) -> (Vec<String>, 
 }
 
 #[tokio::test]
+async fn redis_json_mget_enforces_the_native_cluster_same_slot_contract() {
+    let _cluster_guard = CLUSTER_TEST_LOCK.lock().await;
+    let Some(cluster) = TestJsonCluster::start().await else {
+        return;
+    };
+    let executor = DirectRedisCluster::connect(&cluster.seed_urls)
+        .await
+        .expect("connect RedisJSON cluster-aware adapter");
+    let capabilities = executor
+        .discover_capabilities()
+        .await
+        .expect("discover RedisJSON Cluster capabilities");
+    assert_eq!(capabilities.deployment(), RedisDeployment::Cluster);
+    assert_eq!(
+        capabilities.module(RedisModule::Json).status(),
+        CapabilityStatus::Available
+    );
+    let client = json_router_client(executor).await;
+
+    let same_slot_keys = ["redis-mcp:json:{same}:one", "redis-mcp:json:{same}:two"];
+    let cross_slot_key = "redis-mcp:json:{other}:three";
+    let seed = redis::Client::open(cluster.seed_urls[0].as_str())
+        .expect("open RedisJSON Cluster seed client");
+    let mut connection = seed
+        .get_multiplexed_async_connection()
+        .await
+        .expect("connect to RedisJSON Cluster seed");
+    let first_slot = cluster_key_slot(&mut connection, same_slot_keys[0]).await;
+    let second_slot = cluster_key_slot(&mut connection, same_slot_keys[1]).await;
+    let cross_slot = cluster_key_slot(&mut connection, cross_slot_key).await;
+    assert_eq!(
+        first_slot, second_slot,
+        "matching hash tags must share a slot"
+    );
+    assert_ne!(
+        first_slot, cross_slot,
+        "distinct test tags must not collide"
+    );
+
+    for (index, key) in same_slot_keys
+        .iter()
+        .copied()
+        .chain(std::iter::once(cross_slot_key))
+        .enumerate()
+    {
+        let result = client
+            .call_tool(
+                "redis_json_set",
+                serde_json::json!({"key": key, "value": {"index": index}}),
+            )
+            .await
+            .expect("route JSON.SET by key");
+        assert!(!result.is_error, "JSON.SET {key}: {result:?}");
+    }
+
+    let same_slot = client
+        .call_tool(
+            "redis_json_mget",
+            serde_json::json!({"keys": same_slot_keys, "path": "$.index"}),
+        )
+        .await
+        .expect("same-slot JSON.MGET result")
+        .structured_content
+        .expect("structured same-slot JSON.MGET result");
+    assert_eq!(same_slot["values"][0]["value"], serde_json::json!([0]));
+    assert_eq!(same_slot["values"][1]["value"], serde_json::json!([1]));
+
+    let cross_slot = client
+        .call_tool(
+            "redis_json_mget",
+            serde_json::json!({"keys": [same_slot_keys[0], cross_slot_key]}),
+        )
+        .await
+        .expect("cross-slot JSON.MGET is represented as a tool result");
+    assert!(cross_slot.is_error);
+    let cross_slot =
+        serde_json::to_string(&cross_slot).expect("serialize JSON.MGET CROSSSLOT result");
+    assert!(cross_slot.contains("[InvalidRequest]"), "{cross_slot}");
+    assert!(cross_slot.contains("CROSSSLOT"), "{cross_slot}");
+}
+
+#[tokio::test]
 async fn cluster_routes_curated_and_raw_tools_across_three_masters() {
+    let _cluster_guard = CLUSTER_TEST_LOCK.lock().await;
     let Some(cluster) = TestCluster::start().await else {
         return;
     };

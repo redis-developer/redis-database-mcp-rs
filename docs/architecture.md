@@ -171,6 +171,17 @@ adapter cannot yet aggregate their node-local or fan-out responses into the
 database-wide result those contracts promise. Known cluster snapshots make
 that limitation explicit instead of returning an arbitrary node's answer.
 
+The RedisJSON bundle contains 17 structured tools. Enhanced JSONPath is the
+default, while legacy paths remain an explicit mode because RedisJSON changes
+reply shape between the two. Variable JSON results are measured by encoded
+bytes and nested entries; destructive deletion, clearing, array pop/trim, and
+merge require full access. `JSON.MGET` retains Redis Cluster's native same-slot
+contract. The direct cluster adapter validates its key slots before execution
+because an unknown module command cannot safely inherit redis-rs' built-in
+multi-key routing metadata; cross-slot requests therefore fail with the stable
+`CROSSSLOT` invalid-request classification instead of reaching one arbitrary
+node.
+
 Raw commands remain a separate opt-in even though their metadata belongs to the
 `raw` bundle. The MCP tool requires full access; direct native invocations are
 authorized per classified command. Both use one of two enabled policies:

@@ -5780,10 +5780,684 @@
       "bundle": "json",
       "capability_requirements": {
         "deployment": "any",
-        "minimum_module_version": null,
+        "minimum_module_version": "2.0.0",
         "minimum_redis_version": null,
         "required_commands": [
-          "JSON.DEL"
+          "JSON.ARRAPPEND",
+          "JSON.TYPE",
+          "EXISTS"
+        ],
+        "required_module": "redis_json"
+      },
+      "name": "redis_json_arrappend",
+      "output_policy": "budget_guarded",
+      "protocol": {
+        "annotations": {
+          "destructiveHint": false
+        },
+        "description": "Append one or more structured JSON values to every matched array and return the new lengths.",
+        "inputSchema": {
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "key": {
+              "description": "Redis key containing the JSON document.",
+              "type": "string"
+            },
+            "path": {
+              "default": "$",
+              "description": "JSONPath expression. Defaults to the enhanced document root `$`.",
+              "type": "string"
+            },
+            "values": {
+              "description": "Structured JSON values to append or insert.",
+              "items": true,
+              "type": "array"
+            }
+          },
+          "required": [
+            "key",
+            "values"
+          ],
+          "title": "JsonArrayValuesInput",
+          "type": "object"
+        },
+        "name": "redis_json_arrappend",
+        "outputSchema": {
+          "$defs": {
+            "JsonPathMode": {
+              "enum": [
+                "enhanced",
+                "legacy"
+              ],
+              "type": "string"
+            }
+          },
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "key": {
+              "type": "string"
+            },
+            "key_existed_before": {
+              "type": "boolean"
+            },
+            "match_count": {
+              "format": "uint",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "path": {
+              "type": "string"
+            },
+            "path_mode": {
+              "$ref": "#/$defs/JsonPathMode"
+            },
+            "types": {
+              "description": "JSON types before the operation, aligned with `values`.",
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "values": {
+              "description": "One result per matched path. `null` means the matched value had the wrong type.",
+              "items": true,
+              "type": "array"
+            }
+          },
+          "required": [
+            "key",
+            "path",
+            "path_mode",
+            "key_existed_before",
+            "match_count",
+            "types",
+            "values"
+          ],
+          "title": "JsonPathResultsOutput",
+          "type": "object"
+        },
+        "title": "Append Redis JSON Array Values"
+      },
+      "required_access": "read_write",
+      "required_module": "redis_json",
+      "requires_raw_opt_in": false
+    },
+    {
+      "bundle": "json",
+      "capability_requirements": {
+        "deployment": "any",
+        "minimum_module_version": "2.0.0",
+        "minimum_redis_version": null,
+        "required_commands": [
+          "JSON.ARRINSERT",
+          "JSON.TYPE",
+          "EXISTS"
+        ],
+        "required_module": "redis_json"
+      },
+      "name": "redis_json_arrinsert",
+      "output_policy": "budget_guarded",
+      "protocol": {
+        "annotations": {
+          "destructiveHint": false
+        },
+        "description": "Insert one or more structured JSON values before an index in every matched array and return the new lengths.",
+        "inputSchema": {
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "index": {
+              "description": "Position before which values are inserted. Negative indexes count from the end.",
+              "format": "int64",
+              "type": "integer"
+            },
+            "key": {
+              "description": "Redis key containing the JSON document.",
+              "type": "string"
+            },
+            "path": {
+              "default": "$",
+              "description": "JSONPath expression. Defaults to the enhanced document root `$`.",
+              "type": "string"
+            },
+            "values": {
+              "description": "Structured JSON values to insert.",
+              "items": true,
+              "type": "array"
+            }
+          },
+          "required": [
+            "key",
+            "index",
+            "values"
+          ],
+          "title": "JsonArrayInsertInput",
+          "type": "object"
+        },
+        "name": "redis_json_arrinsert",
+        "outputSchema": {
+          "$defs": {
+            "JsonPathMode": {
+              "enum": [
+                "enhanced",
+                "legacy"
+              ],
+              "type": "string"
+            }
+          },
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "key": {
+              "type": "string"
+            },
+            "key_existed_before": {
+              "type": "boolean"
+            },
+            "match_count": {
+              "format": "uint",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "path": {
+              "type": "string"
+            },
+            "path_mode": {
+              "$ref": "#/$defs/JsonPathMode"
+            },
+            "types": {
+              "description": "JSON types before the operation, aligned with `values`.",
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "values": {
+              "description": "One result per matched path. `null` means the matched value had the wrong type.",
+              "items": true,
+              "type": "array"
+            }
+          },
+          "required": [
+            "key",
+            "path",
+            "path_mode",
+            "key_existed_before",
+            "match_count",
+            "types",
+            "values"
+          ],
+          "title": "JsonPathResultsOutput",
+          "type": "object"
+        },
+        "title": "Insert Redis JSON Array Values"
+      },
+      "required_access": "read_write",
+      "required_module": "redis_json",
+      "requires_raw_opt_in": false
+    },
+    {
+      "bundle": "json",
+      "capability_requirements": {
+        "deployment": "any",
+        "minimum_module_version": "2.0.0",
+        "minimum_redis_version": null,
+        "required_commands": [
+          "JSON.ARRLEN",
+          "JSON.TYPE",
+          "EXISTS"
+        ],
+        "required_module": "redis_json"
+      },
+      "name": "redis_json_arrlen",
+      "output_policy": "budget_guarded",
+      "protocol": {
+        "annotations": {
+          "destructiveHint": false,
+          "idempotentHint": true,
+          "readOnlyHint": true
+        },
+        "description": "Return array lengths for matching enhanced or legacy paths. Wrong-type matches are explicit null results.",
+        "inputSchema": {
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "key": {
+              "description": "Redis key containing the JSON document.",
+              "type": "string"
+            },
+            "path": {
+              "default": "$",
+              "description": "JSONPath expression. Defaults to the enhanced document root `$`.",
+              "type": "string"
+            }
+          },
+          "required": [
+            "key"
+          ],
+          "title": "JsonPathInput",
+          "type": "object"
+        },
+        "name": "redis_json_arrlen",
+        "outputSchema": {
+          "$defs": {
+            "JsonPathMode": {
+              "enum": [
+                "enhanced",
+                "legacy"
+              ],
+              "type": "string"
+            }
+          },
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "key": {
+              "type": "string"
+            },
+            "key_existed_before": {
+              "type": "boolean"
+            },
+            "match_count": {
+              "format": "uint",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "path": {
+              "type": "string"
+            },
+            "path_mode": {
+              "$ref": "#/$defs/JsonPathMode"
+            },
+            "types": {
+              "description": "JSON types before the operation, aligned with `values`.",
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "values": {
+              "description": "One result per matched path. `null` means the matched value had the wrong type.",
+              "items": true,
+              "type": "array"
+            }
+          },
+          "required": [
+            "key",
+            "path",
+            "path_mode",
+            "key_existed_before",
+            "match_count",
+            "types",
+            "values"
+          ],
+          "title": "JsonPathResultsOutput",
+          "type": "object"
+        },
+        "title": "Get Redis JSON Array Lengths"
+      },
+      "required_access": "read_only",
+      "required_module": "redis_json",
+      "requires_raw_opt_in": false
+    },
+    {
+      "bundle": "json",
+      "capability_requirements": {
+        "deployment": "any",
+        "minimum_module_version": "2.0.0",
+        "minimum_redis_version": null,
+        "required_commands": [
+          "JSON.ARRPOP",
+          "JSON.TYPE",
+          "EXISTS"
+        ],
+        "required_module": "redis_json"
+      },
+      "name": "redis_json_arrpop",
+      "output_policy": "budget_guarded",
+      "protocol": {
+        "annotations": {},
+        "description": "Remove and optionally return one value from every matched array. Payloads over max_returned_bytes are omitted after mutation; full access is required.",
+        "inputSchema": {
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "index": {
+              "default": -1,
+              "description": "Element index to remove. Defaults to -1 (the last element).",
+              "format": "int64",
+              "type": "integer"
+            },
+            "key": {
+              "description": "Redis key containing the JSON document.",
+              "type": "string"
+            },
+            "max_returned_bytes": {
+              "default": 65536,
+              "description": "Maximum encoded bytes retained for popped values. Larger payloads are omitted after mutation.",
+              "format": "uint",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "path": {
+              "default": "$",
+              "description": "JSONPath expression. Defaults to the enhanced document root `$`.",
+              "type": "string"
+            }
+          },
+          "required": [
+            "key"
+          ],
+          "title": "JsonArrpopInput",
+          "type": "object"
+        },
+        "name": "redis_json_arrpop",
+        "outputSchema": {
+          "$defs": {
+            "JsonPathMode": {
+              "enum": [
+                "enhanced",
+                "legacy"
+              ],
+              "type": "string"
+            }
+          },
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "index": {
+              "format": "int64",
+              "type": "integer"
+            },
+            "key": {
+              "type": "string"
+            },
+            "key_existed_before": {
+              "type": "boolean"
+            },
+            "match_count": {
+              "format": "uint",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "path": {
+              "type": "string"
+            },
+            "path_mode": {
+              "$ref": "#/$defs/JsonPathMode"
+            },
+            "popped": {
+              "format": "uint",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "returned_bytes": {
+              "format": "uint",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "types": {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "values": {
+              "items": true,
+              "type": [
+                "array",
+                "null"
+              ]
+            },
+            "values_omitted": {
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "key",
+            "path",
+            "path_mode",
+            "key_existed_before",
+            "match_count",
+            "types",
+            "index",
+            "popped",
+            "returned_bytes",
+            "values_omitted"
+          ],
+          "title": "JsonArrpopOutput",
+          "type": "object"
+        },
+        "title": "Pop Redis JSON Array Values"
+      },
+      "required_access": "full",
+      "required_module": "redis_json",
+      "requires_raw_opt_in": false
+    },
+    {
+      "bundle": "json",
+      "capability_requirements": {
+        "deployment": "any",
+        "minimum_module_version": "2.0.0",
+        "minimum_redis_version": null,
+        "required_commands": [
+          "JSON.ARRTRIM",
+          "JSON.TYPE",
+          "EXISTS"
+        ],
+        "required_module": "redis_json"
+      },
+      "name": "redis_json_arrtrim",
+      "output_policy": "budget_guarded",
+      "protocol": {
+        "annotations": {},
+        "description": "Trim every matched array to an inclusive index range. This destructive operation requires full access and is not idempotent for arbitrary ranges.",
+        "inputSchema": {
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "key": {
+              "description": "Redis key containing the JSON document.",
+              "type": "string"
+            },
+            "path": {
+              "default": "$",
+              "description": "JSONPath expression. Defaults to the enhanced document root `$`.",
+              "type": "string"
+            },
+            "start": {
+              "description": "Inclusive first array index to retain.",
+              "format": "int64",
+              "type": "integer"
+            },
+            "stop": {
+              "description": "Inclusive last array index to retain.",
+              "format": "int64",
+              "type": "integer"
+            }
+          },
+          "required": [
+            "key",
+            "start",
+            "stop"
+          ],
+          "title": "JsonArrtrimInput",
+          "type": "object"
+        },
+        "name": "redis_json_arrtrim",
+        "outputSchema": {
+          "$defs": {
+            "JsonPathMode": {
+              "enum": [
+                "enhanced",
+                "legacy"
+              ],
+              "type": "string"
+            }
+          },
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "key": {
+              "type": "string"
+            },
+            "key_existed_before": {
+              "type": "boolean"
+            },
+            "match_count": {
+              "format": "uint",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "path": {
+              "type": "string"
+            },
+            "path_mode": {
+              "$ref": "#/$defs/JsonPathMode"
+            },
+            "types": {
+              "description": "JSON types before the operation, aligned with `values`.",
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "values": {
+              "description": "One result per matched path. `null` means the matched value had the wrong type.",
+              "items": true,
+              "type": "array"
+            }
+          },
+          "required": [
+            "key",
+            "path",
+            "path_mode",
+            "key_existed_before",
+            "match_count",
+            "types",
+            "values"
+          ],
+          "title": "JsonPathResultsOutput",
+          "type": "object"
+        },
+        "title": "Trim Redis JSON Arrays"
+      },
+      "required_access": "full",
+      "required_module": "redis_json",
+      "requires_raw_opt_in": false
+    },
+    {
+      "bundle": "json",
+      "capability_requirements": {
+        "deployment": "any",
+        "minimum_module_version": "2.0.0",
+        "minimum_redis_version": null,
+        "required_commands": [
+          "JSON.CLEAR",
+          "JSON.TYPE",
+          "EXISTS"
+        ],
+        "required_module": "redis_json"
+      },
+      "name": "redis_json_clear",
+      "output_policy": "intrinsically_bounded",
+      "protocol": {
+        "annotations": {
+          "idempotentHint": true
+        },
+        "description": "Clear matched arrays and objects and zero matched numbers. This destructive, idempotent operation requires full access.",
+        "inputSchema": {
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "key": {
+              "description": "Redis key containing the JSON document.",
+              "type": "string"
+            },
+            "path": {
+              "default": "$",
+              "description": "JSONPath expression. Defaults to the enhanced document root `$`.",
+              "type": "string"
+            }
+          },
+          "required": [
+            "key"
+          ],
+          "title": "JsonPathInput",
+          "type": "object"
+        },
+        "name": "redis_json_clear",
+        "outputSchema": {
+          "$defs": {
+            "JsonPathMode": {
+              "enum": [
+                "enhanced",
+                "legacy"
+              ],
+              "type": "string"
+            }
+          },
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "cleared": {
+              "format": "uint64",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "key": {
+              "type": "string"
+            },
+            "key_existed_before": {
+              "type": "boolean"
+            },
+            "match_count": {
+              "format": "uint",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "path": {
+              "type": "string"
+            },
+            "path_mode": {
+              "$ref": "#/$defs/JsonPathMode"
+            },
+            "types": {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            }
+          },
+          "required": [
+            "key",
+            "path",
+            "path_mode",
+            "key_existed_before",
+            "match_count",
+            "types",
+            "cleared"
+          ],
+          "title": "JsonClearOutput",
+          "type": "object"
+        },
+        "title": "Clear Redis JSON Values"
+      },
+      "required_access": "full",
+      "required_module": "redis_json",
+      "requires_raw_opt_in": false
+    },
+    {
+      "bundle": "json",
+      "capability_requirements": {
+        "deployment": "any",
+        "minimum_module_version": "2.0.0",
+        "minimum_redis_version": null,
+        "required_commands": [
+          "JSON.DEL",
+          "EXISTS"
         ],
         "required_module": "redis_json"
       },
@@ -5804,7 +6478,7 @@
             },
             "path": {
               "default": "$",
-              "description": "JSONPath expression. Defaults to the document root.",
+              "description": "JSONPath expression. Defaults to the enhanced document root `$`.",
               "type": "string"
             }
           },
@@ -5816,6 +6490,15 @@
         },
         "name": "redis_json_del",
         "outputSchema": {
+          "$defs": {
+            "JsonPathMode": {
+              "enum": [
+                "enhanced",
+                "legacy"
+              ],
+              "type": "string"
+            }
+          },
           "$schema": "https://json-schema.org/draft/2020-12/schema",
           "additionalProperties": false,
           "properties": {
@@ -5827,13 +6510,21 @@
             "key": {
               "type": "string"
             },
+            "key_existed_before": {
+              "type": "boolean"
+            },
             "path": {
               "type": "string"
+            },
+            "path_mode": {
+              "$ref": "#/$defs/JsonPathMode"
             }
           },
           "required": [
             "key",
             "path",
+            "path_mode",
+            "key_existed_before",
             "deleted"
           ],
           "title": "JsonDelOutput",
@@ -5849,10 +6540,11 @@
       "bundle": "json",
       "capability_requirements": {
         "deployment": "any",
-        "minimum_module_version": null,
+        "minimum_module_version": "2.0.0",
         "minimum_redis_version": null,
         "required_commands": [
-          "JSON.GET"
+          "JSON.GET",
+          "EXISTS"
         ],
         "required_module": "redis_json"
       },
@@ -5864,7 +6556,7 @@
           "idempotentHint": true,
           "readOnlyHint": true
         },
-        "description": "Read the JSON value at a path. Requires RedisJSON; the default path is `$`.",
+        "description": "Read a structured JSON value at an enhanced or legacy path. Missing keys and missing paths are reported separately; the configured output budget is enforced.",
         "inputSchema": {
           "$schema": "https://json-schema.org/draft/2020-12/schema",
           "additionalProperties": false,
@@ -5875,7 +6567,7 @@
             },
             "path": {
               "default": "$",
-              "description": "JSONPath expression. Defaults to the document root.",
+              "description": "JSONPath expression. Defaults to the enhanced document root `$`.",
               "type": "string"
             }
           },
@@ -5887,6 +6579,15 @@
         },
         "name": "redis_json_get",
         "outputSchema": {
+          "$defs": {
+            "JsonPathMode": {
+              "enum": [
+                "enhanced",
+                "legacy"
+              ],
+              "type": "string"
+            }
+          },
           "$schema": "https://json-schema.org/draft/2020-12/schema",
           "additionalProperties": false,
           "properties": {
@@ -5896,15 +6597,29 @@
             "key": {
               "type": "string"
             },
+            "key_existed_before": {
+              "type": "boolean"
+            },
+            "match_count": {
+              "format": "uint",
+              "minimum": 0,
+              "type": "integer"
+            },
             "path": {
               "type": "string"
+            },
+            "path_mode": {
+              "$ref": "#/$defs/JsonPathMode"
             },
             "value": true
           },
           "required": [
             "key",
             "path",
-            "exists"
+            "path_mode",
+            "key_existed_before",
+            "exists",
+            "match_count"
           ],
           "title": "JsonGetOutput",
           "type": "object"
@@ -5919,7 +6634,531 @@
       "bundle": "json",
       "capability_requirements": {
         "deployment": "any",
-        "minimum_module_version": null,
+        "minimum_module_version": "2.6.0",
+        "minimum_redis_version": null,
+        "required_commands": [
+          "JSON.MERGE",
+          "EXISTS"
+        ],
+        "required_module": "redis_json"
+      },
+      "name": "redis_json_merge",
+      "output_policy": "intrinsically_bounded",
+      "protocol": {
+        "annotations": {
+          "idempotentHint": true
+        },
+        "description": "Apply a structured RFC 7396 merge patch. Null object members can delete data, so this RedisJSON 2.6+ operation requires full access.",
+        "inputSchema": {
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "key": {
+              "description": "Redis key to create or update.",
+              "type": "string"
+            },
+            "path": {
+              "default": "$",
+              "description": "JSONPath expression. Defaults to the enhanced document root `$`.",
+              "type": "string"
+            },
+            "value": {
+              "description": "RFC 7396 merge patch. Pass structured JSON directly."
+            }
+          },
+          "required": [
+            "key",
+            "value"
+          ],
+          "title": "JsonMergeInput",
+          "type": "object"
+        },
+        "name": "redis_json_merge",
+        "outputSchema": {
+          "$defs": {
+            "JsonPathMode": {
+              "enum": [
+                "enhanced",
+                "legacy"
+              ],
+              "type": "string"
+            }
+          },
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "key": {
+              "type": "string"
+            },
+            "key_existed_before": {
+              "type": "boolean"
+            },
+            "merged": {
+              "type": "boolean"
+            },
+            "path": {
+              "type": "string"
+            },
+            "path_mode": {
+              "$ref": "#/$defs/JsonPathMode"
+            }
+          },
+          "required": [
+            "key",
+            "path",
+            "path_mode",
+            "key_existed_before",
+            "merged"
+          ],
+          "title": "JsonMergeOutput",
+          "type": "object"
+        },
+        "title": "Merge Redis JSON"
+      },
+      "required_access": "full",
+      "required_module": "redis_json",
+      "requires_raw_opt_in": false
+    },
+    {
+      "bundle": "json",
+      "capability_requirements": {
+        "deployment": "any",
+        "minimum_module_version": "2.0.0",
+        "minimum_redis_version": null,
+        "required_commands": [
+          "JSON.MGET",
+          "EXISTS"
+        ],
+        "required_module": "redis_json"
+      },
+      "name": "redis_json_mget",
+      "output_policy": "budget_guarded",
+      "protocol": {
+        "annotations": {
+          "destructiveHint": false,
+          "idempotentHint": true,
+          "readOnlyHint": true
+        },
+        "description": "Read one JSON path from 1 to the configured maximum number of keys. Results stay aligned with keys and distinguish missing keys from missing paths. Cluster keys must share a hash slot.",
+        "inputSchema": {
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "keys": {
+              "description": "Redis keys to read, in response order. On Redis Cluster every key must share a hash slot.",
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "path": {
+              "default": "$",
+              "description": "JSONPath expression. Defaults to the enhanced document root `$`.",
+              "type": "string"
+            }
+          },
+          "required": [
+            "keys"
+          ],
+          "title": "JsonMgetInput",
+          "type": "object"
+        },
+        "name": "redis_json_mget",
+        "outputSchema": {
+          "$defs": {
+            "JsonMgetItem": {
+              "additionalProperties": false,
+              "properties": {
+                "exists": {
+                  "type": "boolean"
+                },
+                "key": {
+                  "type": "string"
+                },
+                "key_existed_before": {
+                  "type": "boolean"
+                },
+                "match_count": {
+                  "format": "uint",
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                "value": true
+              },
+              "required": [
+                "key",
+                "key_existed_before",
+                "exists",
+                "match_count"
+              ],
+              "type": "object"
+            },
+            "JsonPathMode": {
+              "enum": [
+                "enhanced",
+                "legacy"
+              ],
+              "type": "string"
+            }
+          },
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "path": {
+              "type": "string"
+            },
+            "path_mode": {
+              "$ref": "#/$defs/JsonPathMode"
+            },
+            "values": {
+              "items": {
+                "$ref": "#/$defs/JsonMgetItem"
+              },
+              "type": "array"
+            }
+          },
+          "required": [
+            "path",
+            "path_mode",
+            "values"
+          ],
+          "title": "JsonMgetOutput",
+          "type": "object"
+        },
+        "title": "Get Multiple Redis JSON Values"
+      },
+      "required_access": "read_only",
+      "required_module": "redis_json",
+      "requires_raw_opt_in": false
+    },
+    {
+      "bundle": "json",
+      "capability_requirements": {
+        "deployment": "any",
+        "minimum_module_version": "2.0.0",
+        "minimum_redis_version": null,
+        "required_commands": [
+          "JSON.NUMINCRBY",
+          "JSON.TYPE",
+          "EXISTS"
+        ],
+        "required_module": "redis_json"
+      },
+      "name": "redis_json_numincrby",
+      "output_policy": "budget_guarded",
+      "protocol": {
+        "annotations": {
+          "destructiveHint": false
+        },
+        "description": "Increment every numeric match by a finite value. Enhanced-path results stay aligned and wrong-type matches are explicit nulls.",
+        "inputSchema": {
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "key": {
+              "description": "Redis key containing the JSON document.",
+              "type": "string"
+            },
+            "path": {
+              "default": "$",
+              "description": "JSONPath expression. Defaults to the enhanced document root `$`.",
+              "type": "string"
+            },
+            "value": {
+              "description": "Finite amount to add to every matched number.",
+              "format": "double",
+              "type": "number"
+            }
+          },
+          "required": [
+            "key",
+            "value"
+          ],
+          "title": "JsonNumberInput",
+          "type": "object"
+        },
+        "name": "redis_json_numincrby",
+        "outputSchema": {
+          "$defs": {
+            "JsonPathMode": {
+              "enum": [
+                "enhanced",
+                "legacy"
+              ],
+              "type": "string"
+            }
+          },
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "key": {
+              "type": "string"
+            },
+            "key_existed_before": {
+              "type": "boolean"
+            },
+            "match_count": {
+              "format": "uint",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "path": {
+              "type": "string"
+            },
+            "path_mode": {
+              "$ref": "#/$defs/JsonPathMode"
+            },
+            "types": {
+              "description": "JSON types before the operation, aligned with `values`.",
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "values": {
+              "description": "One result per matched path. `null` means the matched value had the wrong type.",
+              "items": true,
+              "type": "array"
+            }
+          },
+          "required": [
+            "key",
+            "path",
+            "path_mode",
+            "key_existed_before",
+            "match_count",
+            "types",
+            "values"
+          ],
+          "title": "JsonPathResultsOutput",
+          "type": "object"
+        },
+        "title": "Increment Redis JSON Numbers"
+      },
+      "required_access": "read_write",
+      "required_module": "redis_json",
+      "requires_raw_opt_in": false
+    },
+    {
+      "bundle": "json",
+      "capability_requirements": {
+        "deployment": "any",
+        "minimum_module_version": "2.0.0",
+        "minimum_redis_version": null,
+        "required_commands": [
+          "JSON.OBJKEYS",
+          "JSON.TYPE",
+          "EXISTS"
+        ],
+        "required_module": "redis_json"
+      },
+      "name": "redis_json_objkeys",
+      "output_policy": "budget_guarded",
+      "protocol": {
+        "annotations": {
+          "destructiveHint": false,
+          "idempotentHint": true,
+          "readOnlyHint": true
+        },
+        "description": "Return object member names for matching paths. Results preserve enhanced-path match boundaries and enforce configured collection and byte budgets.",
+        "inputSchema": {
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "key": {
+              "description": "Redis key containing the JSON document.",
+              "type": "string"
+            },
+            "path": {
+              "default": "$",
+              "description": "JSONPath expression. Defaults to the enhanced document root `$`.",
+              "type": "string"
+            }
+          },
+          "required": [
+            "key"
+          ],
+          "title": "JsonPathInput",
+          "type": "object"
+        },
+        "name": "redis_json_objkeys",
+        "outputSchema": {
+          "$defs": {
+            "JsonPathMode": {
+              "enum": [
+                "enhanced",
+                "legacy"
+              ],
+              "type": "string"
+            }
+          },
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "key": {
+              "type": "string"
+            },
+            "key_existed_before": {
+              "type": "boolean"
+            },
+            "keys": {
+              "description": "One object-key list per matched path. `null` means the match was not an object.",
+              "items": {
+                "items": {
+                  "type": "string"
+                },
+                "type": [
+                  "array",
+                  "null"
+                ]
+              },
+              "type": "array"
+            },
+            "match_count": {
+              "format": "uint",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "path": {
+              "type": "string"
+            },
+            "path_mode": {
+              "$ref": "#/$defs/JsonPathMode"
+            },
+            "types": {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            }
+          },
+          "required": [
+            "key",
+            "path",
+            "path_mode",
+            "key_existed_before",
+            "match_count",
+            "types",
+            "keys"
+          ],
+          "title": "JsonObjkeysOutput",
+          "type": "object"
+        },
+        "title": "Get Redis JSON Object Keys"
+      },
+      "required_access": "read_only",
+      "required_module": "redis_json",
+      "requires_raw_opt_in": false
+    },
+    {
+      "bundle": "json",
+      "capability_requirements": {
+        "deployment": "any",
+        "minimum_module_version": "2.0.0",
+        "minimum_redis_version": null,
+        "required_commands": [
+          "JSON.OBJLEN",
+          "JSON.TYPE",
+          "EXISTS"
+        ],
+        "required_module": "redis_json"
+      },
+      "name": "redis_json_objlen",
+      "output_policy": "budget_guarded",
+      "protocol": {
+        "annotations": {
+          "destructiveHint": false,
+          "idempotentHint": true,
+          "readOnlyHint": true
+        },
+        "description": "Return object key counts for matching enhanced or legacy paths. Wrong-type matches are explicit null results.",
+        "inputSchema": {
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "key": {
+              "description": "Redis key containing the JSON document.",
+              "type": "string"
+            },
+            "path": {
+              "default": "$",
+              "description": "JSONPath expression. Defaults to the enhanced document root `$`.",
+              "type": "string"
+            }
+          },
+          "required": [
+            "key"
+          ],
+          "title": "JsonPathInput",
+          "type": "object"
+        },
+        "name": "redis_json_objlen",
+        "outputSchema": {
+          "$defs": {
+            "JsonPathMode": {
+              "enum": [
+                "enhanced",
+                "legacy"
+              ],
+              "type": "string"
+            }
+          },
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "key": {
+              "type": "string"
+            },
+            "key_existed_before": {
+              "type": "boolean"
+            },
+            "match_count": {
+              "format": "uint",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "path": {
+              "type": "string"
+            },
+            "path_mode": {
+              "$ref": "#/$defs/JsonPathMode"
+            },
+            "types": {
+              "description": "JSON types before the operation, aligned with `values`.",
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "values": {
+              "description": "One result per matched path. `null` means the matched value had the wrong type.",
+              "items": true,
+              "type": "array"
+            }
+          },
+          "required": [
+            "key",
+            "path",
+            "path_mode",
+            "key_existed_before",
+            "match_count",
+            "types",
+            "values"
+          ],
+          "title": "JsonPathResultsOutput",
+          "type": "object"
+        },
+        "title": "Get Redis JSON Object Lengths"
+      },
+      "required_access": "read_only",
+      "required_module": "redis_json",
+      "requires_raw_opt_in": false
+    },
+    {
+      "bundle": "json",
+      "capability_requirements": {
+        "deployment": "any",
+        "minimum_module_version": "2.0.0",
         "minimum_redis_version": null,
         "required_commands": [
           "JSON.SET"
@@ -5933,7 +7172,7 @@
           "destructiveHint": false,
           "idempotentHint": true
         },
-        "description": "Set a structured JSON value at a path. Requires RedisJSON; NX and XX are optional conditions.",
+        "description": "Set a structured JSON value at a path. NX and XX are mutually exclusive conditions; a false stored result is a conditional no-op.",
         "inputSchema": {
           "$schema": "https://json-schema.org/draft/2020-12/schema",
           "additionalProperties": false,
@@ -5949,7 +7188,7 @@
             },
             "path": {
               "default": "$",
-              "description": "JSONPath expression. Defaults to the document root.",
+              "description": "JSONPath expression. Defaults to the enhanced document root `$`.",
               "type": "string"
             },
             "value": {
@@ -6001,10 +7240,217 @@
       "bundle": "json",
       "capability_requirements": {
         "deployment": "any",
-        "minimum_module_version": null,
+        "minimum_module_version": "2.0.0",
         "minimum_redis_version": null,
         "required_commands": [
-          "JSON.TYPE"
+          "JSON.STRLEN",
+          "JSON.TYPE",
+          "EXISTS"
+        ],
+        "required_module": "redis_json"
+      },
+      "name": "redis_json_strlen",
+      "output_policy": "budget_guarded",
+      "protocol": {
+        "annotations": {
+          "destructiveHint": false,
+          "idempotentHint": true,
+          "readOnlyHint": true
+        },
+        "description": "Return string lengths for every matching enhanced-path value, or the first legacy-path value. Wrong-type matches are explicit null results.",
+        "inputSchema": {
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "key": {
+              "description": "Redis key containing the JSON document.",
+              "type": "string"
+            },
+            "path": {
+              "default": "$",
+              "description": "JSONPath expression. Defaults to the enhanced document root `$`.",
+              "type": "string"
+            }
+          },
+          "required": [
+            "key"
+          ],
+          "title": "JsonPathInput",
+          "type": "object"
+        },
+        "name": "redis_json_strlen",
+        "outputSchema": {
+          "$defs": {
+            "JsonPathMode": {
+              "enum": [
+                "enhanced",
+                "legacy"
+              ],
+              "type": "string"
+            }
+          },
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "key": {
+              "type": "string"
+            },
+            "key_existed_before": {
+              "type": "boolean"
+            },
+            "match_count": {
+              "format": "uint",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "path": {
+              "type": "string"
+            },
+            "path_mode": {
+              "$ref": "#/$defs/JsonPathMode"
+            },
+            "types": {
+              "description": "JSON types before the operation, aligned with `values`.",
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "values": {
+              "description": "One result per matched path. `null` means the matched value had the wrong type.",
+              "items": true,
+              "type": "array"
+            }
+          },
+          "required": [
+            "key",
+            "path",
+            "path_mode",
+            "key_existed_before",
+            "match_count",
+            "types",
+            "values"
+          ],
+          "title": "JsonPathResultsOutput",
+          "type": "object"
+        },
+        "title": "Get Redis JSON String Lengths"
+      },
+      "required_access": "read_only",
+      "required_module": "redis_json",
+      "requires_raw_opt_in": false
+    },
+    {
+      "bundle": "json",
+      "capability_requirements": {
+        "deployment": "any",
+        "minimum_module_version": "2.0.0",
+        "minimum_redis_version": null,
+        "required_commands": [
+          "JSON.TOGGLE",
+          "JSON.TYPE",
+          "EXISTS"
+        ],
+        "required_module": "redis_json"
+      },
+      "name": "redis_json_toggle",
+      "output_policy": "budget_guarded",
+      "protocol": {
+        "annotations": {
+          "destructiveHint": false
+        },
+        "description": "Toggle Boolean values at matching enhanced or legacy paths. Wrong-type matches are explicit null results.",
+        "inputSchema": {
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "key": {
+              "description": "Redis key containing the JSON document.",
+              "type": "string"
+            },
+            "path": {
+              "default": "$",
+              "description": "JSONPath expression. Defaults to the enhanced document root `$`.",
+              "type": "string"
+            }
+          },
+          "required": [
+            "key"
+          ],
+          "title": "JsonPathInput",
+          "type": "object"
+        },
+        "name": "redis_json_toggle",
+        "outputSchema": {
+          "$defs": {
+            "JsonPathMode": {
+              "enum": [
+                "enhanced",
+                "legacy"
+              ],
+              "type": "string"
+            }
+          },
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "key": {
+              "type": "string"
+            },
+            "key_existed_before": {
+              "type": "boolean"
+            },
+            "match_count": {
+              "format": "uint",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "path": {
+              "type": "string"
+            },
+            "path_mode": {
+              "$ref": "#/$defs/JsonPathMode"
+            },
+            "types": {
+              "description": "JSON types before the operation, aligned with `values`.",
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "values": {
+              "description": "One result per matched path. `null` means the matched value had the wrong type.",
+              "items": true,
+              "type": "array"
+            }
+          },
+          "required": [
+            "key",
+            "path",
+            "path_mode",
+            "key_existed_before",
+            "match_count",
+            "types",
+            "values"
+          ],
+          "title": "JsonPathResultsOutput",
+          "type": "object"
+        },
+        "title": "Toggle Redis JSON Booleans"
+      },
+      "required_access": "read_write",
+      "required_module": "redis_json",
+      "requires_raw_opt_in": false
+    },
+    {
+      "bundle": "json",
+      "capability_requirements": {
+        "deployment": "any",
+        "minimum_module_version": "2.0.0",
+        "minimum_redis_version": null,
+        "required_commands": [
+          "JSON.TYPE",
+          "EXISTS"
         ],
         "required_module": "redis_json"
       },
@@ -6016,7 +7462,7 @@
           "idempotentHint": true,
           "readOnlyHint": true
         },
-        "description": "Read JSON value types at a path. Requires RedisJSON; JSONPath may match multiple values.",
+        "description": "Read JSON value types at an enhanced or legacy path. Missing keys and missing paths are reported separately.",
         "inputSchema": {
           "$schema": "https://json-schema.org/draft/2020-12/schema",
           "additionalProperties": false,
@@ -6027,7 +7473,7 @@
             },
             "path": {
               "default": "$",
-              "description": "JSONPath expression. Defaults to the document root.",
+              "description": "JSONPath expression. Defaults to the enhanced document root `$`.",
               "type": "string"
             }
           },
@@ -6039,6 +7485,15 @@
         },
         "name": "redis_json_type",
         "outputSchema": {
+          "$defs": {
+            "JsonPathMode": {
+              "enum": [
+                "enhanced",
+                "legacy"
+              ],
+              "type": "string"
+            }
+          },
           "$schema": "https://json-schema.org/draft/2020-12/schema",
           "additionalProperties": false,
           "properties": {
@@ -6048,8 +7503,19 @@
             "key": {
               "type": "string"
             },
+            "key_existed_before": {
+              "type": "boolean"
+            },
+            "match_count": {
+              "format": "uint",
+              "minimum": 0,
+              "type": "integer"
+            },
             "path": {
               "type": "string"
+            },
+            "path_mode": {
+              "$ref": "#/$defs/JsonPathMode"
             },
             "types": {
               "items": {
@@ -6061,7 +7527,10 @@
           "required": [
             "key",
             "path",
+            "path_mode",
+            "key_existed_before",
             "exists",
+            "match_count",
             "types"
           ],
           "title": "JsonTypeOutput",
@@ -19180,19 +20649,169 @@
       "raw": "# Server\r\nredis_version:8.2.0\r\n",
       "section": null
     },
+    "redis_json_arrappend": {
+      "key": "doc:1",
+      "key_existed_before": true,
+      "match_count": 1,
+      "path": "$.items",
+      "path_mode": "enhanced",
+      "types": [
+        "array"
+      ],
+      "values": [
+        3
+      ]
+    },
+    "redis_json_arrinsert": {
+      "key": "doc:1",
+      "key_existed_before": true,
+      "match_count": 1,
+      "path": "$.items",
+      "path_mode": "enhanced",
+      "types": [
+        "array"
+      ],
+      "values": [
+        3
+      ]
+    },
+    "redis_json_arrlen": {
+      "key": "doc:1",
+      "key_existed_before": true,
+      "match_count": 1,
+      "path": "$.items",
+      "path_mode": "enhanced",
+      "types": [
+        "array"
+      ],
+      "values": [
+        1
+      ]
+    },
+    "redis_json_arrpop": {
+      "index": -1,
+      "key": "doc:1",
+      "key_existed_before": true,
+      "match_count": 1,
+      "path": "$.items",
+      "path_mode": "enhanced",
+      "popped": 1,
+      "returned_bytes": 3,
+      "types": [
+        "array"
+      ],
+      "values": [
+        1
+      ],
+      "values_omitted": false
+    },
+    "redis_json_arrtrim": {
+      "key": "doc:1",
+      "key_existed_before": true,
+      "match_count": 1,
+      "path": "$.items",
+      "path_mode": "enhanced",
+      "types": [
+        "array"
+      ],
+      "values": [
+        3
+      ]
+    },
+    "redis_json_clear": {
+      "cleared": 1,
+      "key": "doc:1",
+      "key_existed_before": true,
+      "match_count": 1,
+      "path": "$",
+      "path_mode": "enhanced",
+      "types": [
+        "object"
+      ]
+    },
     "redis_json_del": {
       "deleted": 1,
       "key": "doc:1",
-      "path": "$"
+      "key_existed_before": true,
+      "path": "$",
+      "path_mode": "enhanced"
     },
     "redis_json_get": {
       "exists": true,
       "key": "doc:1",
+      "key_existed_before": true,
+      "match_count": 1,
       "path": "$",
+      "path_mode": "enhanced",
       "value": [
         {
           "name": "Ada"
         }
+      ]
+    },
+    "redis_json_merge": {
+      "key": "doc:1",
+      "key_existed_before": true,
+      "merged": true,
+      "path": "$",
+      "path_mode": "enhanced"
+    },
+    "redis_json_mget": {
+      "path": "$",
+      "path_mode": "enhanced",
+      "values": [
+        {
+          "exists": true,
+          "key": "doc:1",
+          "key_existed_before": true,
+          "match_count": 1,
+          "value": [
+            {
+              "name": "Ada"
+            }
+          ]
+        }
+      ]
+    },
+    "redis_json_numincrby": {
+      "key": "doc:1",
+      "key_existed_before": true,
+      "match_count": 1,
+      "path": "$.score",
+      "path_mode": "enhanced",
+      "types": [
+        "integer"
+      ],
+      "values": [
+        43
+      ]
+    },
+    "redis_json_objkeys": {
+      "key": "doc:1",
+      "key_existed_before": true,
+      "keys": [
+        [
+          "name"
+        ]
+      ],
+      "match_count": 1,
+      "path": "$",
+      "path_mode": "enhanced",
+      "types": [
+        "object"
+      ]
+    },
+    "redis_json_objlen": {
+      "key": "doc:1",
+      "key_existed_before": true,
+      "match_count": 1,
+      "path": "$",
+      "path_mode": "enhanced",
+      "types": [
+        "object"
+      ],
+      "values": [
+        1
       ]
     },
     "redis_json_set": {
@@ -19200,10 +20819,39 @@
       "path": "$",
       "stored": true
     },
+    "redis_json_strlen": {
+      "key": "doc:1",
+      "key_existed_before": true,
+      "match_count": 1,
+      "path": "$.name",
+      "path_mode": "enhanced",
+      "types": [
+        "string"
+      ],
+      "values": [
+        3
+      ]
+    },
+    "redis_json_toggle": {
+      "key": "doc:1",
+      "key_existed_before": true,
+      "match_count": 1,
+      "path": "$.enabled",
+      "path_mode": "enhanced",
+      "types": [
+        "boolean"
+      ],
+      "values": [
+        0
+      ]
+    },
     "redis_json_type": {
       "exists": true,
       "key": "doc:1",
+      "key_existed_before": true,
+      "match_count": 1,
       "path": "$",
+      "path_mode": "enhanced",
       "types": [
         "object"
       ]

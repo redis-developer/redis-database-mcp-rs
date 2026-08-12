@@ -1,6 +1,8 @@
 use std::time::Duration;
 
-use redis_mcp::{AccessMode, CapabilityStatus, DirectRedis, RedisMcp, RedisModule, ToolBundle};
+use redis_mcp::{
+    AccessMode, CapabilityStatus, DirectRedis, OutputBudget, RedisMcp, RedisModule, ToolBundle,
+};
 use tower_mcp::{
     CallToolResult,
     client::{ChannelTransport, McpClient},
@@ -112,6 +114,25 @@ async fn stack_client(url: &str) -> McpClient {
     client
 }
 
+async fn stack_client_with_budget(url: &str, output_budget: OutputBudget) -> McpClient {
+    let executor = DirectRedis::connect(url)
+        .await
+        .expect("connect to Redis Stack");
+    let router = RedisMcp::builder(executor)
+        .access(AccessMode::Full)
+        .bundles([ToolBundle::Json])
+        .output_budget(output_budget)
+        .build();
+    let client = McpClient::connect(ChannelTransport::new(router))
+        .await
+        .expect("connect budget Stack MCP client");
+    client
+        .initialize("redis-mcp-stack-budget-test", "0")
+        .await
+        .expect("initialize budget Stack MCP client");
+    client
+}
+
 #[tokio::test]
 async fn direct_adapter_discovers_stack_modules_and_versions() {
     let Some(redis) = TestRedisStack::start().await else {
@@ -153,6 +174,377 @@ fn structured(result: CallToolResult) -> serde_json::Value {
     result
         .structured_content
         .expect("successful tool result has structured content")
+}
+
+#[tokio::test]
+async fn complete_redis_json_family_is_structured_bounded_and_semantic() {
+    let Some(redis) = TestRedisStack::start().await else {
+        return;
+    };
+    let client = stack_client(&redis.url).await;
+    let suffix = std::process::id();
+    let key = format!("redis-mcp:stack:{suffix}:json-family");
+    let missing = format!("{key}:missing");
+
+    let set = structured(
+        call(
+            &client,
+            "redis_json_set",
+            serde_json::json!({
+                "key": key,
+                "value": {
+                    "name": "Ada",
+                    "score": 41.5,
+                    "enabled": true,
+                    "items": [1, 2, 3],
+                    "legacy_items": [[1, 2]],
+                    "details": {"language": "Rust", "year": 2015},
+                    "obsolete": true,
+                    "binary_string": "nul:\u{0000}:end"
+                }
+            }),
+        )
+        .await,
+    );
+    assert_eq!(set["stored"], true);
+
+    let conditional_noop = structured(
+        call(
+            &client,
+            "redis_json_set",
+            serde_json::json!({"key": key, "value": {"replaced": true}, "nx": true}),
+        )
+        .await,
+    );
+    assert_eq!(conditional_noop["stored"], false);
+
+    let missing_path = structured(
+        call(
+            &client,
+            "redis_json_get",
+            serde_json::json!({"key": key, "path": "$.missing"}),
+        )
+        .await,
+    );
+    assert_eq!(missing_path["key_existed_before"], true);
+    assert_eq!(missing_path["exists"], false);
+    assert_eq!(missing_path["match_count"], 0);
+    assert_eq!(missing_path["value"], serde_json::json!([]));
+
+    let missing_key = structured(
+        call(
+            &client,
+            "redis_json_get",
+            serde_json::json!({"key": missing}),
+        )
+        .await,
+    );
+    assert_eq!(missing_key["key_existed_before"], false);
+    assert_eq!(missing_key["exists"], false);
+    assert_eq!(missing_key["value"], serde_json::Value::Null);
+
+    let values = structured(
+        call(
+            &client,
+            "redis_json_mget",
+            serde_json::json!({"keys": [key, missing], "path": "$.name"}),
+        )
+        .await,
+    );
+    assert_eq!(values["values"][0]["value"], serde_json::json!(["Ada"]));
+    assert_eq!(values["values"][0]["match_count"], 1);
+    assert_eq!(values["values"][1]["key_existed_before"], false);
+    assert_eq!(values["values"][1]["match_count"], 0);
+
+    let legacy_length = structured(
+        call(
+            &client,
+            "redis_json_strlen",
+            serde_json::json!({"key": key, "path": ".name"}),
+        )
+        .await,
+    );
+    assert_eq!(legacy_length["path_mode"], "legacy");
+    assert_eq!(legacy_length["types"], serde_json::json!(["string"]));
+    assert_eq!(legacy_length["values"], serde_json::json!([3]));
+
+    let wrong_type = structured(
+        call(
+            &client,
+            "redis_json_strlen",
+            serde_json::json!({"key": key, "path": "$.score"}),
+        )
+        .await,
+    );
+    assert_eq!(wrong_type["types"], serde_json::json!(["number"]));
+    assert_eq!(wrong_type["values"], serde_json::json!([null]));
+
+    let object_keys = structured(
+        call(
+            &client,
+            "redis_json_objkeys",
+            serde_json::json!({"key": key, "path": "$.details"}),
+        )
+        .await,
+    );
+    let object_keys = object_keys["keys"][0].as_array().expect("object keys");
+    assert!(object_keys.contains(&serde_json::json!("language")));
+    assert!(object_keys.contains(&serde_json::json!("year")));
+
+    let object_length = structured(
+        call(
+            &client,
+            "redis_json_objlen",
+            serde_json::json!({"key": key, "path": "$.details"}),
+        )
+        .await,
+    );
+    assert_eq!(object_length["values"], serde_json::json!([2]));
+
+    let array_length = structured(
+        call(
+            &client,
+            "redis_json_arrlen",
+            serde_json::json!({"key": key, "path": "$.items"}),
+        )
+        .await,
+    );
+    assert_eq!(array_length["values"], serde_json::json!([3]));
+
+    let incremented = structured(
+        call(
+            &client,
+            "redis_json_numincrby",
+            serde_json::json!({"key": key, "path": "$.score", "value": 0.5}),
+        )
+        .await,
+    );
+    assert_eq!(incremented["values"], serde_json::json!([42.0]));
+
+    let toggled = structured(
+        call(
+            &client,
+            "redis_json_toggle",
+            serde_json::json!({"key": key, "path": "$.enabled"}),
+        )
+        .await,
+    );
+    assert_eq!(toggled["values"], serde_json::json!([0]));
+
+    let appended = structured(
+        call(
+            &client,
+            "redis_json_arrappend",
+            serde_json::json!({
+                "key": key,
+                "path": "$.items",
+                "values": [4, {"kind": "tail"}]
+            }),
+        )
+        .await,
+    );
+    assert_eq!(appended["values"], serde_json::json!([5]));
+
+    let inserted = structured(
+        call(
+            &client,
+            "redis_json_arrinsert",
+            serde_json::json!({"key": key, "path": "$.items", "index": 0, "values": [0]}),
+        )
+        .await,
+    );
+    assert_eq!(inserted["values"], serde_json::json!([6]));
+
+    let popped = structured(
+        call(
+            &client,
+            "redis_json_arrpop",
+            serde_json::json!({"key": key, "path": "$.items"}),
+        )
+        .await,
+    );
+    assert_eq!(popped["popped"], 1);
+    assert_eq!(popped["values"][0], serde_json::json!({"kind": "tail"}));
+    assert_eq!(popped["values_omitted"], false);
+
+    let legacy_array_value = structured(
+        call(
+            &client,
+            "redis_json_arrpop",
+            serde_json::json!({"key": key, "path": ".legacy_items"}),
+        )
+        .await,
+    );
+    assert_eq!(legacy_array_value["path_mode"], "legacy");
+    assert_eq!(legacy_array_value["popped"], 1);
+    assert_eq!(legacy_array_value["values"], serde_json::json!([[1, 2]]));
+
+    let trimmed = structured(
+        call(
+            &client,
+            "redis_json_arrtrim",
+            serde_json::json!({"key": key, "path": "$.items", "start": 0, "stop": 2}),
+        )
+        .await,
+    );
+    assert_eq!(trimmed["values"], serde_json::json!([3]));
+
+    let merged = structured(
+        call(
+            &client,
+            "redis_json_merge",
+            serde_json::json!({
+                "key": key,
+                "value": {"obsolete": null, "new_field": {"ready": true}}
+            }),
+        )
+        .await,
+    );
+    assert_eq!(merged["merged"], true);
+
+    let cleared = structured(
+        call(
+            &client,
+            "redis_json_clear",
+            serde_json::json!({"key": key, "path": "$.details"}),
+        )
+        .await,
+    );
+    assert_eq!(cleared["cleared"], 1);
+
+    let document =
+        structured(call(&client, "redis_json_get", serde_json::json!({"key": key})).await);
+    assert_eq!(document["value"][0]["score"], 42.0);
+    assert_eq!(document["value"][0]["enabled"], false);
+    assert_eq!(document["value"][0]["items"], serde_json::json!([0, 1, 2]));
+    assert_eq!(document["value"][0]["details"], serde_json::json!({}));
+    assert_eq!(document["value"][0]["new_field"]["ready"], true);
+    assert!(document["value"][0].get("obsolete").is_none());
+    assert_eq!(document["value"][0]["binary_string"], "nul:\u{0}:end");
+
+    let malformed = client
+        .call_tool(
+            "redis_json_strlen",
+            serde_json::json!({"key": key, "path": "$["}),
+        )
+        .await
+        .expect("malformed JSONPath tool result");
+    assert!(malformed.is_error);
+
+    let budget_client =
+        stack_client_with_budget(&redis.url, OutputBudget::new(256 * 1024, 1)).await;
+    let oversized = budget_client
+        .call_tool(
+            "redis_json_objkeys",
+            serde_json::json!({"key": key, "path": "$"}),
+        )
+        .await
+        .expect("budgeted JSON.OBJKEYS result");
+    assert!(oversized.is_error);
+
+    let popped_large = structured(
+        call(
+            &client,
+            "redis_json_arrappend",
+            serde_json::json!({
+                "key": key,
+                "path": "$.items",
+                "values": ["a value too large for the requested return budget"]
+            }),
+        )
+        .await,
+    );
+    assert_eq!(popped_large["values"], serde_json::json!([4]));
+    let omitted = structured(
+        call(
+            &client,
+            "redis_json_arrpop",
+            serde_json::json!({
+                "key": key,
+                "path": "$.items",
+                "max_returned_bytes": 1
+            }),
+        )
+        .await,
+    );
+    assert_eq!(omitted["popped"], 1);
+    assert_eq!(omitted["values_omitted"], true);
+    assert_eq!(omitted["values"], serde_json::Value::Null);
+
+    let deleted =
+        structured(call(&client, "redis_json_del", serde_json::json!({"key": key})).await);
+    assert_eq!(deleted["deleted"], 1);
+}
+
+#[tokio::test]
+async fn redis_json_acl_key_patterns_are_enforced_without_leaking_credentials() {
+    let Some(redis) = TestRedisStack::start().await else {
+        return;
+    };
+    let suffix = std::process::id();
+    let username = format!("redis-mcp-json-{suffix}");
+    let password = "mcp-json-secret";
+    let allowed_prefix = format!("redis-mcp:stack:{suffix}:acl:allowed:");
+    let allowed_key = format!("{allowed_prefix}doc");
+    let denied_key = format!("redis-mcp:stack:{suffix}:acl:denied:doc");
+
+    let admin = redis::Client::open(redis.url.as_str()).expect("open Stack admin client");
+    let mut connection = admin
+        .get_multiplexed_async_connection()
+        .await
+        .expect("connect Stack admin client");
+    for key in [&allowed_key, &denied_key] {
+        redis::cmd("JSON.SET")
+            .arg(key)
+            .arg("$")
+            .arg(r#"{"name":"Ada"}"#)
+            .query_async::<()>(&mut connection)
+            .await
+            .expect("seed ACL JSON document");
+    }
+    redis::cmd("ACL")
+        .arg("SETUSER")
+        .arg(&username)
+        .arg("on")
+        .arg(format!(">{password}"))
+        .arg("resetkeys")
+        .arg(format!("~{allowed_prefix}*"))
+        .arg("-@all")
+        .arg("+json.get")
+        .arg("+json.strlen")
+        .arg("+json.type")
+        .arg("+exists")
+        .query_async::<()>(&mut connection)
+        .await
+        .expect("create restricted RedisJSON user");
+
+    let authenticated_url =
+        redis
+            .url
+            .replacen("redis://", &format!("redis://{username}:{password}@"), 1);
+    let client = stack_client(&authenticated_url).await;
+    let allowed = client
+        .call_tool(
+            "redis_json_strlen",
+            serde_json::json!({"key": allowed_key, "path": "$.name"}),
+        )
+        .await
+        .expect("allowed RedisJSON read");
+    assert!(!allowed.is_error, "{allowed:?}");
+
+    let denied = client
+        .call_tool("redis_json_get", serde_json::json!({"key": denied_key}))
+        .await
+        .expect("denied RedisJSON read result");
+    assert!(denied.is_error);
+    assert!(!format!("{denied:?}").contains(password));
+
+    redis::cmd("ACL")
+        .arg("DELUSER")
+        .arg(&username)
+        .query_async::<()>(&mut connection)
+        .await
+        .expect("delete restricted RedisJSON user");
 }
 
 #[tokio::test]

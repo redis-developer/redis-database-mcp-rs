@@ -571,9 +571,32 @@ impl DirectRedisCluster {
     }
 }
 
+fn validate_cluster_command_slots(command: &RedisCommand) -> Result<(), RedisError> {
+    if !command.name().eq_ignore_ascii_case("JSON.MGET") || command.arguments().len() < 3 {
+        return Ok(());
+    }
+
+    let keys = &command.arguments()[..command.arguments().len() - 1];
+    let first =
+        redis::cluster_routing::Route::with_key(&keys[0], redis::cluster_routing::SlotAddr::Master);
+    if keys.iter().skip(1).any(|key| {
+        redis::cluster_routing::Route::with_key(key, redis::cluster_routing::SlotAddr::Master)
+            != first
+    }) {
+        Err(RedisError::new(
+            RedisErrorKind::InvalidRequest,
+            "keys in JSON.MGET must hash to the same Redis Cluster slot",
+        )
+        .with_code("CROSSSLOT"))
+    } else {
+        Ok(())
+    }
+}
+
 #[async_trait]
 impl RedisExecutor for DirectRedisCluster {
     async fn execute(&self, command: RedisCommand) -> Result<RedisValue, RedisError> {
+        validate_cluster_command_slots(&command)?;
         execute_redis_command(self.connection.clone(), command).await
     }
 }
@@ -604,6 +627,26 @@ mod tests {
             redis_command.get_packed_command(),
             b"*3\r\n$3\r\nSET\r\n$3\r\nkey\r\n$2\r\n\xff\0\r\n"
         );
+    }
+
+    #[test]
+    fn redis_json_mget_cluster_keys_must_share_a_slot() {
+        let mut same_slot = RedisCommand::new("redis_json_mget", AccessMode::ReadOnly, "JSON.MGET");
+        same_slot
+            .arg("doc:{tenant}:1")
+            .arg("doc:{tenant}:2")
+            .arg("$");
+        assert!(validate_cluster_command_slots(&same_slot).is_ok());
+
+        let mut cross_slot =
+            RedisCommand::new("redis_json_mget", AccessMode::ReadOnly, "JSON.MGET");
+        cross_slot
+            .arg("doc:{tenant-a}:1")
+            .arg("doc:{tenant-b}:2")
+            .arg("$");
+        let error = validate_cluster_command_slots(&cross_slot).unwrap_err();
+        assert_eq!(error.kind(), RedisErrorKind::InvalidRequest);
+        assert_eq!(error.code(), Some("CROSSSLOT"));
     }
 
     #[test]

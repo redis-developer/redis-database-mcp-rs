@@ -45,8 +45,12 @@ The standalone default exposes 109 broadly useful tools:
   `redis_xclaim`, `redis_xautoclaim`, `redis_xdel`, `redis_xtrim`,
   `redis_xgroup_destroy`, `redis_xgroup_delconsumer`
 - diagnostics: `redis_info`
-- optional RedisJSON lifecycle: `redis_json_get`, `redis_json_type`,
-  `redis_json_set`, `redis_json_del`
+- optional RedisJSON family: `redis_json_get`, `redis_json_type`,
+  `redis_json_mget`, `redis_json_strlen`, `redis_json_objkeys`,
+  `redis_json_objlen`, `redis_json_arrlen`, `redis_json_set`,
+  `redis_json_numincrby`, `redis_json_toggle`, `redis_json_arrappend`,
+  `redis_json_arrinsert`, `redis_json_del`, `redis_json_clear`,
+  `redis_json_arrpop`, `redis_json_arrtrim`, `redis_json_merge`
 - optional Search lifecycle: `redis_ft_list`, `redis_ft_info`,
   `redis_ft_search`, `redis_ft_create`, `redis_ft_dropindex`,
   `redis_vector_get_hash`, `redis_vector_set_hash`,
@@ -61,7 +65,8 @@ result and 1,000 collection entries. Oversized results return a stable
 Search also expose typed continuation metadata. A fixed Redis target is
 configured once by the server; arbitrary URLs are not accepted in tool calls.
 Side-effectful value-returning commands (`SET GET`, `GETEX`, `GETDEL`, counted
-list and sorted-set pops, `LMOVE`, `XREADGROUP`, `XCLAIM`, and `XAUTOCLAIM`) accept explicit byte caps and report
+list and sorted-set pops, `LMOVE`, `XREADGROUP`, `XCLAIM`, `XAUTOCLAIM`, and
+`JSON.ARRPOP`) accept explicit byte caps and report
 oversized returned values as omitted while preserving the mutation outcome.
 
 See [the spike decision record](docs/spike.md) for the tested architecture,
@@ -123,8 +128,12 @@ script, and indefinite-blocking forms:
 
     redis-mcp-server --access full --raw-unrestricted --stdio
 
-RedisJSON and Search are explicit additions to the curated defaults. The
-configured Redis target must provide the corresponding capability:
+RedisJSON and Search are explicit additions to the curated defaults. The JSON
+bundle exposes 17 structured tools spanning reads, typed mutations, arrays,
+objects, deletion, clearing, and RFC 7396 merge. Enhanced JSONPath (`$`) is the
+default; callers can explicitly select legacy paths where RedisJSON has
+different reply semantics. The configured Redis target must provide the
+corresponding capability:
 
     redis-mcp-server --access full \
       --enable-bundle json \
@@ -262,9 +271,10 @@ The Redis Stack lifecycle test similarly uses `REDIS_STACK_URL` when supplied.
 Otherwise, the wrapper auto-detects a local Redis Stack installation and loads
 its Search and RedisJSON modules into an isolated server. A plain Redis target
 is also exercised to keep missing-module errors stable and actionable. Stack
-coverage includes FLOAT32 HASH and FLOAT64 JSON vectors, FLAT and HNSW indexes,
-binary-safe hash round trips, KNN pagination, and typed text/tag/numeric/geo
-hybrid filters.
+coverage includes the complete RedisJSON family, JSONPath and legacy-path
+semantics, nil and wrong-type results, output bounds, ACL key patterns, FLOAT32
+HASH and FLOAT64 JSON vectors, FLAT and HNSW indexes, binary-safe hash round
+trips, KNN pagination, and typed text/tag/numeric/geo hybrid filters.
 
 CI runs the complete suite on Redis 8.8 and the live router/stdio contract on
 every currently supported Redis Open Source series: 6.2, 7.2, 7.4, 8.0, 8.2,

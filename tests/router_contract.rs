@@ -334,9 +334,40 @@ impl RedisExecutor for StubRedis {
             "LREM" => RedisValue::Integer(1),
             "DEL" | "UNLINK" => RedisValue::Integer(1),
             "JSON.GET" => RedisValue::BulkString(br#"[{"name":"Ada"}]"#.to_vec()),
-            "JSON.TYPE" => RedisValue::Array(vec![RedisValue::BulkString(b"object".to_vec())]),
+            "JSON.TYPE" => {
+                let value_type = match command.tool_name() {
+                    "redis_json_strlen" => "string",
+                    "redis_json_numincrby" => "integer",
+                    "redis_json_toggle" => "boolean",
+                    "redis_json_arrlen"
+                    | "redis_json_arrappend"
+                    | "redis_json_arrinsert"
+                    | "redis_json_arrpop"
+                    | "redis_json_arrtrim" => "array",
+                    _ => "object",
+                };
+                RedisValue::Array(vec![RedisValue::BulkString(value_type.as_bytes().to_vec())])
+            }
+            "JSON.MGET" => RedisValue::Array(vec![RedisValue::BulkString(
+                br#"[{"name":"Ada"}]"#.to_vec(),
+            )]),
+            "JSON.STRLEN" => RedisValue::Array(vec![RedisValue::Integer(3)]),
+            "JSON.OBJKEYS" => {
+                RedisValue::Array(vec![RedisValue::Array(vec![RedisValue::BulkString(
+                    b"name".to_vec(),
+                )])])
+            }
+            "JSON.OBJLEN" | "JSON.ARRLEN" => RedisValue::Array(vec![RedisValue::Integer(1)]),
             "JSON.SET" => RedisValue::Okay,
+            "JSON.NUMINCRBY" => RedisValue::BulkString(b"[43]".to_vec()),
+            "JSON.TOGGLE" => RedisValue::Array(vec![RedisValue::Integer(0)]),
+            "JSON.ARRAPPEND" | "JSON.ARRINSERT" | "JSON.ARRTRIM" => {
+                RedisValue::Array(vec![RedisValue::Integer(3)])
+            }
             "JSON.DEL" => RedisValue::Integer(1),
+            "JSON.CLEAR" => RedisValue::Integer(1),
+            "JSON.ARRPOP" => RedisValue::Array(vec![RedisValue::BulkString(b"1".to_vec())]),
+            "JSON.MERGE" => RedisValue::Okay,
             "FT._LIST" => RedisValue::Array(vec![RedisValue::BulkString(b"idx:docs".to_vec())]),
             "FT.INFO" => RedisValue::Array(vec![
                 RedisValue::BulkString(b"index_name".to_vec()),
@@ -1265,6 +1296,31 @@ fn structured_cases() -> Vec<(&'static str, serde_json::Value, &'static str)> {
             serde_json::json!({"key": "doc:1"}),
             "types",
         ),
+        (
+            "redis_json_mget",
+            serde_json::json!({"keys": ["doc:1"]}),
+            "values",
+        ),
+        (
+            "redis_json_strlen",
+            serde_json::json!({"key": "doc:1", "path": "$.name"}),
+            "values",
+        ),
+        (
+            "redis_json_objkeys",
+            serde_json::json!({"key": "doc:1"}),
+            "keys",
+        ),
+        (
+            "redis_json_objlen",
+            serde_json::json!({"key": "doc:1"}),
+            "values",
+        ),
+        (
+            "redis_json_arrlen",
+            serde_json::json!({"key": "doc:1", "path": "$.items"}),
+            "values",
+        ),
         ("redis_ft_list", serde_json::json!({}), "indexes"),
         (
             "redis_ft_info",
@@ -1507,6 +1563,26 @@ fn structured_cases() -> Vec<(&'static str, serde_json::Value, &'static str)> {
             "stored",
         ),
         (
+            "redis_json_numincrby",
+            serde_json::json!({"key": "doc:1", "path": "$.score", "value": 1}),
+            "values",
+        ),
+        (
+            "redis_json_toggle",
+            serde_json::json!({"key": "doc:1", "path": "$.enabled"}),
+            "values",
+        ),
+        (
+            "redis_json_arrappend",
+            serde_json::json!({"key": "doc:1", "path": "$.items", "values": [3]}),
+            "values",
+        ),
+        (
+            "redis_json_arrinsert",
+            serde_json::json!({"key": "doc:1", "path": "$.items", "index": 0, "values": [1]}),
+            "values",
+        ),
+        (
             "redis_ft_create",
             serde_json::json!({
                 "index": "idx:docs",
@@ -1655,6 +1731,26 @@ fn structured_cases() -> Vec<(&'static str, serde_json::Value, &'static str)> {
             "redis_json_del",
             serde_json::json!({"key": "doc:1"}),
             "deleted",
+        ),
+        (
+            "redis_json_clear",
+            serde_json::json!({"key": "doc:1"}),
+            "cleared",
+        ),
+        (
+            "redis_json_arrpop",
+            serde_json::json!({"key": "doc:1", "path": "$.items"}),
+            "popped",
+        ),
+        (
+            "redis_json_arrtrim",
+            serde_json::json!({"key": "doc:1", "path": "$.items", "start": 0, "stop": 1}),
+            "values",
+        ),
+        (
+            "redis_json_merge",
+            serde_json::json!({"key": "doc:1", "value": {"name": "Ada"}}),
+            "merged",
         ),
         (
             "redis_ft_dropindex",
@@ -2012,7 +2108,18 @@ async fn bundles_are_composable_and_raw_remains_a_separate_opt_in() {
     .into_iter()
     .map(|tool| tool.name)
     .collect::<Vec<_>>();
-    assert_eq!(json_read_only, vec!["redis_json_get", "redis_json_type"]);
+    assert_eq!(
+        json_read_only,
+        vec![
+            "redis_json_arrlen",
+            "redis_json_get",
+            "redis_json_mget",
+            "redis_json_objkeys",
+            "redis_json_objlen",
+            "redis_json_strlen",
+            "redis_json_type",
+        ]
+    );
 
     let search_read_only = client_for_bundles(
         AccessMode::ReadOnly,
@@ -2491,6 +2598,19 @@ async fn malformed_and_unbounded_inputs_fail_as_tool_results() {
                 "value": {},
                 "nx": true,
                 "xx": true
+            }),
+        ),
+        ("redis_json_mget", serde_json::json!({"keys": []})),
+        (
+            "redis_json_arrappend",
+            serde_json::json!({"key": "doc:1", "path": "$.items", "values": []}),
+        ),
+        (
+            "redis_json_arrpop",
+            serde_json::json!({
+                "key": "doc:1",
+                "path": "$.items",
+                "max_returned_bytes": 0
             }),
         ),
         (
@@ -4213,6 +4333,37 @@ async fn known_missing_modules_commands_and_module_versions_filter_precisely() {
     assert!(!names.iter().any(|name| name == "redis_get"));
     assert!(names.iter().any(|name| name == "redis_mget"));
 
+    let legacy_json = RedisCapabilities::unknown().with_module(
+        RedisModule::Json,
+        RedisModuleCapability::available(Some(RedisVersion::new(1, 0, 0))),
+    );
+    let client = capability_client(legacy_json, UnavailableToolPolicy::Hide).await;
+    let names = client
+        .list_tools()
+        .await
+        .expect("list legacy RedisJSON tools")
+        .tools
+        .into_iter()
+        .map(|tool| tool.name)
+        .collect::<Vec<_>>();
+    assert!(!names.iter().any(|name| name.starts_with("redis_json_")));
+
+    let pre_merge_json = RedisCapabilities::unknown().with_module(
+        RedisModule::Json,
+        RedisModuleCapability::available(Some(RedisVersion::new(2, 4, 0))),
+    );
+    let client = capability_client(pre_merge_json, UnavailableToolPolicy::Hide).await;
+    let names = client
+        .list_tools()
+        .await
+        .expect("list pre-merge RedisJSON tools")
+        .tools
+        .into_iter()
+        .map(|tool| tool.name)
+        .collect::<Vec<_>>();
+    assert!(names.iter().any(|name| name == "redis_json_arrappend"));
+    assert!(!names.iter().any(|name| name == "redis_json_merge"));
+
     let old_search = RedisCapabilities::unknown().with_module(
         RedisModule::Search,
         RedisModuleCapability::available(Some(RedisVersion::new(1, 8, 0))),
@@ -4673,6 +4824,64 @@ async fn stream_annotations_match_access_and_destructive_semantics() {
         assert!(!annotation.read_only_hint, "{name}");
         assert!(annotation.destructive_hint, "{name}");
         assert!(annotation.idempotent_hint, "{name}");
+    }
+}
+
+#[tokio::test]
+async fn redis_json_annotations_match_access_and_destructive_semantics() {
+    let tools = full_catalog_client()
+        .await
+        .list_tools()
+        .await
+        .expect("list annotated RedisJSON tools")
+        .tools;
+    let annotations = |name: &str| {
+        tools
+            .iter()
+            .find(|tool| tool.name == name)
+            .unwrap_or_else(|| panic!("missing {name}"))
+            .annotations
+            .clone()
+            .unwrap_or_else(|| panic!("missing annotations for {name}"))
+    };
+
+    for name in [
+        "redis_json_get",
+        "redis_json_type",
+        "redis_json_mget",
+        "redis_json_strlen",
+        "redis_json_objkeys",
+        "redis_json_objlen",
+        "redis_json_arrlen",
+    ] {
+        let annotation = annotations(name);
+        assert!(annotation.read_only_hint, "{name}");
+        assert!(!annotation.destructive_hint, "{name}");
+        assert!(annotation.idempotent_hint, "{name}");
+    }
+    for (name, idempotent) in [
+        ("redis_json_set", true),
+        ("redis_json_numincrby", false),
+        ("redis_json_toggle", false),
+        ("redis_json_arrappend", false),
+        ("redis_json_arrinsert", false),
+    ] {
+        let annotation = annotations(name);
+        assert!(!annotation.read_only_hint, "{name}");
+        assert!(!annotation.destructive_hint, "{name}");
+        assert_eq!(annotation.idempotent_hint, idempotent, "{name}");
+    }
+    for (name, idempotent) in [
+        ("redis_json_del", true),
+        ("redis_json_clear", true),
+        ("redis_json_arrpop", false),
+        ("redis_json_arrtrim", false),
+        ("redis_json_merge", true),
+    ] {
+        let annotation = annotations(name);
+        assert!(!annotation.read_only_hint, "{name}");
+        assert!(annotation.destructive_hint, "{name}");
+        assert_eq!(annotation.idempotent_hint, idempotent, "{name}");
     }
 }
 

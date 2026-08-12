@@ -238,6 +238,23 @@ impl ToolMetadata {
             _ => None,
         };
         let minimum_module_version = match self.name {
+            "redis_json_get"
+            | "redis_json_type"
+            | "redis_json_mget"
+            | "redis_json_strlen"
+            | "redis_json_objkeys"
+            | "redis_json_objlen"
+            | "redis_json_arrlen"
+            | "redis_json_set"
+            | "redis_json_numincrby"
+            | "redis_json_toggle"
+            | "redis_json_arrappend"
+            | "redis_json_arrinsert"
+            | "redis_json_del"
+            | "redis_json_clear"
+            | "redis_json_arrpop"
+            | "redis_json_arrtrim" => Some(RedisVersion::new(2, 0, 0)),
+            "redis_json_merge" => Some(RedisVersion::new(2, 6, 0)),
             "redis_ft_list" => Some(RedisVersion::new(2, 0, 0)),
             "redis_vector_get_hash"
             | "redis_vector_set_hash"
@@ -297,8 +314,13 @@ impl ToolMetadata {
             "redis_xread" => &["XREAD"],
             "redis_xinfo_stream" | "redis_xinfo_groups" | "redis_xinfo_consumers" => &["XINFO"],
             "redis_xpending" => &["XPENDING"],
-            "redis_json_get" => &["JSON.GET"],
-            "redis_json_type" => &["JSON.TYPE"],
+            "redis_json_get" => &["JSON.GET", "EXISTS"],
+            "redis_json_type" => &["JSON.TYPE", "EXISTS"],
+            "redis_json_mget" => &["JSON.MGET", "EXISTS"],
+            "redis_json_strlen" => &["JSON.STRLEN", "JSON.TYPE", "EXISTS"],
+            "redis_json_objkeys" => &["JSON.OBJKEYS", "JSON.TYPE", "EXISTS"],
+            "redis_json_objlen" => &["JSON.OBJLEN", "JSON.TYPE", "EXISTS"],
+            "redis_json_arrlen" => &["JSON.ARRLEN", "JSON.TYPE", "EXISTS"],
             "redis_ft_list" => &["FT._LIST"],
             "redis_ft_info" => &["FT.INFO"],
             "redis_ft_search" => &["FT.SEARCH"],
@@ -338,6 +360,10 @@ impl ToolMetadata {
             "redis_xclaim" => &["XCLAIM"],
             "redis_xautoclaim" => &["XAUTOCLAIM"],
             "redis_json_set" => &["JSON.SET"],
+            "redis_json_numincrby" => &["JSON.NUMINCRBY", "JSON.TYPE", "EXISTS"],
+            "redis_json_toggle" => &["JSON.TOGGLE", "JSON.TYPE", "EXISTS"],
+            "redis_json_arrappend" => &["JSON.ARRAPPEND", "JSON.TYPE", "EXISTS"],
+            "redis_json_arrinsert" => &["JSON.ARRINSERT", "JSON.TYPE", "EXISTS"],
             "redis_ft_create" => &["FT.CREATE"],
             "redis_vector_set_hash" => &["HSET"],
             "redis_del" => &["DEL"],
@@ -360,7 +386,11 @@ impl ToolMetadata {
             "redis_getdel" => &["GETDEL"],
             "redis_rename" => &["RENAME"],
             "redis_renamenx" => &["RENAMENX"],
-            "redis_json_del" => &["JSON.DEL"],
+            "redis_json_del" => &["JSON.DEL", "EXISTS"],
+            "redis_json_clear" => &["JSON.CLEAR", "JSON.TYPE", "EXISTS"],
+            "redis_json_arrpop" => &["JSON.ARRPOP", "JSON.TYPE", "EXISTS"],
+            "redis_json_arrtrim" => &["JSON.ARRTRIM", "JSON.TYPE", "EXISTS"],
+            "redis_json_merge" => &["JSON.MERGE", "EXISTS"],
             "redis_ft_dropindex" => &["FT.DROPINDEX"],
             "redis_command" => &[],
             _ => &[],
@@ -421,6 +451,17 @@ impl ToolMetadata {
             | "redis_xpending"
             | "redis_json_get"
             | "redis_json_type"
+            | "redis_json_mget"
+            | "redis_json_strlen"
+            | "redis_json_objkeys"
+            | "redis_json_objlen"
+            | "redis_json_arrlen"
+            | "redis_json_numincrby"
+            | "redis_json_toggle"
+            | "redis_json_arrappend"
+            | "redis_json_arrinsert"
+            | "redis_json_arrpop"
+            | "redis_json_arrtrim"
             | "redis_ft_list"
             | "redis_ft_info"
             | "redis_vector_get_hash"
@@ -762,6 +803,36 @@ pub(crate) const CATALOG: &[ToolMetadata] = &[
         requires_raw_opt_in: false,
     },
     ToolMetadata {
+        name: "redis_json_mget",
+        bundle: ToolBundle::Json,
+        required_access: AccessMode::ReadOnly,
+        requires_raw_opt_in: false,
+    },
+    ToolMetadata {
+        name: "redis_json_strlen",
+        bundle: ToolBundle::Json,
+        required_access: AccessMode::ReadOnly,
+        requires_raw_opt_in: false,
+    },
+    ToolMetadata {
+        name: "redis_json_objkeys",
+        bundle: ToolBundle::Json,
+        required_access: AccessMode::ReadOnly,
+        requires_raw_opt_in: false,
+    },
+    ToolMetadata {
+        name: "redis_json_objlen",
+        bundle: ToolBundle::Json,
+        required_access: AccessMode::ReadOnly,
+        requires_raw_opt_in: false,
+    },
+    ToolMetadata {
+        name: "redis_json_arrlen",
+        bundle: ToolBundle::Json,
+        required_access: AccessMode::ReadOnly,
+        requires_raw_opt_in: false,
+    },
+    ToolMetadata {
         name: "redis_ft_list",
         bundle: ToolBundle::Search,
         required_access: AccessMode::ReadOnly,
@@ -1002,6 +1073,30 @@ pub(crate) const CATALOG: &[ToolMetadata] = &[
         requires_raw_opt_in: false,
     },
     ToolMetadata {
+        name: "redis_json_numincrby",
+        bundle: ToolBundle::Json,
+        required_access: AccessMode::ReadWrite,
+        requires_raw_opt_in: false,
+    },
+    ToolMetadata {
+        name: "redis_json_toggle",
+        bundle: ToolBundle::Json,
+        required_access: AccessMode::ReadWrite,
+        requires_raw_opt_in: false,
+    },
+    ToolMetadata {
+        name: "redis_json_arrappend",
+        bundle: ToolBundle::Json,
+        required_access: AccessMode::ReadWrite,
+        requires_raw_opt_in: false,
+    },
+    ToolMetadata {
+        name: "redis_json_arrinsert",
+        bundle: ToolBundle::Json,
+        required_access: AccessMode::ReadWrite,
+        requires_raw_opt_in: false,
+    },
+    ToolMetadata {
         name: "redis_ft_create",
         bundle: ToolBundle::Search,
         required_access: AccessMode::ReadWrite,
@@ -1153,6 +1248,30 @@ pub(crate) const CATALOG: &[ToolMetadata] = &[
     },
     ToolMetadata {
         name: "redis_json_del",
+        bundle: ToolBundle::Json,
+        required_access: AccessMode::Full,
+        requires_raw_opt_in: false,
+    },
+    ToolMetadata {
+        name: "redis_json_clear",
+        bundle: ToolBundle::Json,
+        required_access: AccessMode::Full,
+        requires_raw_opt_in: false,
+    },
+    ToolMetadata {
+        name: "redis_json_arrpop",
+        bundle: ToolBundle::Json,
+        required_access: AccessMode::Full,
+        requires_raw_opt_in: false,
+    },
+    ToolMetadata {
+        name: "redis_json_arrtrim",
+        bundle: ToolBundle::Json,
+        required_access: AccessMode::Full,
+        requires_raw_opt_in: false,
+    },
+    ToolMetadata {
+        name: "redis_json_merge",
         bundle: ToolBundle::Json,
         required_access: AccessMode::Full,
         requires_raw_opt_in: false,

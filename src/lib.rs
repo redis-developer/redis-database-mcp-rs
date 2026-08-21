@@ -13,6 +13,7 @@ mod catalog;
 mod executor;
 mod invocation;
 mod output;
+mod pubsub_sessions;
 mod raw;
 mod tools;
 
@@ -37,8 +38,34 @@ pub use invocation::{
     RedisOutputLimitDimension,
 };
 pub use output::{DEFAULT_MAX_OUTPUT_BYTES, DEFAULT_MAX_OUTPUT_ENTRIES, OutputBudget};
+pub use pubsub_sessions::{
+    DEFAULT_MAX_PUBSUB_BUFFERED_MESSAGES, DEFAULT_MAX_PUBSUB_MESSAGE_BYTES,
+    DEFAULT_MAX_PUBSUB_READ_BYTES, DEFAULT_MAX_PUBSUB_READ_DURATION, DEFAULT_MAX_PUBSUB_SESSIONS,
+    DEFAULT_MAX_PUBSUB_SESSIONS_PER_OWNER, DEFAULT_MAX_PUBSUB_SUBSCRIPTIONS,
+    DEFAULT_PUBSUB_CLEANUP_INTERVAL, DEFAULT_PUBSUB_IDLE_TIMEOUT, DEFAULT_PUBSUB_OPERATION_TIMEOUT,
+    DirectRedisPubSubSessionManager, PubSubMessage, PubSubReadRequest, PubSubReadResult,
+    PubSubSessionError, PubSubSessionErrorKind, PubSubSessionLimits, PubSubSessionManager,
+    PubSubSessionOwner, PubSubSessionSnapshot, PubSubSubscription, PubSubSubscriptionKind,
+};
 pub use raw::RawCommandPolicy;
 use tower_mcp::{CapabilityFilter, Filterable, McpRouter, Tool};
+
+struct PubSubOwnerCleanup {
+    manager: Arc<dyn PubSubSessionManager>,
+    owner: PubSubSessionOwner,
+}
+
+impl Drop for PubSubOwnerCleanup {
+    fn drop(&mut self) {
+        let manager = self.manager.clone();
+        let owner = self.owner.clone();
+        if let Ok(runtime) = tokio::runtime::Handle::try_current() {
+            runtime.spawn(async move {
+                manager.close_owner(&owner).await;
+            });
+        }
+    }
+}
 
 /// Default upper bound for one Redis command executed by a tool.
 pub const DEFAULT_COMMAND_TIMEOUT: Duration = Duration::from_secs(30);
@@ -56,6 +83,7 @@ impl RedisMcp {
             raw_command_policy: RawCommandPolicy::Disabled,
             command_timeout: DEFAULT_COMMAND_TIMEOUT,
             output_budget: OutputBudget::default(),
+            pubsub_sessions: None,
             capabilities: RedisCapabilities::unknown(),
             unavailable_tool_policy: UnavailableToolPolicy::Advertise,
             server_name: "redis-mcp".to_string(),
@@ -72,6 +100,7 @@ pub struct RedisMcpBuilder {
     raw_command_policy: RawCommandPolicy,
     command_timeout: Duration,
     output_budget: OutputBudget,
+    pubsub_sessions: Option<Arc<dyn PubSubSessionManager>>,
     capabilities: RedisCapabilities,
     unavailable_tool_policy: UnavailableToolPolicy,
     server_name: String,
@@ -142,6 +171,26 @@ impl RedisMcpBuilder {
         self
     }
 
+    /// Enable the owner-isolated Pub/Sub session bundle with a host-supplied
+    /// lifecycle manager.
+    ///
+    /// The manager is independent of [`RedisExecutor`], because subscription
+    /// sessions require dedicated connections and a longer lifecycle than one
+    /// request/response command. This method also enables
+    /// [`ToolBundle::Sessions`].
+    pub fn pubsub_sessions(mut self, manager: impl PubSubSessionManager) -> Self {
+        self.pubsub_sessions = Some(Arc::new(manager));
+        self.bundles.insert(ToolBundle::Sessions);
+        self
+    }
+
+    /// Enable Pub/Sub sessions with a shared manager trait object.
+    pub fn shared_pubsub_sessions(mut self, manager: Arc<dyn PubSubSessionManager>) -> Self {
+        self.pubsub_sessions = Some(manager);
+        self.bundles.insert(ToolBundle::Sessions);
+        self
+    }
+
     /// Supply a precomputed Redis capability snapshot.
     ///
     /// Custom executors can construct this snapshot without depending on
@@ -186,6 +235,9 @@ impl RedisMcpBuilder {
         if self.raw_command_policy.is_enabled() && self.access != AccessMode::Full {
             return Err(RedisMcpBuildError::RawCommandsRequireFullAccess);
         }
+        if self.bundles.contains(&ToolBundle::Sessions) && self.pubsub_sessions.is_none() {
+            return Err(RedisMcpBuildError::SessionsRequireManager);
+        }
         let capabilities = Arc::new(self.capabilities);
         let invocation_engine = RedisInvocationEngine::from_shared(
             self.executor,
@@ -195,12 +247,24 @@ impl RedisMcpBuilder {
             self.output_budget,
             capabilities.clone(),
         );
+        let pubsub_owner = (self.bundles.contains(&ToolBundle::Sessions)
+            && self.pubsub_sessions.is_some())
+        .then(PubSubSessionOwner::random);
         let state = Arc::new(tools::ToolState::new(
             self.access,
             self.output_budget,
             invocation_engine,
+            self.pubsub_sessions,
         ));
         let mut router = McpRouter::new().server_info(self.server_name, self.server_version);
+        if let (Some(manager), Some(owner)) = (&state.pubsub_sessions, pubsub_owner) {
+            router = router
+                .with_extension(owner.clone())
+                .with_extension(Arc::new(PubSubOwnerCleanup {
+                    manager: manager.clone(),
+                    owner,
+                }));
+        }
         router = tools::add_read_only_tools(router, state.clone(), &self.bundles);
         if self.access.permits(AccessMode::ReadWrite) {
             router = tools::add_write_tools(router, state.clone(), &self.bundles);
@@ -238,6 +302,8 @@ pub enum RedisMcpBuildError {
     /// Raw commands are an escape hatch and require full access in addition to
     /// their separate policy opt-in.
     RawCommandsRequireFullAccess,
+    /// Stateful Pub/Sub tools require an explicit lifecycle manager.
+    SessionsRequireManager,
 }
 
 impl std::fmt::Display for RedisMcpBuildError {
@@ -254,6 +320,9 @@ impl std::fmt::Display for RedisMcpBuildError {
             }
             Self::RawCommandsRequireFullAccess => {
                 formatter.write_str("raw command execution requires full access")
+            }
+            Self::SessionsRequireManager => {
+                formatter.write_str("the sessions bundle requires a Pub/Sub session manager")
             }
         }
     }

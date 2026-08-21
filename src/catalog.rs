@@ -132,6 +132,8 @@ pub enum ToolBundle {
     Search,
     /// Operational inspection and troubleshooting tools.
     Diagnostics,
+    /// Stateful, owner-isolated Redis session operations.
+    Sessions,
     /// Server configuration and administrative operations.
     Admin,
     /// Deliberately bounded bulk workflows.
@@ -152,6 +154,7 @@ impl ToolBundle {
         Self::Json,
         Self::Search,
         Self::Diagnostics,
+        Self::Sessions,
         Self::Admin,
         Self::Bulk,
         Self::Raw,
@@ -164,6 +167,7 @@ impl ToolBundle {
             Self::Json => "json",
             Self::Search => "search",
             Self::Diagnostics => "diagnostics",
+            Self::Sessions => "sessions",
             Self::Admin => "admin",
             Self::Bulk => "bulk",
             Self::Raw => "raw",
@@ -202,13 +206,19 @@ impl ToolMetadata {
     /// catalog filtering and stable preflight errors.
     pub fn capability_requirements(self) -> ToolCapabilityRequirements {
         let minimum_redis_version = match self.name {
-            "redis_publish" => Some(RedisVersion::new(2, 0, 0)),
+            "redis_publish"
+            | "redis_subscribe"
+            | "redis_psubscribe"
+            | "redis_pubsub_read"
+            | "redis_pubsub_unsubscribe"
+            | "redis_pubsub_close" => Some(RedisVersion::new(2, 0, 0)),
             "redis_pubsub_channels" | "redis_pubsub_numsub" | "redis_pubsub_numpat" => {
                 Some(RedisVersion::new(2, 8, 0))
             }
-            "redis_spublish" | "redis_pubsub_shardchannels" | "redis_pubsub_shardnumsub" => {
-                Some(RedisVersion::new(7, 0, 0))
-            }
+            "redis_spublish"
+            | "redis_ssubscribe"
+            | "redis_pubsub_shardchannels"
+            | "redis_pubsub_shardnumsub" => Some(RedisVersion::new(7, 0, 0)),
             "redis_dump" => Some(RedisVersion::new(2, 6, 0)),
             "redis_touch" | "redis_hstrlen" => Some(RedisVersion::new(3, 2, 0)),
             "redis_memory_usage" | "redis_object_inspect" | "redis_unlink" => {
@@ -295,6 +305,9 @@ impl ToolMetadata {
             "redis_object_inspect" => &["OBJECT"],
             "redis_publish" => &["PUBLISH"],
             "redis_spublish" => &["SPUBLISH"],
+            "redis_subscribe" => &["SUBSCRIBE"],
+            "redis_psubscribe" => &["PSUBSCRIBE"],
+            "redis_ssubscribe" => &["SSUBSCRIBE"],
             "redis_pubsub_channels"
             | "redis_pubsub_numsub"
             | "redis_pubsub_numpat"
@@ -509,6 +522,7 @@ impl ToolMetadata {
             | "redis_vector_get_hash"
             | "redis_pubsub_channels"
             | "redis_pubsub_shardchannels"
+            | "redis_pubsub_read"
             | "redis_command" => ToolOutputPolicy::BudgetGuarded,
             _ => ToolOutputPolicy::IntrinsicallyBounded,
         }
@@ -633,6 +647,42 @@ pub(crate) const CATALOG: &[ToolMetadata] = &[
     ToolMetadata {
         name: "redis_pubsub_shardnumsub",
         bundle: ToolBundle::Essentials,
+        required_access: AccessMode::ReadOnly,
+        requires_raw_opt_in: false,
+    },
+    ToolMetadata {
+        name: "redis_subscribe",
+        bundle: ToolBundle::Sessions,
+        required_access: AccessMode::ReadOnly,
+        requires_raw_opt_in: false,
+    },
+    ToolMetadata {
+        name: "redis_psubscribe",
+        bundle: ToolBundle::Sessions,
+        required_access: AccessMode::ReadOnly,
+        requires_raw_opt_in: false,
+    },
+    ToolMetadata {
+        name: "redis_ssubscribe",
+        bundle: ToolBundle::Sessions,
+        required_access: AccessMode::ReadOnly,
+        requires_raw_opt_in: false,
+    },
+    ToolMetadata {
+        name: "redis_pubsub_read",
+        bundle: ToolBundle::Sessions,
+        required_access: AccessMode::ReadOnly,
+        requires_raw_opt_in: false,
+    },
+    ToolMetadata {
+        name: "redis_pubsub_unsubscribe",
+        bundle: ToolBundle::Sessions,
+        required_access: AccessMode::ReadOnly,
+        requires_raw_opt_in: false,
+    },
+    ToolMetadata {
+        name: "redis_pubsub_close",
+        bundle: ToolBundle::Sessions,
         required_access: AccessMode::ReadOnly,
         requires_raw_opt_in: false,
     },

@@ -1,8 +1,11 @@
 #![forbid(unsafe_code)]
 
 use clap::{Parser, ValueEnum};
+use std::sync::Arc;
+
 use redis_mcp::{
-    AccessMode, DirectRedis, DirectRedisCluster, RawCommandPolicy, RedisExecutor, RedisMcp,
+    AccessMode, DirectRedis, DirectRedisCluster, DirectRedisPubSubSessionManager,
+    PubSubSessionLimits, PubSubSessionManager, RawCommandPolicy, RedisExecutor, RedisMcp,
     ToolBundle,
 };
 use tower_mcp::{McpRouter, ProtocolSupport, StdioTransport};
@@ -83,10 +86,12 @@ fn build_router(
     access: AccessMode,
     raw_command_policy: RawCommandPolicy,
     optional_bundles: &[CliOptionalBundle],
+    pubsub_sessions: Arc<dyn PubSubSessionManager>,
 ) -> McpRouter {
     let mut builder = RedisMcp::builder(executor)
         .access(access)
         .raw_command_policy(raw_command_policy)
+        .shared_pubsub_sessions(pubsub_sessions)
         .server_info("redis-mcp-server", env!("CARGO_PKG_VERSION"));
     for bundle in optional_bundles {
         builder = builder.bundle((*bundle).into());
@@ -116,13 +121,39 @@ async fn main() -> Result<(), tower_mcp::BoxError> {
         .try_init();
 
     let cluster_mode = !args.cluster_urls.is_empty();
-    let router = if cluster_mode {
+    let (router, pubsub_sessions): (McpRouter, Arc<dyn PubSubSessionManager>) = if cluster_mode {
         let executor = DirectRedisCluster::connect(&args.cluster_urls).await?;
-        build_router(executor, access, raw_command_policy, &args.optional_bundles)
+        let sessions = Arc::new(DirectRedisPubSubSessionManager::cluster(
+            &args.cluster_urls,
+            PubSubSessionLimits::default(),
+        )?);
+        (
+            build_router(
+                executor,
+                access,
+                raw_command_policy,
+                &args.optional_bundles,
+                sessions.clone(),
+            ),
+            sessions,
+        )
     } else {
         let url = args.url.as_deref().unwrap_or("redis://127.0.0.1:6379");
         let executor = DirectRedis::connect(url).await?;
-        build_router(executor, access, raw_command_policy, &args.optional_bundles)
+        let sessions = Arc::new(DirectRedisPubSubSessionManager::standalone(
+            url,
+            PubSubSessionLimits::default(),
+        )?);
+        (
+            build_router(
+                executor,
+                access,
+                raw_command_policy,
+                &args.optional_bundles,
+                sessions.clone(),
+            ),
+            sessions,
+        )
     };
 
     let topology = if cluster_mode {
@@ -137,9 +168,12 @@ async fn main() -> Result<(), tower_mcp::BoxError> {
         "Redis MCP server ready"
     );
     let protocols = ProtocolSupport::try_new(["2025-11-25", "2026-07-28"])?;
-    StdioTransport::new(router)
-        .protocol_support(protocols)
-        .run()
-        .await?;
+    let mut transport = StdioTransport::new(router).protocol_support(protocols);
+    let handle = transport.handle();
+    tokio::spawn(async move {
+        handle.stopping().await;
+        pubsub_sessions.shutdown().await;
+    });
+    transport.run().await?;
     Ok(())
 }

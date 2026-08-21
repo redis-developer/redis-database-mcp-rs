@@ -83,6 +83,11 @@ Request/response Pub/Sub additionally includes binary-safe `redis_publish`,
 Redis 7+ `redis_spublish`, `redis_pubsub_numpat`,
 `redis_pubsub_shardchannels`, and `redis_pubsub_shardnumsub`, all with typed
 receiver/count results and explicit cluster semantics.
+The separate `sessions` bundle adds owner-isolated global, pattern, and sharded
+subscriptions, finite bounded reads, exact unsubscribe, and explicit close.
+Those tools have no redisctl baseline names; they are a library lifecycle
+surface backed by a host-supplied manager rather than ordinary command
+execution.
 These are command-surface improvements rather than redisctl name overlap. Hash
 reads distinguish a missing hash, missing field, and empty value;
 field-expiration tools are capability-gated to Redis 7.4 or newer and return
@@ -201,14 +206,15 @@ hybrid search, plus explicit `redis_ft_cursor_read` and
 - `json`: explicitly selected RedisJSON operations
 - `search`: Redis Query Engine (`FT.*`) operations and module/version behavior
 - `diagnostics`: health, connection, latency, memory, and safe server inspection
+- `sessions`: owner-isolated, quota-bound Pub/Sub subscription lifecycles
 - `admin`: ACL/configuration and destructive server administration
 - `bulk`: bounded bulk load and seed workflows
 - `raw`: explicitly opted-in command execution
 
 Alias management is not automatically assigned to the Redis library: its
 storage, lifecycle, and product semantics must be evaluated separately.
-Pub/Sub publication and inspection are bounded request/response tools;
-subscription sessions remain a distinct lifecycle surface.
+Pub/Sub publication and inspection are bounded request/response tools, while
+subscription sessions use their own explicit manager and owner boundary.
 
 ## Compatibility rules for later catalog growth
 

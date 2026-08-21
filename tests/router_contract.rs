@@ -7,7 +7,9 @@ use std::{
 use async_trait::async_trait;
 use pretty_assertions::assert_eq;
 use redis_mcp::{
-    AccessMode, CapabilityStatus, OutputBudget, RawCommandPolicy, RedisCapabilities, RedisCommand,
+    AccessMode, CapabilityStatus, OutputBudget, PubSubMessage, PubSubReadRequest, PubSubReadResult,
+    PubSubSessionError, PubSubSessionManager, PubSubSessionOwner, PubSubSessionSnapshot,
+    PubSubSubscription, PubSubSubscriptionKind, RawCommandPolicy, RedisCapabilities, RedisCommand,
     RedisDeployment, RedisError, RedisExecutor, RedisMcp, RedisMcpBuildError, RedisModule,
     RedisModuleCapability, RedisValue, RedisVersion, ToolBundle, UnavailableToolPolicy,
     tool_catalog, tool_names, tool_names_for, tool_names_for_capabilities,
@@ -16,6 +18,170 @@ use tower_mcp::client::{ChannelTransport, McpClient};
 
 #[derive(Clone, Copy)]
 struct StubRedis;
+
+#[derive(Clone, Copy)]
+struct StubPubSubSessions;
+
+#[derive(Clone, Default)]
+struct OwnerRecordingPubSubSessions {
+    subscribed_owners: Arc<Mutex<Vec<String>>>,
+    closed_owners: Arc<Mutex<Vec<String>>>,
+}
+
+#[async_trait]
+impl PubSubSessionManager for StubPubSubSessions {
+    async fn subscribe(
+        &self,
+        _owner: &PubSubSessionOwner,
+        kind: PubSubSubscriptionKind,
+        subscriptions: Vec<Vec<u8>>,
+    ) -> Result<PubSubSessionSnapshot, PubSubSessionError> {
+        Ok(PubSubSessionSnapshot {
+            session_id: "ps_00000000000000000000000000000000".to_string(),
+            subscriptions: subscriptions
+                .into_iter()
+                .map(|value| PubSubSubscription { kind, value })
+                .collect(),
+            buffered_messages: 0,
+            max_buffered_messages: 100,
+            max_message_bytes: 1_048_576,
+            idle_timeout: Duration::from_secs(300),
+        })
+    }
+
+    async fn read(
+        &self,
+        _owner: &PubSubSessionOwner,
+        _session_id: &str,
+        _request: PubSubReadRequest,
+    ) -> Result<PubSubReadResult, PubSubSessionError> {
+        Ok(PubSubReadResult {
+            messages: vec![PubSubMessage {
+                sequence: 1,
+                kind: PubSubSubscriptionKind::Channel,
+                channel: b"events".to_vec(),
+                pattern: None,
+                payload: b"hello".to_vec(),
+                age: Duration::from_millis(1),
+            }],
+            remaining_buffered: 0,
+            timed_out: false,
+            dropped_buffer_full_total: 0,
+            dropped_oversized_total: 0,
+        })
+    }
+
+    async fn unsubscribe(
+        &self,
+        _owner: &PubSubSessionOwner,
+        session_id: &str,
+        _kind: PubSubSubscriptionKind,
+        _subscriptions: Vec<Vec<u8>>,
+    ) -> Result<PubSubSessionSnapshot, PubSubSessionError> {
+        Ok(PubSubSessionSnapshot {
+            session_id: session_id.to_string(),
+            subscriptions: Vec::new(),
+            buffered_messages: 0,
+            max_buffered_messages: 100,
+            max_message_bytes: 1_048_576,
+            idle_timeout: Duration::from_secs(300),
+        })
+    }
+
+    async fn close(
+        &self,
+        _owner: &PubSubSessionOwner,
+        _session_id: &str,
+    ) -> Result<(), PubSubSessionError> {
+        Ok(())
+    }
+
+    async fn close_owner(&self, _owner: &PubSubSessionOwner) -> usize {
+        0
+    }
+
+    async fn shutdown(&self) {}
+}
+
+#[async_trait]
+impl PubSubSessionManager for OwnerRecordingPubSubSessions {
+    async fn subscribe(
+        &self,
+        owner: &PubSubSessionOwner,
+        kind: PubSubSubscriptionKind,
+        subscriptions: Vec<Vec<u8>>,
+    ) -> Result<PubSubSessionSnapshot, PubSubSessionError> {
+        self.subscribed_owners
+            .lock()
+            .expect("record subscribed owner")
+            .push(owner.as_str().to_string());
+        Ok(PubSubSessionSnapshot {
+            session_id: "ps_00000000000000000000000000000000".to_string(),
+            subscriptions: subscriptions
+                .into_iter()
+                .map(|value| PubSubSubscription { kind, value })
+                .collect(),
+            buffered_messages: 0,
+            max_buffered_messages: 100,
+            max_message_bytes: 1_048_576,
+            idle_timeout: Duration::from_secs(300),
+        })
+    }
+
+    async fn read(
+        &self,
+        _owner: &PubSubSessionOwner,
+        _session_id: &str,
+        _request: PubSubReadRequest,
+    ) -> Result<PubSubReadResult, PubSubSessionError> {
+        StubPubSubSessions
+            .read(
+                _owner,
+                _session_id,
+                PubSubReadRequest {
+                    max_messages: 1,
+                    max_bytes: 1,
+                    wait: Duration::ZERO,
+                },
+            )
+            .await
+    }
+
+    async fn unsubscribe(
+        &self,
+        _owner: &PubSubSessionOwner,
+        session_id: &str,
+        _kind: PubSubSubscriptionKind,
+        _subscriptions: Vec<Vec<u8>>,
+    ) -> Result<PubSubSessionSnapshot, PubSubSessionError> {
+        Ok(PubSubSessionSnapshot {
+            session_id: session_id.to_string(),
+            subscriptions: Vec::new(),
+            buffered_messages: 0,
+            max_buffered_messages: 100,
+            max_message_bytes: 1_048_576,
+            idle_timeout: Duration::from_secs(300),
+        })
+    }
+
+    async fn close(
+        &self,
+        _owner: &PubSubSessionOwner,
+        _session_id: &str,
+    ) -> Result<(), PubSubSessionError> {
+        Ok(())
+    }
+
+    async fn close_owner(&self, owner: &PubSubSessionOwner) -> usize {
+        self.closed_owners
+            .lock()
+            .expect("record closed owner")
+            .push(owner.as_str().to_string());
+        1
+    }
+
+    async fn shutdown(&self) {}
+}
 
 #[async_trait]
 impl RedisExecutor for StubRedis {
@@ -504,11 +670,15 @@ async fn client_for_bundles(
     bundles: impl IntoIterator<Item = ToolBundle>,
     raw_policy: RawCommandPolicy,
 ) -> McpClient {
-    let router = RedisMcp::builder(StubRedis)
+    let bundles = bundles.into_iter().collect::<Vec<_>>();
+    let mut builder = RedisMcp::builder(StubRedis)
         .access(access)
-        .bundles(bundles)
-        .raw_command_policy(raw_policy)
-        .build();
+        .bundles(bundles.iter().copied())
+        .raw_command_policy(raw_policy);
+    if bundles.contains(&ToolBundle::Sessions) {
+        builder = builder.pubsub_sessions(StubPubSubSessions);
+    }
+    let router = builder.build();
     let client = McpClient::connect(ChannelTransport::new(router))
         .await
         .expect("connect in-process client");
@@ -801,6 +971,42 @@ async fn redis_six_rejects_sharded_pubsub_before_execution() {
             .expect("no sharded publish command")
             .is_empty()
     );
+
+    let client = capability_client(
+        RedisCapabilities::unknown().with_redis_version(RedisVersion::new(6, 2, 0)),
+        UnavailableToolPolicy::Advertise,
+    )
+    .await;
+    let result = client
+        .call_tool(
+            "redis_ssubscribe",
+            serde_json::json!({"subscriptions": [{"value": "events:{one}"}]}),
+        )
+        .await
+        .expect("known old Redis session capability rejection");
+    assert!(result.is_error);
+    assert!(
+        serde_json::to_string(&result)
+            .expect("serialize session capability error")
+            .contains("requires Redis 7.0.0 or newer")
+    );
+    let result = client
+        .call_tool(
+            "redis_pubsub_unsubscribe",
+            serde_json::json!({
+                "session_id": "ps_00000000000000000000000000000000",
+                "kind": "sharded",
+                "subscriptions": [{"value": "events:{one}"}]
+            }),
+        )
+        .await
+        .expect("known old Redis sharded unsubscribe rejection");
+    assert!(result.is_error);
+    assert!(
+        serde_json::to_string(&result)
+            .expect("serialize sharded unsubscribe capability error")
+            .contains("requires Redis 7.0.0 or newer")
+    );
 }
 
 #[tokio::test]
@@ -849,6 +1055,155 @@ async fn pubsub_inputs_reject_invalid_base64_and_cluster_node_bounds() {
             .expect("serialize oversized pattern")
             .contains("maximum is 4096")
     );
+}
+
+#[tokio::test]
+async fn pubsub_session_inputs_are_bounded_and_binary_safe() {
+    let client = client_for_bundles(
+        AccessMode::ReadOnly,
+        [ToolBundle::Sessions],
+        RawCommandPolicy::Disabled,
+    )
+    .await;
+    for (tool, arguments) in [
+        ("redis_subscribe", serde_json::json!({"subscriptions": []})),
+        (
+            "redis_psubscribe",
+            serde_json::json!({
+                "subscriptions": [{"value": "not base64!", "encoding": "base64"}]
+            }),
+        ),
+        (
+            "redis_pubsub_read",
+            serde_json::json!({
+                "session_id": "ps_00000000000000000000000000000000",
+                "max_messages": 1001
+            }),
+        ),
+        (
+            "redis_pubsub_read",
+            serde_json::json!({
+                "session_id": "ps_00000000000000000000000000000000",
+                "max_bytes": 1048577
+            }),
+        ),
+        (
+            "redis_pubsub_read",
+            serde_json::json!({
+                "session_id": "ps_00000000000000000000000000000000",
+                "wait_ms": 30001
+            }),
+        ),
+        (
+            "redis_pubsub_unsubscribe",
+            serde_json::json!({
+                "session_id": "ps_00000000000000000000000000000000",
+                "kind": "channel",
+                "subscriptions": []
+            }),
+        ),
+    ] {
+        let result = client
+            .call_tool(tool, arguments)
+            .await
+            .unwrap_or_else(|error| panic!("{tool}: {error}"));
+        assert!(result.is_error, "{tool}: {result:?}");
+    }
+
+    let binary = client
+        .call_tool(
+            "redis_subscribe",
+            serde_json::json!({
+                "subscriptions": [{"value": "/wA=", "encoding": "base64"}]
+            }),
+        )
+        .await
+        .expect("binary-safe session subscribe")
+        .structured_content
+        .expect("structured binary-safe session subscribe");
+    assert_eq!(binary["subscriptions"][0]["value"]["value"], "/wA=");
+    assert_eq!(binary["subscriptions"][0]["value"]["encoding"], "base64");
+
+    let control = client
+        .call_tool(
+            "redis_subscribe",
+            serde_json::json!({
+                "subscriptions": [{"value": "AA==", "encoding": "base64"}]
+            }),
+        )
+        .await
+        .expect("control-byte session subscribe")
+        .structured_content
+        .expect("structured control-byte session subscribe");
+    assert_eq!(control["subscriptions"][0]["value"]["value"], "AA==");
+    assert_eq!(control["subscriptions"][0]["value"]["encoding"], "base64");
+}
+
+#[tokio::test]
+async fn fake_host_assigns_distinct_session_owners_and_cleans_up_on_disconnect() {
+    async fn connect(manager: OwnerRecordingPubSubSessions) -> McpClient {
+        let router = RedisMcp::builder(StubRedis)
+            .bundles([ToolBundle::Sessions])
+            .pubsub_sessions(manager)
+            .build();
+        let client = McpClient::connect(ChannelTransport::new(router))
+            .await
+            .expect("connect owner-recording client");
+        client
+            .initialize("redis-mcp-owner-test", "0")
+            .await
+            .expect("initialize owner-recording client");
+        client
+    }
+
+    let manager = OwnerRecordingPubSubSessions::default();
+    let first = connect(manager.clone()).await;
+    let second = connect(manager.clone()).await;
+    for client in [&first, &second] {
+        let result = client
+            .call_tool(
+                "redis_subscribe",
+                serde_json::json!({"subscriptions": [{"value": "events"}]}),
+            )
+            .await
+            .expect("record owner through subscribe");
+        assert!(!result.is_error);
+    }
+    let subscribed = manager
+        .subscribed_owners
+        .lock()
+        .expect("subscribed owner records")
+        .clone();
+    assert_eq!(subscribed.len(), 2);
+    assert_ne!(subscribed[0], subscribed[1]);
+
+    drop(first);
+    drop(second);
+    tokio::time::timeout(Duration::from_secs(1), async {
+        loop {
+            if manager
+                .closed_owners
+                .lock()
+                .expect("closed owner records")
+                .len()
+                == 2
+            {
+                break;
+            }
+            tokio::task::yield_now().await;
+        }
+    })
+    .await
+    .expect("router teardown closes both owners");
+    let mut closed = manager
+        .closed_owners
+        .lock()
+        .expect("closed owner records")
+        .clone();
+    let mut subscribed = subscribed;
+    closed.sort();
+    subscribed.sort();
+    assert_eq!(closed, subscribed);
 }
 
 #[tokio::test]
@@ -1386,6 +1741,7 @@ async fn capability_client(
         .bundles(ToolBundle::ALL.iter().copied())
         .capabilities(capabilities)
         .unavailable_tool_policy(policy)
+        .pubsub_sessions(StubPubSubSessions)
         .build();
     let client = McpClient::connect(ChannelTransport::new(router))
         .await
@@ -1829,6 +2185,44 @@ fn structured_cases() -> Vec<(&'static str, serde_json::Value, &'static str)> {
             "redis_pubsub_shardnumsub",
             serde_json::json!({"channels": [{"value": "events:alpha"}]}),
             "counts",
+        ),
+        (
+            "redis_subscribe",
+            serde_json::json!({"subscriptions": [{"value": "events:alpha"}]}),
+            "session_id",
+        ),
+        (
+            "redis_psubscribe",
+            serde_json::json!({"subscriptions": [{"value": "events:*"}]}),
+            "session_id",
+        ),
+        (
+            "redis_ssubscribe",
+            serde_json::json!({"subscriptions": [{"value": "events:{alpha}"}]}),
+            "session_id",
+        ),
+        (
+            "redis_pubsub_read",
+            serde_json::json!({
+                "session_id": "ps_00000000000000000000000000000000"
+            }),
+            "messages",
+        ),
+        (
+            "redis_pubsub_unsubscribe",
+            serde_json::json!({
+                "session_id": "ps_00000000000000000000000000000000",
+                "kind": "channel",
+                "subscriptions": [{"value": "events:alpha"}]
+            }),
+            "subscriptions",
+        ),
+        (
+            "redis_pubsub_close",
+            serde_json::json!({
+                "session_id": "ps_00000000000000000000000000000000"
+            }),
+            "closed",
         ),
         (
             "redis_getex",
@@ -2467,6 +2861,23 @@ async fn pubsub_annotations_distinguish_inspection_from_message_delivery() {
         assert!(!annotation.destructive_hint, "{name}");
         assert!(!annotation.idempotent_hint, "{name}");
     }
+
+    for name in ["redis_subscribe", "redis_psubscribe", "redis_ssubscribe"] {
+        let annotation = annotations(name);
+        assert!(annotation.read_only_hint, "{name}");
+        assert!(!annotation.destructive_hint, "{name}");
+        assert!(!annotation.idempotent_hint, "{name}");
+    }
+    let read = annotations("redis_pubsub_read");
+    assert!(read.read_only_hint);
+    assert!(!read.destructive_hint);
+    assert!(!read.idempotent_hint);
+    for name in ["redis_pubsub_unsubscribe", "redis_pubsub_close"] {
+        let annotation = annotations(name);
+        assert!(annotation.read_only_hint, "{name}");
+        assert!(!annotation.destructive_hint, "{name}");
+        assert!(annotation.idempotent_hint, "{name}");
+    }
 }
 
 #[tokio::test]
@@ -2732,6 +3143,12 @@ fn invalid_builder_safety_configuration_is_rejected() {
             .output_budget(OutputBudget::new(1, 0))
             .try_build(),
         Err(RedisMcpBuildError::ZeroOutputEntries)
+    ));
+    assert!(matches!(
+        RedisMcp::builder(StubRedis)
+            .bundles([ToolBundle::Sessions])
+            .try_build(),
+        Err(RedisMcpBuildError::SessionsRequireManager)
     ));
 }
 
@@ -4839,6 +5256,24 @@ async fn known_old_redis_can_hide_only_version_incompatible_tools() {
     ] {
         assert!(supported_list_names.contains(&name), "{name}");
     }
+
+    let redis_six_session_names = tool_names_for_capabilities(
+        AccessMode::ReadOnly,
+        [ToolBundle::Sessions],
+        false,
+        &supported,
+        UnavailableToolPolicy::Hide,
+    );
+    for name in [
+        "redis_subscribe",
+        "redis_psubscribe",
+        "redis_pubsub_read",
+        "redis_pubsub_unsubscribe",
+        "redis_pubsub_close",
+    ] {
+        assert!(redis_six_session_names.contains(&name), "{name}");
+    }
+    assert!(!redis_six_session_names.contains(&"redis_ssubscribe"));
 
     let pre_field_expiration =
         RedisCapabilities::unknown().with_redis_version(RedisVersion::new(7, 2, 0));

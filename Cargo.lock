@@ -868,6 +868,7 @@ dependencies = [
  "base64",
  "clap",
  "pretty_assertions",
+ "rand",
  "redis",
  "redis-server-wrapper",
  "schemars",

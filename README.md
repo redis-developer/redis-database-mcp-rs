@@ -58,7 +58,15 @@ The standalone default exposes 116 broadly useful tools:
   `redis_ft_search`, `redis_ft_create`, `redis_ft_dropindex`,
   `redis_vector_get_hash`, `redis_vector_set_hash`,
   `redis_ft_vector_search`, `redis_ft_hybrid_search`
+- optional owner-isolated Pub/Sub sessions: `redis_subscribe`,
+  `redis_psubscribe`, `redis_ssubscribe`, `redis_pubsub_read`,
+  `redis_pubsub_unsubscribe`, `redis_pubsub_close`
 - explicit full-access escape hatch: `redis_command`
+
+The reusable router keeps the stateful `sessions` bundle opt-in because its
+lifecycle belongs to the embedding host. The included `redis-mcp-server`
+provides the built-in DirectRedis manager automatically, so its ordinary
+stdio surface contains the 116 curated defaults plus these six session tools.
 
 Every successful tool result includes MCP structuredContent and an output
 schema. Results are limited by default to 256 KiB for the complete encoded MCP
@@ -100,6 +108,9 @@ Inside the REPL:
     redis_set key=greeting value=hello
     redis_get key=greeting
     redis_scan pattern=gre* count=20
+    call redis_subscribe {"subscriptions":[{"value":"events"}]}
+    call redis_publish {"channel":{"value":"events"},"message":{"value":"hello"}}
+    redis_pubsub_read session_id=ps_<opaque-handle> wait_ms=1000
 
 For Redis Cluster, provide one or more seed URLs instead of `--url`. Multiple
 seeds improve initial discovery when a node is unavailable:
@@ -151,13 +162,17 @@ corresponding capability:
 
     use std::time::Duration;
     use redis_mcp::{
-        AccessMode, DirectRedis, OutputBudget, RedisMcp, ToolBundle,
-        UnavailableToolPolicy,
+        AccessMode, DirectRedis, DirectRedisPubSubSessionManager, OutputBudget,
+        PubSubSessionLimits, RedisMcp, ToolBundle, UnavailableToolPolicy,
     };
 
     # async fn example() -> Result<(), Box<dyn std::error::Error>> {
     let redis = DirectRedis::connect("redis://127.0.0.1:6379").await?;
     let capabilities = redis.discover_capabilities().await?;
+    let sessions = DirectRedisPubSubSessionManager::standalone(
+        "redis://127.0.0.1:6379",
+        PubSubSessionLimits::default(),
+    )?;
     let router = RedisMcp::builder(redis)
         .access(AccessMode::ReadWrite)
         .bundles([ToolBundle::Essentials, ToolBundle::Diagnostics])
@@ -165,6 +180,7 @@ corresponding capability:
         .output_budget(OutputBudget::new(512 * 1024, 2_000))
         .capabilities(capabilities)
         .unavailable_tool_policy(UnavailableToolPolicy::Hide)
+        .pubsub_sessions(sessions)
         .build();
 
     // Serve or merge router in the host application.
@@ -197,6 +213,15 @@ need to share this crate's redis-rs dependency line. Commands include the
 originating tool, required access level, and any required Redis module for host
 telemetry, capability routing, and audit records. See
 [the custom executor example](examples/custom_executor.rs).
+
+Subscription sessions deliberately use a separate `PubSubSessionManager`
+boundary: every live session owns a dedicated Redis connection and outlives a
+single command future. `DirectRedisPubSubSessionManager` supports fixed
+standalone and Cluster targets. Custom hosts can implement the public trait,
+inject a stable `PubSubSessionOwner` request extension for each authenticated
+client or principal, and call `close_owner` when that host session ends. The
+builder supplies and cleans up a random owner automatically for one-client
+routers such as stdio.
 
 ## Embed Redis-style argv
 
@@ -253,9 +278,10 @@ one node as the whole database.
 
 The curated default enables the `essentials`, `data_structures`, and
 `diagnostics` bundles. The module-backed `json` and `search` bundles are
-available only through deliberate composition; `admin`, `bulk`, and `raw` are
-reserved for further catalog growth. Raw execution is always controlled by its
-separate policy rather than bundle selection alone.
+available only through deliberate composition. The `sessions` bundle is
+enabled by supplying its manager; `admin`, `bulk`, and `raw` are reserved for
+further catalog growth. Raw execution is always controlled by its separate
+policy rather than bundle selection alone.
 
 See [the architecture decisions](docs/architecture.md) for the intentional
 Tower-MCP boundary and fixed-target model, and the
@@ -295,14 +321,16 @@ catalog, binary and nil responses, conditional and absolute expiration,
 bounded serialization/restore, complete bounded list semantics, typed
 hash-field expiration, binary-safe membership, budgeted set algebra, complete
 bounded sorted-set semantics, complete Streams and consumer-group workflows,
-finite blocking reads, binary-safe Pub/Sub publication and inspection, ACL
-failures, bounded connection loss and
-recovery, and the real `redis-mcp-server` stdio process. A separate job pins
+finite blocking reads, binary-safe Pub/Sub publication and inspection,
+owner-isolated subscription sessions, bounded buffers and reads, cancellation,
+idle cleanup, reconnect/resubscription, ACL failures, bounded connection loss
+and recovery, and the real `redis-mcp-server` stdio process. A separate job pins
 the official
 `redis/redis-stack-server:7.4.0-v8` image and runs the JSON/Search lifecycle.
 Dedicated three-master cluster jobs run on Redis 6.2 and 8.8 and exercise
 redirection, multi-slot aggregation, bounded all-node Pub/Sub inspection,
-slot-routed publication, same-slot copy/rename/list movement and set algebra,
+slot-routed publication, global and sharded subscription sessions, same-slot
+copy/rename/list movement and set algebra,
 single- and same-slot multi-stream reads, stable cross-slot failures, and the
 cluster-configured stdio server. The version list follows the
 [Redis Open Source version-management table](https://redis.io/docs/latest/operate/oss_and_stack/install/version-mgmt/).
@@ -311,8 +339,7 @@ cluster-configured stdio server. The version list follows the
 
 - Cloud or Enterprise REST APIs
 - redisctl profiles or per-tool target URLs
-- transactions, Pub/Sub subscription sessions, MONITOR, or other
-  streaming/session-oriented commands
+- transactions, MONITOR, or unbounded streaming commands
 - terminal tokenization, history, completion, result rendering, or an
   application-specific CLI/REPL frontend
 

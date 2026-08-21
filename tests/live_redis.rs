@@ -2,9 +2,11 @@ use std::time::Duration;
 
 use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64};
 use redis_mcp::{
-    AccessMode, CapabilityStatus, DirectRedis, NativeRedisInvocation, OutputBudget,
-    RawCommandPolicy, RedisDeployment, RedisInvocationEngine, RedisMcp, RedisModule, RedisValue,
-    RedisVersion, ToolBundle, UnavailableToolPolicy, tool_names,
+    AccessMode, CapabilityStatus, DirectRedis, DirectRedisPubSubSessionManager,
+    NativeRedisInvocation, OutputBudget, PubSubReadRequest, PubSubSessionLimits,
+    PubSubSessionManager, PubSubSessionOwner, PubSubSubscriptionKind, RawCommandPolicy,
+    RedisDeployment, RedisInvocationEngine, RedisMcp, RedisModule, RedisValue, RedisVersion,
+    ToolBundle, UnavailableToolPolicy, tool_names,
 };
 use tower_mcp::client::{ChannelTransport, McpClient, StdioClientTransport};
 
@@ -141,6 +143,25 @@ async fn router_client_with_budget(
         .initialize("redis-mcp-live-budget-test", "0")
         .await
         .expect("initialize budget MCP client");
+    client
+}
+
+async fn pubsub_session_router_client(
+    url: &str,
+    manager: DirectRedisPubSubSessionManager,
+) -> McpClient {
+    let executor = DirectRedis::connect(url).await.expect("connect to Redis");
+    let router = RedisMcp::builder(executor)
+        .access(AccessMode::ReadWrite)
+        .pubsub_sessions(manager)
+        .build();
+    let client = McpClient::connect(ChannelTransport::new(router))
+        .await
+        .expect("connect Pub/Sub session MCP client");
+    client
+        .initialize("redis-mcp-live-pubsub-session-test", "0")
+        .await
+        .expect("initialize Pub/Sub session MCP client");
     client
 }
 
@@ -404,6 +425,393 @@ async fn live_pubsub_publish_and_inspection_are_binary_safe_in_resp2_and_resp3()
             assert_eq!(shard_channels["count"], 0, "{protocol}");
         }
     }
+}
+
+#[tokio::test]
+async fn live_pubsub_sessions_are_binary_safe_owner_isolated_and_bounded() {
+    let Some(redis) = TestRedis::start().await else {
+        return;
+    };
+    let limits = PubSubSessionLimits::default()
+        .with_max_sessions(4)
+        .with_max_sessions_per_owner(2)
+        .with_max_buffered_messages(2)
+        .with_max_message_bytes(4)
+        .with_max_read_bytes(256)
+        .with_max_read_duration(Duration::from_secs(2))
+        .with_idle_timeout(Duration::from_secs(2))
+        .with_cleanup_interval(Duration::from_millis(25));
+    let manager = DirectRedisPubSubSessionManager::standalone(&redis.url, limits)
+        .expect("create standalone Pub/Sub session manager");
+    let first = pubsub_session_router_client(&redis.url, manager.clone()).await;
+    let second = pubsub_session_router_client(&redis.url, manager.clone()).await;
+
+    let mut channel = test_key("session:binary").into_bytes();
+    channel.extend([0xff, 0x00]);
+    let channel_base64 = BASE64.encode(&channel);
+    let opened = first
+        .call_tool(
+            "redis_subscribe",
+            serde_json::json!({
+                "subscriptions": [{"value": channel_base64, "encoding": "base64"}]
+            }),
+        )
+        .await
+        .expect("open channel session")
+        .structured_content
+        .expect("structured channel session");
+    let session_id = opened["session_id"]
+        .as_str()
+        .expect("opaque session id")
+        .to_string();
+    assert!(session_id.starts_with("ps_"));
+    assert_eq!(opened["subscriptions"][0]["value"]["encoding"], "base64");
+
+    let foreign = second
+        .call_tool(
+            "redis_pubsub_read",
+            serde_json::json!({"session_id": session_id, "wait_ms": 0}),
+        )
+        .await
+        .expect("foreign owner read result");
+    assert!(foreign.is_error);
+    assert!(
+        serde_json::to_string(&foreign)
+            .expect("serialize foreign-owner failure")
+            .contains("SESSION_NOT_FOUND"),
+        "{foreign:?}"
+    );
+
+    for payload in [[0xff], [0xfe], [0xfd]] {
+        let published = first
+            .call_tool(
+                "redis_publish",
+                serde_json::json!({
+                    "channel": {"value": channel_base64, "encoding": "base64"},
+                    "message": {"value": BASE64.encode(payload), "encoding": "base64"}
+                }),
+            )
+            .await
+            .expect("publish buffered message")
+            .structured_content
+            .expect("structured publish result");
+        assert_eq!(published["receivers"], 1);
+    }
+    tokio::time::sleep(Duration::from_millis(50)).await;
+
+    let read = first
+        .call_tool(
+            "redis_pubsub_read",
+            serde_json::json!({
+                "session_id": session_id,
+                "max_messages": 2,
+                "max_bytes": 256,
+                "wait_ms": 1000
+            }),
+        )
+        .await
+        .expect("read bounded messages")
+        .structured_content
+        .expect("structured bounded read");
+    assert_eq!(read["returned"], 2);
+    assert_eq!(read["dropped_buffer_full_total"], 1);
+    assert_eq!(read["messages"][0]["payload"]["value"], "/g==");
+    assert_eq!(read["messages"][1]["payload"]["value"], "/Q==");
+
+    first
+        .call_tool(
+            "redis_publish",
+            serde_json::json!({
+                "channel": {"value": channel_base64, "encoding": "base64"},
+                "message": {"value": "AQIDBAU=", "encoding": "base64"}
+            }),
+        )
+        .await
+        .expect("publish oversized message");
+    tokio::time::sleep(Duration::from_millis(25)).await;
+    let dropped = first
+        .call_tool(
+            "redis_pubsub_read",
+            serde_json::json!({
+                "session_id": session_id,
+                "max_messages": 1,
+                "max_bytes": 64,
+                "wait_ms": 25
+            }),
+        )
+        .await
+        .expect("read after oversized message")
+        .structured_content
+        .expect("structured oversized read");
+    assert_eq!(dropped["returned"], 0);
+    assert_eq!(dropped["timed_out"], true);
+    assert_eq!(dropped["dropped_oversized_total"], 1);
+
+    let unsubscribed = first
+        .call_tool(
+            "redis_pubsub_unsubscribe",
+            serde_json::json!({
+                "session_id": session_id,
+                "kind": "channel",
+                "subscriptions": [{"value": channel_base64, "encoding": "base64"}]
+            }),
+        )
+        .await
+        .expect("unsubscribe channel")
+        .structured_content
+        .expect("structured unsubscribe");
+    assert_eq!(unsubscribed["subscription_count"], 0);
+
+    let closed = first
+        .call_tool(
+            "redis_pubsub_close",
+            serde_json::json!({"session_id": session_id}),
+        )
+        .await
+        .expect("close session")
+        .structured_content
+        .expect("structured close");
+    assert_eq!(closed["closed"], true);
+
+    let pattern = format!("{}:*", test_key("session:pattern"));
+    let matching_channel = format!("{}:one", test_key("session:pattern"));
+    let pattern_session = first
+        .call_tool(
+            "redis_psubscribe",
+            serde_json::json!({"subscriptions": [{"value": pattern}]}),
+        )
+        .await
+        .expect("open pattern session")
+        .structured_content
+        .expect("structured pattern session")["session_id"]
+        .as_str()
+        .expect("pattern session id")
+        .to_string();
+    first
+        .call_tool(
+            "redis_publish",
+            serde_json::json!({"channel": {"value": matching_channel}, "message": {"value": "pat"}}),
+        )
+        .await
+        .expect("publish matching pattern message");
+    let pattern_read = first
+        .call_tool(
+            "redis_pubsub_read",
+            serde_json::json!({
+                "session_id": pattern_session,
+                "max_messages": 1,
+                "max_bytes": 256,
+                "wait_ms": 1000
+            }),
+        )
+        .await
+        .expect("read pattern message")
+        .structured_content
+        .expect("structured pattern read");
+    assert_eq!(pattern_read["messages"][0]["kind"], "pattern");
+    assert_eq!(pattern_read["messages"][0]["pattern"]["value"], pattern);
+    first
+        .call_tool(
+            "redis_pubsub_close",
+            serde_json::json!({"session_id": pattern_session}),
+        )
+        .await
+        .expect("close pattern session");
+
+    let capabilities = DirectRedis::connect(&redis.url)
+        .await
+        .expect("connect for sharded Pub/Sub capability discovery")
+        .discover_capabilities()
+        .await
+        .expect("discover sharded Pub/Sub capabilities");
+    if capabilities
+        .redis_version()
+        .is_some_and(|version| version >= RedisVersion::new(7, 0, 0))
+    {
+        let shard_channel = format!("{}:{{slot}}", test_key("session:shard"));
+        let shard_session = first
+            .call_tool(
+                "redis_ssubscribe",
+                serde_json::json!({"subscriptions": [{"value": shard_channel}]}),
+            )
+            .await
+            .expect("open sharded session")
+            .structured_content
+            .expect("structured sharded session")["session_id"]
+            .as_str()
+            .expect("sharded session id")
+            .to_string();
+        first
+            .call_tool(
+                "redis_spublish",
+                serde_json::json!({"channel": {"value": shard_channel}, "message": {"value": "shr"}}),
+            )
+            .await
+            .expect("publish sharded message");
+        let shard_read = first
+            .call_tool(
+                "redis_pubsub_read",
+                serde_json::json!({
+                    "session_id": shard_session,
+                    "max_messages": 1,
+                    "max_bytes": 256,
+                    "wait_ms": 1000
+                }),
+            )
+            .await
+            .expect("read sharded message")
+            .structured_content
+            .expect("structured sharded read");
+        assert_eq!(shard_read["messages"][0]["kind"], "sharded");
+        first
+            .call_tool(
+                "redis_pubsub_close",
+                serde_json::json!({"session_id": shard_session}),
+            )
+            .await
+            .expect("close sharded session");
+    }
+
+    let owner = PubSubSessionOwner::new("quota-owner").expect("valid owner");
+    let first_quota = manager
+        .subscribe(
+            &owner,
+            PubSubSubscriptionKind::Pattern,
+            vec![b"quota:*".to_vec()],
+        )
+        .await
+        .expect("first direct session");
+    let second_quota = manager
+        .subscribe(
+            &owner,
+            PubSubSubscriptionKind::Channel,
+            vec![b"quota:second".to_vec()],
+        )
+        .await
+        .expect("second direct session");
+    let quota = manager
+        .subscribe(
+            &owner,
+            PubSubSubscriptionKind::Channel,
+            vec![b"quota:third".to_vec()],
+        )
+        .await
+        .expect_err("per-owner quota");
+    assert_eq!(quota.code(), Some("OWNER_SESSION_QUOTA_EXCEEDED"));
+    assert_eq!(manager.close_owner(&owner).await, 2);
+    for session_id in [first_quota.session_id, second_quota.session_id] {
+        let missing = manager
+            .read(
+                &owner,
+                &session_id,
+                PubSubReadRequest {
+                    max_messages: 1,
+                    max_bytes: 64,
+                    wait: Duration::ZERO,
+                },
+            )
+            .await
+            .expect_err("owner cleanup removed session");
+        assert_eq!(missing.code(), Some("SESSION_NOT_FOUND"));
+    }
+
+    let cancellation_owner = PubSubSessionOwner::new("cancellation-owner").expect("valid owner");
+    let cancellation_channel = test_key("session:cancellation");
+    let cancellation_session = manager
+        .subscribe(
+            &cancellation_owner,
+            PubSubSubscriptionKind::Channel,
+            vec![cancellation_channel.as_bytes().to_vec()],
+        )
+        .await
+        .expect("open cancellation-safe session");
+    let cancelled = tokio::time::timeout(
+        Duration::from_millis(20),
+        manager.read(
+            &cancellation_owner,
+            &cancellation_session.session_id,
+            PubSubReadRequest {
+                max_messages: 1,
+                max_bytes: 256,
+                wait: Duration::from_secs(1),
+            },
+        ),
+    )
+    .await;
+    assert!(
+        cancelled.is_err(),
+        "pending read should be dropped by timeout"
+    );
+    first
+        .call_tool(
+            "redis_publish",
+            serde_json::json!({
+                "channel": {"value": cancellation_channel},
+                "message": {"value": "kept"}
+            }),
+        )
+        .await
+        .expect("publish after cancelled read");
+    let after_cancellation = manager
+        .read(
+            &cancellation_owner,
+            &cancellation_session.session_id,
+            PubSubReadRequest {
+                max_messages: 1,
+                max_bytes: 256,
+                wait: Duration::from_secs(1),
+            },
+        )
+        .await
+        .expect("read message after cancellation");
+    assert_eq!(after_cancellation.messages[0].payload, b"kept");
+    manager
+        .close(&cancellation_owner, &cancellation_session.session_id)
+        .await
+        .expect("close cancellation session");
+
+    let stale_manager = DirectRedisPubSubSessionManager::standalone(
+        &redis.url,
+        PubSubSessionLimits::default()
+            .with_idle_timeout(Duration::from_millis(75))
+            .with_cleanup_interval(Duration::from_millis(10)),
+    )
+    .expect("create stale-session test manager");
+    let stale_owner = PubSubSessionOwner::new("stale-owner").expect("valid owner");
+    let stale = stale_manager
+        .subscribe(
+            &stale_owner,
+            PubSubSubscriptionKind::Channel,
+            vec![b"stale".to_vec()],
+        )
+        .await
+        .expect("open stale session");
+    tokio::time::sleep(Duration::from_millis(120)).await;
+    let reaped = stale_manager
+        .read(
+            &stale_owner,
+            &stale.session_id,
+            PubSubReadRequest {
+                max_messages: 1,
+                max_bytes: 64,
+                wait: Duration::ZERO,
+            },
+        )
+        .await
+        .expect_err("idle session was independently reaped");
+    assert_eq!(reaped.code(), Some("SESSION_NOT_FOUND"));
+    stale_manager.shutdown().await;
+
+    manager.shutdown().await;
+    let shutting_down = manager
+        .subscribe(
+            &owner,
+            PubSubSubscriptionKind::Channel,
+            vec![b"after-shutdown".to_vec()],
+        )
+        .await
+        .expect_err("shutdown rejects new sessions");
+    assert_eq!(shutting_down.code(), Some("SESSION_MANAGER_SHUTTING_DOWN"));
 }
 
 #[tokio::test]
@@ -3062,13 +3470,57 @@ async fn live_redis_round_trip_through_stdio_server() {
     let listed = client.list_tools().await.expect("list stdio tools");
     assert_eq!(
         listed.tools.len(),
-        tool_names(AccessMode::ReadWrite, false).len()
+        tool_names(AccessMode::ReadWrite, false).len() + 6
     );
     assert!(listed.tools.iter().any(|tool| tool.name == "redis_get"));
     assert!(listed.tools.iter().any(|tool| tool.name == "redis_set"));
     assert!(listed.tools.iter().any(|tool| tool.name == "redis_hget"));
     assert!(listed.tools.iter().any(|tool| tool.name == "redis_hset"));
+    assert!(
+        listed
+            .tools
+            .iter()
+            .any(|tool| tool.name == "redis_subscribe")
+    );
     assert!(!listed.tools.iter().any(|tool| tool.name == "redis_del"));
+
+    let channel = test_key("stdio-pubsub");
+    let session_id = client
+        .call_tool(
+            "redis_subscribe",
+            serde_json::json!({"subscriptions": [{"value": channel}]}),
+        )
+        .await
+        .expect("subscribe over stdio")
+        .structured_content
+        .expect("structured stdio subscription")["session_id"]
+        .as_str()
+        .expect("stdio session id")
+        .to_string();
+    client
+        .call_tool(
+            "redis_publish",
+            serde_json::json!({"channel": {"value": channel}, "message": {"value": "over-stdio"}}),
+        )
+        .await
+        .expect("publish over stdio");
+    let message = client
+        .call_tool(
+            "redis_pubsub_read",
+            serde_json::json!({"session_id": session_id, "wait_ms": 1000}),
+        )
+        .await
+        .expect("read Pub/Sub over stdio")
+        .structured_content
+        .expect("structured stdio Pub/Sub read");
+    assert_eq!(message["messages"][0]["payload"]["value"], "over-stdio");
+    client
+        .call_tool(
+            "redis_pubsub_close",
+            serde_json::json!({"session_id": session_id}),
+        )
+        .await
+        .expect("close Pub/Sub session over stdio");
 
     let key = test_key("stdio");
     client
@@ -3213,9 +3665,54 @@ async fn live_acl_failures_are_classified_without_leaking_credentials() {
     assert_eq!(authentication.kind(), RedisErrorKind::Authentication);
     assert!(!authentication.to_string().contains("wrong-password"));
 
+    let session_owner = PubSubSessionOwner::new("acl-owner").expect("valid ACL owner");
+    let wrong_password_sessions = DirectRedisPubSubSessionManager::standalone(
+        restricted_url.as_str(),
+        PubSubSessionLimits::default(),
+    )
+    .expect("parse wrong-password Pub/Sub target");
+    let session_authentication = wrong_password_sessions
+        .subscribe(
+            &session_owner,
+            PubSubSubscriptionKind::Channel,
+            vec![b"acl-session-secret-channel".to_vec()],
+        )
+        .await
+        .expect_err("wrong Pub/Sub password is rejected");
+    assert_eq!(
+        session_authentication.kind(),
+        redis_mcp::PubSubSessionErrorKind::Authentication,
+        "{session_authentication:?}"
+    );
+    let session_authentication = session_authentication.to_string();
+    assert!(!session_authentication.contains("wrong-password"));
+    assert!(!session_authentication.contains("acl-session-secret-channel"));
+
     restricted_url
         .set_password(Some(password))
         .expect("set restricted Redis password");
+
+    let restricted_sessions = DirectRedisPubSubSessionManager::standalone(
+        restricted_url.as_str(),
+        PubSubSessionLimits::default(),
+    )
+    .expect("create restricted Pub/Sub manager");
+    let session_authorization = restricted_sessions
+        .subscribe(
+            &session_owner,
+            PubSubSubscriptionKind::Channel,
+            vec![b"acl-session-secret-channel".to_vec()],
+        )
+        .await
+        .expect_err("restricted Pub/Sub channel is rejected");
+    assert_eq!(
+        session_authorization.kind(),
+        redis_mcp::PubSubSessionErrorKind::Authorization,
+        "{session_authorization:?}"
+    );
+    let session_authorization = session_authorization.to_string();
+    assert!(!session_authorization.contains(password));
+    assert!(!session_authorization.contains("acl-session-secret-channel"));
     let native = RedisInvocationEngine::builder(
         DirectRedis::connect(restricted_url.as_str())
             .await
@@ -3594,6 +4091,206 @@ async fn live_connection_loss_is_bounded_and_direct_redis_recovers() {
         );
         tokio::time::sleep(Duration::from_millis(100)).await;
     }
+
+    let session_manager = DirectRedisPubSubSessionManager::standalone(
+        proxy_url.as_str(),
+        PubSubSessionLimits::default()
+            .with_max_read_duration(Duration::from_secs(1))
+            .with_operation_timeout(Duration::from_millis(500)),
+    )
+    .expect("create proxied Pub/Sub session manager");
+    let session_client =
+        pubsub_session_router_client(proxy_url.as_str(), session_manager.clone()).await;
+    let session_channel = test_key("session-reconnect");
+    let session_id = session_client
+        .call_tool(
+            "redis_subscribe",
+            serde_json::json!({"subscriptions": [{"value": session_channel}]}),
+        )
+        .await
+        .expect("open proxied Pub/Sub session")
+        .structured_content
+        .expect("structured proxied Pub/Sub session")["session_id"]
+        .as_str()
+        .expect("proxied Pub/Sub session id")
+        .to_string();
+    let publisher = redis::Client::open(redis.url.as_str()).expect("open reconnect publisher");
+    let mut publisher = publisher
+        .get_multiplexed_async_connection()
+        .await
+        .expect("connect reconnect publisher");
+    redis::cmd("PUBLISH")
+        .arg(&session_channel)
+        .arg("before")
+        .query_async::<()>(&mut publisher)
+        .await
+        .expect("publish before Pub/Sub fault");
+    let before = session_client
+        .call_tool(
+            "redis_pubsub_read",
+            serde_json::json!({"session_id": session_id, "wait_ms": 1000}),
+        )
+        .await
+        .expect("read before Pub/Sub fault")
+        .structured_content
+        .expect("structured read before Pub/Sub fault");
+    assert_eq!(before["messages"][0]["payload"]["value"], "before");
+
+    proxy.close_after(Direction::UpstreamToClient, 1);
+    redis::cmd("PUBLISH")
+        .arg(&session_channel)
+        .arg("cut")
+        .query_async::<()>(&mut publisher)
+        .await
+        .expect("publish message that cuts Pub/Sub connection");
+    let _bounded = tokio::time::timeout(
+        Duration::from_secs(2),
+        session_client.call_tool(
+            "redis_pubsub_read",
+            serde_json::json!({"session_id": session_id, "wait_ms": 100}),
+        ),
+    )
+    .await
+    .expect("Pub/Sub read remains bounded during connection loss")
+    .expect("connection loss is represented as a Pub/Sub tool result");
+
+    proxy.clear_close_after(Direction::UpstreamToClient);
+    let deadline = tokio::time::Instant::now() + Duration::from_secs(5);
+    loop {
+        redis::cmd("PUBLISH")
+            .arg(&session_channel)
+            .arg("recovered")
+            .query_async::<()>(&mut publisher)
+            .await
+            .expect("publish while waiting for Pub/Sub resubscription");
+        let result = session_client
+            .call_tool(
+                "redis_pubsub_read",
+                serde_json::json!({"session_id": session_id, "wait_ms": 100}),
+            )
+            .await
+            .expect("reconnect read is represented as a tool result");
+        if result.structured_content.as_ref().is_some_and(|content| {
+            content["messages"].as_array().is_some_and(|messages| {
+                messages
+                    .iter()
+                    .any(|message| message["payload"]["value"] == "recovered")
+            })
+        }) {
+            break;
+        }
+        assert!(
+            tokio::time::Instant::now() < deadline,
+            "existing Pub/Sub session did not reconnect and resubscribe: {result:?}"
+        );
+        tokio::time::sleep(Duration::from_millis(100)).await;
+    }
+    session_client
+        .call_tool(
+            "redis_pubsub_close",
+            serde_json::json!({"session_id": session_id}),
+        )
+        .await
+        .expect("close reconnected Pub/Sub session");
+
+    let capabilities = DirectRedis::connect(&redis.url)
+        .await
+        .expect("connect for reconnect capability discovery")
+        .discover_capabilities()
+        .await
+        .expect("discover reconnect capabilities");
+    if capabilities
+        .redis_version()
+        .is_some_and(|version| version >= RedisVersion::new(7, 0, 0))
+    {
+        let shard_channel = format!("{}:{{slot}}", test_key("session-shard-reconnect"));
+        let shard_session = session_client
+            .call_tool(
+                "redis_ssubscribe",
+                serde_json::json!({"subscriptions": [{"value": shard_channel}]}),
+            )
+            .await
+            .expect("open proxied sharded Pub/Sub session")
+            .structured_content
+            .expect("structured proxied sharded session")["session_id"]
+            .as_str()
+            .expect("proxied sharded session id")
+            .to_string();
+        redis::cmd("SPUBLISH")
+            .arg(&shard_channel)
+            .arg("before-shard")
+            .query_async::<()>(&mut publisher)
+            .await
+            .expect("publish before sharded Pub/Sub fault");
+        let before = session_client
+            .call_tool(
+                "redis_pubsub_read",
+                serde_json::json!({"session_id": shard_session, "wait_ms": 1000}),
+            )
+            .await
+            .expect("read before sharded Pub/Sub fault")
+            .structured_content
+            .expect("structured read before sharded Pub/Sub fault");
+        assert_eq!(before["messages"][0]["payload"]["value"], "before-shard");
+
+        proxy.close_after(Direction::UpstreamToClient, 1);
+        redis::cmd("SPUBLISH")
+            .arg(&shard_channel)
+            .arg("cut-shard")
+            .query_async::<()>(&mut publisher)
+            .await
+            .expect("publish message that cuts sharded Pub/Sub connection");
+        let _bounded = tokio::time::timeout(
+            Duration::from_secs(2),
+            session_client.call_tool(
+                "redis_pubsub_read",
+                serde_json::json!({"session_id": shard_session, "wait_ms": 100}),
+            ),
+        )
+        .await
+        .expect("sharded read remains bounded during connection loss")
+        .expect("sharded connection loss is represented as a tool result");
+
+        proxy.clear_close_after(Direction::UpstreamToClient);
+        let deadline = tokio::time::Instant::now() + Duration::from_secs(5);
+        loop {
+            redis::cmd("SPUBLISH")
+                .arg(&shard_channel)
+                .arg("recovered-shard")
+                .query_async::<()>(&mut publisher)
+                .await
+                .expect("publish while waiting for sharded resubscription");
+            let result = session_client
+                .call_tool(
+                    "redis_pubsub_read",
+                    serde_json::json!({"session_id": shard_session, "wait_ms": 100}),
+                )
+                .await
+                .expect("sharded reconnect read is represented as a tool result");
+            if result.structured_content.as_ref().is_some_and(|content| {
+                content["messages"].as_array().is_some_and(|messages| {
+                    messages
+                        .iter()
+                        .any(|message| message["payload"]["value"] == "recovered-shard")
+                })
+            }) {
+                break;
+            }
+            assert!(
+                tokio::time::Instant::now() < deadline,
+                "existing sharded Pub/Sub session did not reconnect: {result:?}"
+            );
+            tokio::time::sleep(Duration::from_millis(100)).await;
+        }
+        session_client
+            .call_tool(
+                "redis_pubsub_close",
+                serde_json::json!({"session_id": shard_session}),
+            )
+            .await
+            .expect("close reconnected sharded Pub/Sub session");
+    }
+    session_manager.shutdown().await;
 
     let fresh = router_client(proxy_url.as_str(), AccessMode::ReadOnly).await;
     let fresh_ping = fresh

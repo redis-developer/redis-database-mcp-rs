@@ -134,12 +134,15 @@ Bundles answer which coherent capabilities a host wants; access mode answers
 which side effects that host permits. These decisions are orthogonal.
 
 The public taxonomy is `essentials`, `data_structures`, `json`, `search`,
-`diagnostics`, `admin`, `bulk`, and `raw`. The curated default enables
+`diagnostics`, `sessions`, `admin`, `bulk`, and `raw`. The curated default enables
 `essentials`, `data_structures`, and `diagnostics`, totaling 116 tools. The
 module-backed `json` and `search` bundles are explicitly selected so a default
 router never advertises capabilities that its Redis target may not provide.
+The stateful `sessions` bundle is enabled only by supplying a lifecycle manager.
 Empty bundles are reserved for coherent catalog growth and do not expose
-placeholder tools.
+placeholder tools. The bundled stdio executable installs the DirectRedis
+session manager itself and therefore exposes 122 tools before module or raw
+additions.
 
 Every catalog entry has `ToolCapabilityRequirements`: required commands,
 optional minimum Redis and module versions, and the required module. Module
@@ -214,7 +217,49 @@ alongside an explicit completeness flag. Transport failures fail the whole
 request rather than presenting partial data as complete. Custom executors can
 read `RedisCommand::cluster_node_limit` and return `RedisValue::ClusterNodes`
 to preserve the same behavior. Long-lived subscription sessions remain a
-separate lifecycle surface.
+separate lifecycle surface in their own optional bundle.
+
+The optional Sessions bundle contains six long-lived Pub/Sub operations:
+`redis_subscribe`, `redis_psubscribe`, Redis 7+ `redis_ssubscribe`,
+`redis_pubsub_read`, `redis_pubsub_unsubscribe`, and `redis_pubsub_close`.
+Subscription creation accepts bounded binary-safe channels or patterns and
+returns an opaque 128-bit random handle. Reads remove a bounded number of
+messages under both raw-byte and encoded MCP output ceilings, wait only for a
+finite duration, preserve channel, pattern, payload, sequence, and age, and
+report buffer-full and oversized-message drop totals.
+
+`PubSubSessionManager` is a public host boundary rather than part of
+`RedisExecutor`. One command executor connection cannot safely represent a
+subscription that outlives a request. The DirectRedis manager accordingly owns
+one dedicated RESP3 connection and one bounded queue per session; subscription
+pushes never share the ordinary multiplexed request/response connection.
+Standalone connections use redis-rs automatic channel and pattern
+resubscription, and the manager explicitly reissues sharded subscriptions after
+a reported disconnect. Cluster connections route each sharded channel by slot.
+Global and sharded delivery are live-tested on a three-master Cluster; Cluster
+topology failover beyond redis-rs' connection recovery remains an explicit
+adapter limitation. Sentinel and host-specific failover policies require a
+custom manager.
+
+Every manager operation receives a `PubSubSessionOwner`. Lookup uses the owner
+and handle together and returns the same not-found result for missing, guessed,
+or foreign handles. The builder installs a random default owner and teardown
+guard for one-client routers such as stdio. A multi-client HTTP or WebSocket
+host must bridge a stable owner extension from its authenticated session or
+principal into each request and call `close_owner` when that host session ends;
+per-request extensions override the default. The DirectRedis manager also
+enforces global and per-owner session quotas, subscriptions per session,
+buffered messages, accepted message bytes, read bytes and duration, operation
+timeouts, and idle lifetime. A background weak-reference reaper closes stale
+connections without waiting for another subscription request, while manager
+shutdown rejects creation, drains every session, and wakes pending reads.
+
+Finite ordinary MCP tool calls are intentional here. A cancelled
+`redis_pubsub_read` future does not consume a queued message, and finite polling
+works with clients that do not implement the evolving MCP task surface. MCP
+tasks would add a second lifecycle without improving Redis queue ownership or
+delivery semantics, so this version does not require them. The library likewise
+does not translate Redis pushes into transport-specific MCP notifications.
 
 Raw commands remain a separate opt-in even though their metadata belongs to the
 `raw` bundle. The MCP tool requires full access; direct native invocations are

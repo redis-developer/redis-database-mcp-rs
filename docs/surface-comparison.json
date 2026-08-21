@@ -225,7 +225,7 @@
   },
   "current_gate": {
     "met": false,
-    "blockers": [30, 31, 32, 33]
+    "blockers": [31, 32, 33]
   },
   "contract_scorecard": {
     "scale": {
@@ -917,10 +917,16 @@
       "id": "pubsub.sessions",
       "redis_mcp_tools": ["psubscribe", "read_messages", "subscribe", "unsubscribe"],
       "redisctl_tools": [],
-      "library_tools": [],
-      "disposition": "planned",
-      "issue": 30,
-      "reason": "Issue #30 replaces process-global handles with isolated, quota-bound, cancellable subscription sessions."
+      "library_tools": [
+        "redis_psubscribe",
+        "redis_pubsub_close",
+        "redis_pubsub_read",
+        "redis_pubsub_unsubscribe",
+        "redis_ssubscribe",
+        "redis_subscribe"
+      ],
+      "disposition": "implemented",
+      "reason": "Owner-scoped opaque handles replace process-global state. A host-supplied manager boundary and the dedicated-connection DirectRedis implementation enforce per-owner/global session quotas, subscription and message bounds, finite cancellable reads, idle reaping, disconnect cleanup, binary-safe structured messages, and explicit standalone and Cluster lifecycle behavior."
     },
     {
       "id": "diagnostics.inspection",

@@ -11738,6 +11738,171 @@
       "requires_raw_opt_in": false
     },
     {
+      "bundle": "sessions",
+      "capability_requirements": {
+        "deployment": "any",
+        "minimum_module_version": null,
+        "minimum_redis_version": "2.0.0",
+        "required_commands": [
+          "PSUBSCRIBE"
+        ],
+        "required_module": null
+      },
+      "name": "redis_psubscribe",
+      "output_policy": "intrinsically_bounded",
+      "protocol": {
+        "annotations": {
+          "destructiveHint": false,
+          "readOnlyHint": true
+        },
+        "description": "Open an owner-isolated session on one or more binary-safe Redis glob patterns. The dedicated connection and message buffer are quota-bound and expire when idle.",
+        "inputSchema": {
+          "$defs": {
+            "EncodedInput": {
+              "additionalProperties": false,
+              "properties": {
+                "encoding": {
+                  "$ref": "#/$defs/InputEncoding",
+                  "default": "utf8",
+                  "description": "Encoding of `value`."
+                },
+                "value": {
+                  "description": "UTF-8 text or standard base64, according to `encoding`.",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "value"
+              ],
+              "type": "object"
+            },
+            "InputEncoding": {
+              "enum": [
+                "utf8",
+                "base64"
+              ],
+              "type": "string"
+            }
+          },
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "subscriptions": {
+              "description": "Binary-safe channels or patterns. Duplicate decoded values are subscribed once.",
+              "items": {
+                "$ref": "#/$defs/EncodedInput"
+              },
+              "maxItems": 100,
+              "minItems": 1,
+              "type": "array"
+            }
+          },
+          "required": [
+            "subscriptions"
+          ],
+          "title": "SubscribeInput",
+          "type": "object"
+        },
+        "name": "redis_psubscribe",
+        "outputSchema": {
+          "$defs": {
+            "EncodedOutput": {
+              "additionalProperties": false,
+              "properties": {
+                "encoding": {
+                  "$ref": "#/$defs/ValueEncoding"
+                },
+                "value": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "value",
+                "encoding"
+              ],
+              "type": "object"
+            },
+            "SubscriptionOutput": {
+              "additionalProperties": false,
+              "properties": {
+                "kind": {
+                  "type": "string"
+                },
+                "value": {
+                  "$ref": "#/$defs/EncodedOutput"
+                }
+              },
+              "required": [
+                "kind",
+                "value"
+              ],
+              "type": "object"
+            },
+            "ValueEncoding": {
+              "enum": [
+                "utf8",
+                "base64"
+              ],
+              "type": "string"
+            }
+          },
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "buffered_messages": {
+              "format": "uint",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "idle_timeout_ms": {
+              "format": "uint64",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "max_buffered_messages": {
+              "format": "uint",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "max_message_bytes": {
+              "format": "uint",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "session_id": {
+              "type": "string"
+            },
+            "subscription_count": {
+              "format": "uint",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "subscriptions": {
+              "items": {
+                "$ref": "#/$defs/SubscriptionOutput"
+              },
+              "type": "array"
+            }
+          },
+          "required": [
+            "session_id",
+            "subscriptions",
+            "subscription_count",
+            "buffered_messages",
+            "max_buffered_messages",
+            "max_message_bytes",
+            "idle_timeout_ms"
+          ],
+          "title": "SessionOutput",
+          "type": "object"
+        },
+        "title": "Open Redis Pattern Subscription"
+      },
+      "required_access": "read_only",
+      "required_module": null,
+      "requires_raw_opt_in": false
+    },
+    {
       "bundle": "essentials",
       "capability_requirements": {
         "deployment": "any",
@@ -12087,6 +12252,64 @@
           "type": "object"
         },
         "title": "List Active Redis Pub/Sub Channels"
+      },
+      "required_access": "read_only",
+      "required_module": null,
+      "requires_raw_opt_in": false
+    },
+    {
+      "bundle": "sessions",
+      "capability_requirements": {
+        "deployment": "any",
+        "minimum_module_version": null,
+        "minimum_redis_version": "2.0.0",
+        "required_commands": [],
+        "required_module": null
+      },
+      "name": "redis_pubsub_close",
+      "output_policy": "intrinsically_bounded",
+      "protocol": {
+        "annotations": {
+          "destructiveHint": false,
+          "idempotentHint": true,
+          "readOnlyHint": true
+        },
+        "description": "Close one owner-isolated Pub/Sub session and release its dedicated Redis connection and buffered messages.",
+        "inputSchema": {
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "session_id": {
+              "description": "Opaque session handle returned by a subscribe tool.",
+              "type": "string"
+            }
+          },
+          "required": [
+            "session_id"
+          ],
+          "title": "CloseInput",
+          "type": "object"
+        },
+        "name": "redis_pubsub_close",
+        "outputSchema": {
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "closed": {
+              "type": "boolean"
+            },
+            "session_id": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "session_id",
+            "closed"
+          ],
+          "title": "CloseOutput",
+          "type": "object"
+        },
+        "title": "Close Redis Pub/Sub Session"
       },
       "required_access": "read_only",
       "required_module": null,
@@ -12450,6 +12673,185 @@
           "type": "object"
         },
         "title": "Count Redis Pub/Sub Channel Subscribers"
+      },
+      "required_access": "read_only",
+      "required_module": null,
+      "requires_raw_opt_in": false
+    },
+    {
+      "bundle": "sessions",
+      "capability_requirements": {
+        "deployment": "any",
+        "minimum_module_version": null,
+        "minimum_redis_version": "2.0.0",
+        "required_commands": [],
+        "required_module": null
+      },
+      "name": "redis_pubsub_read",
+      "output_policy": "budget_guarded",
+      "protocol": {
+        "annotations": {
+          "destructiveHint": false,
+          "readOnlyHint": true
+        },
+        "description": "Read and consume a bounded page from an owner-isolated Pub/Sub session. The wait is finite and request cancellation stops the read without consuming a message.",
+        "inputSchema": {
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "max_bytes": {
+              "default": 65536,
+              "description": "Maximum raw channel, pattern, and payload bytes removed in this read.",
+              "format": "uint",
+              "maximum": 1048576,
+              "minimum": 1,
+              "type": "integer"
+            },
+            "max_messages": {
+              "default": 100,
+              "description": "Maximum messages removed from the session buffer.",
+              "format": "uint",
+              "maximum": 1000,
+              "minimum": 1,
+              "type": "integer"
+            },
+            "session_id": {
+              "description": "Opaque session handle returned by a subscribe tool.",
+              "type": "string"
+            },
+            "wait_ms": {
+              "default": 0,
+              "description": "Finite wait for the first available message, in milliseconds.",
+              "format": "uint64",
+              "maximum": 30000,
+              "minimum": 0,
+              "type": "integer"
+            }
+          },
+          "required": [
+            "session_id"
+          ],
+          "title": "ReadInput",
+          "type": "object"
+        },
+        "name": "redis_pubsub_read",
+        "outputSchema": {
+          "$defs": {
+            "EncodedOutput": {
+              "additionalProperties": false,
+              "properties": {
+                "encoding": {
+                  "$ref": "#/$defs/ValueEncoding"
+                },
+                "value": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "value",
+                "encoding"
+              ],
+              "type": "object"
+            },
+            "MessageOutput": {
+              "additionalProperties": false,
+              "properties": {
+                "age_ms": {
+                  "format": "uint64",
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                "channel": {
+                  "$ref": "#/$defs/EncodedOutput"
+                },
+                "kind": {
+                  "type": "string"
+                },
+                "pattern": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/$defs/EncodedOutput"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "payload": {
+                  "$ref": "#/$defs/EncodedOutput"
+                },
+                "sequence": {
+                  "format": "uint64",
+                  "minimum": 0,
+                  "type": "integer"
+                }
+              },
+              "required": [
+                "sequence",
+                "kind",
+                "channel",
+                "payload",
+                "age_ms"
+              ],
+              "type": "object"
+            },
+            "ValueEncoding": {
+              "enum": [
+                "utf8",
+                "base64"
+              ],
+              "type": "string"
+            }
+          },
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "dropped_buffer_full_total": {
+              "format": "uint64",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "dropped_oversized_total": {
+              "format": "uint64",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "messages": {
+              "items": {
+                "$ref": "#/$defs/MessageOutput"
+              },
+              "type": "array"
+            },
+            "remaining_buffered": {
+              "format": "uint",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "returned": {
+              "format": "uint",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "session_id": {
+              "type": "string"
+            },
+            "timed_out": {
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "session_id",
+            "messages",
+            "returned",
+            "remaining_buffered",
+            "timed_out",
+            "dropped_buffer_full_total",
+            "dropped_oversized_total"
+          ],
+          "title": "ReadOutput",
+          "type": "object"
+        },
+        "title": "Read Redis Pub/Sub Messages"
       },
       "required_access": "read_only",
       "required_module": null,
@@ -12905,6 +13307,188 @@
           "type": "object"
         },
         "title": "Count Redis Shard Channel Subscribers"
+      },
+      "required_access": "read_only",
+      "required_module": null,
+      "requires_raw_opt_in": false
+    },
+    {
+      "bundle": "sessions",
+      "capability_requirements": {
+        "deployment": "any",
+        "minimum_module_version": null,
+        "minimum_redis_version": "2.0.0",
+        "required_commands": [],
+        "required_module": null
+      },
+      "name": "redis_pubsub_unsubscribe",
+      "output_policy": "intrinsically_bounded",
+      "protocol": {
+        "annotations": {
+          "destructiveHint": false,
+          "idempotentHint": true,
+          "readOnlyHint": true
+        },
+        "description": "Remove exact channels or patterns from an owner-isolated session while leaving its dedicated connection open. Close the session explicitly when finished.",
+        "inputSchema": {
+          "$defs": {
+            "EncodedInput": {
+              "additionalProperties": false,
+              "properties": {
+                "encoding": {
+                  "$ref": "#/$defs/InputEncoding",
+                  "default": "utf8",
+                  "description": "Encoding of `value`."
+                },
+                "value": {
+                  "description": "UTF-8 text or standard base64, according to `encoding`.",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "value"
+              ],
+              "type": "object"
+            },
+            "InputEncoding": {
+              "enum": [
+                "utf8",
+                "base64"
+              ],
+              "type": "string"
+            },
+            "SubscriptionKindInput": {
+              "enum": [
+                "channel",
+                "pattern",
+                "sharded"
+              ],
+              "type": "string"
+            }
+          },
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "kind": {
+              "$ref": "#/$defs/SubscriptionKindInput",
+              "description": "Subscription command family to remove."
+            },
+            "session_id": {
+              "description": "Opaque session handle returned by a subscribe tool.",
+              "type": "string"
+            },
+            "subscriptions": {
+              "description": "Exact binary-safe subscription values to remove.",
+              "items": {
+                "$ref": "#/$defs/EncodedInput"
+              },
+              "maxItems": 100,
+              "minItems": 1,
+              "type": "array"
+            }
+          },
+          "required": [
+            "session_id",
+            "kind",
+            "subscriptions"
+          ],
+          "title": "UnsubscribeInput",
+          "type": "object"
+        },
+        "name": "redis_pubsub_unsubscribe",
+        "outputSchema": {
+          "$defs": {
+            "EncodedOutput": {
+              "additionalProperties": false,
+              "properties": {
+                "encoding": {
+                  "$ref": "#/$defs/ValueEncoding"
+                },
+                "value": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "value",
+                "encoding"
+              ],
+              "type": "object"
+            },
+            "SubscriptionOutput": {
+              "additionalProperties": false,
+              "properties": {
+                "kind": {
+                  "type": "string"
+                },
+                "value": {
+                  "$ref": "#/$defs/EncodedOutput"
+                }
+              },
+              "required": [
+                "kind",
+                "value"
+              ],
+              "type": "object"
+            },
+            "ValueEncoding": {
+              "enum": [
+                "utf8",
+                "base64"
+              ],
+              "type": "string"
+            }
+          },
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "buffered_messages": {
+              "format": "uint",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "idle_timeout_ms": {
+              "format": "uint64",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "max_buffered_messages": {
+              "format": "uint",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "max_message_bytes": {
+              "format": "uint",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "session_id": {
+              "type": "string"
+            },
+            "subscription_count": {
+              "format": "uint",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "subscriptions": {
+              "items": {
+                "$ref": "#/$defs/SubscriptionOutput"
+              },
+              "type": "array"
+            }
+          },
+          "required": [
+            "session_id",
+            "subscriptions",
+            "subscription_count",
+            "buffered_messages",
+            "max_buffered_messages",
+            "max_message_bytes",
+            "idle_timeout_ms"
+          ],
+          "title": "SessionOutput",
+          "type": "object"
+        },
+        "title": "Unsubscribe Redis Pub/Sub Session"
       },
       "required_access": "read_only",
       "required_module": null,
@@ -15875,6 +16459,171 @@
       "requires_raw_opt_in": false
     },
     {
+      "bundle": "sessions",
+      "capability_requirements": {
+        "deployment": "any",
+        "minimum_module_version": null,
+        "minimum_redis_version": "7.0.0",
+        "required_commands": [
+          "SSUBSCRIBE"
+        ],
+        "required_module": null
+      },
+      "name": "redis_ssubscribe",
+      "output_policy": "intrinsically_bounded",
+      "protocol": {
+        "annotations": {
+          "destructiveHint": false,
+          "readOnlyHint": true
+        },
+        "description": "Open an owner-isolated Redis 7+ sharded Pub/Sub session. Cluster subscriptions route by channel slot; the dedicated connection and message buffer are quota-bound.",
+        "inputSchema": {
+          "$defs": {
+            "EncodedInput": {
+              "additionalProperties": false,
+              "properties": {
+                "encoding": {
+                  "$ref": "#/$defs/InputEncoding",
+                  "default": "utf8",
+                  "description": "Encoding of `value`."
+                },
+                "value": {
+                  "description": "UTF-8 text or standard base64, according to `encoding`.",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "value"
+              ],
+              "type": "object"
+            },
+            "InputEncoding": {
+              "enum": [
+                "utf8",
+                "base64"
+              ],
+              "type": "string"
+            }
+          },
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "subscriptions": {
+              "description": "Binary-safe channels or patterns. Duplicate decoded values are subscribed once.",
+              "items": {
+                "$ref": "#/$defs/EncodedInput"
+              },
+              "maxItems": 100,
+              "minItems": 1,
+              "type": "array"
+            }
+          },
+          "required": [
+            "subscriptions"
+          ],
+          "title": "SubscribeInput",
+          "type": "object"
+        },
+        "name": "redis_ssubscribe",
+        "outputSchema": {
+          "$defs": {
+            "EncodedOutput": {
+              "additionalProperties": false,
+              "properties": {
+                "encoding": {
+                  "$ref": "#/$defs/ValueEncoding"
+                },
+                "value": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "value",
+                "encoding"
+              ],
+              "type": "object"
+            },
+            "SubscriptionOutput": {
+              "additionalProperties": false,
+              "properties": {
+                "kind": {
+                  "type": "string"
+                },
+                "value": {
+                  "$ref": "#/$defs/EncodedOutput"
+                }
+              },
+              "required": [
+                "kind",
+                "value"
+              ],
+              "type": "object"
+            },
+            "ValueEncoding": {
+              "enum": [
+                "utf8",
+                "base64"
+              ],
+              "type": "string"
+            }
+          },
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "buffered_messages": {
+              "format": "uint",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "idle_timeout_ms": {
+              "format": "uint64",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "max_buffered_messages": {
+              "format": "uint",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "max_message_bytes": {
+              "format": "uint",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "session_id": {
+              "type": "string"
+            },
+            "subscription_count": {
+              "format": "uint",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "subscriptions": {
+              "items": {
+                "$ref": "#/$defs/SubscriptionOutput"
+              },
+              "type": "array"
+            }
+          },
+          "required": [
+            "session_id",
+            "subscriptions",
+            "subscription_count",
+            "buffered_messages",
+            "max_buffered_messages",
+            "max_message_bytes",
+            "idle_timeout_ms"
+          ],
+          "title": "SessionOutput",
+          "type": "object"
+        },
+        "title": "Open Redis Shard Subscription"
+      },
+      "required_access": "read_only",
+      "required_module": null,
+      "requires_raw_opt_in": false
+    },
+    {
       "bundle": "essentials",
       "capability_requirements": {
         "deployment": "any",
@@ -15931,6 +16680,171 @@
           "type": "object"
         },
         "title": "Redis String Length"
+      },
+      "required_access": "read_only",
+      "required_module": null,
+      "requires_raw_opt_in": false
+    },
+    {
+      "bundle": "sessions",
+      "capability_requirements": {
+        "deployment": "any",
+        "minimum_module_version": null,
+        "minimum_redis_version": "2.0.0",
+        "required_commands": [
+          "SUBSCRIBE"
+        ],
+        "required_module": null
+      },
+      "name": "redis_subscribe",
+      "output_policy": "intrinsically_bounded",
+      "protocol": {
+        "annotations": {
+          "destructiveHint": false,
+          "readOnlyHint": true
+        },
+        "description": "Open an owner-isolated session on one or more binary-safe global Pub/Sub channels. The dedicated connection and message buffer are quota-bound and expire when idle.",
+        "inputSchema": {
+          "$defs": {
+            "EncodedInput": {
+              "additionalProperties": false,
+              "properties": {
+                "encoding": {
+                  "$ref": "#/$defs/InputEncoding",
+                  "default": "utf8",
+                  "description": "Encoding of `value`."
+                },
+                "value": {
+                  "description": "UTF-8 text or standard base64, according to `encoding`.",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "value"
+              ],
+              "type": "object"
+            },
+            "InputEncoding": {
+              "enum": [
+                "utf8",
+                "base64"
+              ],
+              "type": "string"
+            }
+          },
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "subscriptions": {
+              "description": "Binary-safe channels or patterns. Duplicate decoded values are subscribed once.",
+              "items": {
+                "$ref": "#/$defs/EncodedInput"
+              },
+              "maxItems": 100,
+              "minItems": 1,
+              "type": "array"
+            }
+          },
+          "required": [
+            "subscriptions"
+          ],
+          "title": "SubscribeInput",
+          "type": "object"
+        },
+        "name": "redis_subscribe",
+        "outputSchema": {
+          "$defs": {
+            "EncodedOutput": {
+              "additionalProperties": false,
+              "properties": {
+                "encoding": {
+                  "$ref": "#/$defs/ValueEncoding"
+                },
+                "value": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "value",
+                "encoding"
+              ],
+              "type": "object"
+            },
+            "SubscriptionOutput": {
+              "additionalProperties": false,
+              "properties": {
+                "kind": {
+                  "type": "string"
+                },
+                "value": {
+                  "$ref": "#/$defs/EncodedOutput"
+                }
+              },
+              "required": [
+                "kind",
+                "value"
+              ],
+              "type": "object"
+            },
+            "ValueEncoding": {
+              "enum": [
+                "utf8",
+                "base64"
+              ],
+              "type": "string"
+            }
+          },
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "buffered_messages": {
+              "format": "uint",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "idle_timeout_ms": {
+              "format": "uint64",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "max_buffered_messages": {
+              "format": "uint",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "max_message_bytes": {
+              "format": "uint",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "session_id": {
+              "type": "string"
+            },
+            "subscription_count": {
+              "format": "uint",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "subscriptions": {
+              "items": {
+                "$ref": "#/$defs/SubscriptionOutput"
+              },
+              "type": "array"
+            }
+          },
+          "required": [
+            "session_id",
+            "subscriptions",
+            "subscription_count",
+            "buffered_messages",
+            "max_buffered_messages",
+            "max_message_bytes",
+            "idle_timeout_ms"
+          ],
+          "title": "SessionOutput",
+          "type": "object"
+        },
+        "title": "Open Redis Channel Subscription"
       },
       "required_access": "read_only",
       "required_module": null,
@@ -24832,6 +25746,23 @@
       "latency_ms": 0.0,
       "response": "PONG"
     },
+    "redis_psubscribe": {
+      "buffered_messages": 0,
+      "idle_timeout_ms": 300000,
+      "max_buffered_messages": 100,
+      "max_message_bytes": 1048576,
+      "session_id": "ps_00000000000000000000000000000000",
+      "subscription_count": 1,
+      "subscriptions": [
+        {
+          "kind": "pattern",
+          "value": {
+            "encoding": "utf8",
+            "value": "events:*"
+          }
+        }
+      ]
+    },
     "redis_publish": {
       "channel": {
         "encoding": "utf8",
@@ -24862,6 +25793,10 @@
       },
       "scope": "global"
     },
+    "redis_pubsub_close": {
+      "closed": true,
+      "session_id": "ps_00000000000000000000000000000000"
+    },
     "redis_pubsub_numpat": {
       "cluster": null,
       "count_scope": "target_unique_patterns",
@@ -24882,6 +25817,30 @@
       ],
       "deployment": "unknown",
       "scope": "global"
+    },
+    "redis_pubsub_read": {
+      "dropped_buffer_full_total": 0,
+      "dropped_oversized_total": 0,
+      "messages": [
+        {
+          "age_ms": 1,
+          "channel": {
+            "encoding": "utf8",
+            "value": "events"
+          },
+          "kind": "channel",
+          "pattern": null,
+          "payload": {
+            "encoding": "utf8",
+            "value": "hello"
+          },
+          "sequence": 1
+        }
+      ],
+      "remaining_buffered": 0,
+      "returned": 1,
+      "session_id": "ps_00000000000000000000000000000000",
+      "timed_out": false
     },
     "redis_pubsub_shardchannels": {
       "channels": [
@@ -24918,6 +25877,15 @@
       ],
       "deployment": "unknown",
       "scope": "sharded"
+    },
+    "redis_pubsub_unsubscribe": {
+      "buffered_messages": 0,
+      "idle_timeout_ms": 300000,
+      "max_buffered_messages": 100,
+      "max_message_bytes": 1048576,
+      "session_id": "ps_00000000000000000000000000000000",
+      "subscription_count": 0,
+      "subscriptions": []
     },
     "redis_randomkey": {
       "encoding": "utf8",
@@ -25126,9 +26094,43 @@
         "returned": 1
       }
     },
+    "redis_ssubscribe": {
+      "buffered_messages": 0,
+      "idle_timeout_ms": 300000,
+      "max_buffered_messages": 100,
+      "max_message_bytes": 1048576,
+      "session_id": "ps_00000000000000000000000000000000",
+      "subscription_count": 1,
+      "subscriptions": [
+        {
+          "kind": "sharded",
+          "value": {
+            "encoding": "utf8",
+            "value": "events:{alpha}"
+          }
+        }
+      ]
+    },
     "redis_strlen": {
       "key": "greeting",
       "length_bytes": 5
+    },
+    "redis_subscribe": {
+      "buffered_messages": 0,
+      "idle_timeout_ms": 300000,
+      "max_buffered_messages": 100,
+      "max_message_bytes": 1048576,
+      "session_id": "ps_00000000000000000000000000000000",
+      "subscription_count": 1,
+      "subscriptions": [
+        {
+          "kind": "channel",
+          "value": {
+            "encoding": "utf8",
+            "value": "events:alpha"
+          }
+        }
+      ]
     },
     "redis_sunion": {
       "count": 2,

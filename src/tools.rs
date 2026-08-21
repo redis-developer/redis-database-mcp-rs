@@ -4,6 +4,7 @@ mod data_structures;
 mod essentials;
 mod json_tools;
 mod pubsub;
+mod pubsub_sessions;
 mod search;
 mod streams;
 
@@ -24,8 +25,8 @@ use tower_mcp::{
 };
 
 use crate::{
-    AccessMode, NativeRedisInvocation, OutputBudget, RedisCommand, RedisDeployment,
-    RedisInvocationEngine, RedisModule, RedisValue, RedisVersion, ToolBundle,
+    AccessMode, NativeRedisInvocation, OutputBudget, PubSubSessionManager, RedisCommand,
+    RedisDeployment, RedisInvocationEngine, RedisModule, RedisValue, RedisVersion, ToolBundle,
     invocation::{redis_value_collection_entries, redis_value_to_json},
 };
 
@@ -39,6 +40,7 @@ pub(crate) struct ToolState {
     access: AccessMode,
     output_budget: OutputBudget,
     invocation_engine: RedisInvocationEngine,
+    pub(crate) pubsub_sessions: Option<Arc<dyn PubSubSessionManager>>,
 }
 
 impl ToolState {
@@ -46,11 +48,13 @@ impl ToolState {
         access: AccessMode,
         output_budget: OutputBudget,
         invocation_engine: RedisInvocationEngine,
+        pubsub_sessions: Option<Arc<dyn PubSubSessionManager>>,
     ) -> Self {
         Self {
             access,
             output_budget,
             invocation_engine,
+            pubsub_sessions,
         }
     }
 
@@ -68,6 +72,54 @@ impl ToolState {
 
     fn deployment(&self) -> RedisDeployment {
         self.invocation_engine.capabilities().deployment()
+    }
+
+    fn pubsub_sessions(&self) -> tower_mcp::Result<Arc<dyn PubSubSessionManager>> {
+        self.pubsub_sessions
+            .clone()
+            .ok_or_else(|| tower_mcp::Error::tool("Pub/Sub session manager is not configured"))
+    }
+
+    fn require_tool_capabilities(&self, tool_name: &str) -> tower_mcp::Result<()> {
+        let metadata = crate::tool_catalog()
+            .iter()
+            .find(|metadata| metadata.name == tool_name)
+            .ok_or_else(|| tower_mcp::Error::tool(format!("unknown curated tool {tool_name}")))?;
+        self.invocation_engine
+            .capabilities()
+            .check_tool(*metadata)
+            .map(|_| ())
+            .map_err(|error| {
+                tower_mcp::Error::tool(format!(
+                    "{tool_name} capability check failed [{:?}]: {error}",
+                    error.kind()
+                ))
+            })
+    }
+
+    fn validate_session_binary_output(
+        &self,
+        raw_bytes: usize,
+        entries: usize,
+        name: &str,
+    ) -> tower_mcp::Result<()> {
+        // Structured content is also rendered into MCP text, and arbitrary
+        // bytes may expand to base64. Reserve fixed and per-entry JSON
+        // overhead, then apply a conservative 3/8 raw-to-encoded ratio.
+        let overhead = 4_096_usize.saturating_add(entries.saturating_mul(512));
+        let safe_raw_bytes = self
+            .output_budget
+            .max_bytes()
+            .saturating_sub(overhead)
+            .saturating_mul(3)
+            / 8;
+        if raw_bytes > safe_raw_bytes {
+            Err(tower_mcp::Error::tool(format!(
+                "{name} contains {raw_bytes} raw bytes; maximum safe size for the configured MCP output budget is {safe_raw_bytes}"
+            )))
+        } else {
+            Ok(())
+        }
     }
 
     fn module_version(&self, module: RedisModule) -> Option<RedisVersion> {
@@ -291,7 +343,10 @@ pub(crate) fn add_read_only_tools(
         router = search::add_read_tools(router, state.clone());
     }
     if bundles.contains(&ToolBundle::Diagnostics) {
-        router = router.tool(info_tool(state));
+        router = router.tool(info_tool(state.clone()));
+    }
+    if bundles.contains(&ToolBundle::Sessions) {
+        router = pubsub_sessions::add_tools(router, state);
     }
     router
 }

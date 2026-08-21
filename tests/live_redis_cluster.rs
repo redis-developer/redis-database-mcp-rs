@@ -1,11 +1,12 @@
 #![cfg(unix)]
 
-use std::{collections::BTreeMap, io, net::TcpListener};
+use std::{collections::BTreeMap, io, net::TcpListener, time::Duration};
 
 use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64};
 use redis_mcp::{
-    AccessMode, CapabilityStatus, DirectRedis, DirectRedisCluster, RawCommandPolicy,
-    RedisDeployment, RedisExecutor, RedisMcp, RedisModule, RedisVersion, ToolBundle,
+    AccessMode, CapabilityStatus, DirectRedis, DirectRedisCluster, DirectRedisPubSubSessionManager,
+    PubSubSessionLimits, PubSubSessionManager, RawCommandPolicy, RedisDeployment, RedisExecutor,
+    RedisMcp, RedisModule, RedisVersion, ToolBundle,
 };
 use redis_server_wrapper::{Error as RedisServerError, RedisCluster, RedisClusterHandle};
 use tower_mcp::client::{ChannelTransport, McpClient, StdioClientTransport};
@@ -248,6 +249,24 @@ async fn router_client(executor: impl RedisExecutor) -> McpClient {
     client
 }
 
+async fn pubsub_session_router_client(
+    executor: impl RedisExecutor,
+    manager: DirectRedisPubSubSessionManager,
+) -> McpClient {
+    let router = RedisMcp::builder(executor)
+        .access(AccessMode::ReadWrite)
+        .pubsub_sessions(manager)
+        .build();
+    let client = McpClient::connect(ChannelTransport::new(router))
+        .await
+        .expect("connect Cluster Pub/Sub session MCP client");
+    client
+        .initialize("redis-mcp-cluster-pubsub-session-test", "0")
+        .await
+        .expect("initialize Cluster Pub/Sub session MCP client");
+    client
+}
+
 async fn json_router_client(executor: impl RedisExecutor) -> McpClient {
     let router = RedisMcp::builder(executor)
         .access(AccessMode::Full)
@@ -320,6 +339,113 @@ fn owner_for_slot(owners: &[SlotOwner], slot: u16) -> Option<usize> {
             .iter()
             .any(|(start, end)| (*start..=*end).contains(&slot))
     })
+}
+
+#[tokio::test]
+async fn pubsub_sessions_deliver_global_and_sharded_messages_in_cluster() {
+    let _cluster_guard = CLUSTER_TEST_LOCK.lock().await;
+    let Some(cluster) = TestCluster::start().await else {
+        return;
+    };
+    let executor = DirectRedisCluster::connect(&cluster.seed_urls)
+        .await
+        .expect("connect cluster-aware adapter for Pub/Sub sessions");
+    let capabilities = executor
+        .discover_capabilities()
+        .await
+        .expect("discover Cluster Pub/Sub capabilities");
+    let manager = DirectRedisPubSubSessionManager::cluster(
+        &cluster.seed_urls,
+        PubSubSessionLimits::default()
+            .with_max_read_duration(Duration::from_secs(2))
+            .with_operation_timeout(Duration::from_secs(5)),
+    )
+    .expect("create Cluster Pub/Sub session manager");
+    let client = pubsub_session_router_client(executor, manager.clone()).await;
+
+    let global_channel = format!("redis-mcp:cluster-session:{}:global", std::process::id());
+    let global_session = client
+        .call_tool(
+            "redis_subscribe",
+            serde_json::json!({"subscriptions": [{"value": global_channel}]}),
+        )
+        .await
+        .expect("open global Cluster Pub/Sub session")
+        .structured_content
+        .expect("structured global Cluster session")["session_id"]
+        .as_str()
+        .expect("global Cluster session id")
+        .to_string();
+    client
+        .call_tool(
+            "redis_publish",
+            serde_json::json!({"channel": {"value": global_channel}, "message": {"value": "global"}}),
+        )
+        .await
+        .expect("publish global Cluster message");
+    let global_read = client
+        .call_tool(
+            "redis_pubsub_read",
+            serde_json::json!({"session_id": global_session, "wait_ms": 1000}),
+        )
+        .await
+        .expect("read global Cluster message")
+        .structured_content
+        .expect("structured global Cluster read");
+    assert_eq!(global_read["messages"][0]["payload"]["value"], "global");
+    client
+        .call_tool(
+            "redis_pubsub_close",
+            serde_json::json!({"session_id": global_session}),
+        )
+        .await
+        .expect("close global Cluster session");
+
+    if capabilities
+        .redis_version()
+        .is_some_and(|version| version >= RedisVersion::new(7, 0, 0))
+    {
+        let shard_channel = format!("redis-mcp:cluster-session:{}:{{shard}}", std::process::id());
+        let shard_session = client
+            .call_tool(
+                "redis_ssubscribe",
+                serde_json::json!({"subscriptions": [{"value": shard_channel}]}),
+            )
+            .await
+            .expect("open sharded Cluster Pub/Sub session")
+            .structured_content
+            .expect("structured sharded Cluster session")["session_id"]
+            .as_str()
+            .expect("sharded Cluster session id")
+            .to_string();
+        client
+            .call_tool(
+                "redis_spublish",
+                serde_json::json!({"channel": {"value": shard_channel}, "message": {"value": "sharded"}}),
+            )
+            .await
+            .expect("publish sharded Cluster message");
+        let shard_read = client
+            .call_tool(
+                "redis_pubsub_read",
+                serde_json::json!({"session_id": shard_session, "wait_ms": 1000}),
+            )
+            .await
+            .expect("read sharded Cluster message")
+            .structured_content
+            .expect("structured sharded Cluster read");
+        assert_eq!(shard_read["messages"][0]["kind"], "sharded");
+        assert_eq!(shard_read["messages"][0]["payload"]["value"], "sharded");
+        client
+            .call_tool(
+                "redis_pubsub_close",
+                serde_json::json!({"session_id": shard_session}),
+            )
+            .await
+            .expect("close sharded Cluster session");
+    }
+
+    manager.shutdown().await;
 }
 
 async fn keys_on_three_masters(seed_url: &str, protocol: &str) -> (Vec<String>, String) {
@@ -1352,6 +1478,49 @@ async fn cluster_routes_curated_and_raw_tools_across_three_masters() {
         .initialize("redis-mcp-cluster-stdio-test", "0")
         .await
         .expect("initialize cluster stdio client");
+    let pubsub_channel = format!("redis-mcp:cluster-stdio:{}:pubsub", std::process::id());
+    let pubsub_session = client
+        .call_tool(
+            "redis_subscribe",
+            serde_json::json!({"subscriptions": [{"value": pubsub_channel}]}),
+        )
+        .await
+        .expect("subscribe over Cluster stdio")
+        .structured_content
+        .expect("structured Cluster stdio subscription")["session_id"]
+        .as_str()
+        .expect("Cluster stdio session id")
+        .to_string();
+    client
+        .call_tool(
+            "redis_publish",
+            serde_json::json!({
+                "channel": {"value": pubsub_channel},
+                "message": {"value": "cluster-stdio"}
+            }),
+        )
+        .await
+        .expect("publish over Cluster stdio");
+    let pubsub_read = client
+        .call_tool(
+            "redis_pubsub_read",
+            serde_json::json!({"session_id": pubsub_session, "wait_ms": 1000}),
+        )
+        .await
+        .expect("read Pub/Sub over Cluster stdio")
+        .structured_content
+        .expect("structured Cluster stdio Pub/Sub read");
+    assert_eq!(
+        pubsub_read["messages"][0]["payload"]["value"],
+        "cluster-stdio"
+    );
+    client
+        .call_tool(
+            "redis_pubsub_close",
+            serde_json::json!({"session_id": pubsub_session}),
+        )
+        .await
+        .expect("close Cluster stdio Pub/Sub session");
     let (_, remote_key) = keys_on_three_masters(&cluster.seed_urls[0], "stdio").await;
     let set = client
         .call_tool(

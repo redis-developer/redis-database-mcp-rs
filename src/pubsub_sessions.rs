@@ -412,7 +412,7 @@ pub struct DirectRedisPubSubSessionManager {
 }
 
 enum DirectTarget {
-    Standalone(Client),
+    Standalone(Box<Client>),
     Cluster(Vec<String>),
 }
 
@@ -654,7 +654,7 @@ impl DirectRedisPubSubSessionManager {
         let info = force_resp3(client.get_connection_info().clone());
         let client = Client::open(info)
             .map_err(|error| redacted_redis_error(error, "Pub/Sub target configuration failed"))?;
-        Self::new(DirectTarget::Standalone(client), limits)
+        Self::new(DirectTarget::Standalone(Box::new(client)), limits)
     }
 
     /// Create a Redis Cluster manager from one or more seed URLs.

@@ -5166,6 +5166,25 @@ async fn search_annotations_match_data_and_cursor_semantics() {
     }
 }
 
+fn canonical_json(value: serde_json::Value) -> serde_json::Value {
+    match value {
+        serde_json::Value::Array(values) => {
+            serde_json::Value::Array(values.into_iter().map(canonical_json).collect())
+        }
+        serde_json::Value::Object(values) => {
+            let mut values = values.into_iter().collect::<Vec<_>>();
+            values.sort_by(|left, right| left.0.cmp(&right.0));
+            serde_json::Value::Object(
+                values
+                    .into_iter()
+                    .map(|(key, value)| (key, canonical_json(value)))
+                    .collect(),
+            )
+        }
+        value => value,
+    }
+}
+
 #[tokio::test]
 async fn curated_catalog_matches_checked_in_contract_snapshot() {
     let client = full_catalog_client().await;
@@ -5215,10 +5234,10 @@ async fn curated_catalog_matches_checked_in_contract_snapshot() {
         structured_results.insert(name, structured);
     }
 
-    let actual = serde_json::to_string_pretty(&serde_json::json!({
+    let actual = serde_json::to_string_pretty(&canonical_json(serde_json::json!({
         "catalog": contracts,
         "structured_results": structured_results,
-    }))
+    })))
     .expect("serialize contract snapshot");
     if std::env::var_os("REDIS_MCP_UPDATE_SNAPSHOTS").is_some() {
         std::fs::write(

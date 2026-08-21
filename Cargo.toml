@@ -30,13 +30,13 @@ schemars = "1.2"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 tokio = { version = "1.40", features = ["macros", "rt-multi-thread", "time"] }
-tower-mcp = { version = "0.19", features = ["protocol-2026-07-28"] }
+tower-mcp = { version = "0.22", features = ["protocol-2026-07-28"] }
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 
 [dev-dependencies]
 pretty_assertions = "1.4"
-tower-mcp = { version = "0.19", features = ["childproc", "protocol-2026-07-28"] }
+tower-mcp = { version = "0.22", features = ["childproc", "protocol-2026-07-28"] }
 
 [target.'cfg(unix)'.dev-dependencies]
 redis-server-wrapper = "0.5.0"

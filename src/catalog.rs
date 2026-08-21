@@ -206,6 +206,15 @@ impl ToolMetadata {
     /// catalog filtering and stable preflight errors.
     pub fn capability_requirements(self) -> ToolCapabilityRequirements {
         let minimum_redis_version = match self.name {
+            "redis_slowlog" => Some(RedisVersion::new(2, 2, 0)),
+            "redis_latency_history" => Some(RedisVersion::new(2, 8, 0)),
+            "redis_cluster_info" => Some(RedisVersion::new(3, 0, 0)),
+            "redis_memory_stats"
+            | "redis_memory_summary"
+            | "redis_module_list"
+            | "redis_key_summary"
+            | "redis_hotkeys" => Some(RedisVersion::new(4, 0, 0)),
+            "redis_acl_whoami" => Some(RedisVersion::new(6, 0, 0)),
             "redis_publish"
             | "redis_subscribe"
             | "redis_psubscribe"
@@ -290,6 +299,16 @@ impl ToolMetadata {
         let required_commands = match self.name {
             "redis_ping" => &["PING"] as &'static [&'static str],
             "redis_info" => &["INFO"],
+            "redis_client_list" | "redis_connection_summary" => &["CLIENT"],
+            "redis_cluster_info" => &["CLUSTER"],
+            "redis_memory_stats" | "redis_memory_summary" => &["MEMORY"],
+            "redis_module_list" => &["MODULE"],
+            "redis_slowlog" => &["SLOWLOG"],
+            "redis_latency_history" => &["LATENCY"],
+            "redis_acl_whoami" => &["ACL"],
+            "redis_health_check" | "redis_keyspace_summary" => &["INFO"],
+            "redis_key_summary" => &["TYPE", "TTL", "MEMORY", "OBJECT"],
+            "redis_hotkeys" => &["SCAN", "TYPE", "MEMORY"],
             "redis_dbsize" => &["DBSIZE"],
             "redis_scan" => &["SCAN"],
             "redis_get" => &["GET"],
@@ -445,12 +464,12 @@ impl ToolMetadata {
             _ => &[],
         };
         let deployment = match self.name {
+            "redis_cluster_info" => ToolDeploymentRequirement::Cluster,
             // redis-rs routes these no-key or cursor commands to one node, or
             // returns a fan-out shape the tool does not aggregate. Advertising
             // database-wide semantics on Cluster would therefore mislead.
-            "redis_info" | "redis_dbsize" | "redis_scan" | "redis_randomkey" | "redis_ft_list" => {
-                ToolDeploymentRequirement::Standalone
-            }
+            "redis_info" | "redis_dbsize" | "redis_scan" | "redis_randomkey" | "redis_hotkeys"
+            | "redis_ft_list" => ToolDeploymentRequirement::Standalone,
             _ => ToolDeploymentRequirement::Any,
         };
         ToolCapabilityRequirements {
@@ -476,6 +495,16 @@ impl ToolMetadata {
                 ToolOutputPolicy::OffsetPaginated
             }
             "redis_info"
+            | "redis_client_list"
+            | "redis_cluster_info"
+            | "redis_memory_stats"
+            | "redis_module_list"
+            | "redis_slowlog"
+            | "redis_latency_history"
+            | "redis_health_check"
+            | "redis_connection_summary"
+            | "redis_keyspace_summary"
+            | "redis_hotkeys"
             | "redis_get"
             | "redis_getdel"
             | "redis_getex"
@@ -538,6 +567,84 @@ pub(crate) const CATALOG: &[ToolMetadata] = &[
     },
     ToolMetadata {
         name: "redis_info",
+        bundle: ToolBundle::Diagnostics,
+        required_access: AccessMode::ReadOnly,
+        requires_raw_opt_in: false,
+    },
+    ToolMetadata {
+        name: "redis_client_list",
+        bundle: ToolBundle::Diagnostics,
+        required_access: AccessMode::ReadOnly,
+        requires_raw_opt_in: false,
+    },
+    ToolMetadata {
+        name: "redis_cluster_info",
+        bundle: ToolBundle::Diagnostics,
+        required_access: AccessMode::ReadOnly,
+        requires_raw_opt_in: false,
+    },
+    ToolMetadata {
+        name: "redis_memory_stats",
+        bundle: ToolBundle::Diagnostics,
+        required_access: AccessMode::ReadOnly,
+        requires_raw_opt_in: false,
+    },
+    ToolMetadata {
+        name: "redis_module_list",
+        bundle: ToolBundle::Diagnostics,
+        required_access: AccessMode::ReadOnly,
+        requires_raw_opt_in: false,
+    },
+    ToolMetadata {
+        name: "redis_slowlog",
+        bundle: ToolBundle::Diagnostics,
+        required_access: AccessMode::ReadOnly,
+        requires_raw_opt_in: false,
+    },
+    ToolMetadata {
+        name: "redis_latency_history",
+        bundle: ToolBundle::Diagnostics,
+        required_access: AccessMode::ReadOnly,
+        requires_raw_opt_in: false,
+    },
+    ToolMetadata {
+        name: "redis_acl_whoami",
+        bundle: ToolBundle::Diagnostics,
+        required_access: AccessMode::ReadOnly,
+        requires_raw_opt_in: false,
+    },
+    ToolMetadata {
+        name: "redis_health_check",
+        bundle: ToolBundle::Diagnostics,
+        required_access: AccessMode::ReadOnly,
+        requires_raw_opt_in: false,
+    },
+    ToolMetadata {
+        name: "redis_connection_summary",
+        bundle: ToolBundle::Diagnostics,
+        required_access: AccessMode::ReadOnly,
+        requires_raw_opt_in: false,
+    },
+    ToolMetadata {
+        name: "redis_keyspace_summary",
+        bundle: ToolBundle::Diagnostics,
+        required_access: AccessMode::ReadOnly,
+        requires_raw_opt_in: false,
+    },
+    ToolMetadata {
+        name: "redis_memory_summary",
+        bundle: ToolBundle::Diagnostics,
+        required_access: AccessMode::ReadOnly,
+        requires_raw_opt_in: false,
+    },
+    ToolMetadata {
+        name: "redis_key_summary",
+        bundle: ToolBundle::Diagnostics,
+        required_access: AccessMode::ReadOnly,
+        requires_raw_opt_in: false,
+    },
+    ToolMetadata {
+        name: "redis_hotkeys",
         bundle: ToolBundle::Diagnostics,
         required_access: AccessMode::ReadOnly,
         requires_raw_opt_in: false,

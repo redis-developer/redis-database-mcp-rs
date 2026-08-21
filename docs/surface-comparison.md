@@ -19,7 +19,7 @@ matrix.
 | --- | --- | ---: | ---: |
 | [`redis/mcp-redis`](https://github.com/redis/mcp-redis) | `5945b0b5b098c9a1882075a161a6a58f23de81ed` | 0.5.1 | 53 |
 | [`redisctl`](https://github.com/redis/redisctl) | `955f4b18f4266c332bc640cada67d125d23edde8` | read-only inventory | 132 |
-| `redis-mcp` | current catalog | 0.1 development line | 164 |
+| `redis-mcp` | current catalog | 0.1 development line | 177 |
 
 The redisctl baseline is a compatibility and breadth reference, not a promise
 to copy application-specific profile fields, aliases, or weak contracts.
@@ -28,8 +28,8 @@ to copy application-specific profile fields, aliases, or weak contracts.
 
 | Baseline | Implemented | Planned | Superseded | Excluded |
 | --- | ---: | ---: | ---: | ---: |
-| `redis/mcp-redis` | 50 | 1 | 1 | 1 |
-| redisctl | 109 | 17 | 1 | 5 |
+| `redis/mcp-redis` | 51 | 0 | 1 | 1 |
+| redisctl | 120 | 6 | 1 | 5 |
 
 The dispositions mean:
 
@@ -56,11 +56,13 @@ hatch. Alias, dictionary, synonym, schema-alteration, explain, profile, and
 deprecated tag-value operations carry explicit access, capability, output, and
 binary-encoding contracts.
 
-### Remaining `redis/mcp-redis` gaps
-
-| Capability | Competitor tools | Library issue |
-| --- | --- | ---: |
-| diagnostics | `client_list` | #31 |
+The pinned `redis/mcp-redis` database-command surface now has no planned gaps.
+The diagnostics bundle closes its final `client_list` lead and adds structured
+CLIENT filtering, cluster health/topology, memory, modules, slowlog, latency,
+ACL identity, connection, keyspace, key, and one-page hot-key workflows.
+Cluster-wide inspection is caller-bounded with explicit partial failures and
+pseudonymous nodes. Sensitive client, module, and slowlog fields require Full
+access; Redis error details are redacted without losing stable categories.
 
 Request/response Pub/Sub now leads the pinned competitor: binary-safe global
 and sharded publication are paired with bounded channel, subscriber, and
@@ -236,8 +238,11 @@ The roadmap is complete only when all of these are true:
 5. The checked-in `current_gate.met` value agrees with the gate calculated by
    the test.
 
-The gate is currently **not met**. Three roadmap blockers remain after completing
-the Streams, RedisJSON, Search, and both Pub/Sub families.
+The gate is currently **met**. Every pinned `redis/mcp-redis` capability is now
+implemented, superseded, or deliberately excluded, and the library satisfies
+the strategic and contract-quality requirements. Issues #32 and #33 remain as
+redisctl-oriented admin and bulk expansion; they no longer block the competitor
+command-surface finish line.
 
 ## Updating the scorecard
 

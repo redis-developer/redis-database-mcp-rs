@@ -135,13 +135,13 @@ which side effects that host permits. These decisions are orthogonal.
 
 The public taxonomy is `essentials`, `data_structures`, `json`, `search`,
 `diagnostics`, `sessions`, `admin`, `bulk`, and `raw`. The curated default enables
-`essentials`, `data_structures`, and `diagnostics`, totaling 116 tools. The
+`essentials`, `data_structures`, and `diagnostics`, totaling 129 tools. The
 module-backed `json` and `search` bundles are explicitly selected so a default
 router never advertises capabilities that its Redis target may not provide.
 The stateful `sessions` bundle is enabled only by supplying a lifecycle manager.
 Empty bundles are reserved for coherent catalog growth and do not expose
 placeholder tools. The bundled stdio executable installs the DirectRedis
-session manager itself and therefore exposes 122 tools before module or raw
+session manager itself and therefore exposes 135 tools before module or raw
 additions.
 
 Every catalog entry has `ToolCapabilityRequirements`: required commands,
@@ -169,11 +169,20 @@ when discovery was not available. Other module errors, such as a missing index
 or malformed query, remain ordinary server errors.
 
 Deployment requirements are catalog data too. `redis_info`, `redis_dbsize`,
-`redis_scan`, `redis_randomkey`, and `redis_ft_list` are currently
+`redis_scan`, `redis_randomkey`, `redis_hotkeys`, and `redis_ft_list` are currently
 standalone-only: the cluster adapter cannot yet aggregate their node-local or
 fan-out responses into the database-wide result those contracts promise. Known
 cluster snapshots make that limitation explicit instead of returning an
 arbitrary node's answer.
+
+The remaining diagnostics are cluster-aware. Each all-node inspection carries
+a caller-selected node ceiling, pseudonymizes node addresses unless Full access
+explicitly enables them, and reports partial failures structurally. CLIENT
+LIST, MODULE LIST, and SLOWLOG redact identity, paths, arguments, and future
+unknown fields by default. Their explicit sensitive switches require Full
+access, while diagnostic server errors retain stable categories but discard
+server-supplied details. `redis_hotkeys` deliberately analyzes one SCAN cursor
+page and returns its continuation instead of hiding a full keyspace traversal.
 
 The RedisJSON bundle contains 17 structured tools. Enhanced JSONPath is the
 default, while legacy paths remain an explicit mode because RedisJSON changes

@@ -29,6 +29,7 @@ pub struct RedisCommand {
     required_module: Option<RedisModule>,
     name: String,
     arguments: Vec<Vec<u8>>,
+    cluster_node_limit: Option<usize>,
 }
 
 impl RedisCommand {
@@ -43,6 +44,7 @@ impl RedisCommand {
             required_module: None,
             name: name.into(),
             arguments: Vec::new(),
+            cluster_node_limit: None,
         }
     }
 
@@ -62,6 +64,16 @@ impl RedisCommand {
 
     pub(crate) fn require_module(&mut self, module: RedisModule) -> &mut Self {
         self.required_module = Some(module);
+        self
+    }
+
+    /// Request one raw response from every Redis Cluster node, rejecting the
+    /// aggregation when the discovered topology exceeds `max_nodes`.
+    ///
+    /// Direct standalone adapters ignore this hint. Custom executors can use
+    /// the public getter to provide the same bounded cluster semantics.
+    pub(crate) fn aggregate_cluster_nodes(&mut self, max_nodes: usize) -> &mut Self {
+        self.cluster_node_limit = Some(max_nodes);
         self
     }
 
@@ -89,6 +101,12 @@ impl RedisCommand {
     pub fn arguments(&self) -> &[Vec<u8>] {
         &self.arguments
     }
+
+    /// Maximum cluster nodes the originating tool permits for an explicit
+    /// all-node aggregation, when one was requested.
+    pub fn cluster_node_limit(&self) -> Option<usize> {
+        self.cluster_node_limit
+    }
 }
 
 impl fmt::Debug for RedisCommand {
@@ -100,6 +118,7 @@ impl fmt::Debug for RedisCommand {
             .field("required_module", &self.required_module)
             .field("name", &self.name)
             .field("argument_count", &self.arguments.len())
+            .field("cluster_node_limit", &self.cluster_node_limit)
             .finish()
     }
 }
@@ -135,6 +154,9 @@ pub enum RedisValue {
         kind: String,
         data: Vec<Self>,
     },
+    /// Raw, address-tagged replies from an explicitly bounded Redis Cluster
+    /// fan-out. Entries are sorted by node address by the direct adapter.
+    ClusterNodes(Vec<(String, Self)>),
     ServerError {
         code: String,
         message: Option<String>,
@@ -238,6 +260,16 @@ impl RedisValue {
                 .map(Self::into_redis_rs)
                 .collect::<Result<_, _>>()
                 .map(redis::Value::Array),
+            Self::ClusterNodes(values) => values
+                .into_iter()
+                .map(|(node, value)| {
+                    Ok((
+                        redis::Value::BulkString(node.into_bytes()),
+                        value.into_redis_rs()?,
+                    ))
+                })
+                .collect::<Result<_, RedisError>>()
+                .map(redis::Value::Map),
             Self::ServerError { code, message } => Err(RedisError::new(
                 RedisErrorKind::Server,
                 match message {
@@ -660,12 +692,67 @@ async fn execute_cluster_command(
 ) -> Result<RedisValue, RedisError> {
     let required_module = command.required_module();
     let command_name = command.name().to_string();
+    let cluster_node_limit = command.cluster_node_limit();
     let routing_key = cluster_routing_key(&command).map(Vec::from);
     let mut redis_command = redis::cmd(command.name());
     for argument in command.arguments() {
         redis_command.arg(argument);
     }
-    let result = if let Some(key) = routing_key {
+    let result = if let Some(max_nodes) = cluster_node_limit {
+        let value = connection
+            .route_command(
+                redis_command,
+                redis::cluster_routing::RoutingInfo::MultiNode((
+                    redis::cluster_routing::MultipleNodeRoutingInfo::AllNodes,
+                    None,
+                )),
+            )
+            .await?;
+        let redis::Value::Map(responses) = value else {
+            return Err(RedisError::new(
+                RedisErrorKind::InvalidResponse,
+                format!("{command_name} cluster fan-out did not return node-tagged replies"),
+            )
+            .with_code("INVALID_CLUSTER_FANOUT_RESPONSE"));
+        };
+        if responses.len() > max_nodes {
+            return Err(RedisError::new(
+                RedisErrorKind::OutputLimit,
+                format!(
+                    "cluster node result size {} exceeds requested limit {max_nodes}",
+                    responses.len()
+                ),
+            )
+            .with_code("CLUSTER_NODE_LIMIT_EXCEEDED"));
+        }
+        let mut responses = responses
+            .into_iter()
+            .map(|(node, value)| {
+                let node = match node {
+                    redis::Value::BulkString(node) => String::from_utf8(node).map_err(|_| {
+                        RedisError::new(
+                            RedisErrorKind::InvalidResponse,
+                            "cluster response contained a non-UTF-8 node address",
+                        )
+                        .with_code("INVALID_CLUSTER_NODE_ADDRESS")
+                    })?,
+                    redis::Value::SimpleString(node) => node,
+                    other => {
+                        return Err(RedisError::new(
+                            RedisErrorKind::InvalidResponse,
+                            format!(
+                                "cluster response contained an invalid node address: {other:?}"
+                            ),
+                        )
+                        .with_code("INVALID_CLUSTER_NODE_ADDRESS"));
+                    }
+                };
+                Ok((node, RedisValue::from(value)))
+            })
+            .collect::<Result<Vec<_>, RedisError>>()?;
+        responses.sort_unstable_by(|left, right| left.0.cmp(&right.0));
+        return Ok(RedisValue::ClusterNodes(responses));
+    } else if let Some(key) = routing_key {
         let route =
             redis::cluster_routing::Route::with_key(&key, redis::cluster_routing::SlotAddr::Master);
         connection
@@ -705,6 +792,19 @@ mod tests {
         assert!(debug.contains("argument_count: 2"));
         assert!(!debug.contains("secret-key"));
         assert!(!debug.contains("secret-value"));
+    }
+
+    #[test]
+    fn command_debug_exposes_only_safe_cluster_aggregation_metadata() {
+        let mut command =
+            RedisCommand::new("redis_pubsub_channels", AccessMode::ReadOnly, "PUBSUB");
+        command
+            .arg("CHANNELS")
+            .arg("secret-pattern")
+            .aggregate_cluster_nodes(8);
+        let debug = format!("{command:?}");
+        assert!(debug.contains("cluster_node_limit: Some(8)"));
+        assert!(!debug.contains("secret-pattern"));
     }
 
     #[test]
@@ -805,6 +905,16 @@ mod tests {
         )]);
         let redis_value = value.clone().into_redis_rs().expect("convert to redis-rs");
         assert_eq!(RedisValue::from(redis_value), value);
+    }
+
+    #[test]
+    fn cluster_node_values_convert_without_exposing_redis_rs_publicly() {
+        let value = RedisValue::ClusterNodes(vec![(
+            "127.0.0.1:6379".to_string(),
+            RedisValue::Array(vec![RedisValue::BulkString(b"events".to_vec())]),
+        )]);
+        let converted = value.into_redis_rs().expect("convert cluster replies");
+        assert!(matches!(converted, redis::Value::Map(entries) if entries.len() == 1));
     }
 
     #[test]

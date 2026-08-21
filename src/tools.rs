@@ -3,6 +3,7 @@
 mod data_structures;
 mod essentials;
 mod json_tools;
+mod pubsub;
 mod search;
 mod streams;
 
@@ -23,8 +24,8 @@ use tower_mcp::{
 };
 
 use crate::{
-    AccessMode, NativeRedisInvocation, OutputBudget, RedisCommand, RedisInvocationEngine,
-    RedisModule, RedisValue, RedisVersion, ToolBundle,
+    AccessMode, NativeRedisInvocation, OutputBudget, RedisCommand, RedisDeployment,
+    RedisInvocationEngine, RedisModule, RedisValue, RedisVersion, ToolBundle,
     invocation::{redis_value_collection_entries, redis_value_to_json},
 };
 
@@ -63,6 +64,10 @@ impl ToolState {
 
     fn redis_version(&self) -> Option<RedisVersion> {
         self.invocation_engine.capabilities().redis_version()
+    }
+
+    fn deployment(&self) -> RedisDeployment {
+        self.invocation_engine.capabilities().deployment()
     }
 
     fn module_version(&self, module: RedisModule) -> Option<RedisVersion> {
@@ -273,6 +278,7 @@ pub(crate) fn add_read_only_tools(
         router = router.tool(type_tool(state.clone()));
         router = router.tool(ttl_tool(state.clone()));
         router = essentials::add_read_tools(router, state.clone());
+        router = pubsub::add_read_tools(router, state.clone());
     }
     if bundles.contains(&ToolBundle::DataStructures) {
         router = data_structures::add_read_tools(router, state.clone());
@@ -298,6 +304,7 @@ pub(crate) fn add_write_tools(
     if bundles.contains(&ToolBundle::Essentials) {
         router = router.tool(set_tool(state.clone()));
         router = essentials::add_write_tools(router, state.clone());
+        router = pubsub::add_write_tools(router, state.clone());
     }
     if bundles.contains(&ToolBundle::DataStructures) {
         router = data_structures::add_write_tools(router, state.clone());

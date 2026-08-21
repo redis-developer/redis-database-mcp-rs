@@ -225,7 +225,7 @@
   },
   "current_gate": {
     "met": false,
-    "blockers": [29, 30, 31, 32, 33]
+    "blockers": [30, 31, 32, 33]
   },
   "contract_scorecard": {
     "scale": {
@@ -901,10 +901,17 @@
       "id": "pubsub.request_response",
       "redis_mcp_tools": ["publish"],
       "redisctl_tools": ["redis_pubsub_channels", "redis_pubsub_numsub"],
-      "library_tools": [],
-      "disposition": "planned",
-      "issue": 29,
-      "reason": "Issue #29 adds bounded publication and channel inspection with explicit cluster behavior."
+      "library_tools": [
+        "redis_publish",
+        "redis_spublish",
+        "redis_pubsub_channels",
+        "redis_pubsub_numsub",
+        "redis_pubsub_numpat",
+        "redis_pubsub_shardchannels",
+        "redis_pubsub_shardnumsub"
+      ],
+      "disposition": "implemented",
+      "reason": "Binary-safe global and Redis 7+ sharded publication are paired with bounded channel, subscriber, and pattern inspection. Cluster publication is slot-routed; inspection has caller-selected node and result ceilings, deterministic deduplication or count aggregation, explicit completeness, and partial server-failure metadata, with live RESP2, RESP3, ACL, and three-master Cluster coverage."
     },
     {
       "id": "pubsub.sessions",

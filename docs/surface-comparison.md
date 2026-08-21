@@ -19,7 +19,7 @@ matrix.
 | --- | --- | ---: | ---: |
 | [`redis/mcp-redis`](https://github.com/redis/mcp-redis) | `5945b0b5b098c9a1882075a161a6a58f23de81ed` | 0.5.1 | 53 |
 | [`redisctl`](https://github.com/redis/redisctl) | `955f4b18f4266c332bc640cada67d125d23edde8` | read-only inventory | 132 |
-| `redis-mcp` | current catalog | 0.1 development line | 151 |
+| `redis-mcp` | current catalog | 0.1 development line | 158 |
 
 The redisctl baseline is a compatibility and breadth reference, not a promise
 to copy application-specific profile fields, aliases, or weak contracts.
@@ -28,8 +28,8 @@ to copy application-specific profile fields, aliases, or weak contracts.
 
 | Baseline | Implemented | Planned | Superseded | Excluded |
 | --- | ---: | ---: | ---: | ---: |
-| `redis/mcp-redis` | 45 | 6 | 1 | 1 |
-| redisctl | 107 | 19 | 1 | 5 |
+| `redis/mcp-redis` | 46 | 5 | 1 | 1 |
+| redisctl | 109 | 17 | 1 | 5 |
 
 The dispositions mean:
 
@@ -60,9 +60,14 @@ binary-encoding contracts.
 
 | Capability | Competitor tools | Library issue |
 | --- | --- | ---: |
-| bounded Pub/Sub | `publish` | #29 |
 | subscription sessions | `subscribe`, `psubscribe`, `read_messages`, `unsubscribe` | #30 |
 | diagnostics | `client_list` | #31 |
+
+Request/response Pub/Sub now leads the pinned competitor: binary-safe global
+and sharded publication are paired with bounded channel, subscriber, and
+pattern inspection. Cluster publication is slot-routed, while inspection uses
+a caller-bounded all-node fan-out with deterministic aggregation and explicit
+partial-failure metadata.
 
 `scan_all_keys` is intentionally superseded by cursor-based `redis_scan`; the
 library will not disguise a full keyspace materialization as a safe scan.
@@ -223,8 +228,8 @@ The roadmap is complete only when all of these are true:
 5. The checked-in `current_gate.met` value agrees with the gate calculated by
    the test.
 
-The gate is currently **not met**. Five roadmap blockers remain after completing
-the Streams, RedisJSON, and Search families.
+The gate is currently **not met**. Four roadmap blockers remain after completing
+the Streams, RedisJSON, Search, and request/response Pub/Sub families.
 
 ## Updating the scorecard
 

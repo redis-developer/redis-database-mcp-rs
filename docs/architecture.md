@@ -28,7 +28,7 @@ credentials, and target selection do not appear in the default tool schemas.
   authorization, timeout, connection, request, response, capability, module,
   server, and fallback categories.
 - `DirectRedis` is the standalone convenience adapter that converts these
-  types to and from redis-rs 1.5 and uses its reconnecting connection manager.
+  types to and from redis-rs 1.6 and uses its reconnecting connection manager.
 - `DirectRedisCluster` is the fixed-cluster convenience adapter. It discovers
   topology from configured seed URLs and delegates redirection, topology
   refresh, and supported multi-slot command splitting to redis-rs.
@@ -135,7 +135,7 @@ which side effects that host permits. These decisions are orthogonal.
 
 The public taxonomy is `essentials`, `data_structures`, `json`, `search`,
 `diagnostics`, `admin`, `bulk`, and `raw`. The curated default enables
-`essentials`, `data_structures`, and `diagnostics`, totaling 109 tools. The
+`essentials`, `data_structures`, and `diagnostics`, totaling 116 tools. The
 module-backed `json` and `search` bundles are explicitly selected so a default
 router never advertises capabilities that its Redis target may not provide.
 Empty bundles are reserved for coherent catalog growth and do not expose
@@ -195,6 +195,26 @@ Known module versions preflight whole-tool requirements and dialect/vector
 options add conditional version checks. Same-slot index names, prefixes, and
 documents are live-tested through the cluster adapter without promising
 cross-node Search aggregation.
+
+The Essentials bundle also contains seven request/response Pub/Sub tools.
+`redis_publish` and Redis 7+ `redis_spublish` accept binary-safe channels and
+payloads, cap payloads at 1 MiB, and report the receiver count with its scope.
+Global publication propagates cluster-wide, while the Redis reply counts only
+subscribers connected to the routed node; sharded publication is routed by the
+channel slot and has the same node-local count caveat.
+
+The five inspection tools cover `PUBSUB CHANNELS`, `NUMSUB`, `NUMPAT`,
+`SHARDCHANNELS`, and `SHARDNUMSUB`. Channel lists have explicit caller and
+global output limits, count queries have bounded binary-safe inputs, and every
+cluster fan-out has an explicit `max_cluster_nodes` ceiling. The direct cluster
+adapter returns sorted address-tagged node replies instead of accepting
+redis-rs' opaque aggregate. Handlers then byte-sort and deduplicate channel
+names, sum subscriber and pattern counts, and expose server-side node failures
+alongside an explicit completeness flag. Transport failures fail the whole
+request rather than presenting partial data as complete. Custom executors can
+read `RedisCommand::cluster_node_limit` and return `RedisValue::ClusterNodes`
+to preserve the same behavior. Long-lived subscription sessions remain a
+separate lifecycle surface.
 
 Raw commands remain a separate opt-in even though their metadata belongs to the
 `raw` bundle. The MCP tool requires full access; direct native invocations are

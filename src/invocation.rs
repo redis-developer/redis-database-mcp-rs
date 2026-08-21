@@ -559,6 +559,11 @@ pub(crate) fn redis_value_collection_entries(value: &RedisValue) -> usize {
         RedisValue::Push { data, .. } => data.iter().fold(data.len(), |count, value| {
             count.saturating_add(redis_value_collection_entries(value))
         }),
+        RedisValue::ClusterNodes(values) => {
+            values.iter().fold(values.len(), |count, (_, value)| {
+                count.saturating_add(redis_value_collection_entries(value))
+            })
+        }
         _ => 0,
     }
 }
@@ -607,6 +612,15 @@ pub(crate) fn redis_value_to_json(value: &RedisValue) -> JsonValue {
         RedisValue::Push { kind, data } => json!({
             "kind": kind,
             "data": data.iter().map(redis_value_to_json).collect::<Vec<_>>(),
+        }),
+        RedisValue::ClusterNodes(values) => json!({
+            "cluster_nodes": values
+                .iter()
+                .map(|(node, value)| json!({
+                    "node": node,
+                    "value": redis_value_to_json(value),
+                }))
+                .collect::<Vec<_>>(),
         }),
         RedisValue::ServerError { code, message } => {
             json!({ "server_error": { "code": code, "message": message } })

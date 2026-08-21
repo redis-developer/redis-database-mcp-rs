@@ -202,6 +202,13 @@ impl ToolMetadata {
     /// catalog filtering and stable preflight errors.
     pub fn capability_requirements(self) -> ToolCapabilityRequirements {
         let minimum_redis_version = match self.name {
+            "redis_publish" => Some(RedisVersion::new(2, 0, 0)),
+            "redis_pubsub_channels" | "redis_pubsub_numsub" | "redis_pubsub_numpat" => {
+                Some(RedisVersion::new(2, 8, 0))
+            }
+            "redis_spublish" | "redis_pubsub_shardchannels" | "redis_pubsub_shardnumsub" => {
+                Some(RedisVersion::new(7, 0, 0))
+            }
             "redis_dump" => Some(RedisVersion::new(2, 6, 0)),
             "redis_touch" | "redis_hstrlen" => Some(RedisVersion::new(3, 2, 0)),
             "redis_memory_usage" | "redis_object_inspect" | "redis_unlink" => {
@@ -286,6 +293,13 @@ impl ToolMetadata {
             "redis_getrange" => &["GETRANGE"],
             "redis_dump" => &["DUMP"],
             "redis_object_inspect" => &["OBJECT"],
+            "redis_publish" => &["PUBLISH"],
+            "redis_spublish" => &["SPUBLISH"],
+            "redis_pubsub_channels"
+            | "redis_pubsub_numsub"
+            | "redis_pubsub_numpat"
+            | "redis_pubsub_shardchannels"
+            | "redis_pubsub_shardnumsub" => &["PUBSUB"],
             "redis_hget" => &["HGET", "EXISTS"],
             "redis_hgetall" => &["HGETALL"],
             "redis_hexists" => &["HEXISTS", "EXISTS"],
@@ -493,6 +507,8 @@ impl ToolMetadata {
             | "redis_ft_dictdump"
             | "redis_ft_syndump"
             | "redis_vector_get_hash"
+            | "redis_pubsub_channels"
+            | "redis_pubsub_shardchannels"
             | "redis_command" => ToolOutputPolicy::BudgetGuarded,
             _ => ToolOutputPolicy::IntrinsicallyBounded,
         }
@@ -586,6 +602,36 @@ pub(crate) const CATALOG: &[ToolMetadata] = &[
     },
     ToolMetadata {
         name: "redis_object_inspect",
+        bundle: ToolBundle::Essentials,
+        required_access: AccessMode::ReadOnly,
+        requires_raw_opt_in: false,
+    },
+    ToolMetadata {
+        name: "redis_pubsub_channels",
+        bundle: ToolBundle::Essentials,
+        required_access: AccessMode::ReadOnly,
+        requires_raw_opt_in: false,
+    },
+    ToolMetadata {
+        name: "redis_pubsub_numsub",
+        bundle: ToolBundle::Essentials,
+        required_access: AccessMode::ReadOnly,
+        requires_raw_opt_in: false,
+    },
+    ToolMetadata {
+        name: "redis_pubsub_numpat",
+        bundle: ToolBundle::Essentials,
+        required_access: AccessMode::ReadOnly,
+        requires_raw_opt_in: false,
+    },
+    ToolMetadata {
+        name: "redis_pubsub_shardchannels",
+        bundle: ToolBundle::Essentials,
+        required_access: AccessMode::ReadOnly,
+        requires_raw_opt_in: false,
+    },
+    ToolMetadata {
+        name: "redis_pubsub_shardnumsub",
         bundle: ToolBundle::Essentials,
         required_access: AccessMode::ReadOnly,
         requires_raw_opt_in: false,
@@ -940,6 +986,18 @@ pub(crate) const CATALOG: &[ToolMetadata] = &[
     },
     ToolMetadata {
         name: "redis_set",
+        bundle: ToolBundle::Essentials,
+        required_access: AccessMode::ReadWrite,
+        requires_raw_opt_in: false,
+    },
+    ToolMetadata {
+        name: "redis_publish",
+        bundle: ToolBundle::Essentials,
+        required_access: AccessMode::ReadWrite,
+        requires_raw_opt_in: false,
+    },
+    ToolMetadata {
+        name: "redis_spublish",
         bundle: ToolBundle::Essentials,
         required_access: AccessMode::ReadWrite,
         requires_raw_opt_in: false,

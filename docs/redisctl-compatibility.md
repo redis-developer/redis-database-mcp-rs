@@ -35,7 +35,7 @@ Redis Stack behavior is covered primarily by `tests/redis_tools.rs` and
 
 ## Current overlap
 
-The library implements 102 names from the baseline: 67 default tools, 34
+The library implements 104 names from the baseline: 69 default tools, 34
 optional RedisJSON/Search tools, and the separately enabled raw tool. One typed
 `redis_object_inspect` additionally covers three redisctl OBJECT tools without
 copying their names. Matching a name does not imply an identical contract:
@@ -50,6 +50,8 @@ copying their names. Matching a name does not imply an identical contract:
 | `redis_type` | `key` matches; redisctl also injects target fields. | Structured key/type result. |
 | `redis_ttl` | `key` matches; redisctl also injects target fields. | Structured TTL plus `exists` and `persistent` flags. |
 | `redis_set` | `key` and `value` match; binary encodings and typed `condition`/`expiration` objects are intentional schema extensions. | NX/XX, GET, EX/PX/EXAT/PXAT/KEEPTTL are mutually valid choices. Results distinguish applied/no-op, prior existence, nil, binary encoding, and explicitly omitted oversized prior values. |
+| `redis_pubsub_channels` | The pattern corresponds; the library makes it a binary-safe value and requires a bounded result limit plus a cluster-node ceiling. | Results are byte-sorted and deduplicated. Cluster fan-out reports completeness and node failures instead of implying that one node is the whole cluster. |
+| `redis_pubsub_numsub` | Channel names correspond; the library uses bounded binary-safe channel objects and a cluster-node ceiling. | Returns structured per-channel counts, deduplicates requested names, and sums node-local counts deterministically in Cluster. |
 | `redis_del` | `keys` matches; redisctl also injects target fields. | Enforces 1–1000 keys and returns requested/deleted counts. |
 | `redis_command` | redisctl uses `args`, `dry_run`, `url`, and `profile`; the library uses `arguments` and fixed-target configuration. | Structured RESP output delegates to the public binary-safe `RedisInvocationEngine`, which centralizes access classification, raw policy, timeout, capabilities, redaction, and output budgets. This is intentionally not wire-compatible today. |
 
@@ -77,6 +79,10 @@ The library additionally exposes `redis_hscan`, `redis_hincrbyfloat`,
 `redis_xgroup_create`, `redis_xgroup_setid`, `redis_xgroup_createconsumer`,
 `redis_xreadgroup`, `redis_xack`, `redis_xclaim`, `redis_xautoclaim`,
 `redis_xdel`, `redis_xgroup_destroy`, and `redis_xgroup_delconsumer`.
+Request/response Pub/Sub additionally includes binary-safe `redis_publish`,
+Redis 7+ `redis_spublish`, `redis_pubsub_numpat`,
+`redis_pubsub_shardchannels`, and `redis_pubsub_shardnumsub`, all with typed
+receiver/count results and explicit cluster semantics.
 These are command-surface improvements rather than redisctl name overlap. Hash
 reads distinguish a missing hash, missing field, and empty value;
 field-expiration tools are capability-gated to Redis 7.4 or newer and return
@@ -190,7 +196,7 @@ hybrid search, plus explicit `redis_ft_cursor_read` and
 
 ## Bundle mapping direction
 
-- `essentials`: the broadly useful subset of redisctl `server` and `keys`
+- `essentials`: broadly useful server, key, and request/response Pub/Sub tools
 - `data_structures`: native hashes, lists, sets, sorted sets, and streams
 - `json`: explicitly selected RedisJSON operations
 - `search`: Redis Query Engine (`FT.*`) operations and module/version behavior
@@ -200,9 +206,9 @@ hybrid search, plus explicit `redis_ft_cursor_read` and
 - `raw`: explicitly opted-in command execution
 
 Alias management is not automatically assigned to the Redis library: its
-storage, lifecycle, and product semantics must be evaluated separately. Pub/Sub
-inspection commands may be ordinary bounded diagnostics, but subscription
-sessions remain outside request/response tools.
+storage, lifecycle, and product semantics must be evaluated separately.
+Pub/Sub publication and inspection are bounded request/response tools;
+subscription sessions remain a distinct lifecycle surface.
 
 ## Compatibility rules for later catalog growth
 

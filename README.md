@@ -12,16 +12,19 @@ Redis Cloud and Redis Enterprise APIs. The Rust package is simply redis-mcp.
 
 ## Curated default
 
-The standalone default exposes 109 broadly useful tools:
+The standalone default exposes 116 broadly useful tools:
 
 - read-only essentials: `redis_ping`, `redis_dbsize`, `redis_scan`,
   `redis_get`, `redis_type`, `redis_ttl`, `redis_exists`, `redis_mget`,
   `redis_strlen`, `redis_memory_usage`, `redis_randomkey`, `redis_getrange`,
-  `redis_dump`, `redis_object_inspect`
+  `redis_dump`, `redis_object_inspect`, `redis_pubsub_channels`,
+  `redis_pubsub_numsub`, `redis_pubsub_numpat`,
+  `redis_pubsub_shardchannels`, `redis_pubsub_shardnumsub`
 - read-write essentials: `redis_set`, `redis_expire`, `redis_persist`,
   `redis_mset`, `redis_incr`, `redis_append`, `redis_getex`, `redis_setrange`,
   `redis_decr`, `redis_decrby`, `redis_incrby`, `redis_incrbyfloat`,
-  `redis_copy`, `redis_touch`, `redis_restore`
+  `redis_copy`, `redis_touch`, `redis_restore`, `redis_publish`,
+  `redis_spublish`
 - full-access essentials: `redis_del`, `redis_unlink`, `redis_getdel`,
   `redis_copy_replace`, `redis_rename`, `redis_renamenx`,
   `redis_restore_replace`
@@ -68,6 +71,10 @@ Side-effectful value-returning commands (`SET GET`, `GETEX`, `GETDEL`, counted
 list and sorted-set pops, `LMOVE`, `XREADGROUP`, `XCLAIM`, `XAUTOCLAIM`, and
 `JSON.ARRPOP`) accept explicit byte caps and report
 oversized returned values as omitted while preserving the mutation outcome.
+Pub/Sub publication and inspection are binary-safe too. Channel enumeration
+requires a result limit; cluster inspection requires a node limit, deduplicates
+or sums node-local replies deterministically, and reports partial node failures.
+`SPUBLISH` and shard inspection are capability-gated to Redis 7.0 or newer.
 
 See [the spike decision record](docs/spike.md) for the tested architecture,
 REPL findings, and redisctl migration sequence.
@@ -283,26 +290,29 @@ three-node Cluster routing.
 
 CI runs the complete suite on Redis 8.8 and the live router/stdio contract on
 every currently supported Redis Open Source series: 6.2, 7.2, 7.4, 8.0, 8.2,
-8.4, 8.6, and 8.8. Live tests exercise both RESP2 and RESP3, the 109-tool curated
+8.4, 8.6, and 8.8. Live tests exercise both RESP2 and RESP3, the 116-tool curated
 catalog, binary and nil responses, conditional and absolute expiration,
 bounded serialization/restore, complete bounded list semantics, typed
 hash-field expiration, binary-safe membership, budgeted set algebra, complete
 bounded sorted-set semantics, complete Streams and consumer-group workflows,
-finite blocking reads, ACL failures, bounded connection loss and
+finite blocking reads, binary-safe Pub/Sub publication and inspection, ACL
+failures, bounded connection loss and
 recovery, and the real `redis-mcp-server` stdio process. A separate job pins
 the official
 `redis/redis-stack-server:7.4.0-v8` image and runs the JSON/Search lifecycle.
 Dedicated three-master cluster jobs run on Redis 6.2 and 8.8 and exercise
-redirection, multi-slot aggregation, same-slot copy/rename/list movement and
-set algebra, single- and same-slot multi-stream reads, stable cross-slot failures, and the cluster-configured stdio
-server. The version list follows the
+redirection, multi-slot aggregation, bounded all-node Pub/Sub inspection,
+slot-routed publication, same-slot copy/rename/list movement and set algebra,
+single- and same-slot multi-stream reads, stable cross-slot failures, and the
+cluster-configured stdio server. The version list follows the
 [Redis Open Source version-management table](https://redis.io/docs/latest/operate/oss_and_stack/install/version-mgmt/).
 
 ## Non-goals
 
 - Cloud or Enterprise REST APIs
 - redisctl profiles or per-tool target URLs
-- transactions, Pub/Sub, MONITOR, or other streaming/session-oriented commands
+- transactions, Pub/Sub subscription sessions, MONITOR, or other
+  streaming/session-oriented commands
 - terminal tokenization, history, completion, result rendering, or an
   application-specific CLI/REPL frontend
 

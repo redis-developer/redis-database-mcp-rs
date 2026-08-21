@@ -1,5 +1,6 @@
 use std::time::Duration;
 
+use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64};
 use redis_mcp::{
     AccessMode, CapabilityStatus, DirectRedis, NativeRedisInvocation, OutputBudget,
     RawCommandPolicy, RedisDeployment, RedisInvocationEngine, RedisMcp, RedisModule, RedisValue,
@@ -279,6 +280,129 @@ async fn live_redis_round_trip_through_router() {
             .await
             .expect("delete key");
         assert_eq!(delete.structured_content.as_ref().unwrap()["deleted"], 1);
+    }
+}
+
+#[tokio::test]
+async fn live_pubsub_publish_and_inspection_are_binary_safe_in_resp2_and_resp3() {
+    let Some(redis) = TestRedis::start().await else {
+        return;
+    };
+    let capabilities = DirectRedis::connect(&redis.url)
+        .await
+        .expect("connect for Pub/Sub capability discovery")
+        .discover_capabilities()
+        .await
+        .expect("discover Pub/Sub capabilities");
+
+    for protocol in ["resp2", "resp3"] {
+        let url = with_protocol(&redis.url, protocol);
+        let redis_client = redis::Client::open(url.as_str()).expect("open Pub/Sub subscriber");
+        let mut subscriber = redis_client
+            .get_async_pubsub()
+            .await
+            .expect("connect Pub/Sub subscriber");
+        let mut channel = test_key(&format!("pubsub:{protocol}")).into_bytes();
+        channel.extend([0xff, 0x00]);
+        subscriber
+            .subscribe(channel.clone())
+            .await
+            .expect("subscribe to binary channel");
+        let pattern = test_key(&format!("pubsub-pattern:{protocol}:*"));
+        subscriber
+            .psubscribe(pattern)
+            .await
+            .expect("subscribe to pattern");
+
+        let client = router_client(&url, AccessMode::ReadWrite).await;
+        let channel_base64 = BASE64.encode(&channel);
+        let channels = client
+            .call_tool(
+                "redis_pubsub_channels",
+                serde_json::json!({
+                    "pattern": {"value": channel_base64, "encoding": "base64"},
+                    "limit": 4
+                }),
+            )
+            .await
+            .expect("PUBSUB CHANNELS")
+            .structured_content
+            .expect("structured PUBSUB CHANNELS");
+        assert_eq!(channels["count"], 1, "{protocol}");
+        assert_eq!(
+            channels["channels"][0]["value"], channel_base64,
+            "{protocol}"
+        );
+        assert_eq!(channels["channels"][0]["encoding"], "base64", "{protocol}");
+
+        let counts = client
+            .call_tool(
+                "redis_pubsub_numsub",
+                serde_json::json!({
+                    "channels": [{"value": channel_base64, "encoding": "base64"}]
+                }),
+            )
+            .await
+            .expect("PUBSUB NUMSUB")
+            .structured_content
+            .expect("structured PUBSUB NUMSUB");
+        assert_eq!(counts["counts"][0]["subscribers"], 1, "{protocol}");
+
+        let patterns = client
+            .call_tool("redis_pubsub_numpat", serde_json::json!({}))
+            .await
+            .expect("PUBSUB NUMPAT")
+            .structured_content
+            .expect("structured PUBSUB NUMPAT");
+        assert!(
+            patterns["pattern_count"]
+                .as_u64()
+                .is_some_and(|count| count >= 1)
+        );
+
+        let published = client
+            .call_tool(
+                "redis_publish",
+                serde_json::json!({
+                    "channel": {"value": channel_base64, "encoding": "base64"},
+                    "message": {"value": "/gE=", "encoding": "base64"}
+                }),
+            )
+            .await
+            .expect("binary PUBLISH")
+            .structured_content
+            .expect("structured binary PUBLISH");
+        assert_eq!(published["receivers"], 1, "{protocol}");
+        assert_eq!(published["delivery"], "global", "{protocol}");
+
+        if capabilities
+            .redis_version()
+            .is_some_and(|version| version >= RedisVersion::new(7, 0, 0))
+        {
+            let published = client
+                .call_tool(
+                    "redis_spublish",
+                    serde_json::json!({
+                        "channel": {"value": "shard:{events}"},
+                        "message": {"value": "hello"}
+                    }),
+                )
+                .await
+                .expect("SPUBLISH")
+                .structured_content
+                .expect("structured SPUBLISH");
+            assert_eq!(published["receivers"], 0, "{protocol}");
+            let shard_channels = client
+                .call_tool(
+                    "redis_pubsub_shardchannels",
+                    serde_json::json!({"pattern": {"value": "shard:*"}, "limit": 4}),
+                )
+                .await
+                .expect("PUBSUB SHARDCHANNELS")
+                .structured_content
+                .expect("structured PUBSUB SHARDCHANNELS");
+            assert_eq!(shard_channels["count"], 0, "{protocol}");
+        }
     }
 }
 
@@ -3070,6 +3194,7 @@ async fn live_acl_failures_are_classified_without_leaking_credentials() {
         .arg("+zscore")
         .arg("+xlen")
         .arg("+exists")
+        .arg("+pubsub")
         .query_async::<()>(&mut connection)
         .await
         .expect("create restricted ACL user");
@@ -3199,6 +3324,32 @@ async fn live_acl_failures_are_classified_without_leaking_credentials() {
         allowed_stream.structured_content.as_ref().unwrap()["length"],
         1
     );
+
+    let allowed_pubsub_inspection = client
+        .call_tool("redis_pubsub_numpat", serde_json::json!({}))
+        .await
+        .expect("ACL-allowed PUBSUB NUMPAT");
+    assert!(!allowed_pubsub_inspection.is_error);
+
+    let denied_publish = client
+        .call_tool(
+            "redis_publish",
+            serde_json::json!({
+                "channel": {"value": "acl:denied"},
+                "message": {"value": "blocked-pubsub-value"}
+            }),
+        )
+        .await
+        .expect("ACL-denied PUBLISH is represented as a tool result");
+    assert!(denied_publish.is_error);
+    let denied_publish =
+        serde_json::to_string(&denied_publish).expect("serialize PUBLISH ACL denial");
+    assert!(
+        denied_publish.contains("[Authorization]"),
+        "{denied_publish}"
+    );
+    assert!(!denied_publish.contains(password));
+    assert!(!denied_publish.contains("blocked-pubsub-value"));
 
     let full_client = router_client(restricted_url.as_str(), AccessMode::Full).await;
     let denied_list = full_client

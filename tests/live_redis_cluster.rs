@@ -2,9 +2,10 @@
 
 use std::{collections::BTreeMap, io, net::TcpListener};
 
+use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64};
 use redis_mcp::{
     AccessMode, CapabilityStatus, DirectRedis, DirectRedisCluster, RawCommandPolicy,
-    RedisDeployment, RedisExecutor, RedisMcp, RedisModule, ToolBundle,
+    RedisDeployment, RedisExecutor, RedisMcp, RedisModule, RedisVersion, ToolBundle,
 };
 use redis_server_wrapper::{Error as RedisServerError, RedisCluster, RedisClusterHandle};
 use tower_mcp::client::{ChannelTransport, McpClient, StdioClientTransport};
@@ -625,6 +626,149 @@ async fn search_routes_same_slot_index_documents_and_aggregates_in_cluster() {
         .await
         .expect("route Cluster FT.DROPINDEX");
     assert!(!dropped.is_error, "{dropped:?}");
+}
+
+#[tokio::test]
+async fn pubsub_cluster_aggregation_is_bounded_deduplicated_and_slot_routed() {
+    let _cluster_guard = CLUSTER_TEST_LOCK.lock().await;
+    let Some(cluster) = TestCluster::start().await else {
+        return;
+    };
+
+    let mut channel = format!("redis-mcp:cluster:pubsub:{{{}}}", std::process::id()).into_bytes();
+    channel.extend([0xff, 0x00]);
+    let channel_base64 = BASE64.encode(&channel);
+    let mut subscribers = Vec::new();
+    for seed_url in &cluster.seed_urls {
+        let client = redis::Client::open(seed_url.as_str()).expect("open cluster Pub/Sub node");
+        let mut subscriber = client
+            .get_async_pubsub()
+            .await
+            .expect("connect cluster Pub/Sub node");
+        subscriber
+            .subscribe(channel.clone())
+            .await
+            .expect("subscribe on cluster node");
+        subscribers.push(subscriber);
+    }
+
+    let executor = DirectRedisCluster::connect(&cluster.seed_urls)
+        .await
+        .expect("connect cluster Pub/Sub adapter");
+    let capabilities = executor
+        .discover_capabilities()
+        .await
+        .expect("discover cluster Pub/Sub capabilities");
+    let redis_version = capabilities.redis_version();
+    let router = RedisMcp::builder(executor)
+        .access(AccessMode::ReadWrite)
+        .capabilities(capabilities)
+        .build();
+    let client = McpClient::connect(ChannelTransport::new(router))
+        .await
+        .expect("connect cluster Pub/Sub MCP client");
+    client
+        .initialize("redis-mcp-cluster-pubsub-test", "0")
+        .await
+        .expect("initialize cluster Pub/Sub MCP client");
+
+    let channels = client
+        .call_tool(
+            "redis_pubsub_channels",
+            serde_json::json!({
+                "pattern": {"value": channel_base64, "encoding": "base64"},
+                "limit": 4,
+                "max_cluster_nodes": cluster.seed_urls.len()
+            }),
+        )
+        .await
+        .expect("cluster PUBSUB CHANNELS")
+        .structured_content
+        .expect("structured cluster PUBSUB CHANNELS");
+    assert_eq!(channels["count"], 1);
+    assert_eq!(channels["channels"][0]["value"], channel_base64);
+    assert_eq!(channels["channels"][0]["encoding"], "base64");
+    assert_eq!(
+        channels["cluster"]["nodes_queried"],
+        cluster.seed_urls.len()
+    );
+    assert_eq!(channels["cluster"]["complete"], true);
+
+    let counts = client
+        .call_tool(
+            "redis_pubsub_numsub",
+            serde_json::json!({
+                "channels": [{"value": channel_base64, "encoding": "base64"}],
+                "max_cluster_nodes": cluster.seed_urls.len()
+            }),
+        )
+        .await
+        .expect("cluster PUBSUB NUMSUB")
+        .structured_content
+        .expect("structured cluster PUBSUB NUMSUB");
+    assert_eq!(counts["counts"][0]["subscribers"], cluster.seed_urls.len());
+
+    let published = client
+        .call_tool(
+            "redis_publish",
+            serde_json::json!({
+                "channel": {"value": channel_base64, "encoding": "base64"},
+                "message": {"value": "/gE=", "encoding": "base64"}
+            }),
+        )
+        .await
+        .expect("cluster PUBLISH")
+        .structured_content
+        .expect("structured cluster PUBLISH");
+    assert_eq!(published["receivers"], 1);
+    assert_eq!(published["receiver_count_scope"], "executing_node");
+
+    let bounded = client
+        .call_tool(
+            "redis_pubsub_channels",
+            serde_json::json!({"limit": 4, "max_cluster_nodes": 2}),
+        )
+        .await
+        .expect("cluster node limit tool result");
+    assert!(bounded.is_error);
+    assert!(
+        serde_json::to_string(&bounded)
+            .expect("serialize cluster node limit")
+            .contains("CLUSTER_NODE_LIMIT_EXCEEDED")
+    );
+
+    if redis_version.is_some_and(|version| version >= RedisVersion::new(7, 0, 0)) {
+        let shard_channel = format!("redis-mcp:cluster:shard:{{{}}}", std::process::id());
+        let published = client
+            .call_tool(
+                "redis_spublish",
+                serde_json::json!({
+                    "channel": {"value": shard_channel},
+                    "message": {"value": "hello"}
+                }),
+            )
+            .await
+            .expect("cluster SPUBLISH")
+            .structured_content
+            .expect("structured cluster SPUBLISH");
+        assert_eq!(published["receivers"], 0);
+        let counts = client
+            .call_tool(
+                "redis_pubsub_shardnumsub",
+                serde_json::json!({
+                    "channels": [{"value": shard_channel}],
+                    "max_cluster_nodes": cluster.seed_urls.len()
+                }),
+            )
+            .await
+            .expect("cluster PUBSUB SHARDNUMSUB")
+            .structured_content
+            .expect("structured cluster PUBSUB SHARDNUMSUB");
+        assert_eq!(counts["counts"][0]["subscribers"], 0);
+        assert_eq!(counts["cluster"]["nodes_queried"], cluster.seed_urls.len());
+    }
+
+    drop(subscribers);
 }
 
 #[tokio::test]

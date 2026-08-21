@@ -45,6 +45,19 @@ impl RedisExecutor for StubRedis {
                     RedisValue::Integer(1)
                 }
             }
+            "PUBLISH" | "SPUBLISH" => RedisValue::Integer(1),
+            "PUBSUB" => match command.arguments().first().map(Vec::as_slice) {
+                Some(b"CHANNELS" | b"SHARDCHANNELS") => RedisValue::Array(vec![
+                    RedisValue::BulkString(b"events:alpha".to_vec()),
+                    RedisValue::BulkString(vec![0xff, 0x00]),
+                ]),
+                Some(b"NUMSUB" | b"SHARDNUMSUB") => RedisValue::Array(vec![
+                    RedisValue::BulkString(b"events:alpha".to_vec()),
+                    RedisValue::Integer(2),
+                ]),
+                Some(b"NUMPAT") => RedisValue::Integer(1),
+                _ => RedisValue::Nil,
+            },
             "EXISTS" => RedisValue::Integer(1),
             "MGET" => RedisValue::Array(vec![
                 RedisValue::BulkString(b"hello".to_vec()),
@@ -547,6 +560,295 @@ async fn fixed_client(executor: FixedRedis, capabilities: RedisCapabilities) -> 
         .await
         .expect("initialize fixed client");
     client
+}
+
+#[tokio::test]
+async fn pubsub_publish_is_binary_safe_and_exposes_cluster_count_scope() {
+    for tool in ["redis_publish", "redis_spublish"] {
+        let executor = FixedRedis::new(RedisValue::Integer(3));
+        let commands = executor.commands.clone();
+        let client = fixed_client(
+            executor,
+            RedisCapabilities::unknown()
+                .with_redis_version(RedisVersion::new(7, 0, 0))
+                .with_deployment(RedisDeployment::Cluster),
+        )
+        .await;
+        let result = client
+            .call_tool(
+                tool,
+                serde_json::json!({
+                    "channel": {"value": "/wA=", "encoding": "base64"},
+                    "message": {"value": "/gE=", "encoding": "base64"}
+                }),
+            )
+            .await
+            .unwrap_or_else(|error| panic!("{tool}: {error}"))
+            .structured_content
+            .unwrap_or_else(|| panic!("{tool} structured output"));
+        assert_eq!(result["receivers"], 3, "{tool}");
+        assert_eq!(result["receiver_count_scope"], "executing_node", "{tool}");
+        assert_eq!(result["channel"]["value"], "/wA=", "{tool}");
+        assert_eq!(result["channel"]["encoding"], "base64", "{tool}");
+
+        let commands = commands.lock().expect("recorded Pub/Sub publish");
+        assert_eq!(commands.len(), 1, "{tool}");
+        assert_eq!(commands[0].arguments()[0], [0xff, 0x00], "{tool}");
+        assert_eq!(commands[0].arguments()[1], [0xfe, 0x01], "{tool}");
+        assert_eq!(
+            commands[0].name(),
+            if tool == "redis_publish" {
+                "PUBLISH"
+            } else {
+                "SPUBLISH"
+            }
+        );
+    }
+}
+
+#[tokio::test]
+async fn pubsub_channel_cluster_aggregation_is_sorted_deduplicated_and_explicit() {
+    let executor = FixedRedis::new(RedisValue::ClusterNodes(vec![
+        (
+            "node-b:6379".to_string(),
+            RedisValue::Array(vec![
+                RedisValue::BulkString(b"zeta".to_vec()),
+                RedisValue::BulkString(b"alpha".to_vec()),
+                RedisValue::BulkString(vec![0xff, 0x00]),
+            ]),
+        ),
+        (
+            "node-a:6379".to_string(),
+            RedisValue::Array(vec![RedisValue::BulkString(b"alpha".to_vec())]),
+        ),
+        (
+            "node-c:6379".to_string(),
+            RedisValue::ServerError {
+                code: "NOPERM".to_string(),
+                message: Some("permission denied".to_string()),
+            },
+        ),
+    ]));
+    let commands = executor.commands.clone();
+    let client = fixed_client(
+        executor,
+        RedisCapabilities::unknown().with_deployment(RedisDeployment::Cluster),
+    )
+    .await;
+    let result = client
+        .call_tool(
+            "redis_pubsub_channels",
+            serde_json::json!({
+                "pattern": {"value": "events:*"},
+                "limit": 4,
+                "max_cluster_nodes": 4
+            }),
+        )
+        .await
+        .expect("cluster channel inspection")
+        .structured_content
+        .expect("structured cluster channel inspection");
+    assert_eq!(result["count"], 3);
+    assert_eq!(result["channels"][0]["value"], "alpha");
+    assert_eq!(result["channels"][1]["value"], "zeta");
+    assert_eq!(result["channels"][2]["value"], "/wA=");
+    assert_eq!(result["channels"][2]["encoding"], "base64");
+    assert_eq!(result["cluster"]["nodes_queried"], 3);
+    assert_eq!(result["cluster"]["nodes_succeeded"], 2);
+    assert_eq!(result["cluster"]["complete"], false);
+    assert_eq!(result["cluster"]["failures"][0]["node"], "node-c:6379");
+
+    let commands = commands.lock().expect("recorded channel inspection");
+    assert_eq!(commands.len(), 1);
+    assert_eq!(
+        commands[0].arguments(),
+        [b"CHANNELS".to_vec(), b"events:*".to_vec()]
+    );
+    assert_eq!(commands[0].cluster_node_limit(), Some(4));
+}
+
+#[tokio::test]
+async fn pubsub_subscriber_counts_sum_cluster_nodes_and_preserve_zeroes() {
+    let executor = FixedRedis::new(RedisValue::ClusterNodes(vec![
+        (
+            "node-a:6379".to_string(),
+            RedisValue::Array(vec![
+                RedisValue::BulkString(b"alpha".to_vec()),
+                RedisValue::Integer(2),
+                RedisValue::BulkString(b"beta".to_vec()),
+                RedisValue::Integer(0),
+            ]),
+        ),
+        (
+            "node-b:6379".to_string(),
+            RedisValue::Map(vec![(
+                RedisValue::BulkString(b"alpha".to_vec()),
+                RedisValue::Integer(3),
+            )]),
+        ),
+    ]));
+    let commands = executor.commands.clone();
+    let client = fixed_client(
+        executor,
+        RedisCapabilities::unknown().with_deployment(RedisDeployment::Cluster),
+    )
+    .await;
+    let result = client
+        .call_tool(
+            "redis_pubsub_numsub",
+            serde_json::json!({
+                "channels": [
+                    {"value": "beta"},
+                    {"value": "alpha"},
+                    {"value": "alpha"}
+                ],
+                "max_cluster_nodes": 8
+            }),
+        )
+        .await
+        .expect("cluster subscriber counts")
+        .structured_content
+        .expect("structured cluster subscriber counts");
+    assert_eq!(result["count"], 2);
+    assert_eq!(result["counts"][0]["channel"]["value"], "alpha");
+    assert_eq!(result["counts"][0]["subscribers"], 5);
+    assert_eq!(result["counts"][1]["channel"]["value"], "beta");
+    assert_eq!(result["counts"][1]["subscribers"], 0);
+    assert_eq!(result["cluster"]["complete"], true);
+
+    let commands = commands.lock().expect("recorded subscriber inspection");
+    assert_eq!(
+        commands[0].arguments(),
+        [b"NUMSUB".to_vec(), b"alpha".to_vec(), b"beta".to_vec()]
+    );
+    assert_eq!(commands[0].cluster_node_limit(), Some(8));
+}
+
+#[tokio::test]
+async fn pubsub_channel_enumeration_fails_with_a_structured_requested_limit() {
+    let client = fixed_client(
+        FixedRedis::new(RedisValue::Array(vec![
+            RedisValue::BulkString(b"alpha".to_vec()),
+            RedisValue::BulkString(b"beta".to_vec()),
+        ])),
+        RedisCapabilities::unknown(),
+    )
+    .await;
+    let result = client
+        .call_tool("redis_pubsub_channels", serde_json::json!({"limit": 1}))
+        .await
+        .expect("bounded channel inspection");
+    assert!(result.is_error);
+    let serialized = serde_json::to_value(result).expect("serialize output-limit response");
+    assert_eq!(
+        serialized["_meta"]["io.redis.mcp/outputLimit"]["dimension"],
+        "collection_entries"
+    );
+    assert_eq!(serialized["_meta"]["io.redis.mcp/outputLimit"]["limit"], 1);
+}
+
+#[tokio::test]
+async fn pubsub_cluster_aggregation_fails_when_every_node_fails() {
+    let client = fixed_client(
+        FixedRedis::new(RedisValue::ClusterNodes(vec![(
+            "node-a:6379".to_string(),
+            RedisValue::ServerError {
+                code: "NOPERM".to_string(),
+                message: Some("permission denied".to_string()),
+            },
+        )])),
+        RedisCapabilities::unknown().with_deployment(RedisDeployment::Cluster),
+    )
+    .await;
+    let result = client
+        .call_tool("redis_pubsub_numpat", serde_json::json!({}))
+        .await
+        .expect("all-node failure tool result");
+    assert!(result.is_error);
+    let result = serde_json::to_string(&result).expect("serialize all-node failure");
+    assert!(result.contains("failed on every node"), "{result}");
+    assert!(result.contains("node-a:6379=NOPERM"), "{result}");
+}
+
+#[tokio::test]
+async fn redis_six_rejects_sharded_pubsub_before_execution() {
+    let executor = FixedRedis::new(RedisValue::Integer(0));
+    let commands = executor.commands.clone();
+    let client = fixed_client(
+        executor,
+        RedisCapabilities::unknown().with_redis_version(RedisVersion::new(6, 2, 0)),
+    )
+    .await;
+    let result = client
+        .call_tool(
+            "redis_spublish",
+            serde_json::json!({
+                "channel": {"value": "events"},
+                "message": {"value": "hello"}
+            }),
+        )
+        .await
+        .expect("known old Redis capability rejection");
+    assert!(result.is_error);
+    assert!(
+        serde_json::to_string(&result)
+            .expect("serialize capability error")
+            .contains("requires Redis 7.0.0 or newer")
+    );
+    assert!(
+        commands
+            .lock()
+            .expect("no sharded publish command")
+            .is_empty()
+    );
+}
+
+#[tokio::test]
+async fn pubsub_inputs_reject_invalid_base64_and_cluster_node_bounds() {
+    let client = fixed_client(
+        FixedRedis::new(RedisValue::Integer(0)),
+        RedisCapabilities::unknown(),
+    )
+    .await;
+    let invalid_base64 = client
+        .call_tool(
+            "redis_publish",
+            serde_json::json!({
+                "channel": {"value": "not base64!", "encoding": "base64"},
+                "message": {"value": "hello"}
+            }),
+        )
+        .await
+        .expect("invalid base64 tool result");
+    assert!(invalid_base64.is_error);
+    assert!(
+        serde_json::to_string(&invalid_base64)
+            .expect("serialize invalid base64")
+            .contains("not valid standard base64")
+    );
+
+    let excessive_nodes = client
+        .call_tool(
+            "redis_pubsub_numpat",
+            serde_json::json!({"max_cluster_nodes": 257}),
+        )
+        .await
+        .expect("cluster node bound tool result");
+    assert!(excessive_nodes.is_error);
+
+    let excessive_pattern = client
+        .call_tool(
+            "redis_pubsub_channels",
+            serde_json::json!({"pattern": {"value": "x".repeat(4097)}}),
+        )
+        .await
+        .expect("oversized pattern tool result");
+    assert!(excessive_pattern.is_error);
+    assert!(
+        serde_json::to_string(&excessive_pattern)
+            .expect("serialize oversized pattern")
+            .contains("maximum is 4096")
+    );
 }
 
 #[tokio::test]
@@ -1452,6 +1754,22 @@ fn structured_cases() -> Vec<(&'static str, serde_json::Value, &'static str)> {
             "applied",
         ),
         (
+            "redis_publish",
+            serde_json::json!({
+                "channel": {"value": "events:alpha"},
+                "message": {"value": "hello"}
+            }),
+            "receivers",
+        ),
+        (
+            "redis_spublish",
+            serde_json::json!({
+                "channel": {"value": "events:{alpha}"},
+                "message": {"value": "hello"}
+            }),
+            "receivers",
+        ),
+        (
             "redis_expire",
             serde_json::json!({"key": "greeting", "seconds": 60}),
             "applied",
@@ -1486,6 +1804,31 @@ fn structured_cases() -> Vec<(&'static str, serde_json::Value, &'static str)> {
             "redis_object_inspect",
             serde_json::json!({"key": "greeting", "operation": "encoding"}),
             "encoding",
+        ),
+        (
+            "redis_pubsub_channels",
+            serde_json::json!({"pattern": {"value": "events:*"}}),
+            "channels",
+        ),
+        (
+            "redis_pubsub_numsub",
+            serde_json::json!({"channels": [{"value": "events:alpha"}]}),
+            "counts",
+        ),
+        (
+            "redis_pubsub_numpat",
+            serde_json::json!({}),
+            "pattern_count",
+        ),
+        (
+            "redis_pubsub_shardchannels",
+            serde_json::json!({"pattern": {"value": "events:*"}}),
+            "channels",
+        ),
+        (
+            "redis_pubsub_shardnumsub",
+            serde_json::json!({"channels": [{"value": "events:alpha"}]}),
+            "counts",
         ),
         (
             "redis_getex",
@@ -1898,8 +2241,8 @@ fn structured_cases() -> Vec<(&'static str, serde_json::Value, &'static str)> {
 
 #[tokio::test]
 async fn access_modes_expose_exactly_the_expected_tools() {
-    assert_eq!(tool_names(AccessMode::Full, false).len(), 109);
-    assert_eq!(tool_names(AccessMode::Full, true).len(), 110);
+    assert_eq!(tool_names(AccessMode::Full, false).len(), 116);
+    assert_eq!(tool_names(AccessMode::Full, true).len(), 117);
     for (access, raw) in [
         (AccessMode::ReadOnly, false),
         (AccessMode::ReadWrite, false),
@@ -2085,6 +2428,45 @@ async fn key_string_annotations_match_access_and_overwrite_semantics() {
         assert!(annotation.destructive_hint, "{name}");
     }
     assert!(!annotations("redis_restore_replace").idempotent_hint);
+}
+
+#[tokio::test]
+async fn pubsub_annotations_distinguish_inspection_from_message_delivery() {
+    let tools = full_catalog_client()
+        .await
+        .list_tools()
+        .await
+        .expect("list annotated Pub/Sub tools")
+        .tools;
+    let annotations = |name: &str| {
+        tools
+            .iter()
+            .find(|tool| tool.name == name)
+            .unwrap_or_else(|| panic!("missing {name}"))
+            .annotations
+            .clone()
+            .unwrap_or_else(|| panic!("missing annotations for {name}"))
+    };
+
+    for name in [
+        "redis_pubsub_channels",
+        "redis_pubsub_numsub",
+        "redis_pubsub_numpat",
+        "redis_pubsub_shardchannels",
+        "redis_pubsub_shardnumsub",
+    ] {
+        let annotation = annotations(name);
+        assert!(annotation.read_only_hint, "{name}");
+        assert!(!annotation.destructive_hint, "{name}");
+        assert!(annotation.idempotent_hint, "{name}");
+    }
+
+    for name in ["redis_publish", "redis_spublish"] {
+        let annotation = annotations(name);
+        assert!(!annotation.read_only_hint, "{name}");
+        assert!(!annotation.destructive_hint, "{name}");
+        assert!(!annotation.idempotent_hint, "{name}");
+    }
 }
 
 #[tokio::test]

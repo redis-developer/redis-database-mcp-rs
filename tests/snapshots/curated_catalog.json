@@ -11740,6 +11740,1179 @@
     {
       "bundle": "essentials",
       "capability_requirements": {
+        "deployment": "any",
+        "minimum_module_version": null,
+        "minimum_redis_version": "2.0.0",
+        "required_commands": [
+          "PUBLISH"
+        ],
+        "required_module": null
+      },
+      "name": "redis_publish",
+      "output_policy": "intrinsically_bounded",
+      "protocol": {
+        "annotations": {
+          "destructiveHint": false
+        },
+        "description": "Publish one binary-safe message through global Redis Pub/Sub. In a cluster delivery propagates cluster-wide while the receiver count is local to the routed node.",
+        "inputSchema": {
+          "$defs": {
+            "EncodedInput": {
+              "additionalProperties": false,
+              "properties": {
+                "encoding": {
+                  "$ref": "#/$defs/InputEncoding",
+                  "default": "utf8",
+                  "description": "Encoding of `value`."
+                },
+                "value": {
+                  "description": "UTF-8 text or standard base64, according to `encoding`.",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "value"
+              ],
+              "type": "object"
+            },
+            "InputEncoding": {
+              "enum": [
+                "utf8",
+                "base64"
+              ],
+              "type": "string"
+            }
+          },
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "channel": {
+              "$ref": "#/$defs/EncodedInput",
+              "description": "Binary-safe channel name, limited to 64 KiB."
+            },
+            "message": {
+              "$ref": "#/$defs/EncodedInput",
+              "description": "Binary-safe message payload. Payloads are limited to 1 MiB."
+            }
+          },
+          "required": [
+            "channel",
+            "message"
+          ],
+          "title": "PublishInput",
+          "type": "object"
+        },
+        "name": "redis_publish",
+        "outputSchema": {
+          "$defs": {
+            "EncodedOutput": {
+              "additionalProperties": false,
+              "properties": {
+                "encoding": {
+                  "$ref": "#/$defs/ValueEncoding"
+                },
+                "value": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "value",
+                "encoding"
+              ],
+              "type": "object"
+            },
+            "ValueEncoding": {
+              "enum": [
+                "utf8",
+                "base64"
+              ],
+              "type": "string"
+            }
+          },
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "channel": {
+              "$ref": "#/$defs/EncodedOutput"
+            },
+            "delivery": {
+              "type": "string"
+            },
+            "receiver_count_scope": {
+              "type": "string"
+            },
+            "receivers": {
+              "format": "uint64",
+              "minimum": 0,
+              "type": "integer"
+            }
+          },
+          "required": [
+            "channel",
+            "receivers",
+            "receiver_count_scope",
+            "delivery"
+          ],
+          "title": "PublishOutput",
+          "type": "object"
+        },
+        "title": "Publish to Redis Channel"
+      },
+      "required_access": "read_write",
+      "required_module": null,
+      "requires_raw_opt_in": false
+    },
+    {
+      "bundle": "essentials",
+      "capability_requirements": {
+        "deployment": "any",
+        "minimum_module_version": null,
+        "minimum_redis_version": "2.8.0",
+        "required_commands": [
+          "PUBSUB"
+        ],
+        "required_module": null
+      },
+      "name": "redis_pubsub_channels",
+      "output_policy": "budget_guarded",
+      "protocol": {
+        "annotations": {
+          "destructiveHint": false,
+          "idempotentHint": true,
+          "readOnlyHint": true
+        },
+        "description": "List a bounded, sorted set of active global Pub/Sub channels. Cluster results are deduplicated across a bounded all-node fan-out and expose partial node failures.",
+        "inputSchema": {
+          "$defs": {
+            "EncodedInput": {
+              "additionalProperties": false,
+              "properties": {
+                "encoding": {
+                  "$ref": "#/$defs/InputEncoding",
+                  "default": "utf8",
+                  "description": "Encoding of `value`."
+                },
+                "value": {
+                  "description": "UTF-8 text or standard base64, according to `encoding`.",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "value"
+              ],
+              "type": "object"
+            },
+            "InputEncoding": {
+              "enum": [
+                "utf8",
+                "base64"
+              ],
+              "type": "string"
+            }
+          },
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "limit": {
+              "default": 100,
+              "description": "Maximum distinct channels accepted in the result. Narrow the pattern when exceeded.",
+              "format": "uint",
+              "maximum": 1000,
+              "minimum": 1,
+              "type": "integer"
+            },
+            "max_cluster_nodes": {
+              "default": 32,
+              "description": "Maximum cluster nodes that may participate in one aggregation.",
+              "format": "uint",
+              "maximum": 256,
+              "minimum": 1,
+              "type": "integer"
+            },
+            "pattern": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/EncodedInput"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Optional binary-safe Redis glob pattern, limited to 4 KiB. Omit it to match every active channel."
+            }
+          },
+          "title": "ChannelsInput",
+          "type": "object"
+        },
+        "name": "redis_pubsub_channels",
+        "outputSchema": {
+          "$defs": {
+            "ClusterAggregation": {
+              "additionalProperties": false,
+              "properties": {
+                "complete": {
+                  "type": "boolean"
+                },
+                "failures": {
+                  "items": {
+                    "$ref": "#/$defs/ClusterNodeFailure"
+                  },
+                  "type": "array"
+                },
+                "node_limit": {
+                  "format": "uint",
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                "nodes_queried": {
+                  "format": "uint",
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                "nodes_succeeded": {
+                  "format": "uint",
+                  "minimum": 0,
+                  "type": "integer"
+                }
+              },
+              "required": [
+                "node_limit",
+                "nodes_queried",
+                "nodes_succeeded",
+                "complete",
+                "failures"
+              ],
+              "type": "object"
+            },
+            "ClusterNodeFailure": {
+              "additionalProperties": false,
+              "properties": {
+                "code": {
+                  "type": "string"
+                },
+                "message": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "node": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "node",
+                "code"
+              ],
+              "type": "object"
+            },
+            "EncodedOutput": {
+              "additionalProperties": false,
+              "properties": {
+                "encoding": {
+                  "$ref": "#/$defs/ValueEncoding"
+                },
+                "value": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "value",
+                "encoding"
+              ],
+              "type": "object"
+            },
+            "ValueEncoding": {
+              "enum": [
+                "utf8",
+                "base64"
+              ],
+              "type": "string"
+            }
+          },
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "channels": {
+              "items": {
+                "$ref": "#/$defs/EncodedOutput"
+              },
+              "type": "array"
+            },
+            "cluster": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/ClusterAggregation"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "count": {
+              "format": "uint",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "deployment": {
+              "type": "string"
+            },
+            "limit": {
+              "format": "uint",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "pattern": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/EncodedOutput"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "scope": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "scope",
+            "deployment",
+            "channels",
+            "count",
+            "limit"
+          ],
+          "title": "ChannelsOutput",
+          "type": "object"
+        },
+        "title": "List Active Redis Pub/Sub Channels"
+      },
+      "required_access": "read_only",
+      "required_module": null,
+      "requires_raw_opt_in": false
+    },
+    {
+      "bundle": "essentials",
+      "capability_requirements": {
+        "deployment": "any",
+        "minimum_module_version": null,
+        "minimum_redis_version": "2.8.0",
+        "required_commands": [
+          "PUBSUB"
+        ],
+        "required_module": null
+      },
+      "name": "redis_pubsub_numpat",
+      "output_policy": "intrinsically_bounded",
+      "protocol": {
+        "annotations": {
+          "destructiveHint": false,
+          "idempotentHint": true,
+          "readOnlyHint": true
+        },
+        "description": "Count unique active pattern subscriptions. Cluster counts are summed across a bounded all-node fan-out with partial failures exposed.",
+        "inputSchema": {
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "max_cluster_nodes": {
+              "default": 32,
+              "description": "Maximum cluster nodes that may participate in one aggregation.",
+              "format": "uint",
+              "maximum": 256,
+              "minimum": 1,
+              "type": "integer"
+            }
+          },
+          "title": "NumpatInput",
+          "type": "object"
+        },
+        "name": "redis_pubsub_numpat",
+        "outputSchema": {
+          "$defs": {
+            "ClusterAggregation": {
+              "additionalProperties": false,
+              "properties": {
+                "complete": {
+                  "type": "boolean"
+                },
+                "failures": {
+                  "items": {
+                    "$ref": "#/$defs/ClusterNodeFailure"
+                  },
+                  "type": "array"
+                },
+                "node_limit": {
+                  "format": "uint",
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                "nodes_queried": {
+                  "format": "uint",
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                "nodes_succeeded": {
+                  "format": "uint",
+                  "minimum": 0,
+                  "type": "integer"
+                }
+              },
+              "required": [
+                "node_limit",
+                "nodes_queried",
+                "nodes_succeeded",
+                "complete",
+                "failures"
+              ],
+              "type": "object"
+            },
+            "ClusterNodeFailure": {
+              "additionalProperties": false,
+              "properties": {
+                "code": {
+                  "type": "string"
+                },
+                "message": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "node": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "node",
+                "code"
+              ],
+              "type": "object"
+            }
+          },
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "cluster": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/ClusterAggregation"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "count_scope": {
+              "type": "string"
+            },
+            "deployment": {
+              "type": "string"
+            },
+            "pattern_count": {
+              "format": "uint64",
+              "minimum": 0,
+              "type": "integer"
+            }
+          },
+          "required": [
+            "deployment",
+            "pattern_count",
+            "count_scope"
+          ],
+          "title": "NumpatOutput",
+          "type": "object"
+        },
+        "title": "Count Redis Pub/Sub Patterns"
+      },
+      "required_access": "read_only",
+      "required_module": null,
+      "requires_raw_opt_in": false
+    },
+    {
+      "bundle": "essentials",
+      "capability_requirements": {
+        "deployment": "any",
+        "minimum_module_version": null,
+        "minimum_redis_version": "2.8.0",
+        "required_commands": [
+          "PUBSUB"
+        ],
+        "required_module": null
+      },
+      "name": "redis_pubsub_numsub",
+      "output_policy": "intrinsically_bounded",
+      "protocol": {
+        "annotations": {
+          "destructiveHint": false,
+          "idempotentHint": true,
+          "readOnlyHint": true
+        },
+        "description": "Count exact-match subscribers for a bounded binary-safe channel list. Cluster counts are summed across a bounded all-node fan-out with partial failures exposed.",
+        "inputSchema": {
+          "$defs": {
+            "EncodedInput": {
+              "additionalProperties": false,
+              "properties": {
+                "encoding": {
+                  "$ref": "#/$defs/InputEncoding",
+                  "default": "utf8",
+                  "description": "Encoding of `value`."
+                },
+                "value": {
+                  "description": "UTF-8 text or standard base64, according to `encoding`.",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "value"
+              ],
+              "type": "object"
+            },
+            "InputEncoding": {
+              "enum": [
+                "utf8",
+                "base64"
+              ],
+              "type": "string"
+            }
+          },
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "channels": {
+              "description": "Binary-safe channel names, each limited to 64 KiB. Duplicate decoded names are queried once.",
+              "items": {
+                "$ref": "#/$defs/EncodedInput"
+              },
+              "maxItems": 1000,
+              "minItems": 1,
+              "type": "array"
+            },
+            "max_cluster_nodes": {
+              "default": 32,
+              "description": "Maximum cluster nodes that may participate in one aggregation.",
+              "format": "uint",
+              "maximum": 256,
+              "minimum": 1,
+              "type": "integer"
+            }
+          },
+          "required": [
+            "channels"
+          ],
+          "title": "NumsubInput",
+          "type": "object"
+        },
+        "name": "redis_pubsub_numsub",
+        "outputSchema": {
+          "$defs": {
+            "ClusterAggregation": {
+              "additionalProperties": false,
+              "properties": {
+                "complete": {
+                  "type": "boolean"
+                },
+                "failures": {
+                  "items": {
+                    "$ref": "#/$defs/ClusterNodeFailure"
+                  },
+                  "type": "array"
+                },
+                "node_limit": {
+                  "format": "uint",
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                "nodes_queried": {
+                  "format": "uint",
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                "nodes_succeeded": {
+                  "format": "uint",
+                  "minimum": 0,
+                  "type": "integer"
+                }
+              },
+              "required": [
+                "node_limit",
+                "nodes_queried",
+                "nodes_succeeded",
+                "complete",
+                "failures"
+              ],
+              "type": "object"
+            },
+            "ClusterNodeFailure": {
+              "additionalProperties": false,
+              "properties": {
+                "code": {
+                  "type": "string"
+                },
+                "message": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "node": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "node",
+                "code"
+              ],
+              "type": "object"
+            },
+            "EncodedOutput": {
+              "additionalProperties": false,
+              "properties": {
+                "encoding": {
+                  "$ref": "#/$defs/ValueEncoding"
+                },
+                "value": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "value",
+                "encoding"
+              ],
+              "type": "object"
+            },
+            "SubscriberCount": {
+              "additionalProperties": false,
+              "properties": {
+                "channel": {
+                  "$ref": "#/$defs/EncodedOutput"
+                },
+                "subscribers": {
+                  "format": "uint64",
+                  "minimum": 0,
+                  "type": "integer"
+                }
+              },
+              "required": [
+                "channel",
+                "subscribers"
+              ],
+              "type": "object"
+            },
+            "ValueEncoding": {
+              "enum": [
+                "utf8",
+                "base64"
+              ],
+              "type": "string"
+            }
+          },
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "cluster": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/ClusterAggregation"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "count": {
+              "format": "uint",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "counts": {
+              "items": {
+                "$ref": "#/$defs/SubscriberCount"
+              },
+              "type": "array"
+            },
+            "deployment": {
+              "type": "string"
+            },
+            "scope": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "scope",
+            "deployment",
+            "counts",
+            "count"
+          ],
+          "title": "NumsubOutput",
+          "type": "object"
+        },
+        "title": "Count Redis Pub/Sub Channel Subscribers"
+      },
+      "required_access": "read_only",
+      "required_module": null,
+      "requires_raw_opt_in": false
+    },
+    {
+      "bundle": "essentials",
+      "capability_requirements": {
+        "deployment": "any",
+        "minimum_module_version": null,
+        "minimum_redis_version": "7.0.0",
+        "required_commands": [
+          "PUBSUB"
+        ],
+        "required_module": null
+      },
+      "name": "redis_pubsub_shardchannels",
+      "output_policy": "budget_guarded",
+      "protocol": {
+        "annotations": {
+          "destructiveHint": false,
+          "idempotentHint": true,
+          "readOnlyHint": true
+        },
+        "description": "List a bounded, sorted set of active Redis 7+ shard channels. Cluster results are deduplicated across a bounded all-node fan-out and expose partial node failures.",
+        "inputSchema": {
+          "$defs": {
+            "EncodedInput": {
+              "additionalProperties": false,
+              "properties": {
+                "encoding": {
+                  "$ref": "#/$defs/InputEncoding",
+                  "default": "utf8",
+                  "description": "Encoding of `value`."
+                },
+                "value": {
+                  "description": "UTF-8 text or standard base64, according to `encoding`.",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "value"
+              ],
+              "type": "object"
+            },
+            "InputEncoding": {
+              "enum": [
+                "utf8",
+                "base64"
+              ],
+              "type": "string"
+            }
+          },
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "limit": {
+              "default": 100,
+              "description": "Maximum distinct channels accepted in the result. Narrow the pattern when exceeded.",
+              "format": "uint",
+              "maximum": 1000,
+              "minimum": 1,
+              "type": "integer"
+            },
+            "max_cluster_nodes": {
+              "default": 32,
+              "description": "Maximum cluster nodes that may participate in one aggregation.",
+              "format": "uint",
+              "maximum": 256,
+              "minimum": 1,
+              "type": "integer"
+            },
+            "pattern": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/EncodedInput"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Optional binary-safe Redis glob pattern, limited to 4 KiB. Omit it to match every active channel."
+            }
+          },
+          "title": "ChannelsInput",
+          "type": "object"
+        },
+        "name": "redis_pubsub_shardchannels",
+        "outputSchema": {
+          "$defs": {
+            "ClusterAggregation": {
+              "additionalProperties": false,
+              "properties": {
+                "complete": {
+                  "type": "boolean"
+                },
+                "failures": {
+                  "items": {
+                    "$ref": "#/$defs/ClusterNodeFailure"
+                  },
+                  "type": "array"
+                },
+                "node_limit": {
+                  "format": "uint",
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                "nodes_queried": {
+                  "format": "uint",
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                "nodes_succeeded": {
+                  "format": "uint",
+                  "minimum": 0,
+                  "type": "integer"
+                }
+              },
+              "required": [
+                "node_limit",
+                "nodes_queried",
+                "nodes_succeeded",
+                "complete",
+                "failures"
+              ],
+              "type": "object"
+            },
+            "ClusterNodeFailure": {
+              "additionalProperties": false,
+              "properties": {
+                "code": {
+                  "type": "string"
+                },
+                "message": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "node": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "node",
+                "code"
+              ],
+              "type": "object"
+            },
+            "EncodedOutput": {
+              "additionalProperties": false,
+              "properties": {
+                "encoding": {
+                  "$ref": "#/$defs/ValueEncoding"
+                },
+                "value": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "value",
+                "encoding"
+              ],
+              "type": "object"
+            },
+            "ValueEncoding": {
+              "enum": [
+                "utf8",
+                "base64"
+              ],
+              "type": "string"
+            }
+          },
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "channels": {
+              "items": {
+                "$ref": "#/$defs/EncodedOutput"
+              },
+              "type": "array"
+            },
+            "cluster": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/ClusterAggregation"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "count": {
+              "format": "uint",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "deployment": {
+              "type": "string"
+            },
+            "limit": {
+              "format": "uint",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "pattern": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/EncodedOutput"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "scope": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "scope",
+            "deployment",
+            "channels",
+            "count",
+            "limit"
+          ],
+          "title": "ChannelsOutput",
+          "type": "object"
+        },
+        "title": "List Active Redis Shard Channels"
+      },
+      "required_access": "read_only",
+      "required_module": null,
+      "requires_raw_opt_in": false
+    },
+    {
+      "bundle": "essentials",
+      "capability_requirements": {
+        "deployment": "any",
+        "minimum_module_version": null,
+        "minimum_redis_version": "7.0.0",
+        "required_commands": [
+          "PUBSUB"
+        ],
+        "required_module": null
+      },
+      "name": "redis_pubsub_shardnumsub",
+      "output_policy": "intrinsically_bounded",
+      "protocol": {
+        "annotations": {
+          "destructiveHint": false,
+          "idempotentHint": true,
+          "readOnlyHint": true
+        },
+        "description": "Count subscribers for a bounded binary-safe list of Redis 7+ shard channels. Cluster counts are summed across a bounded all-node fan-out with partial failures exposed.",
+        "inputSchema": {
+          "$defs": {
+            "EncodedInput": {
+              "additionalProperties": false,
+              "properties": {
+                "encoding": {
+                  "$ref": "#/$defs/InputEncoding",
+                  "default": "utf8",
+                  "description": "Encoding of `value`."
+                },
+                "value": {
+                  "description": "UTF-8 text or standard base64, according to `encoding`.",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "value"
+              ],
+              "type": "object"
+            },
+            "InputEncoding": {
+              "enum": [
+                "utf8",
+                "base64"
+              ],
+              "type": "string"
+            }
+          },
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "channels": {
+              "description": "Binary-safe channel names, each limited to 64 KiB. Duplicate decoded names are queried once.",
+              "items": {
+                "$ref": "#/$defs/EncodedInput"
+              },
+              "maxItems": 1000,
+              "minItems": 1,
+              "type": "array"
+            },
+            "max_cluster_nodes": {
+              "default": 32,
+              "description": "Maximum cluster nodes that may participate in one aggregation.",
+              "format": "uint",
+              "maximum": 256,
+              "minimum": 1,
+              "type": "integer"
+            }
+          },
+          "required": [
+            "channels"
+          ],
+          "title": "NumsubInput",
+          "type": "object"
+        },
+        "name": "redis_pubsub_shardnumsub",
+        "outputSchema": {
+          "$defs": {
+            "ClusterAggregation": {
+              "additionalProperties": false,
+              "properties": {
+                "complete": {
+                  "type": "boolean"
+                },
+                "failures": {
+                  "items": {
+                    "$ref": "#/$defs/ClusterNodeFailure"
+                  },
+                  "type": "array"
+                },
+                "node_limit": {
+                  "format": "uint",
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                "nodes_queried": {
+                  "format": "uint",
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                "nodes_succeeded": {
+                  "format": "uint",
+                  "minimum": 0,
+                  "type": "integer"
+                }
+              },
+              "required": [
+                "node_limit",
+                "nodes_queried",
+                "nodes_succeeded",
+                "complete",
+                "failures"
+              ],
+              "type": "object"
+            },
+            "ClusterNodeFailure": {
+              "additionalProperties": false,
+              "properties": {
+                "code": {
+                  "type": "string"
+                },
+                "message": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "node": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "node",
+                "code"
+              ],
+              "type": "object"
+            },
+            "EncodedOutput": {
+              "additionalProperties": false,
+              "properties": {
+                "encoding": {
+                  "$ref": "#/$defs/ValueEncoding"
+                },
+                "value": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "value",
+                "encoding"
+              ],
+              "type": "object"
+            },
+            "SubscriberCount": {
+              "additionalProperties": false,
+              "properties": {
+                "channel": {
+                  "$ref": "#/$defs/EncodedOutput"
+                },
+                "subscribers": {
+                  "format": "uint64",
+                  "minimum": 0,
+                  "type": "integer"
+                }
+              },
+              "required": [
+                "channel",
+                "subscribers"
+              ],
+              "type": "object"
+            },
+            "ValueEncoding": {
+              "enum": [
+                "utf8",
+                "base64"
+              ],
+              "type": "string"
+            }
+          },
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "cluster": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/ClusterAggregation"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "count": {
+              "format": "uint",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "counts": {
+              "items": {
+                "$ref": "#/$defs/SubscriberCount"
+              },
+              "type": "array"
+            },
+            "deployment": {
+              "type": "string"
+            },
+            "scope": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "scope",
+            "deployment",
+            "counts",
+            "count"
+          ],
+          "title": "NumsubOutput",
+          "type": "object"
+        },
+        "title": "Count Redis Shard Channel Subscribers"
+      },
+      "required_access": "read_only",
+      "required_module": null,
+      "requires_raw_opt_in": false
+    },
+    {
+      "bundle": "essentials",
+      "capability_requirements": {
         "deployment": "standalone",
         "minimum_module_version": null,
         "minimum_redis_version": null,
@@ -14212,6 +15385,131 @@
         "title": "Check Multiple Redis Set Members"
       },
       "required_access": "read_only",
+      "required_module": null,
+      "requires_raw_opt_in": false
+    },
+    {
+      "bundle": "essentials",
+      "capability_requirements": {
+        "deployment": "any",
+        "minimum_module_version": null,
+        "minimum_redis_version": "7.0.0",
+        "required_commands": [
+          "SPUBLISH"
+        ],
+        "required_module": null
+      },
+      "name": "redis_spublish",
+      "output_policy": "intrinsically_bounded",
+      "protocol": {
+        "annotations": {
+          "destructiveHint": false
+        },
+        "description": "Publish one binary-safe message through Redis 7+ sharded Pub/Sub. In a cluster the channel is slot-routed; the receiver count is local to the routed node.",
+        "inputSchema": {
+          "$defs": {
+            "EncodedInput": {
+              "additionalProperties": false,
+              "properties": {
+                "encoding": {
+                  "$ref": "#/$defs/InputEncoding",
+                  "default": "utf8",
+                  "description": "Encoding of `value`."
+                },
+                "value": {
+                  "description": "UTF-8 text or standard base64, according to `encoding`.",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "value"
+              ],
+              "type": "object"
+            },
+            "InputEncoding": {
+              "enum": [
+                "utf8",
+                "base64"
+              ],
+              "type": "string"
+            }
+          },
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "channel": {
+              "$ref": "#/$defs/EncodedInput",
+              "description": "Binary-safe channel name, limited to 64 KiB."
+            },
+            "message": {
+              "$ref": "#/$defs/EncodedInput",
+              "description": "Binary-safe message payload. Payloads are limited to 1 MiB."
+            }
+          },
+          "required": [
+            "channel",
+            "message"
+          ],
+          "title": "PublishInput",
+          "type": "object"
+        },
+        "name": "redis_spublish",
+        "outputSchema": {
+          "$defs": {
+            "EncodedOutput": {
+              "additionalProperties": false,
+              "properties": {
+                "encoding": {
+                  "$ref": "#/$defs/ValueEncoding"
+                },
+                "value": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "value",
+                "encoding"
+              ],
+              "type": "object"
+            },
+            "ValueEncoding": {
+              "enum": [
+                "utf8",
+                "base64"
+              ],
+              "type": "string"
+            }
+          },
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "channel": {
+              "$ref": "#/$defs/EncodedOutput"
+            },
+            "delivery": {
+              "type": "string"
+            },
+            "receiver_count_scope": {
+              "type": "string"
+            },
+            "receivers": {
+              "format": "uint64",
+              "minimum": 0,
+              "type": "integer"
+            }
+          },
+          "required": [
+            "channel",
+            "receivers",
+            "receiver_count_scope",
+            "delivery"
+          ],
+          "title": "PublishOutput",
+          "type": "object"
+        },
+        "title": "Publish to Redis Shard Channel"
+      },
+      "required_access": "read_write",
       "required_module": null,
       "requires_raw_opt_in": false
     },
@@ -23534,6 +24832,93 @@
       "latency_ms": 0.0,
       "response": "PONG"
     },
+    "redis_publish": {
+      "channel": {
+        "encoding": "utf8",
+        "value": "events:alpha"
+      },
+      "delivery": "global",
+      "receiver_count_scope": "executing_node",
+      "receivers": 1
+    },
+    "redis_pubsub_channels": {
+      "channels": [
+        {
+          "encoding": "utf8",
+          "value": "events:alpha"
+        },
+        {
+          "encoding": "base64",
+          "value": "/wA="
+        }
+      ],
+      "cluster": null,
+      "count": 2,
+      "deployment": "unknown",
+      "limit": 100,
+      "pattern": {
+        "encoding": "utf8",
+        "value": "events:*"
+      },
+      "scope": "global"
+    },
+    "redis_pubsub_numpat": {
+      "cluster": null,
+      "count_scope": "target_unique_patterns",
+      "deployment": "unknown",
+      "pattern_count": 1
+    },
+    "redis_pubsub_numsub": {
+      "cluster": null,
+      "count": 1,
+      "counts": [
+        {
+          "channel": {
+            "encoding": "utf8",
+            "value": "events:alpha"
+          },
+          "subscribers": 2
+        }
+      ],
+      "deployment": "unknown",
+      "scope": "global"
+    },
+    "redis_pubsub_shardchannels": {
+      "channels": [
+        {
+          "encoding": "utf8",
+          "value": "events:alpha"
+        },
+        {
+          "encoding": "base64",
+          "value": "/wA="
+        }
+      ],
+      "cluster": null,
+      "count": 2,
+      "deployment": "unknown",
+      "limit": 100,
+      "pattern": {
+        "encoding": "utf8",
+        "value": "events:*"
+      },
+      "scope": "sharded"
+    },
+    "redis_pubsub_shardnumsub": {
+      "cluster": null,
+      "count": 1,
+      "counts": [
+        {
+          "channel": {
+            "encoding": "utf8",
+            "value": "events:alpha"
+          },
+          "subscribers": 2
+        }
+      ],
+      "deployment": "unknown",
+      "scope": "sharded"
+    },
     "redis_randomkey": {
       "encoding": "utf8",
       "key": "alpha"
@@ -23705,6 +25090,15 @@
         }
       ],
       "set_exists": true
+    },
+    "redis_spublish": {
+      "channel": {
+        "encoding": "utf8",
+        "value": "events:{alpha}"
+      },
+      "delivery": "sharded",
+      "receiver_count_scope": "executing_node",
+      "receivers": 1
     },
     "redis_srem": {
       "key": "tags",

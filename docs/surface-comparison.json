@@ -224,8 +224,8 @@
     ]
   },
   "current_gate": {
-    "met": false,
-    "blockers": [31, 32, 33]
+    "met": true,
+    "blockers": [32, 33]
   },
   "contract_scorecard": {
     "scale": {
@@ -944,10 +944,23 @@
         "redis_module_list",
         "redis_slowlog"
       ],
-      "library_tools": [],
-      "disposition": "planned",
-      "issue": 31,
-      "reason": "Issue #31 adds bounded, redacted, structured diagnostics across standalone and cluster targets."
+      "library_tools": [
+        "redis_acl_whoami",
+        "redis_client_list",
+        "redis_cluster_info",
+        "redis_connection_summary",
+        "redis_health_check",
+        "redis_hotkeys",
+        "redis_key_summary",
+        "redis_keyspace_summary",
+        "redis_latency_history",
+        "redis_memory_stats",
+        "redis_memory_summary",
+        "redis_module_list",
+        "redis_slowlog"
+      ],
+      "disposition": "implemented",
+      "reason": "The diagnostics bundle is a structured superset of competitor INFO, DBSIZE, and CLIENT LIST workflows: caller-bounded all-node fan-out exposes partial failures, node addresses are pseudonymous by default, client/module/slowlog secrets require Full access, server errors are redacted without losing categories, unknown fields remain binary-safe, and hot-key analysis covers exactly one explicit SCAN cursor page."
     },
     {
       "id": "admin.guarded",

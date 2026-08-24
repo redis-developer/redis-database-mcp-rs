@@ -1,6 +1,193 @@
 {
   "catalog": [
     {
+      "bundle": "diagnostics",
+      "capability_requirements": {
+        "deployment": "any",
+        "minimum_module_version": null,
+        "minimum_redis_version": "6.0.0",
+        "required_commands": [
+          "ACL"
+        ],
+        "required_module": null
+      },
+      "name": "redis_acl_whoami",
+      "output_policy": "intrinsically_bounded",
+      "protocol": {
+        "annotations": {
+          "destructiveHint": false,
+          "idempotentHint": true,
+          "readOnlyHint": true
+        },
+        "description": "Return the current authenticated Redis username. Cluster execution is caller-bounded, reports partial failures, and pseudonymizes node addresses by default.",
+        "inputSchema": {
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "include_node_addresses": {
+              "default": false,
+              "description": "Return actual cluster node addresses. Requires Full access; defaults to pseudonymous labels.",
+              "type": "boolean"
+            },
+            "max_cluster_nodes": {
+              "default": 32,
+              "description": "Maximum cluster nodes that may participate in one all-node inspection.",
+              "format": "uint",
+              "maximum": 256,
+              "minimum": 1,
+              "type": "integer"
+            }
+          },
+          "title": "ClusterInput",
+          "type": "object"
+        },
+        "name": "redis_acl_whoami",
+        "outputSchema": {
+          "$defs": {
+            "ClusterAggregation": {
+              "additionalProperties": false,
+              "properties": {
+                "complete": {
+                  "type": "boolean"
+                },
+                "failures": {
+                  "items": {
+                    "$ref": "#/$defs/ClusterNodeFailure"
+                  },
+                  "type": "array"
+                },
+                "node_addresses_redacted": {
+                  "type": "boolean"
+                },
+                "node_limit": {
+                  "format": "uint",
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                "nodes_queried": {
+                  "format": "uint",
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                "nodes_succeeded": {
+                  "format": "uint",
+                  "minimum": 0,
+                  "type": "integer"
+                }
+              },
+              "required": [
+                "node_limit",
+                "nodes_queried",
+                "nodes_succeeded",
+                "complete",
+                "node_addresses_redacted",
+                "failures"
+              ],
+              "type": "object"
+            },
+            "ClusterNodeFailure": {
+              "additionalProperties": false,
+              "properties": {
+                "code": {
+                  "type": "string"
+                },
+                "message_redacted": {
+                  "type": "boolean"
+                },
+                "node": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "node",
+                "code",
+                "message_redacted"
+              ],
+              "type": "object"
+            },
+            "EncodedValue": {
+              "additionalProperties": false,
+              "properties": {
+                "encoding": {
+                  "$ref": "#/$defs/ValueEncoding"
+                },
+                "value": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "value",
+                "encoding"
+              ],
+              "type": "object"
+            },
+            "NodeIdentity": {
+              "additionalProperties": false,
+              "properties": {
+                "node": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "username": {
+                  "$ref": "#/$defs/EncodedValue"
+                }
+              },
+              "required": [
+                "username"
+              ],
+              "type": "object"
+            },
+            "ValueEncoding": {
+              "enum": [
+                "utf8",
+                "base64"
+              ],
+              "type": "string"
+            }
+          },
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "cluster": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/ClusterAggregation"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "consistent": {
+              "type": "boolean"
+            },
+            "deployment": {
+              "type": "string"
+            },
+            "identities": {
+              "items": {
+                "$ref": "#/$defs/NodeIdentity"
+              },
+              "type": "array"
+            }
+          },
+          "required": [
+            "deployment",
+            "identities",
+            "consistent"
+          ],
+          "title": "AclWhoamiOutput",
+          "type": "object"
+        },
+        "title": "Identify Redis ACL User"
+      },
+      "required_access": "read_only",
+      "required_module": null,
+      "requires_raw_opt_in": false
+    },
+    {
       "bundle": "essentials",
       "capability_requirements": {
         "deployment": "any",
@@ -66,6 +253,724 @@
       "requires_raw_opt_in": false
     },
     {
+      "bundle": "diagnostics",
+      "capability_requirements": {
+        "deployment": "any",
+        "minimum_module_version": null,
+        "minimum_redis_version": null,
+        "required_commands": [
+          "CLIENT"
+        ],
+        "required_module": null
+      },
+      "name": "redis_client_list",
+      "output_policy": "budget_guarded",
+      "protocol": {
+        "annotations": {
+          "destructiveHint": false,
+          "idempotentHint": true,
+          "readOnlyHint": true
+        },
+        "description": "List a bounded, filterable set of structured Redis clients. Addresses, names, usernames, library identity, unknown fields, and cluster node addresses are redacted unless explicitly requested under Full access.",
+        "inputSchema": {
+          "$defs": {
+            "ClientKindFilter": {
+              "enum": [
+                "normal",
+                "master",
+                "replica",
+                "pubsub"
+              ],
+              "type": "string"
+            }
+          },
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "address_prefix": {
+              "default": null,
+              "description": "Filter by a client-address prefix (maximum 1024 bytes).",
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "client_type": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/ClientKindFilter"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Filter by Redis client type."
+            },
+            "database": {
+              "default": null,
+              "description": "Filter by selected database number.",
+              "format": "int64",
+              "type": [
+                "integer",
+                "null"
+              ]
+            },
+            "include_sensitive": {
+              "default": false,
+              "description": "Include addresses, names, usernames, library identity, unknown fields, and real node addresses. Requires Full access.",
+              "type": "boolean"
+            },
+            "max_cluster_nodes": {
+              "default": 32,
+              "description": "Maximum cluster nodes that may participate.",
+              "format": "uint",
+              "maximum": 256,
+              "minimum": 1,
+              "type": "integer"
+            },
+            "max_results": {
+              "default": 100,
+              "description": "Maximum clients returned across the target.",
+              "format": "uint",
+              "maximum": 1000,
+              "minimum": 1,
+              "type": "integer"
+            },
+            "maximum_idle_seconds": {
+              "default": null,
+              "description": "Maximum idle time in seconds.",
+              "format": "uint64",
+              "minimum": 0,
+              "type": [
+                "integer",
+                "null"
+              ]
+            },
+            "minimum_idle_seconds": {
+              "default": null,
+              "description": "Minimum idle time in seconds.",
+              "format": "uint64",
+              "minimum": 0,
+              "type": [
+                "integer",
+                "null"
+              ]
+            },
+            "name": {
+              "default": null,
+              "description": "Filter by exact client name (maximum 1024 bytes).",
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "username": {
+              "default": null,
+              "description": "Filter by exact ACL username (maximum 1024 bytes).",
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          "title": "ClientListInput",
+          "type": "object"
+        },
+        "name": "redis_client_list",
+        "outputSchema": {
+          "$defs": {
+            "ClientRecord": {
+              "additionalProperties": false,
+              "properties": {
+                "address": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/$defs/EncodedValue"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "age_seconds": {
+                  "format": "uint64",
+                  "minimum": 0,
+                  "type": [
+                    "integer",
+                    "null"
+                  ]
+                },
+                "client_type": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "command": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "database": {
+                  "format": "int64",
+                  "type": [
+                    "integer",
+                    "null"
+                  ]
+                },
+                "flags": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "id": {
+                  "format": "uint64",
+                  "minimum": 0,
+                  "type": [
+                    "integer",
+                    "null"
+                  ]
+                },
+                "idle_seconds": {
+                  "format": "uint64",
+                  "minimum": 0,
+                  "type": [
+                    "integer",
+                    "null"
+                  ]
+                },
+                "library_name": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/$defs/EncodedValue"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "library_version": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/$defs/EncodedValue"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "local_address": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/$defs/EncodedValue"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "name": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/$defs/EncodedValue"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "node": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "pattern_subscriptions": {
+                  "format": "uint64",
+                  "minimum": 0,
+                  "type": [
+                    "integer",
+                    "null"
+                  ]
+                },
+                "response_protocol": {
+                  "format": "int64",
+                  "type": [
+                    "integer",
+                    "null"
+                  ]
+                },
+                "sensitive_fields_redacted": {
+                  "type": "boolean"
+                },
+                "sharded_subscriptions": {
+                  "format": "uint64",
+                  "minimum": 0,
+                  "type": [
+                    "integer",
+                    "null"
+                  ]
+                },
+                "subscriptions": {
+                  "format": "uint64",
+                  "minimum": 0,
+                  "type": [
+                    "integer",
+                    "null"
+                  ]
+                },
+                "total_commands": {
+                  "format": "uint64",
+                  "minimum": 0,
+                  "type": [
+                    "integer",
+                    "null"
+                  ]
+                },
+                "total_memory_bytes": {
+                  "format": "uint64",
+                  "minimum": 0,
+                  "type": [
+                    "integer",
+                    "null"
+                  ]
+                },
+                "total_network_input_bytes": {
+                  "format": "uint64",
+                  "minimum": 0,
+                  "type": [
+                    "integer",
+                    "null"
+                  ]
+                },
+                "total_network_output_bytes": {
+                  "format": "uint64",
+                  "minimum": 0,
+                  "type": [
+                    "integer",
+                    "null"
+                  ]
+                },
+                "unknown_field_count": {
+                  "format": "uint",
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                "unknown_fields": {
+                  "additionalProperties": {
+                    "$ref": "#/$defs/EncodedValue"
+                  },
+                  "type": [
+                    "object",
+                    "null"
+                  ]
+                },
+                "username": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/$defs/EncodedValue"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                }
+              },
+              "required": [
+                "sensitive_fields_redacted",
+                "unknown_field_count"
+              ],
+              "type": "object"
+            },
+            "ClusterAggregation": {
+              "additionalProperties": false,
+              "properties": {
+                "complete": {
+                  "type": "boolean"
+                },
+                "failures": {
+                  "items": {
+                    "$ref": "#/$defs/ClusterNodeFailure"
+                  },
+                  "type": "array"
+                },
+                "node_addresses_redacted": {
+                  "type": "boolean"
+                },
+                "node_limit": {
+                  "format": "uint",
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                "nodes_queried": {
+                  "format": "uint",
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                "nodes_succeeded": {
+                  "format": "uint",
+                  "minimum": 0,
+                  "type": "integer"
+                }
+              },
+              "required": [
+                "node_limit",
+                "nodes_queried",
+                "nodes_succeeded",
+                "complete",
+                "node_addresses_redacted",
+                "failures"
+              ],
+              "type": "object"
+            },
+            "ClusterNodeFailure": {
+              "additionalProperties": false,
+              "properties": {
+                "code": {
+                  "type": "string"
+                },
+                "message_redacted": {
+                  "type": "boolean"
+                },
+                "node": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "node",
+                "code",
+                "message_redacted"
+              ],
+              "type": "object"
+            },
+            "EncodedValue": {
+              "additionalProperties": false,
+              "properties": {
+                "encoding": {
+                  "$ref": "#/$defs/ValueEncoding"
+                },
+                "value": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "value",
+                "encoding"
+              ],
+              "type": "object"
+            },
+            "ValueEncoding": {
+              "enum": [
+                "utf8",
+                "base64"
+              ],
+              "type": "string"
+            }
+          },
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "clients": {
+              "items": {
+                "$ref": "#/$defs/ClientRecord"
+              },
+              "type": "array"
+            },
+            "cluster": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/ClusterAggregation"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "deployment": {
+              "type": "string"
+            },
+            "matched": {
+              "format": "uint",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "returned": {
+              "format": "uint",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "truncated": {
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "deployment",
+            "matched",
+            "returned",
+            "truncated",
+            "clients"
+          ],
+          "title": "ClientListOutput",
+          "type": "object"
+        },
+        "title": "List Redis Clients"
+      },
+      "required_access": "read_only",
+      "required_module": null,
+      "requires_raw_opt_in": false
+    },
+    {
+      "bundle": "diagnostics",
+      "capability_requirements": {
+        "deployment": "cluster",
+        "minimum_module_version": null,
+        "minimum_redis_version": "3.0.0",
+        "required_commands": [
+          "CLUSTER"
+        ],
+        "required_module": null
+      },
+      "name": "redis_cluster_info",
+      "output_policy": "budget_guarded",
+      "protocol": {
+        "annotations": {
+          "destructiveHint": false,
+          "idempotentHint": true,
+          "readOnlyHint": true
+        },
+        "description": "Read structured CLUSTER INFO summaries through a bounded all-node fan-out. Unknown fields are retained and partial node failures are explicit; real node addresses require Full access.",
+        "inputSchema": {
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "include_node_addresses": {
+              "default": false,
+              "description": "Return actual cluster node addresses. Requires Full access; defaults to pseudonymous labels.",
+              "type": "boolean"
+            },
+            "max_cluster_nodes": {
+              "default": 32,
+              "description": "Maximum cluster nodes that may participate in one all-node inspection.",
+              "format": "uint",
+              "maximum": 256,
+              "minimum": 1,
+              "type": "integer"
+            }
+          },
+          "title": "ClusterInput",
+          "type": "object"
+        },
+        "name": "redis_cluster_info",
+        "outputSchema": {
+          "$defs": {
+            "ClusterAggregation": {
+              "additionalProperties": false,
+              "properties": {
+                "complete": {
+                  "type": "boolean"
+                },
+                "failures": {
+                  "items": {
+                    "$ref": "#/$defs/ClusterNodeFailure"
+                  },
+                  "type": "array"
+                },
+                "node_addresses_redacted": {
+                  "type": "boolean"
+                },
+                "node_limit": {
+                  "format": "uint",
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                "nodes_queried": {
+                  "format": "uint",
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                "nodes_succeeded": {
+                  "format": "uint",
+                  "minimum": 0,
+                  "type": "integer"
+                }
+              },
+              "required": [
+                "node_limit",
+                "nodes_queried",
+                "nodes_succeeded",
+                "complete",
+                "node_addresses_redacted",
+                "failures"
+              ],
+              "type": "object"
+            },
+            "ClusterInfoNode": {
+              "additionalProperties": false,
+              "properties": {
+                "cluster_size": {
+                  "format": "uint64",
+                  "minimum": 0,
+                  "type": [
+                    "integer",
+                    "null"
+                  ]
+                },
+                "current_epoch": {
+                  "format": "uint64",
+                  "minimum": 0,
+                  "type": [
+                    "integer",
+                    "null"
+                  ]
+                },
+                "known_nodes": {
+                  "format": "uint64",
+                  "minimum": 0,
+                  "type": [
+                    "integer",
+                    "null"
+                  ]
+                },
+                "messages_received": {
+                  "format": "uint64",
+                  "minimum": 0,
+                  "type": [
+                    "integer",
+                    "null"
+                  ]
+                },
+                "messages_sent": {
+                  "format": "uint64",
+                  "minimum": 0,
+                  "type": [
+                    "integer",
+                    "null"
+                  ]
+                },
+                "node": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "properties": {
+                  "additionalProperties": {
+                    "type": "string"
+                  },
+                  "type": "object"
+                },
+                "slots_assigned": {
+                  "format": "uint64",
+                  "minimum": 0,
+                  "type": [
+                    "integer",
+                    "null"
+                  ]
+                },
+                "slots_fail": {
+                  "format": "uint64",
+                  "minimum": 0,
+                  "type": [
+                    "integer",
+                    "null"
+                  ]
+                },
+                "slots_ok": {
+                  "format": "uint64",
+                  "minimum": 0,
+                  "type": [
+                    "integer",
+                    "null"
+                  ]
+                },
+                "slots_pfail": {
+                  "format": "uint64",
+                  "minimum": 0,
+                  "type": [
+                    "integer",
+                    "null"
+                  ]
+                },
+                "state": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                }
+              },
+              "required": [
+                "properties"
+              ],
+              "type": "object"
+            },
+            "ClusterNodeFailure": {
+              "additionalProperties": false,
+              "properties": {
+                "code": {
+                  "type": "string"
+                },
+                "message_redacted": {
+                  "type": "boolean"
+                },
+                "node": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "node",
+                "code",
+                "message_redacted"
+              ],
+              "type": "object"
+            }
+          },
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "cluster": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/ClusterAggregation"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "healthy_nodes": {
+              "format": "uint",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "nodes": {
+              "items": {
+                "$ref": "#/$defs/ClusterInfoNode"
+              },
+              "type": "array"
+            },
+            "unhealthy_nodes": {
+              "format": "uint",
+              "minimum": 0,
+              "type": "integer"
+            }
+          },
+          "required": [
+            "healthy_nodes",
+            "unhealthy_nodes",
+            "nodes"
+          ],
+          "title": "ClusterInfoOutput",
+          "type": "object"
+        },
+        "title": "Inspect Redis Cluster"
+      },
+      "required_access": "read_only",
+      "required_module": null,
+      "requires_raw_opt_in": false
+    },
+    {
       "bundle": "raw",
       "capability_requirements": {
         "deployment": "any",
@@ -124,6 +1029,278 @@
       "required_access": "full",
       "required_module": null,
       "requires_raw_opt_in": true
+    },
+    {
+      "bundle": "diagnostics",
+      "capability_requirements": {
+        "deployment": "any",
+        "minimum_module_version": null,
+        "minimum_redis_version": null,
+        "required_commands": [
+          "CLIENT"
+        ],
+        "required_module": null
+      },
+      "name": "redis_connection_summary",
+      "output_policy": "budget_guarded",
+      "protocol": {
+        "annotations": {
+          "destructiveHint": false,
+          "idempotentHint": true,
+          "readOnlyHint": true
+        },
+        "description": "Summarize client totals, types, commands, databases, idle connections, blocked connections, and oldest age without exposing client addresses, names, or usernames. Cluster node labels are pseudonymous by default.",
+        "inputSchema": {
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "include_node_addresses": {
+              "default": false,
+              "description": "Return actual cluster node addresses. Requires Full access; defaults to pseudonymous labels.",
+              "type": "boolean"
+            },
+            "max_cluster_nodes": {
+              "default": 32,
+              "description": "Maximum cluster nodes that may participate in one all-node inspection.",
+              "format": "uint",
+              "maximum": 256,
+              "minimum": 1,
+              "type": "integer"
+            }
+          },
+          "title": "ClusterInput",
+          "type": "object"
+        },
+        "name": "redis_connection_summary",
+        "outputSchema": {
+          "$defs": {
+            "ClusterAggregation": {
+              "additionalProperties": false,
+              "properties": {
+                "complete": {
+                  "type": "boolean"
+                },
+                "failures": {
+                  "items": {
+                    "$ref": "#/$defs/ClusterNodeFailure"
+                  },
+                  "type": "array"
+                },
+                "node_addresses_redacted": {
+                  "type": "boolean"
+                },
+                "node_limit": {
+                  "format": "uint",
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                "nodes_queried": {
+                  "format": "uint",
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                "nodes_succeeded": {
+                  "format": "uint",
+                  "minimum": 0,
+                  "type": "integer"
+                }
+              },
+              "required": [
+                "node_limit",
+                "nodes_queried",
+                "nodes_succeeded",
+                "complete",
+                "node_addresses_redacted",
+                "failures"
+              ],
+              "type": "object"
+            },
+            "ClusterNodeFailure": {
+              "additionalProperties": false,
+              "properties": {
+                "code": {
+                  "type": "string"
+                },
+                "message_redacted": {
+                  "type": "boolean"
+                },
+                "node": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "node",
+                "code",
+                "message_redacted"
+              ],
+              "type": "object"
+            },
+            "ConnectionNodeSummary": {
+              "additionalProperties": false,
+              "properties": {
+                "blocked": {
+                  "format": "uint",
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                "client_types": {
+                  "additionalProperties": {
+                    "format": "uint",
+                    "minimum": 0,
+                    "type": "integer"
+                  },
+                  "type": "object"
+                },
+                "commands": {
+                  "additionalProperties": {
+                    "format": "uint",
+                    "minimum": 0,
+                    "type": "integer"
+                  },
+                  "type": "object"
+                },
+                "databases": {
+                  "additionalProperties": false,
+                  "patternProperties": {
+                    "^-?\\d+$": {
+                      "format": "uint",
+                      "minimum": 0,
+                      "type": "integer"
+                    }
+                  },
+                  "type": "object"
+                },
+                "idle_over_60_seconds": {
+                  "format": "uint",
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                "node": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "oldest_age_seconds": {
+                  "format": "uint64",
+                  "minimum": 0,
+                  "type": [
+                    "integer",
+                    "null"
+                  ]
+                },
+                "total": {
+                  "format": "uint",
+                  "minimum": 0,
+                  "type": "integer"
+                }
+              },
+              "required": [
+                "total",
+                "idle_over_60_seconds",
+                "blocked",
+                "client_types",
+                "commands",
+                "databases"
+              ],
+              "type": "object"
+            }
+          },
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "blocked": {
+              "format": "uint",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "client_identity_redacted": {
+              "type": "boolean"
+            },
+            "client_types": {
+              "additionalProperties": {
+                "format": "uint",
+                "minimum": 0,
+                "type": "integer"
+              },
+              "type": "object"
+            },
+            "cluster": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/ClusterAggregation"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "commands": {
+              "additionalProperties": {
+                "format": "uint",
+                "minimum": 0,
+                "type": "integer"
+              },
+              "type": "object"
+            },
+            "databases": {
+              "additionalProperties": false,
+              "patternProperties": {
+                "^-?\\d+$": {
+                  "format": "uint",
+                  "minimum": 0,
+                  "type": "integer"
+                }
+              },
+              "type": "object"
+            },
+            "deployment": {
+              "type": "string"
+            },
+            "idle_over_60_seconds": {
+              "format": "uint",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "nodes": {
+              "items": {
+                "$ref": "#/$defs/ConnectionNodeSummary"
+              },
+              "type": "array"
+            },
+            "oldest_age_seconds": {
+              "format": "uint64",
+              "minimum": 0,
+              "type": [
+                "integer",
+                "null"
+              ]
+            },
+            "total": {
+              "format": "uint",
+              "minimum": 0,
+              "type": "integer"
+            }
+          },
+          "required": [
+            "deployment",
+            "total",
+            "idle_over_60_seconds",
+            "blocked",
+            "client_types",
+            "commands",
+            "databases",
+            "nodes",
+            "client_identity_redacted"
+          ],
+          "title": "ConnectionSummaryOutput",
+          "type": "object"
+        },
+        "title": "Summarize Redis Connections"
+      },
+      "required_access": "read_only",
+      "required_module": null,
+      "requires_raw_opt_in": false
     },
     {
       "bundle": "essentials",
@@ -5566,6 +6743,301 @@
       "requires_raw_opt_in": false
     },
     {
+      "bundle": "diagnostics",
+      "capability_requirements": {
+        "deployment": "any",
+        "minimum_module_version": null,
+        "minimum_redis_version": null,
+        "required_commands": [
+          "INFO"
+        ],
+        "required_module": null
+      },
+      "name": "redis_health_check",
+      "output_policy": "budget_guarded",
+      "protocol": {
+        "annotations": {
+          "destructiveHint": false,
+          "idempotentHint": true,
+          "readOnlyHint": true
+        },
+        "description": "Derive a bounded structured health summary from INFO across the target, including persistence, replication, memory, workload, client, and keyspace signals. Partial cluster failures are explicit.",
+        "inputSchema": {
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "include_node_addresses": {
+              "default": false,
+              "description": "Return actual cluster node addresses. Requires Full access; defaults to pseudonymous labels.",
+              "type": "boolean"
+            },
+            "max_cluster_nodes": {
+              "default": 32,
+              "description": "Maximum cluster nodes that may participate in one all-node inspection.",
+              "format": "uint",
+              "maximum": 256,
+              "minimum": 1,
+              "type": "integer"
+            }
+          },
+          "title": "ClusterInput",
+          "type": "object"
+        },
+        "name": "redis_health_check",
+        "outputSchema": {
+          "$defs": {
+            "ClusterAggregation": {
+              "additionalProperties": false,
+              "properties": {
+                "complete": {
+                  "type": "boolean"
+                },
+                "failures": {
+                  "items": {
+                    "$ref": "#/$defs/ClusterNodeFailure"
+                  },
+                  "type": "array"
+                },
+                "node_addresses_redacted": {
+                  "type": "boolean"
+                },
+                "node_limit": {
+                  "format": "uint",
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                "nodes_queried": {
+                  "format": "uint",
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                "nodes_succeeded": {
+                  "format": "uint",
+                  "minimum": 0,
+                  "type": "integer"
+                }
+              },
+              "required": [
+                "node_limit",
+                "nodes_queried",
+                "nodes_succeeded",
+                "complete",
+                "node_addresses_redacted",
+                "failures"
+              ],
+              "type": "object"
+            },
+            "ClusterNodeFailure": {
+              "additionalProperties": false,
+              "properties": {
+                "code": {
+                  "type": "string"
+                },
+                "message_redacted": {
+                  "type": "boolean"
+                },
+                "node": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "node",
+                "code",
+                "message_redacted"
+              ],
+              "type": "object"
+            },
+            "HealthNode": {
+              "additionalProperties": false,
+              "properties": {
+                "blocked_clients": {
+                  "format": "uint64",
+                  "minimum": 0,
+                  "type": [
+                    "integer",
+                    "null"
+                  ]
+                },
+                "connected_clients": {
+                  "format": "uint64",
+                  "minimum": 0,
+                  "type": [
+                    "integer",
+                    "null"
+                  ]
+                },
+                "expiring_keys": {
+                  "format": "uint64",
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                "instantaneous_ops_per_second": {
+                  "format": "uint64",
+                  "minimum": 0,
+                  "type": [
+                    "integer",
+                    "null"
+                  ]
+                },
+                "issues": {
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
+                },
+                "loading": {
+                  "type": [
+                    "boolean",
+                    "null"
+                  ]
+                },
+                "maxmemory_bytes": {
+                  "format": "uint64",
+                  "minimum": 0,
+                  "type": [
+                    "integer",
+                    "null"
+                  ]
+                },
+                "memory_fragmentation_ratio": {
+                  "format": "double",
+                  "type": [
+                    "number",
+                    "null"
+                  ]
+                },
+                "mode": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "node": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "redis_version": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "rejected_connections": {
+                  "format": "uint64",
+                  "minimum": 0,
+                  "type": [
+                    "integer",
+                    "null"
+                  ]
+                },
+                "role": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "status": {
+                  "type": "string"
+                },
+                "total_commands_processed": {
+                  "format": "uint64",
+                  "minimum": 0,
+                  "type": [
+                    "integer",
+                    "null"
+                  ]
+                },
+                "total_keys": {
+                  "format": "uint64",
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                "uptime_seconds": {
+                  "format": "uint64",
+                  "minimum": 0,
+                  "type": [
+                    "integer",
+                    "null"
+                  ]
+                },
+                "used_memory_bytes": {
+                  "format": "uint64",
+                  "minimum": 0,
+                  "type": [
+                    "integer",
+                    "null"
+                  ]
+                }
+              },
+              "required": [
+                "status",
+                "issues",
+                "total_keys",
+                "expiring_keys"
+              ],
+              "type": "object"
+            }
+          },
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "cluster": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/ClusterAggregation"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "degraded_nodes": {
+              "format": "uint",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "deployment": {
+              "type": "string"
+            },
+            "elapsed_ms": {
+              "format": "double",
+              "type": "number"
+            },
+            "healthy_nodes": {
+              "format": "uint",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "nodes": {
+              "items": {
+                "$ref": "#/$defs/HealthNode"
+              },
+              "type": "array"
+            },
+            "status": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "deployment",
+            "status",
+            "elapsed_ms",
+            "healthy_nodes",
+            "degraded_nodes",
+            "nodes"
+          ],
+          "title": "HealthCheckOutput",
+          "type": "object"
+        },
+        "title": "Check Redis Health"
+      },
+      "required_access": "read_only",
+      "required_module": null,
+      "requires_raw_opt_in": false
+    },
+    {
       "bundle": "data_structures",
       "capability_requirements": {
         "deployment": "any",
@@ -6790,6 +8262,261 @@
           "type": "object"
         },
         "title": "Get Redis Hash Fields"
+      },
+      "required_access": "read_only",
+      "required_module": null,
+      "requires_raw_opt_in": false
+    },
+    {
+      "bundle": "diagnostics",
+      "capability_requirements": {
+        "deployment": "standalone",
+        "minimum_module_version": null,
+        "minimum_redis_version": "4.0.0",
+        "required_commands": [
+          "SCAN",
+          "TYPE",
+          "MEMORY"
+        ],
+        "required_module": null
+      },
+      "name": "redis_hotkeys",
+      "output_policy": "budget_guarded",
+      "protocol": {
+        "annotations": {
+          "destructiveHint": false,
+          "idempotentHint": true,
+          "readOnlyHint": true
+        },
+        "description": "Inspect exactly one explicit SCAN cursor page and rank that bounded sample by MEMORY USAGE. This never hides a full keyspace walk; continue with page.continuation.cursor. Standalone only.",
+        "inputSchema": {
+          "$defs": {
+            "InputEncoding": {
+              "enum": [
+                "utf8",
+                "base64"
+              ],
+              "type": "string"
+            }
+          },
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "count": {
+              "default": 100,
+              "description": "Approximate number of keys Redis should inspect in this one SCAN page.",
+              "format": "uint",
+              "maximum": 256,
+              "minimum": 1,
+              "type": "integer"
+            },
+            "cursor": {
+              "default": 0,
+              "description": "Cursor returned by the previous call. Start with zero.",
+              "format": "uint64",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "max_keys": {
+              "default": 100,
+              "description": "Hard maximum keys accepted from this SCAN page before any per-key inspection runs.",
+              "format": "uint",
+              "maximum": 256,
+              "minimum": 1,
+              "type": "integer"
+            },
+            "pattern": {
+              "default": "*",
+              "description": "Glob-style key pattern, as UTF-8 or standard base64.",
+              "type": "string"
+            },
+            "pattern_encoding": {
+              "$ref": "#/$defs/InputEncoding",
+              "default": "utf8",
+              "description": "Encoding of `pattern`."
+            },
+            "top": {
+              "default": 10,
+              "description": "Number of largest sampled keys returned.",
+              "format": "uint",
+              "maximum": 256,
+              "minimum": 1,
+              "type": "integer"
+            }
+          },
+          "title": "HotkeysInput",
+          "type": "object"
+        },
+        "name": "redis_hotkeys",
+        "outputSchema": {
+          "$defs": {
+            "EncodedValue": {
+              "additionalProperties": false,
+              "properties": {
+                "encoding": {
+                  "$ref": "#/$defs/ValueEncoding"
+                },
+                "value": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "value",
+                "encoding"
+              ],
+              "type": "object"
+            },
+            "HotkeyCandidate": {
+              "additionalProperties": false,
+              "properties": {
+                "key": {
+                  "$ref": "#/$defs/EncodedValue"
+                },
+                "key_type": {
+                  "type": "string"
+                },
+                "memory_bytes": {
+                  "format": "uint64",
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                "rank": {
+                  "format": "uint",
+                  "minimum": 0,
+                  "type": "integer"
+                }
+              },
+              "required": [
+                "rank",
+                "key",
+                "key_type",
+                "memory_bytes"
+              ],
+              "type": "object"
+            },
+            "PageContinuation": {
+              "additionalProperties": false,
+              "properties": {
+                "cursor": {
+                  "format": "uint64",
+                  "minimum": 0,
+                  "type": [
+                    "integer",
+                    "null"
+                  ]
+                },
+                "offset": {
+                  "format": "uint64",
+                  "minimum": 0,
+                  "type": [
+                    "integer",
+                    "null"
+                  ]
+                },
+                "start": {
+                  "format": "int64",
+                  "type": [
+                    "integer",
+                    "null"
+                  ]
+                }
+              },
+              "type": "object"
+            },
+            "PageMetadata": {
+              "additionalProperties": false,
+              "properties": {
+                "complete": {
+                  "type": "boolean"
+                },
+                "continuation": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/$defs/PageContinuation"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "requested": {
+                  "format": "uint",
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                "returned": {
+                  "format": "uint",
+                  "minimum": 0,
+                  "type": "integer"
+                }
+              },
+              "required": [
+                "requested",
+                "returned",
+                "complete"
+              ],
+              "type": "object"
+            },
+            "ValueEncoding": {
+              "enum": [
+                "utf8",
+                "base64"
+              ],
+              "type": "string"
+            }
+          },
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "candidates": {
+              "items": {
+                "$ref": "#/$defs/HotkeyCandidate"
+              },
+              "type": "array"
+            },
+            "measured_keys": {
+              "format": "uint",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "page": {
+              "$ref": "#/$defs/PageMetadata"
+            },
+            "sampled_keys": {
+              "format": "uint",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "selection_basis": {
+              "type": "string"
+            },
+            "total_sampled_memory_bytes": {
+              "format": "uint64",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "type_distribution": {
+              "additionalProperties": {
+                "format": "uint",
+                "minimum": 0,
+                "type": "integer"
+              },
+              "type": "object"
+            }
+          },
+          "required": [
+            "sampled_keys",
+            "measured_keys",
+            "total_sampled_memory_bytes",
+            "type_distribution",
+            "candidates",
+            "page",
+            "selection_basis"
+          ],
+          "title": "HotkeysOutput",
+          "type": "object"
+        },
+        "title": "Sample Large Redis Keys"
       },
       "required_access": "read_only",
       "required_module": null,
@@ -9882,6 +11609,575 @@
       "requires_raw_opt_in": false
     },
     {
+      "bundle": "diagnostics",
+      "capability_requirements": {
+        "deployment": "any",
+        "minimum_module_version": null,
+        "minimum_redis_version": "4.0.0",
+        "required_commands": [
+          "TYPE",
+          "TTL",
+          "MEMORY",
+          "OBJECT"
+        ],
+        "required_module": null
+      },
+      "name": "redis_key_summary",
+      "output_policy": "intrinsically_bounded",
+      "protocol": {
+        "annotations": {
+          "destructiveHint": false,
+          "idempotentHint": true,
+          "readOnlyHint": true
+        },
+        "description": "Read a binary-safe structured key summary combining TYPE, TTL, MEMORY USAGE, and OBJECT ENCODING under one total workflow timeout.",
+        "inputSchema": {
+          "$defs": {
+            "InputEncoding": {
+              "enum": [
+                "utf8",
+                "base64"
+              ],
+              "type": "string"
+            }
+          },
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "key": {
+              "description": "Redis key, as UTF-8 or standard base64.",
+              "type": "string"
+            },
+            "key_encoding": {
+              "$ref": "#/$defs/InputEncoding",
+              "default": "utf8",
+              "description": "Encoding of `key`."
+            }
+          },
+          "required": [
+            "key"
+          ],
+          "title": "KeySummaryInput",
+          "type": "object"
+        },
+        "name": "redis_key_summary",
+        "outputSchema": {
+          "$defs": {
+            "EncodedValue": {
+              "additionalProperties": false,
+              "properties": {
+                "encoding": {
+                  "$ref": "#/$defs/ValueEncoding"
+                },
+                "value": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "value",
+                "encoding"
+              ],
+              "type": "object"
+            },
+            "ValueEncoding": {
+              "enum": [
+                "utf8",
+                "base64"
+              ],
+              "type": "string"
+            }
+          },
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "exists": {
+              "type": "boolean"
+            },
+            "key": {
+              "$ref": "#/$defs/EncodedValue"
+            },
+            "key_type": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "memory_bytes": {
+              "format": "uint64",
+              "minimum": 0,
+              "type": [
+                "integer",
+                "null"
+              ]
+            },
+            "object_encoding": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/EncodedValue"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "persistent": {
+              "type": "boolean"
+            },
+            "ttl_seconds": {
+              "format": "int64",
+              "type": [
+                "integer",
+                "null"
+              ]
+            }
+          },
+          "required": [
+            "key",
+            "exists",
+            "persistent"
+          ],
+          "title": "KeySummaryOutput",
+          "type": "object"
+        },
+        "title": "Summarize Redis Key"
+      },
+      "required_access": "read_only",
+      "required_module": null,
+      "requires_raw_opt_in": false
+    },
+    {
+      "bundle": "diagnostics",
+      "capability_requirements": {
+        "deployment": "any",
+        "minimum_module_version": null,
+        "minimum_redis_version": null,
+        "required_commands": [
+          "INFO"
+        ],
+        "required_module": null
+      },
+      "name": "redis_keyspace_summary",
+      "output_policy": "budget_guarded",
+      "protocol": {
+        "annotations": {
+          "destructiveHint": false,
+          "idempotentHint": true,
+          "readOnlyHint": true
+        },
+        "description": "Summarize per-database key counts, expirations, and average TTL from bounded INFO keyspace responses. Unknown database fields remain structured and cluster partial failures are explicit.",
+        "inputSchema": {
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "include_node_addresses": {
+              "default": false,
+              "description": "Return actual cluster node addresses. Requires Full access; defaults to pseudonymous labels.",
+              "type": "boolean"
+            },
+            "max_cluster_nodes": {
+              "default": 32,
+              "description": "Maximum cluster nodes that may participate in one all-node inspection.",
+              "format": "uint",
+              "maximum": 256,
+              "minimum": 1,
+              "type": "integer"
+            }
+          },
+          "title": "ClusterInput",
+          "type": "object"
+        },
+        "name": "redis_keyspace_summary",
+        "outputSchema": {
+          "$defs": {
+            "ClusterAggregation": {
+              "additionalProperties": false,
+              "properties": {
+                "complete": {
+                  "type": "boolean"
+                },
+                "failures": {
+                  "items": {
+                    "$ref": "#/$defs/ClusterNodeFailure"
+                  },
+                  "type": "array"
+                },
+                "node_addresses_redacted": {
+                  "type": "boolean"
+                },
+                "node_limit": {
+                  "format": "uint",
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                "nodes_queried": {
+                  "format": "uint",
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                "nodes_succeeded": {
+                  "format": "uint",
+                  "minimum": 0,
+                  "type": "integer"
+                }
+              },
+              "required": [
+                "node_limit",
+                "nodes_queried",
+                "nodes_succeeded",
+                "complete",
+                "node_addresses_redacted",
+                "failures"
+              ],
+              "type": "object"
+            },
+            "ClusterNodeFailure": {
+              "additionalProperties": false,
+              "properties": {
+                "code": {
+                  "type": "string"
+                },
+                "message_redacted": {
+                  "type": "boolean"
+                },
+                "node": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "node",
+                "code",
+                "message_redacted"
+              ],
+              "type": "object"
+            },
+            "DatabaseSummary": {
+              "additionalProperties": false,
+              "properties": {
+                "average_ttl_ms": {
+                  "format": "uint64",
+                  "minimum": 0,
+                  "type": [
+                    "integer",
+                    "null"
+                  ]
+                },
+                "database": {
+                  "type": "string"
+                },
+                "expiring_keys": {
+                  "format": "uint64",
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                "fields": {
+                  "additionalProperties": {
+                    "type": "string"
+                  },
+                  "type": "object"
+                },
+                "keys": {
+                  "format": "uint64",
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                "subexpiry": {
+                  "format": "uint64",
+                  "minimum": 0,
+                  "type": [
+                    "integer",
+                    "null"
+                  ]
+                }
+              },
+              "required": [
+                "database",
+                "keys",
+                "expiring_keys",
+                "fields"
+              ],
+              "type": "object"
+            },
+            "KeyspaceNodeSummary": {
+              "additionalProperties": false,
+              "properties": {
+                "databases": {
+                  "items": {
+                    "$ref": "#/$defs/DatabaseSummary"
+                  },
+                  "type": "array"
+                },
+                "expiring_keys": {
+                  "format": "uint64",
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                "node": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "total_keys": {
+                  "format": "uint64",
+                  "minimum": 0,
+                  "type": "integer"
+                }
+              },
+              "required": [
+                "total_keys",
+                "expiring_keys",
+                "databases"
+              ],
+              "type": "object"
+            }
+          },
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "cluster": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/ClusterAggregation"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "deployment": {
+              "type": "string"
+            },
+            "expiring_keys": {
+              "format": "uint64",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "nodes": {
+              "items": {
+                "$ref": "#/$defs/KeyspaceNodeSummary"
+              },
+              "type": "array"
+            },
+            "total_keys": {
+              "format": "uint64",
+              "minimum": 0,
+              "type": "integer"
+            }
+          },
+          "required": [
+            "deployment",
+            "total_keys",
+            "expiring_keys",
+            "nodes"
+          ],
+          "title": "KeyspaceSummaryOutput",
+          "type": "object"
+        },
+        "title": "Summarize Redis Keyspace"
+      },
+      "required_access": "read_only",
+      "required_module": null,
+      "requires_raw_opt_in": false
+    },
+    {
+      "bundle": "diagnostics",
+      "capability_requirements": {
+        "deployment": "any",
+        "minimum_module_version": null,
+        "minimum_redis_version": "2.8.0",
+        "required_commands": [
+          "LATENCY"
+        ],
+        "required_module": null
+      },
+      "name": "redis_latency_history",
+      "output_policy": "budget_guarded",
+      "protocol": {
+        "annotations": {
+          "destructiveHint": false,
+          "idempotentHint": true,
+          "readOnlyHint": true
+        },
+        "description": "Read bounded structured LATENCY HISTORY samples for one event. Cluster results expose completeness and pseudonymize node addresses by default.",
+        "inputSchema": {
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "event": {
+              "description": "Redis latency event, such as command or fast-command.",
+              "type": "string"
+            },
+            "include_node_addresses": {
+              "default": false,
+              "description": "Return real cluster node addresses. Requires Full access.",
+              "type": "boolean"
+            },
+            "limit": {
+              "default": 100,
+              "description": "Maximum samples returned per node.",
+              "format": "uint",
+              "maximum": 1000,
+              "minimum": 1,
+              "type": "integer"
+            },
+            "max_cluster_nodes": {
+              "default": 32,
+              "description": "Maximum cluster nodes that may participate.",
+              "format": "uint",
+              "maximum": 256,
+              "minimum": 1,
+              "type": "integer"
+            }
+          },
+          "required": [
+            "event"
+          ],
+          "title": "LatencyHistoryInput",
+          "type": "object"
+        },
+        "name": "redis_latency_history",
+        "outputSchema": {
+          "$defs": {
+            "ClusterAggregation": {
+              "additionalProperties": false,
+              "properties": {
+                "complete": {
+                  "type": "boolean"
+                },
+                "failures": {
+                  "items": {
+                    "$ref": "#/$defs/ClusterNodeFailure"
+                  },
+                  "type": "array"
+                },
+                "node_addresses_redacted": {
+                  "type": "boolean"
+                },
+                "node_limit": {
+                  "format": "uint",
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                "nodes_queried": {
+                  "format": "uint",
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                "nodes_succeeded": {
+                  "format": "uint",
+                  "minimum": 0,
+                  "type": "integer"
+                }
+              },
+              "required": [
+                "node_limit",
+                "nodes_queried",
+                "nodes_succeeded",
+                "complete",
+                "node_addresses_redacted",
+                "failures"
+              ],
+              "type": "object"
+            },
+            "ClusterNodeFailure": {
+              "additionalProperties": false,
+              "properties": {
+                "code": {
+                  "type": "string"
+                },
+                "message_redacted": {
+                  "type": "boolean"
+                },
+                "node": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "node",
+                "code",
+                "message_redacted"
+              ],
+              "type": "object"
+            },
+            "LatencySample": {
+              "additionalProperties": false,
+              "properties": {
+                "latency_milliseconds": {
+                  "format": "uint64",
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                "node": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "timestamp_seconds": {
+                  "format": "int64",
+                  "type": "integer"
+                }
+              },
+              "required": [
+                "timestamp_seconds",
+                "latency_milliseconds"
+              ],
+              "type": "object"
+            }
+          },
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "available": {
+              "format": "uint",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "cluster": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/ClusterAggregation"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "event": {
+              "type": "string"
+            },
+            "returned": {
+              "format": "uint",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "samples": {
+              "items": {
+                "$ref": "#/$defs/LatencySample"
+              },
+              "type": "array"
+            },
+            "truncated": {
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "event",
+            "returned",
+            "available",
+            "truncated",
+            "samples"
+          ],
+          "title": "LatencyHistoryOutput",
+          "type": "object"
+        },
+        "title": "Read Redis Latency History"
+      },
+      "required_access": "read_only",
+      "required_module": null,
+      "requires_raw_opt_in": false
+    },
+    {
       "bundle": "data_structures",
       "capability_requirements": {
         "deployment": "any",
@@ -11240,6 +13536,525 @@
       "requires_raw_opt_in": false
     },
     {
+      "bundle": "diagnostics",
+      "capability_requirements": {
+        "deployment": "any",
+        "minimum_module_version": null,
+        "minimum_redis_version": "4.0.0",
+        "required_commands": [
+          "MEMORY"
+        ],
+        "required_module": null
+      },
+      "name": "redis_memory_stats",
+      "output_policy": "budget_guarded",
+      "protocol": {
+        "annotations": {
+          "destructiveHint": false,
+          "idempotentHint": true,
+          "readOnlyHint": true
+        },
+        "description": "Read structured MEMORY STATS values with known fields normalized and every unknown field retained in a binary-safe representation. Cluster fan-out is bounded and partial failures are explicit.",
+        "inputSchema": {
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "include_node_addresses": {
+              "default": false,
+              "description": "Return actual cluster node addresses. Requires Full access; defaults to pseudonymous labels.",
+              "type": "boolean"
+            },
+            "max_cluster_nodes": {
+              "default": 32,
+              "description": "Maximum cluster nodes that may participate in one all-node inspection.",
+              "format": "uint",
+              "maximum": 256,
+              "minimum": 1,
+              "type": "integer"
+            }
+          },
+          "title": "ClusterInput",
+          "type": "object"
+        },
+        "name": "redis_memory_stats",
+        "outputSchema": {
+          "$defs": {
+            "ClusterAggregation": {
+              "additionalProperties": false,
+              "properties": {
+                "complete": {
+                  "type": "boolean"
+                },
+                "failures": {
+                  "items": {
+                    "$ref": "#/$defs/ClusterNodeFailure"
+                  },
+                  "type": "array"
+                },
+                "node_addresses_redacted": {
+                  "type": "boolean"
+                },
+                "node_limit": {
+                  "format": "uint",
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                "nodes_queried": {
+                  "format": "uint",
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                "nodes_succeeded": {
+                  "format": "uint",
+                  "minimum": 0,
+                  "type": "integer"
+                }
+              },
+              "required": [
+                "node_limit",
+                "nodes_queried",
+                "nodes_succeeded",
+                "complete",
+                "node_addresses_redacted",
+                "failures"
+              ],
+              "type": "object"
+            },
+            "ClusterNodeFailure": {
+              "additionalProperties": false,
+              "properties": {
+                "code": {
+                  "type": "string"
+                },
+                "message_redacted": {
+                  "type": "boolean"
+                },
+                "node": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "node",
+                "code",
+                "message_redacted"
+              ],
+              "type": "object"
+            },
+            "DiagnosticField": {
+              "additionalProperties": false,
+              "properties": {
+                "key": {
+                  "$ref": "#/$defs/EncodedValue"
+                },
+                "value": true
+              },
+              "required": [
+                "key",
+                "value"
+              ],
+              "type": "object"
+            },
+            "EncodedValue": {
+              "additionalProperties": false,
+              "properties": {
+                "encoding": {
+                  "$ref": "#/$defs/ValueEncoding"
+                },
+                "value": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "value",
+                "encoding"
+              ],
+              "type": "object"
+            },
+            "MemoryStatsNode": {
+              "additionalProperties": false,
+              "properties": {
+                "bytes_per_key": {
+                  "format": "uint64",
+                  "minimum": 0,
+                  "type": [
+                    "integer",
+                    "null"
+                  ]
+                },
+                "dataset_bytes": {
+                  "format": "uint64",
+                  "minimum": 0,
+                  "type": [
+                    "integer",
+                    "null"
+                  ]
+                },
+                "dataset_percentage": {
+                  "format": "double",
+                  "type": [
+                    "number",
+                    "null"
+                  ]
+                },
+                "fields": {
+                  "items": {
+                    "$ref": "#/$defs/DiagnosticField"
+                  },
+                  "type": "array"
+                },
+                "fragmentation_ratio": {
+                  "format": "double",
+                  "type": [
+                    "number",
+                    "null"
+                  ]
+                },
+                "keys_count": {
+                  "format": "uint64",
+                  "minimum": 0,
+                  "type": [
+                    "integer",
+                    "null"
+                  ]
+                },
+                "node": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "overhead_total_bytes": {
+                  "format": "uint64",
+                  "minimum": 0,
+                  "type": [
+                    "integer",
+                    "null"
+                  ]
+                },
+                "peak_allocated_bytes": {
+                  "format": "uint64",
+                  "minimum": 0,
+                  "type": [
+                    "integer",
+                    "null"
+                  ]
+                },
+                "peak_percentage": {
+                  "format": "double",
+                  "type": [
+                    "number",
+                    "null"
+                  ]
+                },
+                "replication_backlog_bytes": {
+                  "format": "uint64",
+                  "minimum": 0,
+                  "type": [
+                    "integer",
+                    "null"
+                  ]
+                },
+                "startup_allocated_bytes": {
+                  "format": "uint64",
+                  "minimum": 0,
+                  "type": [
+                    "integer",
+                    "null"
+                  ]
+                },
+                "total_allocated_bytes": {
+                  "format": "uint64",
+                  "minimum": 0,
+                  "type": [
+                    "integer",
+                    "null"
+                  ]
+                }
+              },
+              "required": [
+                "fields"
+              ],
+              "type": "object"
+            },
+            "ValueEncoding": {
+              "enum": [
+                "utf8",
+                "base64"
+              ],
+              "type": "string"
+            }
+          },
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "cluster": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/ClusterAggregation"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "deployment": {
+              "type": "string"
+            },
+            "nodes": {
+              "items": {
+                "$ref": "#/$defs/MemoryStatsNode"
+              },
+              "type": "array"
+            }
+          },
+          "required": [
+            "deployment",
+            "nodes"
+          ],
+          "title": "MemoryStatsOutput",
+          "type": "object"
+        },
+        "title": "Inspect Redis Memory Statistics"
+      },
+      "required_access": "read_only",
+      "required_module": null,
+      "requires_raw_opt_in": false
+    },
+    {
+      "bundle": "diagnostics",
+      "capability_requirements": {
+        "deployment": "any",
+        "minimum_module_version": null,
+        "minimum_redis_version": "4.0.0",
+        "required_commands": [
+          "MEMORY"
+        ],
+        "required_module": null
+      },
+      "name": "redis_memory_summary",
+      "output_policy": "intrinsically_bounded",
+      "protocol": {
+        "annotations": {
+          "destructiveHint": false,
+          "idempotentHint": true,
+          "readOnlyHint": true
+        },
+        "description": "Derive a compact per-node and aggregate memory summary from MEMORY STATS while preserving bounded cluster completeness metadata.",
+        "inputSchema": {
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "include_node_addresses": {
+              "default": false,
+              "description": "Return actual cluster node addresses. Requires Full access; defaults to pseudonymous labels.",
+              "type": "boolean"
+            },
+            "max_cluster_nodes": {
+              "default": 32,
+              "description": "Maximum cluster nodes that may participate in one all-node inspection.",
+              "format": "uint",
+              "maximum": 256,
+              "minimum": 1,
+              "type": "integer"
+            }
+          },
+          "title": "ClusterInput",
+          "type": "object"
+        },
+        "name": "redis_memory_summary",
+        "outputSchema": {
+          "$defs": {
+            "ClusterAggregation": {
+              "additionalProperties": false,
+              "properties": {
+                "complete": {
+                  "type": "boolean"
+                },
+                "failures": {
+                  "items": {
+                    "$ref": "#/$defs/ClusterNodeFailure"
+                  },
+                  "type": "array"
+                },
+                "node_addresses_redacted": {
+                  "type": "boolean"
+                },
+                "node_limit": {
+                  "format": "uint",
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                "nodes_queried": {
+                  "format": "uint",
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                "nodes_succeeded": {
+                  "format": "uint",
+                  "minimum": 0,
+                  "type": "integer"
+                }
+              },
+              "required": [
+                "node_limit",
+                "nodes_queried",
+                "nodes_succeeded",
+                "complete",
+                "node_addresses_redacted",
+                "failures"
+              ],
+              "type": "object"
+            },
+            "ClusterNodeFailure": {
+              "additionalProperties": false,
+              "properties": {
+                "code": {
+                  "type": "string"
+                },
+                "message_redacted": {
+                  "type": "boolean"
+                },
+                "node": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "node",
+                "code",
+                "message_redacted"
+              ],
+              "type": "object"
+            },
+            "MemoryNodeSummary": {
+              "additionalProperties": false,
+              "properties": {
+                "bytes_per_key": {
+                  "format": "uint64",
+                  "minimum": 0,
+                  "type": [
+                    "integer",
+                    "null"
+                  ]
+                },
+                "dataset_bytes": {
+                  "format": "uint64",
+                  "minimum": 0,
+                  "type": [
+                    "integer",
+                    "null"
+                  ]
+                },
+                "dataset_percentage": {
+                  "format": "double",
+                  "type": [
+                    "number",
+                    "null"
+                  ]
+                },
+                "fragmentation_ratio": {
+                  "format": "double",
+                  "type": [
+                    "number",
+                    "null"
+                  ]
+                },
+                "key_count": {
+                  "format": "uint64",
+                  "minimum": 0,
+                  "type": [
+                    "integer",
+                    "null"
+                  ]
+                },
+                "node": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "overhead_bytes": {
+                  "format": "uint64",
+                  "minimum": 0,
+                  "type": [
+                    "integer",
+                    "null"
+                  ]
+                },
+                "peak_allocated_bytes": {
+                  "format": "uint64",
+                  "minimum": 0,
+                  "type": [
+                    "integer",
+                    "null"
+                  ]
+                },
+                "total_allocated_bytes": {
+                  "format": "uint64",
+                  "minimum": 0,
+                  "type": [
+                    "integer",
+                    "null"
+                  ]
+                }
+              },
+              "type": "object"
+            }
+          },
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "cluster": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/ClusterAggregation"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "deployment": {
+              "type": "string"
+            },
+            "nodes": {
+              "items": {
+                "$ref": "#/$defs/MemoryNodeSummary"
+              },
+              "type": "array"
+            },
+            "total_allocated_bytes": {
+              "format": "uint64",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "total_dataset_bytes": {
+              "format": "uint64",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "total_overhead_bytes": {
+              "format": "uint64",
+              "minimum": 0,
+              "type": "integer"
+            }
+          },
+          "required": [
+            "deployment",
+            "total_allocated_bytes",
+            "total_dataset_bytes",
+            "total_overhead_bytes",
+            "nodes"
+          ],
+          "title": "MemorySummaryOutput",
+          "type": "object"
+        },
+        "title": "Summarize Redis Memory"
+      },
+      "required_access": "read_only",
+      "required_module": null,
+      "requires_raw_opt_in": false
+    },
+    {
       "bundle": "essentials",
       "capability_requirements": {
         "deployment": "any",
@@ -11413,6 +14228,252 @@
           "type": "object"
         },
         "title": "Get Multiple Redis Strings"
+      },
+      "required_access": "read_only",
+      "required_module": null,
+      "requires_raw_opt_in": false
+    },
+    {
+      "bundle": "diagnostics",
+      "capability_requirements": {
+        "deployment": "any",
+        "minimum_module_version": null,
+        "minimum_redis_version": "4.0.0",
+        "required_commands": [
+          "MODULE"
+        ],
+        "required_module": null
+      },
+      "name": "redis_module_list",
+      "output_policy": "budget_guarded",
+      "protocol": {
+        "annotations": {
+          "destructiveHint": false,
+          "idempotentHint": true,
+          "readOnlyHint": true
+        },
+        "description": "List loaded Redis modules with structured names and versions. Paths, arguments, unknown fields, and real cluster node addresses are redacted unless explicitly requested under Full access.",
+        "inputSchema": {
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "include_sensitive": {
+              "default": false,
+              "description": "Include module paths, arguments, unknown fields, and real node addresses. Requires Full access.",
+              "type": "boolean"
+            },
+            "max_cluster_nodes": {
+              "default": 32,
+              "description": "Maximum cluster nodes that may participate.",
+              "format": "uint",
+              "maximum": 256,
+              "minimum": 1,
+              "type": "integer"
+            }
+          },
+          "title": "ModuleListInput",
+          "type": "object"
+        },
+        "name": "redis_module_list",
+        "outputSchema": {
+          "$defs": {
+            "ClusterAggregation": {
+              "additionalProperties": false,
+              "properties": {
+                "complete": {
+                  "type": "boolean"
+                },
+                "failures": {
+                  "items": {
+                    "$ref": "#/$defs/ClusterNodeFailure"
+                  },
+                  "type": "array"
+                },
+                "node_addresses_redacted": {
+                  "type": "boolean"
+                },
+                "node_limit": {
+                  "format": "uint",
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                "nodes_queried": {
+                  "format": "uint",
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                "nodes_succeeded": {
+                  "format": "uint",
+                  "minimum": 0,
+                  "type": "integer"
+                }
+              },
+              "required": [
+                "node_limit",
+                "nodes_queried",
+                "nodes_succeeded",
+                "complete",
+                "node_addresses_redacted",
+                "failures"
+              ],
+              "type": "object"
+            },
+            "ClusterNodeFailure": {
+              "additionalProperties": false,
+              "properties": {
+                "code": {
+                  "type": "string"
+                },
+                "message_redacted": {
+                  "type": "boolean"
+                },
+                "node": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "node",
+                "code",
+                "message_redacted"
+              ],
+              "type": "object"
+            },
+            "DiagnosticField": {
+              "additionalProperties": false,
+              "properties": {
+                "key": {
+                  "$ref": "#/$defs/EncodedValue"
+                },
+                "value": true
+              },
+              "required": [
+                "key",
+                "value"
+              ],
+              "type": "object"
+            },
+            "EncodedValue": {
+              "additionalProperties": false,
+              "properties": {
+                "encoding": {
+                  "$ref": "#/$defs/ValueEncoding"
+                },
+                "value": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "value",
+                "encoding"
+              ],
+              "type": "object"
+            },
+            "ModuleRecord": {
+              "additionalProperties": false,
+              "properties": {
+                "arguments": true,
+                "name": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/$defs/EncodedValue"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "node": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "path": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/$defs/EncodedValue"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "sensitive_fields_redacted": {
+                  "type": "boolean"
+                },
+                "unknown_field_count": {
+                  "format": "uint",
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                "unknown_fields": {
+                  "items": {
+                    "$ref": "#/$defs/DiagnosticField"
+                  },
+                  "type": [
+                    "array",
+                    "null"
+                  ]
+                },
+                "version": {
+                  "format": "int64",
+                  "type": [
+                    "integer",
+                    "null"
+                  ]
+                }
+              },
+              "required": [
+                "sensitive_fields_redacted",
+                "unknown_field_count"
+              ],
+              "type": "object"
+            },
+            "ValueEncoding": {
+              "enum": [
+                "utf8",
+                "base64"
+              ],
+              "type": "string"
+            }
+          },
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "cluster": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/ClusterAggregation"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "count": {
+              "format": "uint",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "deployment": {
+              "type": "string"
+            },
+            "modules": {
+              "items": {
+                "$ref": "#/$defs/ModuleRecord"
+              },
+              "type": "array"
+            }
+          },
+          "required": [
+            "deployment",
+            "count",
+            "modules"
+          ],
+          "title": "ModuleListOutput",
+          "type": "object"
+        },
+        "title": "List Redis Modules"
       },
       "required_access": "read_only",
       "required_module": null,
@@ -15672,6 +18733,283 @@
           "type": "object"
         },
         "title": "Check Redis Set Membership"
+      },
+      "required_access": "read_only",
+      "required_module": null,
+      "requires_raw_opt_in": false
+    },
+    {
+      "bundle": "diagnostics",
+      "capability_requirements": {
+        "deployment": "any",
+        "minimum_module_version": null,
+        "minimum_redis_version": "2.2.0",
+        "required_commands": [
+          "SLOWLOG"
+        ],
+        "required_module": null
+      },
+      "name": "redis_slowlog",
+      "output_policy": "budget_guarded",
+      "protocol": {
+        "annotations": {
+          "destructiveHint": false,
+          "idempotentHint": true,
+          "readOnlyHint": true
+        },
+        "description": "Read bounded structured SLOWLOG entries. Command arguments, client identity, future fields, and real cluster node addresses are redacted unless explicitly requested under Full access.",
+        "inputSchema": {
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "include_arguments": {
+              "default": false,
+              "description": "Include command arguments. Requires Full access because commands may contain credentials or user data.",
+              "type": "boolean"
+            },
+            "include_sensitive": {
+              "default": false,
+              "description": "Include client addresses, names, future extra fields, and real node addresses. Requires Full access.",
+              "type": "boolean"
+            },
+            "limit": {
+              "default": 10,
+              "description": "Maximum entries returned per Redis node.",
+              "format": "uint",
+              "maximum": 1000,
+              "minimum": 1,
+              "type": "integer"
+            },
+            "max_cluster_nodes": {
+              "default": 32,
+              "description": "Maximum cluster nodes that may participate.",
+              "format": "uint",
+              "maximum": 256,
+              "minimum": 1,
+              "type": "integer"
+            }
+          },
+          "title": "SlowlogInput",
+          "type": "object"
+        },
+        "name": "redis_slowlog",
+        "outputSchema": {
+          "$defs": {
+            "ClusterAggregation": {
+              "additionalProperties": false,
+              "properties": {
+                "complete": {
+                  "type": "boolean"
+                },
+                "failures": {
+                  "items": {
+                    "$ref": "#/$defs/ClusterNodeFailure"
+                  },
+                  "type": "array"
+                },
+                "node_addresses_redacted": {
+                  "type": "boolean"
+                },
+                "node_limit": {
+                  "format": "uint",
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                "nodes_queried": {
+                  "format": "uint",
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                "nodes_succeeded": {
+                  "format": "uint",
+                  "minimum": 0,
+                  "type": "integer"
+                }
+              },
+              "required": [
+                "node_limit",
+                "nodes_queried",
+                "nodes_succeeded",
+                "complete",
+                "node_addresses_redacted",
+                "failures"
+              ],
+              "type": "object"
+            },
+            "ClusterNodeFailure": {
+              "additionalProperties": false,
+              "properties": {
+                "code": {
+                  "type": "string"
+                },
+                "message_redacted": {
+                  "type": "boolean"
+                },
+                "node": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "node",
+                "code",
+                "message_redacted"
+              ],
+              "type": "object"
+            },
+            "EncodedValue": {
+              "additionalProperties": false,
+              "properties": {
+                "encoding": {
+                  "$ref": "#/$defs/ValueEncoding"
+                },
+                "value": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "value",
+                "encoding"
+              ],
+              "type": "object"
+            },
+            "SlowlogEntry": {
+              "additionalProperties": false,
+              "properties": {
+                "argument_count": {
+                  "format": "uint",
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                "arguments": {
+                  "items": {
+                    "$ref": "#/$defs/EncodedValue"
+                  },
+                  "type": [
+                    "array",
+                    "null"
+                  ]
+                },
+                "client_address": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/$defs/EncodedValue"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "client_name": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/$defs/EncodedValue"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "command": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/$defs/EncodedValue"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "duration_microseconds": {
+                  "format": "uint64",
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                "extra_field_count": {
+                  "format": "uint",
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                "extra_fields": {
+                  "items": true,
+                  "type": [
+                    "array",
+                    "null"
+                  ]
+                },
+                "id": {
+                  "format": "uint64",
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                "node": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "sensitive_fields_redacted": {
+                  "type": "boolean"
+                },
+                "timestamp_seconds": {
+                  "format": "int64",
+                  "type": "integer"
+                }
+              },
+              "required": [
+                "id",
+                "timestamp_seconds",
+                "duration_microseconds",
+                "argument_count",
+                "extra_field_count",
+                "sensitive_fields_redacted"
+              ],
+              "type": "object"
+            },
+            "ValueEncoding": {
+              "enum": [
+                "utf8",
+                "base64"
+              ],
+              "type": "string"
+            }
+          },
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "cluster": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/ClusterAggregation"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "count": {
+              "format": "uint",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "deployment": {
+              "type": "string"
+            },
+            "entries": {
+              "items": {
+                "$ref": "#/$defs/SlowlogEntry"
+              },
+              "type": "array"
+            }
+          },
+          "required": [
+            "deployment",
+            "count",
+            "entries"
+          ],
+          "title": "SlowlogOutput",
+          "type": "object"
+        },
+        "title": "Read Redis Slow Log"
       },
       "required_access": "read_only",
       "required_module": null,
@@ -24757,9 +28095,92 @@
     }
   ],
   "structured_results": {
+    "redis_acl_whoami": {
+      "cluster": null,
+      "consistent": true,
+      "deployment": "unknown",
+      "identities": [
+        {
+          "node": null,
+          "username": {
+            "encoding": "utf8",
+            "value": "default"
+          }
+        }
+      ]
+    },
     "redis_append": {
       "key": "greeting",
       "length_bytes": 5
+    },
+    "redis_client_list": {
+      "clients": [
+        {
+          "address": null,
+          "age_seconds": 120,
+          "client_type": "normal",
+          "command": "get",
+          "database": 0,
+          "flags": "b",
+          "id": 1,
+          "idle_seconds": 61,
+          "library_name": null,
+          "library_version": null,
+          "local_address": null,
+          "name": null,
+          "node": null,
+          "pattern_subscriptions": 0,
+          "response_protocol": 3,
+          "sensitive_fields_redacted": true,
+          "sharded_subscriptions": 0,
+          "subscriptions": 0,
+          "total_commands": 2,
+          "total_memory_bytes": 18000,
+          "total_network_input_bytes": 10,
+          "total_network_output_bytes": 20,
+          "unknown_field_count": 1,
+          "unknown_fields": null,
+          "username": null
+        }
+      ],
+      "cluster": null,
+      "deployment": "unknown",
+      "matched": 1,
+      "returned": 1,
+      "truncated": false
+    },
+    "redis_cluster_info": {
+      "cluster": null,
+      "healthy_nodes": 1,
+      "nodes": [
+        {
+          "cluster_size": 3,
+          "current_epoch": 7,
+          "known_nodes": 3,
+          "messages_received": 9,
+          "messages_sent": 10,
+          "node": null,
+          "properties": {
+            "cluster_current_epoch": "7",
+            "cluster_known_nodes": "3",
+            "cluster_size": "3",
+            "cluster_slots_assigned": "16384",
+            "cluster_slots_fail": "0",
+            "cluster_slots_ok": "16384",
+            "cluster_slots_pfail": "0",
+            "cluster_state": "ok",
+            "cluster_stats_messages_received": "9",
+            "cluster_stats_messages_sent": "10",
+            "future_metric": "1"
+          },
+          "slots_assigned": 16384,
+          "slots_fail": 0,
+          "slots_ok": 16384,
+          "slots_pfail": 0,
+          "state": "ok"
+        }
+      ],
+      "unhealthy_nodes": 0
     },
     "redis_command": {
       "command": "ECHO",
@@ -24767,6 +28188,42 @@
         "encoding": "utf8",
         "value": "hello"
       }
+    },
+    "redis_connection_summary": {
+      "blocked": 1,
+      "client_identity_redacted": true,
+      "client_types": {
+        "normal": 1
+      },
+      "cluster": null,
+      "commands": {
+        "get": 1
+      },
+      "databases": {
+        "0": 1
+      },
+      "deployment": "unknown",
+      "idle_over_60_seconds": 1,
+      "nodes": [
+        {
+          "blocked": 1,
+          "client_types": {
+            "normal": 1
+          },
+          "commands": {
+            "get": 1
+          },
+          "databases": {
+            "0": 1
+          },
+          "idle_over_60_seconds": 1,
+          "node": null,
+          "oldest_age_seconds": 120,
+          "total": 1
+        }
+      ],
+      "oldest_age_seconds": 120,
+      "total": 1
     },
     "redis_copy": {
       "copied": true,
@@ -25185,6 +28642,36 @@
       "key_encoding": "utf8",
       "requested": 1
     },
+    "redis_health_check": {
+      "cluster": null,
+      "degraded_nodes": 0,
+      "deployment": "unknown",
+      "elapsed_ms": 0.0,
+      "healthy_nodes": 1,
+      "nodes": [
+        {
+          "blocked_clients": 0,
+          "connected_clients": 2,
+          "expiring_keys": 1,
+          "instantaneous_ops_per_second": 3,
+          "issues": [],
+          "loading": false,
+          "maxmemory_bytes": 0,
+          "memory_fragmentation_ratio": 1.1,
+          "mode": "standalone",
+          "node": null,
+          "redis_version": "8.2.0",
+          "rejected_connections": 0,
+          "role": "master",
+          "status": "ok",
+          "total_commands_processed": 10,
+          "total_keys": 2,
+          "uptime_seconds": 60,
+          "used_memory_bytes": 1024
+        }
+      ],
+      "status": "ok"
+    },
     "redis_hexists": {
       "field": "name",
       "field_encoding": "utf8",
@@ -25288,6 +28775,32 @@
           "value_encoding": null
         }
       ]
+    },
+    "redis_hotkeys": {
+      "candidates": [
+        {
+          "key": {
+            "encoding": "utf8",
+            "value": "alpha"
+          },
+          "key_type": "string",
+          "memory_bytes": 64,
+          "rank": 1
+        }
+      ],
+      "measured_keys": 2,
+      "page": {
+        "complete": true,
+        "continuation": null,
+        "requested": 2,
+        "returned": 2
+      },
+      "sampled_keys": 2,
+      "selection_basis": "largest_memory_usage_in_one_explicit_scan_page",
+      "total_sampled_memory_bytes": 128,
+      "type_distribution": {
+        "string": 2
+      }
     },
     "redis_hpersist": {
       "already_persistent": 0,
@@ -25601,6 +29114,63 @@
         "object"
       ]
     },
+    "redis_key_summary": {
+      "exists": true,
+      "key": {
+        "encoding": "utf8",
+        "value": "alpha"
+      },
+      "key_type": "string",
+      "memory_bytes": 64,
+      "object_encoding": {
+        "encoding": "utf8",
+        "value": "embstr"
+      },
+      "persistent": true,
+      "ttl_seconds": null
+    },
+    "redis_keyspace_summary": {
+      "cluster": null,
+      "deployment": "unknown",
+      "expiring_keys": 1,
+      "nodes": [
+        {
+          "databases": [
+            {
+              "average_ttl_ms": 5000,
+              "database": "db0",
+              "expiring_keys": 1,
+              "fields": {
+                "avg_ttl": "5000",
+                "expires": "1",
+                "keys": "2",
+                "subexpiry": "0"
+              },
+              "keys": 2,
+              "subexpiry": 0
+            }
+          ],
+          "expiring_keys": 1,
+          "node": null,
+          "total_keys": 2
+        }
+      ],
+      "total_keys": 2
+    },
+    "redis_latency_history": {
+      "available": 1,
+      "cluster": null,
+      "event": "command",
+      "returned": 1,
+      "samples": [
+        {
+          "latency_milliseconds": 12,
+          "node": null,
+          "timestamp_seconds": 1700000000
+        }
+      ],
+      "truncated": false
+    },
     "redis_lindex": {
       "element_exists": true,
       "encoding": "utf8",
@@ -25705,6 +29275,107 @@
       "stop": 9,
       "trimmed": true
     },
+    "redis_memory_stats": {
+      "cluster": null,
+      "deployment": "unknown",
+      "nodes": [
+        {
+          "bytes_per_key": 384,
+          "dataset_bytes": 768,
+          "dataset_percentage": null,
+          "fields": [
+            {
+              "key": {
+                "encoding": "utf8",
+                "value": "peak.allocated"
+              },
+              "value": 2048
+            },
+            {
+              "key": {
+                "encoding": "utf8",
+                "value": "total.allocated"
+              },
+              "value": 1024
+            },
+            {
+              "key": {
+                "encoding": "utf8",
+                "value": "overhead.total"
+              },
+              "value": 256
+            },
+            {
+              "key": {
+                "encoding": "utf8",
+                "value": "dataset.bytes"
+              },
+              "value": 768
+            },
+            {
+              "key": {
+                "encoding": "utf8",
+                "value": "keys.count"
+              },
+              "value": 2
+            },
+            {
+              "key": {
+                "encoding": "utf8",
+                "value": "keys.bytes-per-key"
+              },
+              "value": 384
+            },
+            {
+              "key": {
+                "encoding": "utf8",
+                "value": "fragmentation"
+              },
+              "value": 1.1
+            },
+            {
+              "key": {
+                "encoding": "utf8",
+                "value": "future.stat"
+              },
+              "value": {
+                "encoding": "base64",
+                "value": "/wA="
+              }
+            }
+          ],
+          "fragmentation_ratio": 1.1,
+          "keys_count": 2,
+          "node": null,
+          "overhead_total_bytes": 256,
+          "peak_allocated_bytes": 2048,
+          "peak_percentage": null,
+          "replication_backlog_bytes": null,
+          "startup_allocated_bytes": null,
+          "total_allocated_bytes": 1024
+        }
+      ]
+    },
+    "redis_memory_summary": {
+      "cluster": null,
+      "deployment": "unknown",
+      "nodes": [
+        {
+          "bytes_per_key": 384,
+          "dataset_bytes": 768,
+          "dataset_percentage": null,
+          "fragmentation_ratio": 1.1,
+          "key_count": 2,
+          "node": null,
+          "overhead_bytes": 256,
+          "peak_allocated_bytes": 2048,
+          "total_allocated_bytes": 1024
+        }
+      ],
+      "total_allocated_bytes": 1024,
+      "total_dataset_bytes": 768,
+      "total_overhead_bytes": 256
+    },
     "redis_memory_usage": {
       "bytes": 64,
       "exists": true,
@@ -25724,6 +29395,26 @@
           "exists": false,
           "key": "missing",
           "value": null
+        }
+      ]
+    },
+    "redis_module_list": {
+      "cluster": null,
+      "count": 1,
+      "deployment": "unknown",
+      "modules": [
+        {
+          "arguments": null,
+          "name": {
+            "encoding": "utf8",
+            "value": "search"
+          },
+          "node": null,
+          "path": null,
+          "sensitive_fields_redacted": true,
+          "unknown_field_count": 0,
+          "unknown_fields": null,
+          "version": 20800
         }
       ]
     },
@@ -26023,6 +29714,30 @@
       "member": "alpha",
       "member_encoding": "utf8",
       "set_exists": true
+    },
+    "redis_slowlog": {
+      "cluster": null,
+      "count": 1,
+      "deployment": "unknown",
+      "entries": [
+        {
+          "argument_count": 2,
+          "arguments": null,
+          "client_address": null,
+          "client_name": null,
+          "command": {
+            "encoding": "utf8",
+            "value": "SET"
+          },
+          "duration_microseconds": 250,
+          "extra_field_count": 2,
+          "extra_fields": null,
+          "id": 7,
+          "node": null,
+          "sensitive_fields_redacted": true,
+          "timestamp_seconds": 1700000000
+        }
+      ]
     },
     "redis_smembers": {
       "count": 2,

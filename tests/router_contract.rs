@@ -188,7 +188,22 @@ impl RedisExecutor for StubRedis {
     async fn execute(&self, command: RedisCommand) -> Result<RedisValue, RedisError> {
         let value = match command.name() {
             "PING" => RedisValue::SimpleString("PONG".into()),
-            "INFO" => RedisValue::BulkString(b"# Server\r\nredis_version:8.2.0\r\n".to_vec()),
+            "INFO" => match command.arguments().first().map(Vec::as_slice) {
+                Some(b"keyspace") => RedisValue::BulkString(
+                    b"# Keyspace\r\ndb0:keys=2,expires=1,avg_ttl=5000,subexpiry=0\r\n"
+                        .to_vec(),
+                ),
+                Some(b"ALL") => RedisValue::BulkString(
+                    b"# Server\r\nredis_version:8.2.0\r\nredis_mode:standalone\r\nuptime_in_seconds:60\r\n# Clients\r\nconnected_clients:2\r\nblocked_clients:0\r\n# Memory\r\nused_memory:1024\r\nmaxmemory:0\r\nmem_fragmentation_ratio:1.1\r\n# Stats\r\ninstantaneous_ops_per_sec:3\r\ntotal_commands_processed:10\r\nrejected_connections:0\r\n# Persistence\r\nloading:0\r\nrdb_last_bgsave_status:ok\r\naof_last_bgrewrite_status:ok\r\n# Replication\r\nrole:master\r\n# Keyspace\r\ndb0:keys=2,expires=1,avg_ttl=5000\r\n".to_vec(),
+                ),
+                _ => RedisValue::BulkString(b"# Server\r\nredis_version:8.2.0\r\n".to_vec()),
+            },
+            "CLIENT" => RedisValue::BulkString(
+                b"id=1 addr=10.0.0.1:5000 laddr=10.0.0.2:6379 fd=8 name=agent age=120 idle=61 flags=b db=0 sub=0 psub=0 ssub=0 multi=-1 qbuf=0 qbuf-free=0 argv-mem=0 multi-mem=0 rbs=16384 rbp=0 obl=0 oll=0 omem=0 tot-mem=18000 events=r cmd=get user=default redir=-1 resp=3 lib-name=test lib-ver=1.0 io-thread=0 tot-net-in=10 tot-net-out=20 tot-cmds=2 type=normal future=value\n".to_vec(),
+            ),
+            "CLUSTER" => RedisValue::BulkString(
+                b"cluster_state:ok\r\ncluster_slots_assigned:16384\r\ncluster_slots_ok:16384\r\ncluster_slots_pfail:0\r\ncluster_slots_fail:0\r\ncluster_known_nodes:3\r\ncluster_size:3\r\ncluster_current_epoch:7\r\ncluster_stats_messages_sent:10\r\ncluster_stats_messages_received:9\r\nfuture_metric:1\r\n".to_vec(),
+            ),
             "DBSIZE" => RedisValue::Integer(2),
             "SCAN" => RedisValue::Array(vec![
                 RedisValue::BulkString(b"0".to_vec()),
@@ -230,7 +245,54 @@ impl RedisExecutor for StubRedis {
                 RedisValue::Nil,
             ]),
             "STRLEN" => RedisValue::Integer(5),
+            "MEMORY" if command.arguments().first().is_some_and(|arg| arg == b"STATS") => {
+                RedisValue::Array(vec![
+                    RedisValue::BulkString(b"peak.allocated".to_vec()),
+                    RedisValue::Integer(2048),
+                    RedisValue::BulkString(b"total.allocated".to_vec()),
+                    RedisValue::Integer(1024),
+                    RedisValue::BulkString(b"overhead.total".to_vec()),
+                    RedisValue::Integer(256),
+                    RedisValue::BulkString(b"dataset.bytes".to_vec()),
+                    RedisValue::Integer(768),
+                    RedisValue::BulkString(b"keys.count".to_vec()),
+                    RedisValue::Integer(2),
+                    RedisValue::BulkString(b"keys.bytes-per-key".to_vec()),
+                    RedisValue::Integer(384),
+                    RedisValue::BulkString(b"fragmentation".to_vec()),
+                    RedisValue::Double(1.1),
+                    RedisValue::BulkString(b"future.stat".to_vec()),
+                    RedisValue::BulkString(vec![0xff, 0x00]),
+                ])
+            }
             "MEMORY" => RedisValue::Integer(64),
+            "MODULE" => RedisValue::Array(vec![RedisValue::Array(vec![
+                RedisValue::BulkString(b"name".to_vec()),
+                RedisValue::BulkString(b"search".to_vec()),
+                RedisValue::BulkString(b"ver".to_vec()),
+                RedisValue::Integer(20800),
+                RedisValue::BulkString(b"path".to_vec()),
+                RedisValue::BulkString(b"/private/module.so".to_vec()),
+                RedisValue::BulkString(b"args".to_vec()),
+                RedisValue::Array(Vec::new()),
+            ])]),
+            "SLOWLOG" => RedisValue::Array(vec![RedisValue::Array(vec![
+                RedisValue::Integer(7),
+                RedisValue::Integer(1_700_000_000),
+                RedisValue::Integer(250),
+                RedisValue::Array(vec![
+                    RedisValue::BulkString(b"SET".to_vec()),
+                    RedisValue::BulkString(b"secret-key".to_vec()),
+                    RedisValue::BulkString(b"secret-value".to_vec()),
+                ]),
+                RedisValue::BulkString(b"10.0.0.1:5000".to_vec()),
+                RedisValue::BulkString(b"agent".to_vec()),
+            ])]),
+            "LATENCY" => RedisValue::Array(vec![RedisValue::Array(vec![
+                RedisValue::Integer(1_700_000_000),
+                RedisValue::Integer(12),
+            ])]),
+            "ACL" => RedisValue::BulkString(b"default".to_vec()),
             "RANDOMKEY" => RedisValue::BulkString(b"alpha".to_vec()),
             "HGET" if command.tool_name() == "redis_vector_get_hash" => RedisValue::BulkString(
                 [1.0_f32, 2.0_f32]
@@ -1757,6 +1819,35 @@ fn structured_cases() -> Vec<(&'static str, serde_json::Value, &'static str)> {
     vec![
         ("redis_ping", serde_json::json!({}), "response"),
         ("redis_info", serde_json::json!({}), "properties"),
+        ("redis_client_list", serde_json::json!({}), "clients"),
+        ("redis_cluster_info", serde_json::json!({}), "nodes"),
+        ("redis_memory_stats", serde_json::json!({}), "nodes"),
+        ("redis_module_list", serde_json::json!({}), "modules"),
+        ("redis_slowlog", serde_json::json!({}), "entries"),
+        (
+            "redis_latency_history",
+            serde_json::json!({"event": "command"}),
+            "samples",
+        ),
+        ("redis_acl_whoami", serde_json::json!({}), "identities"),
+        ("redis_health_check", serde_json::json!({}), "status"),
+        ("redis_connection_summary", serde_json::json!({}), "total"),
+        (
+            "redis_keyspace_summary",
+            serde_json::json!({}),
+            "total_keys",
+        ),
+        ("redis_memory_summary", serde_json::json!({}), "nodes"),
+        (
+            "redis_key_summary",
+            serde_json::json!({"key": "alpha"}),
+            "key_type",
+        ),
+        (
+            "redis_hotkeys",
+            serde_json::json!({"count": 2, "max_keys": 2, "top": 1}),
+            "candidates",
+        ),
         ("redis_dbsize", serde_json::json!({}), "key_count"),
         (
             "redis_scan",
@@ -2635,8 +2726,8 @@ fn structured_cases() -> Vec<(&'static str, serde_json::Value, &'static str)> {
 
 #[tokio::test]
 async fn access_modes_expose_exactly_the_expected_tools() {
-    assert_eq!(tool_names(AccessMode::Full, false).len(), 116);
-    assert_eq!(tool_names(AccessMode::Full, true).len(), 117);
+    assert_eq!(tool_names(AccessMode::Full, false).len(), 129);
+    assert_eq!(tool_names(AccessMode::Full, true).len(), 130);
     for (access, raw) in [
         (AccessMode::ReadOnly, false),
         (AccessMode::ReadWrite, false),
@@ -2995,7 +3086,22 @@ async fn bundles_are_composable_and_raw_remains_a_separate_opt_in() {
             .iter()
             .map(|tool| tool.name.as_str())
             .collect::<Vec<_>>(),
-        vec!["redis_info"]
+        vec![
+            "redis_acl_whoami",
+            "redis_client_list",
+            "redis_cluster_info",
+            "redis_connection_summary",
+            "redis_health_check",
+            "redis_hotkeys",
+            "redis_info",
+            "redis_key_summary",
+            "redis_keyspace_summary",
+            "redis_latency_history",
+            "redis_memory_stats",
+            "redis_memory_summary",
+            "redis_module_list",
+            "redis_slowlog",
+        ]
     );
 
     let essentials_and_raw = client_for_bundles(
@@ -3338,6 +3444,214 @@ async fn scan_and_range_outputs_expose_typed_continuations() {
     assert_eq!(range["count"], 1);
     assert_eq!(range["page"]["complete"], false);
     assert_eq!(range["page"]["continuation"]["start"], 1);
+}
+
+#[tokio::test]
+async fn diagnostics_redact_sensitive_fields_and_require_explicit_full_access() {
+    let read_only = client(AccessMode::ReadOnly, false).await;
+    let clients = read_only
+        .call_tool("redis_client_list", serde_json::json!({}))
+        .await
+        .expect("redacted CLIENT LIST")
+        .structured_content
+        .expect("structured CLIENT LIST");
+    assert_eq!(clients["clients"][0]["address"], serde_json::Value::Null);
+    assert_eq!(clients["clients"][0]["name"], serde_json::Value::Null);
+    assert_eq!(clients["clients"][0]["username"], serde_json::Value::Null);
+    assert_eq!(
+        clients["clients"][0]["unknown_fields"],
+        serde_json::Value::Null
+    );
+    assert_eq!(clients["clients"][0]["unknown_field_count"], 1);
+    assert_eq!(clients["clients"][0]["sensitive_fields_redacted"], true);
+    let serialized = serde_json::to_string(&clients).expect("serialize redacted clients");
+    assert!(!serialized.contains("10.0.0.1"));
+    assert!(!serialized.contains("agent"));
+    assert!(!serialized.contains("future=value"));
+
+    let slowlog = read_only
+        .call_tool("redis_slowlog", serde_json::json!({}))
+        .await
+        .expect("redacted SLOWLOG")
+        .structured_content
+        .expect("structured SLOWLOG");
+    assert_eq!(slowlog["entries"][0]["arguments"], serde_json::Value::Null);
+    assert_eq!(
+        slowlog["entries"][0]["client_address"],
+        serde_json::Value::Null
+    );
+    let serialized = serde_json::to_string(&slowlog).expect("serialize redacted SLOWLOG");
+    assert!(!serialized.contains("secret-key"));
+    assert!(!serialized.contains("secret-value"));
+    assert!(!serialized.contains("10.0.0.1"));
+
+    let memory = read_only
+        .call_tool("redis_memory_stats", serde_json::json!({}))
+        .await
+        .expect("forward-compatible MEMORY STATS")
+        .structured_content
+        .expect("structured MEMORY STATS");
+    let future = memory["nodes"][0]["fields"]
+        .as_array()
+        .expect("MEMORY fields")
+        .iter()
+        .find(|field| field["key"]["value"] == "future.stat")
+        .expect("future MEMORY field");
+    assert_eq!(future["value"]["encoding"], "base64");
+    assert_eq!(future["value"]["value"], "/wA=");
+
+    let modules = read_only
+        .call_tool("redis_module_list", serde_json::json!({}))
+        .await
+        .expect("redacted MODULE LIST")
+        .structured_content
+        .expect("structured MODULE LIST");
+    assert_eq!(modules["modules"][0]["path"], serde_json::Value::Null);
+    assert_eq!(modules["modules"][0]["arguments"], serde_json::Value::Null);
+
+    let denied = read_only
+        .call_tool(
+            "redis_client_list",
+            serde_json::json!({"include_sensitive": true}),
+        )
+        .await
+        .expect("sensitive CLIENT LIST denial");
+    assert!(denied.is_error);
+
+    let full = client(AccessMode::Full, false).await;
+    let clients = full
+        .call_tool(
+            "redis_client_list",
+            serde_json::json!({"include_sensitive": true}),
+        )
+        .await
+        .expect("authorized CLIENT LIST")
+        .structured_content
+        .expect("structured authorized CLIENT LIST");
+    assert_eq!(clients["clients"][0]["address"]["value"], "10.0.0.1:5000");
+    assert_eq!(clients["clients"][0]["name"]["value"], "agent");
+    assert_eq!(
+        clients["clients"][0]["unknown_fields"]["future"]["value"],
+        "value"
+    );
+
+    let modules = full
+        .call_tool(
+            "redis_module_list",
+            serde_json::json!({"include_sensitive": true}),
+        )
+        .await
+        .expect("authorized MODULE LIST")
+        .structured_content
+        .expect("structured authorized MODULE LIST");
+    assert_eq!(modules["modules"][0]["path"]["value"], "/private/module.so");
+
+    let slowlog = full
+        .call_tool(
+            "redis_slowlog",
+            serde_json::json!({"include_arguments": true, "include_sensitive": true}),
+        )
+        .await
+        .expect("authorized SLOWLOG")
+        .structured_content
+        .expect("structured authorized SLOWLOG");
+    assert_eq!(slowlog["entries"][0]["arguments"][0]["value"], "secret-key");
+    assert_eq!(
+        slowlog["entries"][0]["client_address"]["value"],
+        "10.0.0.1:5000"
+    );
+}
+
+#[tokio::test]
+async fn diagnostics_cluster_failures_are_structured_and_node_addresses_are_redacted() {
+    let executor = FixedRedis::new(RedisValue::ClusterNodes(vec![
+        (
+            "10.0.0.1:6379".to_string(),
+            RedisValue::BulkString(
+                b"# Server\r\nredis_version:8.2.0\r\nloading:0\r\nrole:master\r\n".to_vec(),
+            ),
+        ),
+        (
+            "10.0.0.2:6379".to_string(),
+            RedisValue::ServerError {
+                code: "NOPERM".to_string(),
+                message: Some("server detail that must be redacted".to_string()),
+            },
+        ),
+    ]));
+    let commands = executor.commands.clone();
+    let client = fixed_client(
+        executor,
+        RedisCapabilities::unknown().with_deployment(RedisDeployment::Cluster),
+    )
+    .await;
+    let result = client
+        .call_tool(
+            "redis_health_check",
+            serde_json::json!({"max_cluster_nodes": 4}),
+        )
+        .await
+        .expect("partial cluster health")
+        .structured_content
+        .expect("structured partial cluster health");
+    assert_eq!(result["status"], "degraded");
+    assert_eq!(result["nodes"][0]["node"], "node-1");
+    assert_eq!(result["cluster"]["nodes_queried"], 2);
+    assert_eq!(result["cluster"]["nodes_succeeded"], 1);
+    assert_eq!(result["cluster"]["complete"], false);
+    assert_eq!(result["cluster"]["failures"][0]["node"], "node-2");
+    assert_eq!(result["cluster"]["failures"][0]["code"], "NOPERM");
+    let serialized = serde_json::to_string(&result).expect("serialize cluster health");
+    assert!(!serialized.contains("10.0.0"));
+    assert!(!serialized.contains("server detail"));
+    let commands = commands.lock().expect("record diagnostics command");
+    assert_eq!(commands.len(), 1);
+    assert_eq!(commands[0].name(), "INFO");
+    assert_eq!(commands[0].cluster_node_limit(), Some(4));
+}
+
+#[tokio::test]
+async fn diagnostics_bounds_and_single_page_hotkey_contract_are_enforced() {
+    let client = client(AccessMode::ReadOnly, false).await;
+    for (tool, arguments) in [
+        ("redis_client_list", serde_json::json!({"max_results": 0})),
+        (
+            "redis_latency_history",
+            serde_json::json!({"event": "command", "limit": 0}),
+        ),
+        ("redis_slowlog", serde_json::json!({"limit": 1001})),
+        (
+            "redis_hotkeys",
+            serde_json::json!({"count": 2, "max_keys": 1, "top": 2}),
+        ),
+        (
+            "redis_health_check",
+            serde_json::json!({"max_cluster_nodes": 257}),
+        ),
+    ] {
+        let result = client
+            .call_tool(tool, arguments)
+            .await
+            .unwrap_or_else(|error| panic!("{tool}: {error}"));
+        assert!(result.is_error, "{tool}");
+    }
+
+    let hotkeys = client
+        .call_tool(
+            "redis_hotkeys",
+            serde_json::json!({"cursor": 0, "count": 2, "max_keys": 2, "top": 1}),
+        )
+        .await
+        .expect("bounded hotkey page")
+        .structured_content
+        .expect("structured hotkey page");
+    assert_eq!(hotkeys["sampled_keys"], 2);
+    assert_eq!(hotkeys["candidates"].as_array().map(Vec::len), Some(1));
+    assert_eq!(hotkeys["page"]["complete"], true);
+    assert_eq!(
+        hotkeys["selection_basis"],
+        "largest_memory_usage_in_one_explicit_scan_page"
+    );
 }
 
 #[tokio::test]
@@ -6047,6 +6361,9 @@ async fn curated_catalog_matches_checked_in_contract_snapshot() {
             .unwrap_or_else(|| panic!("{name} returned no structured content"));
         if name == "redis_ping" {
             structured["latency_ms"] = serde_json::json!(0.0);
+        }
+        if name == "redis_health_check" {
+            structured["elapsed_ms"] = serde_json::json!(0.0);
         }
         structured_results.insert(name, structured);
     }

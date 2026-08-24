@@ -3577,6 +3577,218 @@ async fn live_redis_round_trip_through_stdio_server() {
         .expect("delete stdio test key");
 }
 
+#[tokio::test]
+async fn live_diagnostics_are_structured_bounded_redacted_and_binary_safe() {
+    let Some(redis) = TestRedis::start().await else {
+        return;
+    };
+    let redis_client = redis::Client::open(redis.url.as_str()).expect("open diagnostics Redis");
+    let mut connection = redis_client
+        .get_multiplexed_async_connection()
+        .await
+        .expect("connect diagnostics Redis");
+    let key = test_key("diagnostics");
+    let binary_key = [test_key("diagnostics-binary").as_bytes(), &[0xff, 0x00]].concat();
+    redis::cmd("SET")
+        .arg(&key)
+        .arg("diagnostic-value")
+        .query_async::<()>(&mut connection)
+        .await
+        .expect("seed diagnostic key");
+    redis::cmd("SET")
+        .arg(&binary_key)
+        .arg("binary-diagnostic-value")
+        .query_async::<()>(&mut connection)
+        .await
+        .expect("seed binary diagnostic key");
+    redis::cmd("CLIENT")
+        .arg("SETNAME")
+        .arg("diagnostic-admin-client")
+        .query_async::<()>(&mut connection)
+        .await
+        .expect("name diagnostic admin client");
+
+    for protocol in ["resp2", "resp3"] {
+        let url = with_protocol(&redis.url, protocol);
+        let client = router_client(&url, AccessMode::Full).await;
+
+        let clients = client
+            .call_tool("redis_client_list", serde_json::json!({"max_results": 20}))
+            .await
+            .expect("CLIENT LIST")
+            .structured_content
+            .expect("structured CLIENT LIST");
+        assert!(clients["returned"].as_u64().is_some_and(|count| count >= 1));
+        assert_eq!(clients["clients"][0]["address"], serde_json::Value::Null);
+        assert_eq!(clients["clients"][0]["sensitive_fields_redacted"], true);
+        let redacted = serde_json::to_string(&clients).expect("serialize redacted clients");
+        assert!(!redacted.contains("diagnostic-admin-client"));
+
+        let sensitive = client
+            .call_tool(
+                "redis_client_list",
+                serde_json::json!({
+                    "name": "diagnostic-admin-client",
+                    "max_results": 20,
+                    "include_sensitive": true
+                }),
+            )
+            .await
+            .expect("sensitive CLIENT LIST")
+            .structured_content
+            .expect("structured sensitive CLIENT LIST");
+        assert_eq!(sensitive["matched"], 1);
+        assert_eq!(
+            sensitive["clients"][0]["name"]["value"],
+            "diagnostic-admin-client"
+        );
+
+        let memory = client
+            .call_tool("redis_memory_stats", serde_json::json!({}))
+            .await
+            .expect("MEMORY STATS")
+            .structured_content
+            .expect("structured MEMORY STATS");
+        assert_eq!(memory["nodes"].as_array().map(Vec::len), Some(1));
+        assert!(
+            memory["nodes"][0]["fields"]
+                .as_array()
+                .is_some_and(|fields| !fields.is_empty())
+        );
+
+        let modules = client
+            .call_tool("redis_module_list", serde_json::json!({}))
+            .await
+            .expect("MODULE LIST")
+            .structured_content
+            .expect("structured MODULE LIST");
+        assert!(modules["modules"].is_array());
+
+        let slowlog = client
+            .call_tool("redis_slowlog", serde_json::json!({"limit": 5}))
+            .await
+            .expect("SLOWLOG GET")
+            .structured_content
+            .expect("structured SLOWLOG GET");
+        assert!(slowlog["entries"].is_array());
+        let serialized = serde_json::to_string(&slowlog).expect("serialize SLOWLOG");
+        assert!(!serialized.contains("diagnostic-value"));
+
+        let latency = client
+            .call_tool(
+                "redis_latency_history",
+                serde_json::json!({"event": "command", "limit": 5}),
+            )
+            .await
+            .expect("LATENCY HISTORY")
+            .structured_content
+            .expect("structured LATENCY HISTORY");
+        assert!(latency["samples"].is_array());
+
+        let identity = client
+            .call_tool("redis_acl_whoami", serde_json::json!({}))
+            .await
+            .expect("ACL WHOAMI")
+            .structured_content
+            .expect("structured ACL WHOAMI");
+        assert_eq!(identity["identities"][0]["username"]["value"], "default");
+
+        let health = client
+            .call_tool("redis_health_check", serde_json::json!({}))
+            .await
+            .expect("health check")
+            .structured_content
+            .expect("structured health check");
+        assert_eq!(health["status"], "ok");
+        assert!(health["nodes"][0]["redis_version"].is_string());
+
+        let connections = client
+            .call_tool("redis_connection_summary", serde_json::json!({}))
+            .await
+            .expect("connection summary")
+            .structured_content
+            .expect("structured connection summary");
+        assert!(
+            connections["total"]
+                .as_u64()
+                .is_some_and(|count| count >= 1)
+        );
+        assert_eq!(connections["client_identity_redacted"], true);
+
+        let keyspace = client
+            .call_tool("redis_keyspace_summary", serde_json::json!({}))
+            .await
+            .expect("keyspace summary")
+            .structured_content
+            .expect("structured keyspace summary");
+        assert!(
+            keyspace["total_keys"]
+                .as_u64()
+                .is_some_and(|count| count >= 2)
+        );
+
+        let memory_summary = client
+            .call_tool("redis_memory_summary", serde_json::json!({}))
+            .await
+            .expect("memory summary")
+            .structured_content
+            .expect("structured memory summary");
+        assert!(memory_summary["nodes"][0]["total_allocated_bytes"].is_number());
+
+        let binary_key_base64 = BASE64.encode(&binary_key);
+        let key_summary = client
+            .call_tool(
+                "redis_key_summary",
+                serde_json::json!({"key": binary_key_base64, "key_encoding": "base64"}),
+            )
+            .await
+            .expect("binary key summary")
+            .structured_content
+            .expect("structured binary key summary");
+        assert_eq!(key_summary["exists"], true);
+        assert_eq!(key_summary["key"]["encoding"], "base64");
+        assert_eq!(key_summary["key"]["value"], binary_key_base64);
+
+        let hotkeys = client
+            .call_tool(
+                "redis_hotkeys",
+                serde_json::json!({
+                    "pattern": key,
+                    "count": 10,
+                    "max_keys": 10,
+                    "top": 5
+                }),
+            )
+            .await
+            .expect("one-page hotkey sample")
+            .structured_content
+            .expect("structured hotkey sample");
+        assert_eq!(hotkeys["sampled_keys"], 1);
+        assert_eq!(hotkeys["candidates"][0]["key"]["value"], key);
+        assert_eq!(hotkeys["page"]["complete"], true);
+    }
+
+    let limited = router_client_with_budget(
+        &redis.url,
+        AccessMode::ReadOnly,
+        OutputBudget::new(512, 100),
+    )
+    .await
+    .call_tool("redis_client_list", serde_json::json!({"max_results": 20}))
+    .await
+    .expect("bounded CLIENT LIST output");
+    assert!(limited.is_error);
+    let limited = serde_json::to_string(&limited).expect("serialize bounded CLIENT LIST");
+    assert!(limited.contains("output_limit_exceeded"), "{limited}");
+
+    redis::cmd("DEL")
+        .arg(&key)
+        .arg(&binary_key)
+        .query_async::<()>(&mut connection)
+        .await
+        .expect("delete diagnostics keys");
+}
+
 #[cfg(unix)]
 #[tokio::test]
 async fn live_acl_failures_are_classified_without_leaking_credentials() {
@@ -4004,6 +4216,33 @@ async fn live_acl_failures_are_classified_without_leaking_credentials() {
     assert!(denied_hash.contains("[Authorization]"), "{denied_hash}");
     assert!(!denied_hash.contains(password));
     assert!(!denied_hash.contains("123456789"));
+
+    for (tool, arguments) in [
+        ("redis_client_list", serde_json::json!({})),
+        ("redis_health_check", serde_json::json!({})),
+        ("redis_memory_stats", serde_json::json!({})),
+        ("redis_acl_whoami", serde_json::json!({})),
+    ] {
+        let denied_diagnostic = client
+            .call_tool(tool, arguments)
+            .await
+            .unwrap_or_else(|error| panic!("{tool} ACL denial: {error}"));
+        assert!(denied_diagnostic.is_error, "{tool}");
+        let denied_diagnostic = serde_json::to_string(&denied_diagnostic)
+            .unwrap_or_else(|error| panic!("serialize {tool} ACL denial: {error}"));
+        assert!(
+            denied_diagnostic.contains("[Authorization]"),
+            "{tool}: {denied_diagnostic}"
+        );
+        assert!(
+            !denied_diagnostic.contains(password),
+            "{tool}: {denied_diagnostic}"
+        );
+        assert!(
+            !denied_diagnostic.contains(&username),
+            "{tool}: {denied_diagnostic}"
+        );
+    }
 
     redis::cmd("DEL")
         .arg(&[

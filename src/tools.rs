@@ -1,6 +1,7 @@
 //! Curated Redis database MCP tools.
 
 mod data_structures;
+mod diagnostics;
 mod essentials;
 mod json_tools;
 mod pubsub;
@@ -344,6 +345,7 @@ pub(crate) fn add_read_only_tools(
     }
     if bundles.contains(&ToolBundle::Diagnostics) {
         router = router.tool(info_tool(state.clone()));
+        router = diagnostics::add_read_tools(router, state.clone());
     }
     if bundles.contains(&ToolBundle::Sessions) {
         router = pubsub_sessions::add_tools(router, state);

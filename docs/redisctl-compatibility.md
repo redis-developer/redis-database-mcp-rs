@@ -35,7 +35,7 @@ Redis Stack behavior is covered primarily by `tests/redis_tools.rs` and
 
 ## Current overlap
 
-The library implements 104 names from the baseline: 69 default tools, 34
+The library implements 115 names from the baseline: 80 default tools, 34
 optional RedisJSON/Search tools, and the separately enabled raw tool. One typed
 `redis_object_inspect` additionally covers three redisctl OBJECT tools without
 copying their names. Matching a name does not imply an identical contract:
@@ -44,6 +44,13 @@ copying their names. Matching a name does not imply an identical contract:
 | --- | --- | --- |
 | `redis_ping` | Redis arguments match; redisctl also injects `url` and `profile`. | Structured response and measured latency instead of prose. |
 | `redis_info` | `section` matches; redisctl also injects `url` and `profile`. | Parsed properties plus the raw INFO response. |
+| `redis_client_list` | Redis-domain filters replace redisctl's unfiltered call; target fields remain host-owned. | Structured records have a total result ceiling. Addresses, names, usernames, library identity, unknown fields, and real cluster node addresses require Full access. |
+| `redis_cluster_info` | Target fields are omitted; `max_cluster_nodes` bounds fan-out. | Parses known CLUSTER INFO metrics, retains unknown fields, pseudonymizes node addresses, and reports partial failures. |
+| `redis_slowlog` | `limit` corresponds to redisctl's `count`; cluster and disclosure ceilings are explicit. | Arguments and client identity are redacted by default because slowlog entries can contain credentials and user data. |
+| `redis_memory_stats`, `redis_module_list`, `redis_latency_history`, `redis_acl_whoami` | Redis-domain inputs correspond; target fields are omitted and cluster tools add node bounds. | Results are structured, forward-compatible, binary-safe, output-bounded, and explicit about partial cluster failures. Module paths/arguments require Full access. |
+| `redis_health_check`, `redis_connection_summary`, `redis_key_summary` | Redis-domain intent is preserved without target fields. | Structured summaries run under total workflow bounds; connection identity is never included in aggregate output and key names remain binary-safe. |
+| `redis_hotkeys` | Pattern and sample controls correspond, but the library uses an explicit Redis cursor page. | Exactly one SCAN page is analyzed and returned with continuation metadata; the tool never hides a full keyspace walk. |
+| `redis_keyspace_summary`, `redis_memory_summary` | New library summaries with no direct redisctl name. | Compact, cluster-aware derived views complement the raw structured INFO keyspace and MEMORY STATS tools. |
 | `redis_dbsize` | Redis arguments match; redisctl also injects target fields. | Structured unsigned key count. |
 | `redis_scan` | Pattern and type filter correspond, but redisctl accepts `limit` and loops to accumulate results. | One bounded cursor page with `cursor` and `count`; callers explicitly continue. This is a deliberate contract change. |
 | `redis_get` | `key` matches; redisctl also injects target fields. | Nil is explicit and binary values are base64 rather than lossy UTF-8/prose. |

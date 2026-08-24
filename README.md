@@ -12,7 +12,7 @@ Redis Cloud and Redis Enterprise APIs. The Rust package is simply redis-mcp.
 
 ## Curated default
 
-The standalone default exposes 116 broadly useful tools:
+The standalone default exposes 129 broadly useful tools:
 
 - read-only essentials: `redis_ping`, `redis_dbsize`, `redis_scan`,
   `redis_get`, `redis_type`, `redis_ttl`, `redis_exists`, `redis_mget`,
@@ -47,7 +47,11 @@ The standalone default exposes 116 broadly useful tools:
   `redis_xgroup_createconsumer`, `redis_xreadgroup`, `redis_xack`,
   `redis_xclaim`, `redis_xautoclaim`, `redis_xdel`, `redis_xtrim`,
   `redis_xgroup_destroy`, `redis_xgroup_delconsumer`
-- diagnostics: `redis_info`
+- diagnostics: `redis_info`, `redis_client_list`, `redis_cluster_info`,
+  `redis_memory_stats`, `redis_module_list`, `redis_slowlog`,
+  `redis_latency_history`, `redis_acl_whoami`, `redis_health_check`,
+  `redis_connection_summary`, `redis_keyspace_summary`,
+  `redis_memory_summary`, `redis_key_summary`, `redis_hotkeys`
 - optional RedisJSON family: `redis_json_get`, `redis_json_type`,
   `redis_json_mget`, `redis_json_strlen`, `redis_json_objkeys`,
   `redis_json_objlen`, `redis_json_arrlen`, `redis_json_set`,
@@ -66,7 +70,7 @@ The standalone default exposes 116 broadly useful tools:
 The reusable router keeps the stateful `sessions` bundle opt-in because its
 lifecycle belongs to the embedding host. The included `redis-mcp-server`
 provides the built-in DirectRedis manager automatically, so its ordinary
-stdio surface contains the 116 curated defaults plus these six session tools.
+stdio surface contains the 129 curated defaults plus these six session tools.
 
 Every successful tool result includes MCP structuredContent and an output
 schema. Results are limited by default to 256 KiB for the complete encoded MCP
@@ -270,7 +274,7 @@ from `tools/list` instead. Every catalog entry exposes its minimum Redis/module
 versions and required command names.
 
 The current catalog marks `redis_info`, `redis_dbsize`, `redis_scan`,
-`redis_randomkey`, and `redis_ft_list` as standalone-only because redis-rs
+`redis_randomkey`, `redis_hotkeys`, and `redis_ft_list` as standalone-only because redis-rs
 otherwise routes them to one cluster node or returns a fan-out shape without
 the database-wide aggregation their contracts imply. A discovered cluster
 snapshot therefore hides or rejects those tools instead of silently reporting
@@ -316,14 +320,15 @@ three-node Cluster routing.
 
 CI runs the complete suite on Redis 8.8 and the live router/stdio contract on
 every currently supported Redis Open Source series: 6.2, 7.2, 7.4, 8.0, 8.2,
-8.4, 8.6, and 8.8. Live tests exercise both RESP2 and RESP3, the 116-tool curated
+8.4, 8.6, and 8.8. Live tests exercise both RESP2 and RESP3, the 129-tool curated
 catalog, binary and nil responses, conditional and absolute expiration,
 bounded serialization/restore, complete bounded list semantics, typed
 hash-field expiration, binary-safe membership, budgeted set algebra, complete
 bounded sorted-set semantics, complete Streams and consumer-group workflows,
 finite blocking reads, binary-safe Pub/Sub publication and inspection,
 owner-isolated subscription sessions, bounded buffers and reads, cancellation,
-idle cleanup, reconnect/resubscription, ACL failures, bounded connection loss
+idle cleanup, reconnect/resubscription, bounded and redacted standalone and
+Cluster diagnostics, ACL failures, bounded connection loss
 and recovery, and the real `redis-mcp-server` stdio process. A separate job pins
 the official
 `redis/redis-stack-server:7.4.0-v8` image and runs the JSON/Search lifecycle.

@@ -502,6 +502,145 @@ async fn keys_on_three_masters(seed_url: &str, protocol: &str) -> (Vec<String>, 
 }
 
 #[tokio::test]
+async fn diagnostics_fan_out_with_bounded_redacted_cluster_summaries() {
+    let _cluster_guard = CLUSTER_TEST_LOCK.lock().await;
+    let Some(cluster) = TestCluster::start().await else {
+        return;
+    };
+    let executor = DirectRedisCluster::connect(&cluster.seed_urls)
+        .await
+        .expect("connect cluster-aware diagnostics adapter");
+    let capabilities = executor
+        .discover_capabilities()
+        .await
+        .expect("discover Cluster diagnostic capabilities");
+    assert_eq!(capabilities.deployment(), RedisDeployment::Cluster);
+    let router = RedisMcp::builder(executor)
+        .access(AccessMode::Full)
+        .capabilities(capabilities)
+        .build();
+    let client = McpClient::connect(ChannelTransport::new(router))
+        .await
+        .expect("connect Cluster diagnostics MCP client");
+    client
+        .initialize("redis-mcp-cluster-diagnostics-test", "0")
+        .await
+        .expect("initialize Cluster diagnostics MCP client");
+
+    let inputs = serde_json::json!({"max_cluster_nodes": 8});
+    let cluster_info = client
+        .call_tool("redis_cluster_info", inputs.clone())
+        .await
+        .expect("CLUSTER INFO fan-out")
+        .structured_content
+        .expect("structured CLUSTER INFO fan-out");
+    assert_eq!(cluster_info["healthy_nodes"], 3);
+    assert_eq!(cluster_info["cluster"]["nodes_queried"], 3);
+    assert_eq!(cluster_info["cluster"]["nodes_succeeded"], 3);
+    assert_eq!(cluster_info["cluster"]["complete"], true);
+    assert_eq!(cluster_info["cluster"]["node_addresses_redacted"], true);
+    assert_eq!(cluster_info["nodes"][0]["node"], "node-1");
+
+    let health = client
+        .call_tool("redis_health_check", inputs.clone())
+        .await
+        .expect("Cluster health fan-out")
+        .structured_content
+        .expect("structured Cluster health fan-out");
+    assert_eq!(health["status"], "ok");
+    assert_eq!(health["nodes"].as_array().map(Vec::len), Some(3));
+    assert_eq!(health["cluster"]["complete"], true);
+
+    let clients = client
+        .call_tool(
+            "redis_client_list",
+            serde_json::json!({"max_results": 20, "max_cluster_nodes": 8}),
+        )
+        .await
+        .expect("Cluster CLIENT LIST fan-out")
+        .structured_content
+        .expect("structured Cluster CLIENT LIST fan-out");
+    assert_eq!(clients["cluster"]["nodes_queried"], 3);
+    assert_eq!(clients["cluster"]["node_addresses_redacted"], true);
+    assert!(
+        clients["clients"]
+            .as_array()
+            .is_some_and(|clients| !clients.is_empty())
+    );
+    assert_eq!(clients["clients"][0]["address"], serde_json::Value::Null);
+
+    for (tool, field) in [
+        ("redis_connection_summary", "nodes"),
+        ("redis_keyspace_summary", "nodes"),
+        ("redis_memory_stats", "nodes"),
+        ("redis_memory_summary", "nodes"),
+        ("redis_module_list", "modules"),
+        ("redis_acl_whoami", "identities"),
+    ] {
+        let result = client
+            .call_tool(tool, inputs.clone())
+            .await
+            .unwrap_or_else(|error| panic!("{tool}: {error}"));
+        assert!(!result.is_error, "{tool}: {result:?}");
+        let structured = result
+            .structured_content
+            .unwrap_or_else(|| panic!("{tool} structured output"));
+        assert!(structured[field].is_array(), "{tool}: {structured}");
+        assert_eq!(structured["cluster"]["nodes_queried"], 3, "{tool}");
+        let serialized = serde_json::to_string(&structured)
+            .unwrap_or_else(|error| panic!("serialize {tool}: {error}"));
+        for seed in &cluster.seed_urls {
+            let address = seed
+                .strip_prefix("redis://")
+                .and_then(|value| value.strip_suffix('/'))
+                .unwrap_or(seed);
+            assert!(
+                !serialized.contains(address),
+                "{tool} leaked {address}: {serialized}"
+            );
+        }
+    }
+
+    let slowlog = client
+        .call_tool(
+            "redis_slowlog",
+            serde_json::json!({"limit": 2, "max_cluster_nodes": 8}),
+        )
+        .await
+        .expect("Cluster SLOWLOG fan-out")
+        .structured_content
+        .expect("structured Cluster SLOWLOG fan-out");
+    assert_eq!(slowlog["cluster"]["nodes_queried"], 3);
+    assert!(slowlog["entries"].is_array());
+
+    let latency = client
+        .call_tool(
+            "redis_latency_history",
+            serde_json::json!({"event": "command", "limit": 2, "max_cluster_nodes": 8}),
+        )
+        .await
+        .expect("Cluster LATENCY HISTORY fan-out")
+        .structured_content
+        .expect("structured Cluster LATENCY HISTORY fan-out");
+    assert_eq!(latency["cluster"]["nodes_queried"], 3);
+    assert!(latency["samples"].is_array());
+
+    let hotkeys = client
+        .call_tool(
+            "redis_hotkeys",
+            serde_json::json!({"count": 1, "max_keys": 1, "top": 1}),
+        )
+        .await
+        .expect("Cluster hotkey capability result");
+    assert!(hotkeys.is_error);
+    assert!(
+        serde_json::to_string(&hotkeys)
+            .expect("serialize Cluster hotkey error")
+            .contains("[CapabilityUnavailable]")
+    );
+}
+
+#[tokio::test]
 async fn redis_json_mget_enforces_the_native_cluster_same_slot_contract() {
     let _cluster_guard = CLUSTER_TEST_LOCK.lock().await;
     let Some(cluster) = TestJsonCluster::start().await else {

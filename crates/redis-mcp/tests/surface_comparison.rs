@@ -84,7 +84,7 @@ struct Capability {
 }
 
 fn scorecard() -> Scorecard {
-    serde_json::from_str(include_str!("../docs/surface-comparison.json"))
+    serde_json::from_str(include_str!("../../../docs/surface-comparison.json"))
         .expect("surface comparison must be valid JSON")
 }
 

@@ -237,6 +237,22 @@ impl ToolMetadata {
             | "redis_geopos" => Some(RedisVersion::new(3, 2, 0)),
             "redis_bitfield_ro" => Some(RedisVersion::new(6, 0, 0)),
             "redis_geosearch" | "redis_geosearchstore" => Some(RedisVersion::new(6, 2, 0)),
+            "redis_vadd" | "redis_vcard" | "redis_vdim" | "redis_vemb" | "redis_vgetattr"
+            | "redis_vinfo" | "redis_vlinks" | "redis_vrandmember" | "redis_vrem"
+            | "redis_vsetattr" | "redis_vsim" | "redis_hgetdel" | "redis_hgetex"
+            | "redis_hsetex" => Some(RedisVersion::new(8, 0, 0)),
+            "redis_vismember" | "redis_xackdel" | "redis_xdelex" => {
+                Some(RedisVersion::new(8, 2, 0))
+            }
+            "redis_delex" | "redis_digest" | "redis_msetex" | "redis_vrange" => {
+                Some(RedisVersion::new(8, 4, 0))
+            }
+            "redis_arcount" | "redis_ardel" | "redis_ardelrange" | "redis_arget"
+            | "redis_argetrange" | "redis_argrep" | "redis_arinfo" | "redis_arinsert"
+            | "redis_arlastitems" | "redis_arlen" | "redis_armget" | "redis_armset"
+            | "redis_arnext" | "redis_arop" | "redis_arring" | "redis_arscan" | "redis_arseek"
+            | "redis_arset" | "redis_increx" | "redis_xnack" => Some(RedisVersion::new(8, 8, 0)),
+            "redis_lmovem" => Some(RedisVersion::new(8, 10, 0)),
             "redis_touch" | "redis_hstrlen" => Some(RedisVersion::new(3, 2, 0)),
             "redis_memory_usage" | "redis_object_inspect" | "redis_unlink" => {
                 Some(RedisVersion::new(4, 0, 0))
@@ -379,6 +395,35 @@ impl ToolMetadata {
             "redis_geopos" => &["GEOPOS"],
             "redis_geosearch" => &["GEOSEARCH"],
             "redis_pfcount" => &["PFCOUNT"],
+            "redis_arcount" => &["ARCOUNT"],
+            "redis_ardel" => &["ARDEL"],
+            "redis_ardelrange" => &["ARDELRANGE"],
+            "redis_arget" => &["ARGET"],
+            "redis_argetrange" => &["ARGETRANGE"],
+            "redis_argrep" => &["ARGREP"],
+            "redis_arinfo" => &["ARINFO"],
+            "redis_arinsert" => &["ARINSERT"],
+            "redis_arlastitems" => &["ARLASTITEMS"],
+            "redis_arlen" => &["ARLEN"],
+            "redis_armget" => &["ARMGET"],
+            "redis_armset" => &["ARMSET"],
+            "redis_arnext" => &["ARNEXT"],
+            "redis_arop" => &["AROP"],
+            "redis_arring" => &["ARRING"],
+            "redis_arscan" => &["ARSCAN"],
+            "redis_arseek" => &["ARSEEK"],
+            "redis_arset" => &["ARSET"],
+            "redis_digest" => &["DIGEST"],
+            "redis_vcard" => &["VCARD"],
+            "redis_vdim" => &["VDIM"],
+            "redis_vemb" => &["VEMB"],
+            "redis_vgetattr" => &["VGETATTR"],
+            "redis_vinfo" => &["VINFO"],
+            "redis_vismember" => &["VISMEMBER"],
+            "redis_vlinks" => &["VLINKS"],
+            "redis_vrandmember" => &["VRANDMEMBER"],
+            "redis_vrange" => &["VRANGE"],
+            "redis_vsim" => &["VSIM"],
             "redis_xlen" => &["XLEN", "EXISTS"],
             "redis_xrange" => &["XRANGE"],
             "redis_xrevrange" => &["XREVRANGE"],
@@ -433,6 +478,12 @@ impl ToolMetadata {
             "redis_bitfield" => &["BITFIELD"],
             "redis_geoadd" => &["GEOADD"],
             "redis_pfadd" => &["PFADD"],
+            "redis_hgetex" => &["HGETEX"],
+            "redis_hsetex" => &["HSETEX"],
+            "redis_increx" => &["INCREX"],
+            "redis_msetex" => &["MSETEX"],
+            "redis_vadd" => &["VADD"],
+            "redis_vsetattr" => &["VSETATTR"],
             "redis_xadd" => &["XADD"],
             "redis_xgroup_create" | "redis_xgroup_setid" | "redis_xgroup_createconsumer" => {
                 &["XGROUP"]
@@ -468,6 +519,13 @@ impl ToolMetadata {
             "redis_bitop" => &["BITOP"],
             "redis_geosearchstore" => &["GEOSEARCHSTORE"],
             "redis_pfmerge" => &["PFMERGE"],
+            "redis_delex" => &["DELEX"],
+            "redis_hgetdel" => &["HGETDEL"],
+            "redis_lmovem" => &["LMOVEM"],
+            "redis_vrem" => &["VREM"],
+            "redis_xackdel" => &["XACKDEL"],
+            "redis_xdelex" => &["XDELEX"],
+            "redis_xnack" => &["XNACK"],
             "redis_xdel" => &["XDEL"],
             "redis_xtrim" => &["XTRIM"],
             "redis_xgroup_destroy" | "redis_xgroup_delconsumer" => &["XGROUP"],
@@ -512,9 +570,8 @@ impl ToolMetadata {
                 ToolOutputPolicy::CursorPaginated
             }
             "redis_ft_aggregate" | "redis_ft_cursor_read" => ToolOutputPolicy::CursorPaginated,
-            "redis_lrange" | "redis_zrange" | "redis_xrange" | "redis_xrevrange" => {
-                ToolOutputPolicy::RangePaginated
-            }
+            "redis_lrange" | "redis_zrange" | "redis_xrange" | "redis_xrevrange"
+            | "redis_argrep" | "redis_arscan" | "redis_vrange" => ToolOutputPolicy::RangePaginated,
             "redis_ft_search" | "redis_ft_vector_search" | "redis_ft_hybrid_search" => {
                 ToolOutputPolicy::OffsetPaginated
             }
@@ -551,6 +608,9 @@ impl ToolMetadata {
             | "redis_geohash"
             | "redis_geopos"
             | "redis_geosearch"
+            | "redis_vemb"
+            | "redis_vinfo"
+            | "redis_vlinks"
             | "redis_xinfo_stream"
             | "redis_xinfo_groups"
             | "redis_xinfo_consumers"
@@ -1055,6 +1115,138 @@ pub(crate) const CATALOG: &[ToolMetadata] = &[
         requires_raw_opt_in: false,
     },
     ToolMetadata {
+        name: "redis_arcount",
+        bundle: ToolBundle::DataStructures,
+        required_access: AccessMode::ReadOnly,
+        requires_raw_opt_in: false,
+    },
+    ToolMetadata {
+        name: "redis_arget",
+        bundle: ToolBundle::DataStructures,
+        required_access: AccessMode::ReadOnly,
+        requires_raw_opt_in: false,
+    },
+    ToolMetadata {
+        name: "redis_argetrange",
+        bundle: ToolBundle::DataStructures,
+        required_access: AccessMode::ReadOnly,
+        requires_raw_opt_in: false,
+    },
+    ToolMetadata {
+        name: "redis_argrep",
+        bundle: ToolBundle::DataStructures,
+        required_access: AccessMode::ReadOnly,
+        requires_raw_opt_in: false,
+    },
+    ToolMetadata {
+        name: "redis_arinfo",
+        bundle: ToolBundle::DataStructures,
+        required_access: AccessMode::ReadOnly,
+        requires_raw_opt_in: false,
+    },
+    ToolMetadata {
+        name: "redis_arlastitems",
+        bundle: ToolBundle::DataStructures,
+        required_access: AccessMode::ReadOnly,
+        requires_raw_opt_in: false,
+    },
+    ToolMetadata {
+        name: "redis_arlen",
+        bundle: ToolBundle::DataStructures,
+        required_access: AccessMode::ReadOnly,
+        requires_raw_opt_in: false,
+    },
+    ToolMetadata {
+        name: "redis_armget",
+        bundle: ToolBundle::DataStructures,
+        required_access: AccessMode::ReadOnly,
+        requires_raw_opt_in: false,
+    },
+    ToolMetadata {
+        name: "redis_arnext",
+        bundle: ToolBundle::DataStructures,
+        required_access: AccessMode::ReadOnly,
+        requires_raw_opt_in: false,
+    },
+    ToolMetadata {
+        name: "redis_arop",
+        bundle: ToolBundle::DataStructures,
+        required_access: AccessMode::ReadOnly,
+        requires_raw_opt_in: false,
+    },
+    ToolMetadata {
+        name: "redis_arscan",
+        bundle: ToolBundle::DataStructures,
+        required_access: AccessMode::ReadOnly,
+        requires_raw_opt_in: false,
+    },
+    ToolMetadata {
+        name: "redis_digest",
+        bundle: ToolBundle::DataStructures,
+        required_access: AccessMode::ReadOnly,
+        requires_raw_opt_in: false,
+    },
+    ToolMetadata {
+        name: "redis_vcard",
+        bundle: ToolBundle::DataStructures,
+        required_access: AccessMode::ReadOnly,
+        requires_raw_opt_in: false,
+    },
+    ToolMetadata {
+        name: "redis_vdim",
+        bundle: ToolBundle::DataStructures,
+        required_access: AccessMode::ReadOnly,
+        requires_raw_opt_in: false,
+    },
+    ToolMetadata {
+        name: "redis_vemb",
+        bundle: ToolBundle::DataStructures,
+        required_access: AccessMode::ReadOnly,
+        requires_raw_opt_in: false,
+    },
+    ToolMetadata {
+        name: "redis_vgetattr",
+        bundle: ToolBundle::DataStructures,
+        required_access: AccessMode::ReadOnly,
+        requires_raw_opt_in: false,
+    },
+    ToolMetadata {
+        name: "redis_vinfo",
+        bundle: ToolBundle::DataStructures,
+        required_access: AccessMode::ReadOnly,
+        requires_raw_opt_in: false,
+    },
+    ToolMetadata {
+        name: "redis_vismember",
+        bundle: ToolBundle::DataStructures,
+        required_access: AccessMode::ReadOnly,
+        requires_raw_opt_in: false,
+    },
+    ToolMetadata {
+        name: "redis_vlinks",
+        bundle: ToolBundle::DataStructures,
+        required_access: AccessMode::ReadOnly,
+        requires_raw_opt_in: false,
+    },
+    ToolMetadata {
+        name: "redis_vrandmember",
+        bundle: ToolBundle::DataStructures,
+        required_access: AccessMode::ReadOnly,
+        requires_raw_opt_in: false,
+    },
+    ToolMetadata {
+        name: "redis_vrange",
+        bundle: ToolBundle::DataStructures,
+        required_access: AccessMode::ReadOnly,
+        requires_raw_opt_in: false,
+    },
+    ToolMetadata {
+        name: "redis_vsim",
+        bundle: ToolBundle::DataStructures,
+        required_access: AccessMode::ReadOnly,
+        requires_raw_opt_in: false,
+    },
+    ToolMetadata {
         name: "redis_xlen",
         bundle: ToolBundle::DataStructures,
         required_access: AccessMode::ReadOnly,
@@ -1409,6 +1601,72 @@ pub(crate) const CATALOG: &[ToolMetadata] = &[
         requires_raw_opt_in: false,
     },
     ToolMetadata {
+        name: "redis_arinsert",
+        bundle: ToolBundle::DataStructures,
+        required_access: AccessMode::ReadWrite,
+        requires_raw_opt_in: false,
+    },
+    ToolMetadata {
+        name: "redis_armset",
+        bundle: ToolBundle::DataStructures,
+        required_access: AccessMode::ReadWrite,
+        requires_raw_opt_in: false,
+    },
+    ToolMetadata {
+        name: "redis_arring",
+        bundle: ToolBundle::DataStructures,
+        required_access: AccessMode::ReadWrite,
+        requires_raw_opt_in: false,
+    },
+    ToolMetadata {
+        name: "redis_arseek",
+        bundle: ToolBundle::DataStructures,
+        required_access: AccessMode::ReadWrite,
+        requires_raw_opt_in: false,
+    },
+    ToolMetadata {
+        name: "redis_arset",
+        bundle: ToolBundle::DataStructures,
+        required_access: AccessMode::ReadWrite,
+        requires_raw_opt_in: false,
+    },
+    ToolMetadata {
+        name: "redis_hgetex",
+        bundle: ToolBundle::DataStructures,
+        required_access: AccessMode::ReadWrite,
+        requires_raw_opt_in: false,
+    },
+    ToolMetadata {
+        name: "redis_hsetex",
+        bundle: ToolBundle::DataStructures,
+        required_access: AccessMode::ReadWrite,
+        requires_raw_opt_in: false,
+    },
+    ToolMetadata {
+        name: "redis_increx",
+        bundle: ToolBundle::DataStructures,
+        required_access: AccessMode::ReadWrite,
+        requires_raw_opt_in: false,
+    },
+    ToolMetadata {
+        name: "redis_msetex",
+        bundle: ToolBundle::DataStructures,
+        required_access: AccessMode::ReadWrite,
+        requires_raw_opt_in: false,
+    },
+    ToolMetadata {
+        name: "redis_vadd",
+        bundle: ToolBundle::DataStructures,
+        required_access: AccessMode::ReadWrite,
+        requires_raw_opt_in: false,
+    },
+    ToolMetadata {
+        name: "redis_vsetattr",
+        bundle: ToolBundle::DataStructures,
+        required_access: AccessMode::ReadWrite,
+        requires_raw_opt_in: false,
+    },
+    ToolMetadata {
         name: "redis_xadd",
         bundle: ToolBundle::DataStructures,
         required_access: AccessMode::ReadWrite,
@@ -1626,6 +1884,60 @@ pub(crate) const CATALOG: &[ToolMetadata] = &[
     },
     ToolMetadata {
         name: "redis_pfmerge",
+        bundle: ToolBundle::DataStructures,
+        required_access: AccessMode::Full,
+        requires_raw_opt_in: false,
+    },
+    ToolMetadata {
+        name: "redis_ardel",
+        bundle: ToolBundle::DataStructures,
+        required_access: AccessMode::Full,
+        requires_raw_opt_in: false,
+    },
+    ToolMetadata {
+        name: "redis_ardelrange",
+        bundle: ToolBundle::DataStructures,
+        required_access: AccessMode::Full,
+        requires_raw_opt_in: false,
+    },
+    ToolMetadata {
+        name: "redis_delex",
+        bundle: ToolBundle::DataStructures,
+        required_access: AccessMode::Full,
+        requires_raw_opt_in: false,
+    },
+    ToolMetadata {
+        name: "redis_hgetdel",
+        bundle: ToolBundle::DataStructures,
+        required_access: AccessMode::Full,
+        requires_raw_opt_in: false,
+    },
+    ToolMetadata {
+        name: "redis_lmovem",
+        bundle: ToolBundle::DataStructures,
+        required_access: AccessMode::Full,
+        requires_raw_opt_in: false,
+    },
+    ToolMetadata {
+        name: "redis_vrem",
+        bundle: ToolBundle::DataStructures,
+        required_access: AccessMode::Full,
+        requires_raw_opt_in: false,
+    },
+    ToolMetadata {
+        name: "redis_xackdel",
+        bundle: ToolBundle::DataStructures,
+        required_access: AccessMode::Full,
+        requires_raw_opt_in: false,
+    },
+    ToolMetadata {
+        name: "redis_xdelex",
+        bundle: ToolBundle::DataStructures,
+        required_access: AccessMode::Full,
+        requires_raw_opt_in: false,
+    },
+    ToolMetadata {
+        name: "redis_xnack",
         bundle: ToolBundle::DataStructures,
         required_access: AccessMode::Full,
         requires_raw_opt_in: false,

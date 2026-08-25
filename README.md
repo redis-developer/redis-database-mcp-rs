@@ -21,7 +21,7 @@ human workflows without duplicating command definitions.
 
 ## Curated default
 
-The standalone default exposes 145 broadly useful tools:
+The standalone default exposes 187 broadly useful tools:
 
 - read-only essentials: `redis_ping`, `redis_dbsize`, `redis_scan`,
   `redis_get`, `redis_type`, `redis_ttl`, `redis_exists`, `redis_mget`,
@@ -59,7 +59,17 @@ The standalone default exposes 145 broadly useful tools:
   `redis_xadd`, `redis_xgroup_create`, `redis_xgroup_setid`,
   `redis_xgroup_createconsumer`, `redis_xreadgroup`, `redis_xack`,
   `redis_xclaim`, `redis_xautoclaim`, `redis_xdel`, `redis_xtrim`,
-  `redis_xgroup_destroy`, `redis_xgroup_delconsumer`
+  `redis_xgroup_destroy`, `redis_xgroup_delconsumer`, `redis_arcount`,
+  `redis_ardel`, `redis_ardelrange`, `redis_arget`, `redis_argetrange`,
+  `redis_argrep`, `redis_arinfo`, `redis_arinsert`, `redis_arlastitems`,
+  `redis_arlen`, `redis_armget`, `redis_armset`, `redis_arnext`, `redis_arop`,
+  `redis_arring`, `redis_arscan`, `redis_arseek`, `redis_arset`, `redis_vadd`,
+  `redis_vcard`, `redis_vdim`, `redis_vemb`, `redis_vgetattr`, `redis_vinfo`,
+  `redis_vismember`, `redis_vlinks`, `redis_vrandmember`, `redis_vrange`,
+  `redis_vrem`, `redis_vsetattr`, `redis_vsim`, `redis_delex`, `redis_digest`,
+  `redis_hgetdel`, `redis_hgetex`, `redis_hsetex`, `redis_increx`,
+  `redis_lmovem`, `redis_msetex`, `redis_xackdel`, `redis_xdelex`,
+  `redis_xnack`
 - diagnostics: `redis_info`, `redis_client_list`, `redis_cluster_info`,
   `redis_memory_stats`, `redis_module_list`, `redis_slowlog`,
   `redis_latency_history`, `redis_acl_whoami`, `redis_health_check`,
@@ -83,7 +93,7 @@ The standalone default exposes 145 broadly useful tools:
 The reusable router keeps the stateful `sessions` bundle opt-in because its
 lifecycle belongs to the embedding host. The included `redis-mcp-server`
 provides the built-in DirectRedis manager automatically, so its ordinary
-stdio surface contains the 145 curated defaults plus these six session tools.
+stdio surface contains the 187 curated defaults plus these six session tools.
 
 Every successful tool result includes MCP structuredContent and an output
 schema. Results are limited by default to 256 KiB for the complete encoded MCP
@@ -149,8 +159,8 @@ conflicts with the standalone `REDIS_URL`. The target remains fixed for the
 life of the server and is never exposed in tool inputs. Normal Redis Cluster
 slot rules still apply: supported multi-key commands such as `MGET`, `MSET`,
 and `DEL` are split across slots by the adapter, while commands that require
-all keys in one slot (for example `RENAME`, `LMOVE`, set algebra, `BITOP`,
-`GEOSEARCHSTORE`, `PFCOUNT`, and `PFMERGE`) return a stable `CROSSSLOT`
+all keys in one slot (for example `RENAME`, `LMOVE`, `LMOVEM`, `MSETEX`, set
+algebra, `BITOP`, `GEOSEARCHSTORE`, `PFCOUNT`, and `PFMERGE`) return a stable `CROSSSLOT`
 invalid-request error.
 
 Every curated sorted-set operation is currently single-key and follows normal
@@ -344,12 +354,13 @@ CI runs the complete suite on Redis 8.8 and the live router/stdio contract on
 every currently supported Redis Open Source series: 6.2, 7.2, 7.4, 8.0, 8.2,
 8.4, 8.6, 8.8, and 8.10.1. Standalone and Cluster jobs cover the latest pin,
 and a separate job regenerates the official command metadata from the pinned
-Redis image. Live tests exercise both RESP2 and RESP3, the 145-tool curated
+Redis image. Live tests exercise both RESP2 and RESP3, the 187-tool curated
 catalog, binary and nil responses, conditional and absolute expiration,
 bounded serialization/restore, complete bounded list semantics, typed
 hash-field expiration, binary-safe membership, budgeted set algebra, complete
 bounded sorted-set semantics, typed bitmap/bitfield, geospatial, and
-HyperLogLog semantics, complete Streams and consumer-group workflows,
+HyperLogLog semantics, complete Streams and consumer-group workflows, Redis 8
+vector sets, Redis Arrays, and the finite modern core deltas through Redis 8.10,
 finite blocking reads, binary-safe Pub/Sub publication and inspection,
 owner-isolated subscription sessions, bounded buffers and reads, cancellation,
 idle cleanup, reconnect/resubscription, bounded and redacted standalone and
@@ -357,10 +368,11 @@ Cluster diagnostics, ACL failures, bounded connection loss
 and recovery, and the real `redis-mcp-server` stdio process. A separate job pins
 the official
 `redis/redis-stack-server:7.4.0-v8` image and runs the JSON/Search lifecycle.
-Dedicated three-master cluster jobs run on Redis 6.2 and 8.8 and exercise
+Dedicated three-master cluster jobs run on Redis 6.2, 8.8, and 8.10.1 and exercise
 redirection, multi-slot aggregation, bounded all-node Pub/Sub inspection,
 slot-routed publication, global and sharded subscription sessions, same-slot
-copy/rename/list movement and set algebra,
+copy/rename/list movement and set algebra, Redis 8 Array/vector routing and
+modern atomic same-slot contracts,
 single- and same-slot multi-stream reads, stable cross-slot failures, and the
 cluster-configured stdio server. The version list follows the
 [Redis Open Source version-management table](https://redis.io/docs/latest/operate/oss_and_stack/install/version-mgmt/).

@@ -164,165 +164,165 @@
     },
     {
       "name": "ARCOUNT",
-      "disposition": "planned",
+      "disposition": "typed",
       "access": "read_only",
       "cluster_behavior": "key_routed",
-      "tools": [],
-      "tracking_issue": 57,
-      "rationale": "Structured coverage is planned in issue #57; unrestricted raw execution is not the completeness contract."
+      "tools": ["redis_arcount"],
+      "tracking_issue": null,
+      "rationale": "The typed tool returns an intrinsically bounded allocated-element count."
     },
     {
       "name": "ARDEL",
-      "disposition": "planned",
+      "disposition": "typed",
       "access": "full",
       "cluster_behavior": "key_routed",
-      "tools": [],
-      "tracking_issue": 57,
-      "rationale": "Structured coverage is planned in issue #57; unrestricted raw execution is not the completeness contract."
+      "tools": ["redis_ardel"],
+      "tracking_issue": null,
+      "rationale": "The full-access typed tool deletes an explicit bounded set of indices."
     },
     {
       "name": "ARDELRANGE",
-      "disposition": "planned",
+      "disposition": "typed",
       "access": "full",
       "cluster_behavior": "key_routed",
-      "tools": [],
-      "tracking_issue": 57,
-      "rationale": "Structured coverage is planned in issue #57; unrestricted raw execution is not the completeness contract."
+      "tools": ["redis_ardelrange"],
+      "tracking_issue": null,
+      "rationale": "The full-access typed tool validates and bounds every inclusive deletion range."
     },
     {
       "name": "ARGET",
-      "disposition": "planned",
+      "disposition": "typed",
       "access": "read_only",
       "cluster_behavior": "key_routed",
-      "tools": [],
-      "tracking_issue": 57,
-      "rationale": "Structured coverage is planned in issue #57; unrestricted raw execution is not the completeness contract."
+      "tools": ["redis_arget"],
+      "tracking_issue": null,
+      "rationale": "The typed tool preserves binary values and distinguishes empty array positions."
     },
     {
       "name": "ARGETRANGE",
-      "disposition": "planned",
+      "disposition": "typed",
       "access": "read_only",
       "cluster_behavior": "key_routed",
-      "tools": [],
-      "tracking_issue": 57,
-      "rationale": "Structured coverage is planned in issue #57; unrestricted raw execution is not the completeness contract."
+      "tools": ["redis_argetrange"],
+      "tracking_issue": null,
+      "rationale": "The typed tool rejects ranges larger than the configured output-entry budget and preserves null slots."
     },
     {
       "name": "ARGREP",
-      "disposition": "planned",
+      "disposition": "typed",
       "access": "read_only",
       "cluster_behavior": "key_routed",
-      "tools": [],
-      "tracking_issue": 57,
-      "rationale": "Structured coverage is planned in issue #57; unrestricted raw execution is not the completeness contract."
+      "tools": ["redis_argrep"],
+      "tracking_issue": null,
+      "rationale": "The typed tool exposes bounded exact, substring, glob, and regular-expression predicates with binary-safe values."
     },
     {
       "name": "ARINFO",
-      "disposition": "planned",
+      "disposition": "typed",
       "access": "read_only",
       "cluster_behavior": "key_routed",
-      "tools": [],
-      "tracking_issue": 57,
-      "rationale": "Structured coverage is planned in issue #57; unrestricted raw execution is not the completeness contract."
+      "tools": ["redis_arinfo"],
+      "tracking_issue": null,
+      "rationale": "The typed tool normalizes RESP2 and RESP3 metadata without returning array payloads."
     },
     {
       "name": "ARINSERT",
-      "disposition": "planned",
+      "disposition": "typed",
       "access": "read_write",
       "cluster_behavior": "key_routed",
-      "tools": [],
-      "tracking_issue": 57,
-      "rationale": "Structured coverage is planned in issue #57; unrestricted raw execution is not the completeness contract."
+      "tools": ["redis_arinsert"],
+      "tracking_issue": null,
+      "rationale": "The typed tool bounds and binary-safely inserts one contiguous value batch."
     },
     {
       "name": "ARLASTITEMS",
-      "disposition": "planned",
+      "disposition": "typed",
       "access": "read_only",
       "cluster_behavior": "key_routed",
-      "tools": [],
-      "tracking_issue": 57,
-      "rationale": "Structured coverage is planned in issue #57; unrestricted raw execution is not the completeness contract."
+      "tools": ["redis_arlastitems"],
+      "tracking_issue": null,
+      "rationale": "The typed tool requires an explicit bounded count and preserves binary and null results."
     },
     {
       "name": "ARLEN",
-      "disposition": "planned",
+      "disposition": "typed",
       "access": "read_only",
       "cluster_behavior": "key_routed",
-      "tools": [],
-      "tracking_issue": 57,
-      "rationale": "Structured coverage is planned in issue #57; unrestricted raw execution is not the completeness contract."
+      "tools": ["redis_arlen"],
+      "tracking_issue": null,
+      "rationale": "The typed tool returns the intrinsically bounded logical array length."
     },
     {
       "name": "ARMGET",
-      "disposition": "planned",
+      "disposition": "typed",
       "access": "read_only",
       "cluster_behavior": "key_routed",
-      "tools": [],
-      "tracking_issue": 57,
-      "rationale": "Structured coverage is planned in issue #57; unrestricted raw execution is not the completeness contract."
+      "tools": ["redis_armget"],
+      "tracking_issue": null,
+      "rationale": "The typed tool reads an explicit bounded index set and preserves request-aligned nulls."
     },
     {
       "name": "ARMSET",
-      "disposition": "planned",
+      "disposition": "typed",
       "access": "read_write",
       "cluster_behavior": "key_routed",
-      "tools": [],
-      "tracking_issue": 57,
-      "rationale": "Structured coverage is planned in issue #57; unrestricted raw execution is not the completeness contract."
+      "tools": ["redis_armset"],
+      "tracking_issue": null,
+      "rationale": "The typed tool bounds explicit binary-safe index/value pairs."
     },
     {
       "name": "ARNEXT",
-      "disposition": "planned",
+      "disposition": "typed",
       "access": "read_only",
       "cluster_behavior": "key_routed",
-      "tools": [],
-      "tracking_issue": 57,
-      "rationale": "Structured coverage is planned in issue #57; unrestricted raw execution is not the completeness contract."
+      "tools": ["redis_arnext"],
+      "tracking_issue": null,
+      "rationale": "The typed tool distinguishes an exhausted insertion cursor from an integer cursor."
     },
     {
       "name": "AROP",
-      "disposition": "planned",
+      "disposition": "typed",
       "access": "read_only",
       "cluster_behavior": "key_routed",
-      "tools": [],
-      "tracking_issue": 57,
-      "rationale": "Structured coverage is planned in issue #57; unrestricted raw execution is not the completeness contract."
+      "tools": ["redis_arop"],
+      "tracking_issue": null,
+      "rationale": "The typed tool enumerates finite aggregate operations and validates the inclusive range."
     },
     {
       "name": "ARRING",
-      "disposition": "planned",
+      "disposition": "typed",
       "access": "read_write",
       "cluster_behavior": "key_routed",
-      "tools": [],
-      "tracking_issue": 57,
-      "rationale": "Structured coverage is planned in issue #57; unrestricted raw execution is not the completeness contract."
+      "tools": ["redis_arring"],
+      "tracking_issue": null,
+      "rationale": "The typed tool requires a positive ring size and bounds the inserted value batch."
     },
     {
       "name": "ARSCAN",
-      "disposition": "planned",
+      "disposition": "typed",
       "access": "read_only",
       "cluster_behavior": "key_routed",
-      "tools": [],
-      "tracking_issue": 57,
-      "rationale": "Structured coverage is planned in issue #57; unrestricted raw execution is not the completeness contract."
+      "tools": ["redis_arscan"],
+      "tracking_issue": null,
+      "rationale": "The typed tool returns bounded binary-safe index/value pages with an explicit continuation start."
     },
     {
       "name": "ARSEEK",
-      "disposition": "planned",
+      "disposition": "typed",
       "access": "read_write",
       "cluster_behavior": "key_routed",
-      "tools": [],
-      "tracking_issue": 57,
-      "rationale": "Structured coverage is planned in issue #57; unrestricted raw execution is not the completeness contract."
+      "tools": ["redis_arseek"],
+      "tracking_issue": null,
+      "rationale": "The typed tool sets one explicit signed insertion cursor."
     },
     {
       "name": "ARSET",
-      "disposition": "planned",
+      "disposition": "typed",
       "access": "read_write",
       "cluster_behavior": "key_routed",
-      "tools": [],
-      "tracking_issue": 57,
-      "rationale": "Structured coverage is planned in issue #57; unrestricted raw execution is not the completeness contract."
+      "tools": ["redis_arset"],
+      "tracking_issue": null,
+      "rationale": "The typed tool bounds one contiguous binary-safe write starting at an explicit index."
     },
     {
       "name": "ASKING",
@@ -1239,21 +1239,21 @@
     },
     {
       "name": "DELEX",
-      "disposition": "planned",
+      "disposition": "typed",
       "access": "full",
       "cluster_behavior": "key_routed",
-      "tools": [],
-      "tracking_issue": 57,
-      "rationale": "Structured coverage is planned in issue #57; unrestricted raw execution is not the completeness contract."
+      "tools": ["redis_delex"],
+      "tracking_issue": null,
+      "rationale": "The full-access typed tool makes binary value and 16-character hexadecimal XXH3 digest conditions explicit."
     },
     {
       "name": "DIGEST",
-      "disposition": "planned",
+      "disposition": "typed",
       "access": "read_only",
       "cluster_behavior": "key_routed",
-      "tools": [],
-      "tracking_issue": 57,
-      "rationale": "Structured coverage is planned in issue #57; unrestricted raw execution is not the completeness contract."
+      "tools": ["redis_digest"],
+      "tracking_issue": null,
+      "rationale": "The typed tool reports missing keys and preserves Redis's 16-character hexadecimal XXH3-64 digest."
     },
     {
       "name": "DISCARD",
@@ -1751,21 +1751,21 @@
     },
     {
       "name": "HGETDEL",
-      "disposition": "planned",
+      "disposition": "typed",
       "access": "full",
       "cluster_behavior": "key_routed",
-      "tools": [],
-      "tracking_issue": 57,
-      "rationale": "Structured coverage is planned in issue #57; unrestricted raw execution is not the completeness contract."
+      "tools": ["redis_hgetdel"],
+      "tracking_issue": null,
+      "rationale": "The full-access typed tool returns request-aligned binary-safe values while deleting a bounded field set."
     },
     {
       "name": "HGETEX",
-      "disposition": "planned",
+      "disposition": "typed",
       "access": "read_write",
       "cluster_behavior": "key_routed",
-      "tools": [],
-      "tracking_issue": 57,
-      "rationale": "Structured coverage is planned in issue #57; unrestricted raw execution is not the completeness contract."
+      "tools": ["redis_hgetex"],
+      "tracking_issue": null,
+      "rationale": "The typed tool bounds fields, preserves request-aligned values, and enumerates every supported expiration mode."
     },
     {
       "name": "HIMPORT",
@@ -1778,39 +1778,39 @@
     },
     {
       "name": "HIMPORT DISCARD",
-      "disposition": "planned",
+      "disposition": "excluded",
       "access": "full",
       "cluster_behavior": "all_shards",
       "tools": [],
-      "tracking_issue": 57,
-      "rationale": "Structured coverage is planned in issue #57; unrestricted raw execution is not the completeness contract."
+      "tracking_issue": null,
+      "rationale": "HIMPORT fieldsets are connection-local migration state and cannot be safely preserved across pooled independent MCP calls."
     },
     {
       "name": "HIMPORT DISCARDALL",
-      "disposition": "planned",
+      "disposition": "excluded",
       "access": "full",
       "cluster_behavior": "all_shards",
       "tools": [],
-      "tracking_issue": 57,
-      "rationale": "Structured coverage is planned in issue #57; unrestricted raw execution is not the completeness contract."
+      "tracking_issue": null,
+      "rationale": "HIMPORT fieldsets are connection-local migration state and cannot be safely preserved across pooled independent MCP calls."
     },
     {
       "name": "HIMPORT PREPARE",
-      "disposition": "planned",
+      "disposition": "excluded",
       "access": "full",
       "cluster_behavior": "all_shards",
       "tools": [],
-      "tracking_issue": 57,
-      "rationale": "Structured coverage is planned in issue #57; unrestricted raw execution is not the completeness contract."
+      "tracking_issue": null,
+      "rationale": "HIMPORT fieldsets are connection-local migration state and cannot be safely preserved across pooled independent MCP calls."
     },
     {
       "name": "HIMPORT SET",
-      "disposition": "planned",
+      "disposition": "excluded",
       "access": "read_write",
       "cluster_behavior": "key_routed",
       "tools": [],
-      "tracking_issue": 57,
-      "rationale": "Structured coverage is planned in issue #57; unrestricted raw execution is not the completeness contract."
+      "tracking_issue": null,
+      "rationale": "HIMPORT SET depends on a prepared connection-local fieldset, which pooled independent MCP calls cannot guarantee."
     },
     {
       "name": "HINCRBY",
@@ -2012,12 +2012,12 @@
     },
     {
       "name": "HSETEX",
-      "disposition": "planned",
+      "disposition": "typed",
       "access": "read_write",
       "cluster_behavior": "key_routed",
-      "tools": [],
-      "tracking_issue": 57,
-      "rationale": "Structured coverage is planned in issue #57; unrestricted raw execution is not the completeness contract."
+      "tools": ["redis_hsetex"],
+      "tracking_issue": null,
+      "rationale": "The typed tool bounds binary field/value pairs and enumerates field conditions and expiration modes."
     },
     {
       "name": "HSETNX",
@@ -2099,12 +2099,12 @@
     },
     {
       "name": "INCREX",
-      "disposition": "planned",
+      "disposition": "typed",
       "access": "read_write",
       "cluster_behavior": "key_routed",
-      "tools": [],
-      "tracking_issue": 57,
-      "rationale": "Structured coverage is planned in issue #57; unrestricted raw execution is not the completeness contract."
+      "tools": ["redis_increx"],
+      "tracking_issue": null,
+      "rationale": "The typed tool preserves exact numeric tokens and validates bounds, saturation, and expiration combinations."
     },
     {
       "name": "INFO",
@@ -2268,12 +2268,12 @@
     },
     {
       "name": "LMOVEM",
-      "disposition": "planned",
-      "access": "read_write",
+      "disposition": "typed",
+      "access": "full",
       "cluster_behavior": "key_routed",
-      "tools": [],
-      "tracking_issue": 57,
-      "rationale": "Structured coverage is planned in issue #57; unrestricted raw execution is not the completeness contract."
+      "tools": ["redis_lmovem"],
+      "tracking_issue": null,
+      "rationale": "The full-access typed tool bounds batch size, enumerates direction and ordering, and requires same-slot keys."
     },
     {
       "name": "LMPOP",
@@ -2562,12 +2562,12 @@
     },
     {
       "name": "MSETEX",
-      "disposition": "planned",
+      "disposition": "typed",
       "access": "read_write",
       "cluster_behavior": "multi_shard",
-      "tools": [],
-      "tracking_issue": 57,
-      "rationale": "Structured coverage is planned in issue #57; unrestricted raw execution is not the completeness contract."
+      "tools": ["redis_msetex"],
+      "tracking_issue": null,
+      "rationale": "The typed tool bounds binary key/value pairs and exposes all-keys conditions and shared expiration modes."
     },
     {
       "name": "MSETNX",
@@ -3592,12 +3592,12 @@
     },
     {
       "name": "TRIMSLOTS",
-      "disposition": "planned",
+      "disposition": "excluded",
       "access": "full",
       "cluster_behavior": "node_local",
       "tools": [],
-      "tracking_issue": 57,
-      "rationale": "Structured coverage is planned in issue #57; unrestricted raw execution is not the completeness contract."
+      "tracking_issue": null,
+      "rationale": "Destructive node-local slot trimming is a Cluster migration and server-lifecycle operation, not an agent-safe database tool."
     },
     {
       "name": "TTL",
@@ -3654,120 +3654,120 @@
     },
     {
       "name": "VADD",
-      "disposition": "planned",
+      "disposition": "typed",
       "access": "read_write",
       "cluster_behavior": "key_routed",
-      "tools": [],
-      "tracking_issue": 57,
-      "rationale": "Structured coverage is planned in issue #57; unrestricted raw execution is not the completeness contract."
+      "tools": ["redis_vadd"],
+      "tracking_issue": null,
+      "rationale": "The typed tool bounds dimensions and exposes numeric or packed-FP32 vectors plus finite construction controls."
     },
     {
       "name": "VCARD",
-      "disposition": "planned",
+      "disposition": "typed",
       "access": "read_only",
       "cluster_behavior": "key_routed",
-      "tools": [],
-      "tracking_issue": 57,
-      "rationale": "Structured coverage is planned in issue #57; unrestricted raw execution is not the completeness contract."
+      "tools": ["redis_vcard"],
+      "tracking_issue": null,
+      "rationale": "The typed tool returns an intrinsically bounded vector-set cardinality."
     },
     {
       "name": "VDIM",
-      "disposition": "planned",
+      "disposition": "typed",
       "access": "read_only",
       "cluster_behavior": "key_routed",
-      "tools": [],
-      "tracking_issue": 57,
-      "rationale": "Structured coverage is planned in issue #57; unrestricted raw execution is not the completeness contract."
+      "tools": ["redis_vdim"],
+      "tracking_issue": null,
+      "rationale": "The typed tool returns an intrinsically bounded vector dimension."
     },
     {
       "name": "VEMB",
-      "disposition": "planned",
+      "disposition": "typed",
       "access": "read_only",
       "cluster_behavior": "key_routed",
-      "tools": [],
-      "tracking_issue": 57,
-      "rationale": "Structured coverage is planned in issue #57; unrestricted raw execution is not the completeness contract."
+      "tools": ["redis_vemb"],
+      "tracking_issue": null,
+      "rationale": "The typed tool returns exact decimal components or a binary-safe packed FP32 embedding under output budgets."
     },
     {
       "name": "VGETATTR",
-      "disposition": "planned",
+      "disposition": "typed",
       "access": "read_only",
       "cluster_behavior": "key_routed",
-      "tools": [],
-      "tracking_issue": 57,
-      "rationale": "Structured coverage is planned in issue #57; unrestricted raw execution is not the completeness contract."
+      "tools": ["redis_vgetattr"],
+      "tracking_issue": null,
+      "rationale": "The typed tool parses and returns one element's JSON attributes."
     },
     {
       "name": "VINFO",
-      "disposition": "planned",
+      "disposition": "typed",
       "access": "read_only",
       "cluster_behavior": "key_routed",
-      "tools": [],
-      "tracking_issue": 57,
-      "rationale": "Structured coverage is planned in issue #57; unrestricted raw execution is not the completeness contract."
+      "tools": ["redis_vinfo"],
+      "tracking_issue": null,
+      "rationale": "The typed tool normalizes bounded RESP2 and RESP3 vector-set metadata."
     },
     {
       "name": "VISMEMBER",
-      "disposition": "planned",
+      "disposition": "typed",
       "access": "read_only",
       "cluster_behavior": "key_routed",
-      "tools": [],
-      "tracking_issue": 57,
-      "rationale": "Structured coverage is planned in issue #57; unrestricted raw execution is not the completeness contract."
+      "tools": ["redis_vismember"],
+      "tracking_issue": null,
+      "rationale": "The typed tool provides binary-safe membership semantics."
     },
     {
       "name": "VLINKS",
-      "disposition": "planned",
+      "disposition": "typed",
       "access": "read_only",
       "cluster_behavior": "key_routed",
-      "tools": [],
-      "tracking_issue": 57,
-      "rationale": "Structured coverage is planned in issue #57; unrestricted raw execution is not the completeness contract."
+      "tools": ["redis_vlinks"],
+      "tracking_issue": null,
+      "rationale": "The typed tool exposes optional scores and applies global entry and encoded-byte budgets to graph links."
     },
     {
       "name": "VRANDMEMBER",
-      "disposition": "planned",
+      "disposition": "typed",
       "access": "read_only",
       "cluster_behavior": "key_routed",
-      "tools": [],
-      "tracking_issue": 57,
-      "rationale": "Structured coverage is planned in issue #57; unrestricted raw execution is not the completeness contract."
+      "tools": ["redis_vrandmember"],
+      "tracking_issue": null,
+      "rationale": "The typed tool bounds positive or negative sample counts and preserves binary members."
     },
     {
       "name": "VRANGE",
-      "disposition": "planned",
+      "disposition": "typed",
       "access": "read_only",
       "cluster_behavior": "key_routed",
-      "tools": [],
-      "tracking_issue": 57,
-      "rationale": "Structured coverage is planned in issue #57; unrestricted raw execution is not the completeness contract."
+      "tools": ["redis_vrange"],
+      "tracking_issue": null,
+      "rationale": "The typed tool requires a bounded count and preserves binary lexicographical bounds and members."
     },
     {
       "name": "VREM",
-      "disposition": "planned",
+      "disposition": "typed",
       "access": "full",
       "cluster_behavior": "key_routed",
-      "tools": [],
-      "tracking_issue": 57,
-      "rationale": "Structured coverage is planned in issue #57; unrestricted raw execution is not the completeness contract."
+      "tools": ["redis_vrem"],
+      "tracking_issue": null,
+      "rationale": "The full-access typed tool removes one explicit binary-safe vector-set member."
     },
     {
       "name": "VSETATTR",
-      "disposition": "planned",
+      "disposition": "typed",
       "access": "read_write",
       "cluster_behavior": "key_routed",
-      "tools": [],
-      "tracking_issue": 57,
-      "rationale": "Structured coverage is planned in issue #57; unrestricted raw execution is not the completeness contract."
+      "tools": ["redis_vsetattr"],
+      "tracking_issue": null,
+      "rationale": "The typed tool replaces or removes one member's validated JSON attributes."
     },
     {
       "name": "VSIM",
-      "disposition": "planned",
+      "disposition": "typed",
       "access": "read_only",
       "cluster_behavior": "key_routed",
-      "tools": [],
-      "tracking_issue": 57,
-      "rationale": "Structured coverage is planned in issue #57; unrestricted raw execution is not the completeness contract."
+      "tools": ["redis_vsim"],
+      "tracking_issue": null,
+      "rationale": "The typed tool bounds results and dimensions while exposing element, numeric, packed-FP32, score, attribute, filter, and search-effort controls."
     },
     {
       "name": "WAIT",
@@ -3809,12 +3809,12 @@
     },
     {
       "name": "XACKDEL",
-      "disposition": "planned",
+      "disposition": "typed",
       "access": "full",
       "cluster_behavior": "key_routed",
-      "tools": [],
-      "tracking_issue": 57,
-      "rationale": "Structured coverage is planned in issue #57; unrestricted raw execution is not the completeness contract."
+      "tools": ["redis_xackdel"],
+      "tracking_issue": null,
+      "rationale": "The full-access typed tool bounds IDs and enumerates consumer-group reference policies."
     },
     {
       "name": "XADD",
@@ -3840,12 +3840,12 @@
     },
     {
       "name": "XCFGSET",
-      "disposition": "planned",
+      "disposition": "internal",
       "access": "read_write",
       "cluster_behavior": "key_routed",
       "tools": [],
-      "tracking_issue": 57,
-      "rationale": "Structured coverage is planned in issue #57; unrestricted raw execution is not the completeness contract."
+      "tracking_issue": null,
+      "rationale": "Internal IDMP configuration is server-managed Stream machinery, not an agent-safe database operation."
     },
     {
       "name": "XCLAIM",
@@ -3871,12 +3871,12 @@
     },
     {
       "name": "XDELEX",
-      "disposition": "planned",
+      "disposition": "typed",
       "access": "full",
       "cluster_behavior": "key_routed",
-      "tools": [],
-      "tracking_issue": 57,
-      "rationale": "Structured coverage is planned in issue #57; unrestricted raw execution is not the completeness contract."
+      "tools": ["redis_xdelex"],
+      "tracking_issue": null,
+      "rationale": "The full-access typed tool bounds IDs and makes dangling-reference deletion behavior explicit."
     },
     {
       "name": "XGROUP",
@@ -3953,12 +3953,12 @@
     },
     {
       "name": "XIDMPRECORD",
-      "disposition": "planned",
+      "disposition": "internal",
       "access": "read_write",
       "cluster_behavior": "key_routed",
       "tools": [],
-      "tracking_issue": 57,
-      "rationale": "Structured coverage is planned in issue #57; unrestricted raw execution is not the completeness contract."
+      "tracking_issue": null,
+      "rationale": "Redis documents this as an internal command for setting Stream IDMP metadata."
     },
     {
       "name": "XINFO",
@@ -4024,12 +4024,12 @@
     },
     {
       "name": "XNACK",
-      "disposition": "planned",
+      "disposition": "typed",
       "access": "full",
       "cluster_behavior": "key_routed",
-      "tools": [],
-      "tracking_issue": 57,
-      "rationale": "Structured coverage is planned in issue #57; unrestricted raw execution is not the completeness contract."
+      "tools": ["redis_xnack"],
+      "tracking_issue": null,
+      "rationale": "The full-access typed tool bounds IDs and enumerates release mode, retry count, and force behavior."
     },
     {
       "name": "XPENDING",
@@ -4088,12 +4088,12 @@
     },
     {
       "name": "XSETID",
-      "disposition": "planned",
+      "disposition": "internal",
       "access": "read_write",
       "cluster_behavior": "key_routed",
       "tools": [],
-      "tracking_issue": 57,
-      "rationale": "Structured coverage is planned in issue #57; unrestricted raw execution is not the completeness contract."
+      "tracking_issue": null,
+      "rationale": "Redis documents this as an internal replication command for restoring Stream values."
     },
     {
       "name": "XTRIM",

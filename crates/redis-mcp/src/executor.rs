@@ -618,6 +618,58 @@ fn validate_cluster_command_slots(command: &RedisCommand) -> Result<(), RedisErr
             .with_code("CROSSSLOT"));
         }
     }
+    if command.name().eq_ignore_ascii_case("LMOVEM")
+        && command.arguments().len() >= 2
+        && route(&command.arguments()[0]) != route(&command.arguments()[1])
+    {
+        return Err(RedisError::new(
+            RedisErrorKind::InvalidRequest,
+            "source and destination in LMOVEM must hash to the same Redis Cluster slot",
+        )
+        .with_code("CROSSSLOT"));
+    }
+    if command.name().eq_ignore_ascii_case("MSETEX") && !command.arguments().is_empty() {
+        let count = std::str::from_utf8(&command.arguments()[0])
+            .ok()
+            .and_then(|count| count.parse::<usize>().ok())
+            .filter(|count| *count > 0)
+            .ok_or_else(|| {
+                RedisError::new(
+                    RedisErrorKind::InvalidRequest,
+                    "MSETEX contained an invalid key count",
+                )
+            })?;
+        let pair_end = count
+            .checked_mul(2)
+            .and_then(|count| count.checked_add(1))
+            .ok_or_else(|| {
+                RedisError::new(
+                    RedisErrorKind::InvalidRequest,
+                    "MSETEX key count exceeded the supported argument range",
+                )
+            })?;
+        let pair_arguments = command.arguments().get(1..pair_end).ok_or_else(|| {
+            RedisError::new(
+                RedisErrorKind::InvalidRequest,
+                "MSETEX key count exceeded the supplied key/value arguments",
+            )
+        })?;
+        if let Some(first_key) = pair_arguments.first() {
+            let first = route(first_key);
+            if pair_arguments
+                .iter()
+                .step_by(2)
+                .skip(1)
+                .any(|key| route(key) != first)
+            {
+                return Err(RedisError::new(
+                    RedisErrorKind::InvalidRequest,
+                    "keys in MSETEX must hash to the same Redis Cluster slot for atomic execution",
+                )
+                .with_code("CROSSSLOT"));
+            }
+        }
+    }
     if matches!(
         command.name().to_ascii_uppercase().as_str(),
         "FT.ALIASADD" | "FT.ALIASUPDATE"
@@ -681,6 +733,55 @@ fn cluster_routing_key(command: &RedisCommand) -> Option<&[u8]> {
     if command.required_module() == Some(RedisModule::Search)
         && !command.name().eq_ignore_ascii_case("FT._LIST")
     {
+        return command.arguments().first().map(Vec::as_slice);
+    }
+    if command.name().eq_ignore_ascii_case("MSETEX") {
+        return command.arguments().get(1).map(Vec::as_slice);
+    }
+    if matches!(
+        command.name().to_ascii_uppercase().as_str(),
+        "ARCOUNT"
+            | "ARDEL"
+            | "ARDELRANGE"
+            | "ARGET"
+            | "ARGETRANGE"
+            | "ARGREP"
+            | "ARINFO"
+            | "ARINSERT"
+            | "ARLASTITEMS"
+            | "ARLEN"
+            | "ARMGET"
+            | "ARMSET"
+            | "ARNEXT"
+            | "AROP"
+            | "ARRING"
+            | "ARSCAN"
+            | "ARSEEK"
+            | "ARSET"
+            | "DELEX"
+            | "DIGEST"
+            | "HGETDEL"
+            | "HGETEX"
+            | "HSETEX"
+            | "INCREX"
+            | "LMOVEM"
+            | "VADD"
+            | "VCARD"
+            | "VDIM"
+            | "VEMB"
+            | "VGETATTR"
+            | "VINFO"
+            | "VISMEMBER"
+            | "VLINKS"
+            | "VRANDMEMBER"
+            | "VRANGE"
+            | "VREM"
+            | "VSETATTR"
+            | "VSIM"
+            | "XACKDEL"
+            | "XDELEX"
+            | "XNACK"
+    ) {
         return command.arguments().first().map(Vec::as_slice);
     }
     None
@@ -839,6 +940,54 @@ mod tests {
         let error = validate_cluster_command_slots(&cross_slot).unwrap_err();
         assert_eq!(error.kind(), RedisErrorKind::InvalidRequest);
         assert_eq!(error.code(), Some("CROSSSLOT"));
+    }
+
+    #[test]
+    fn modern_multi_key_commands_require_one_atomic_cluster_slot() {
+        let mut lmovem = RedisCommand::new("redis_lmovem", AccessMode::Full, "LMOVEM");
+        lmovem
+            .arg("list:{tenant}:source")
+            .arg("list:{tenant}:destination")
+            .arg("LEFT")
+            .arg("RIGHT");
+        assert!(validate_cluster_command_slots(&lmovem).is_ok());
+
+        let mut cross_slot = lmovem.clone();
+        cross_slot.arguments[1] = b"list:{other}:destination".to_vec();
+        assert_eq!(
+            validate_cluster_command_slots(&cross_slot)
+                .unwrap_err()
+                .code(),
+            Some("CROSSSLOT")
+        );
+
+        let mut msetex = RedisCommand::new("redis_msetex", AccessMode::ReadWrite, "MSETEX");
+        msetex
+            .arg("2")
+            .arg("key:{tenant}:1")
+            .arg("one")
+            .arg("key:{tenant}:2")
+            .arg("two")
+            .arg("EX")
+            .arg("30");
+        assert!(validate_cluster_command_slots(&msetex).is_ok());
+        assert_eq!(
+            cluster_routing_key(&msetex),
+            Some(b"key:{tenant}:1".as_slice())
+        );
+
+        msetex.arguments[3] = b"key:{other}:2".to_vec();
+        assert_eq!(
+            validate_cluster_command_slots(&msetex).unwrap_err().code(),
+            Some("CROSSSLOT")
+        );
+
+        let mut invalid = RedisCommand::new("redis_command", AccessMode::Full, "MSETEX");
+        invalid.arg(usize::MAX.to_string());
+        assert_eq!(
+            validate_cluster_command_slots(&invalid).unwrap_err().kind(),
+            RedisErrorKind::InvalidRequest
+        );
     }
 
     #[test]

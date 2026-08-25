@@ -206,6 +206,21 @@ async fn module_router_client(url: &str) -> McpClient {
     client
 }
 
+async fn call_structured(
+    client: &McpClient,
+    tool: &'static str,
+    input: serde_json::Value,
+) -> serde_json::Value {
+    let result = client
+        .call_tool(tool, input)
+        .await
+        .unwrap_or_else(|error| panic!("{tool}: {error}"));
+    assert!(!result.is_error, "{tool}: {result:?}");
+    result
+        .structured_content
+        .unwrap_or_else(|| panic!("{tool}: missing structured content"))
+}
+
 #[tokio::test]
 async fn direct_adapter_discovers_bounded_standalone_capabilities() {
     let Some(redis) = TestRedis::start().await else {
@@ -301,6 +316,543 @@ async fn live_redis_round_trip_through_router() {
             .await
             .expect("delete key");
         assert_eq!(delete.structured_content.as_ref().unwrap()["deleted"], 1);
+    }
+}
+
+#[tokio::test]
+async fn redis_eight_modern_surface_is_version_gated_and_live_in_resp2_and_resp3() {
+    let Some(redis) = TestRedis::start().await else {
+        return;
+    };
+    let (capability_client, capabilities) =
+        capability_router_client(&redis.url, AccessMode::Full).await;
+    let version = capabilities
+        .redis_version()
+        .expect("live Redis reports its version");
+    let listed = capability_client
+        .list_tools()
+        .await
+        .expect("list capability-filtered tools")
+        .tools
+        .into_iter()
+        .map(|tool| tool.name.to_string())
+        .collect::<std::collections::BTreeSet<_>>();
+
+    for (minimum, tools) in [
+        (
+            RedisVersion::new(8, 0, 0),
+            &["redis_vadd", "redis_vsim", "redis_hgetex", "redis_hsetex"][..],
+        ),
+        (
+            RedisVersion::new(8, 2, 0),
+            &["redis_vismember", "redis_xackdel", "redis_xdelex"][..],
+        ),
+        (
+            RedisVersion::new(8, 4, 0),
+            &[
+                "redis_delex",
+                "redis_digest",
+                "redis_msetex",
+                "redis_vrange",
+            ][..],
+        ),
+        (
+            RedisVersion::new(8, 8, 0),
+            &[
+                "redis_arcount",
+                "redis_arset",
+                "redis_increx",
+                "redis_xnack",
+            ][..],
+        ),
+        (RedisVersion::new(8, 10, 0), &["redis_lmovem"][..]),
+    ] {
+        for tool in tools {
+            assert_eq!(
+                listed.contains(*tool),
+                version >= minimum,
+                "{tool} visibility on Redis {version}"
+            );
+        }
+    }
+
+    if version < RedisVersion::new(8, 0, 0) {
+        return;
+    }
+
+    for protocol in ["resp2", "resp3"] {
+        let client = router_client(&with_protocol(&redis.url, protocol), AccessMode::Full).await;
+        let prefix = test_key(&format!("redis-eight:{protocol}"));
+        let vector = format!("{prefix}:vectors");
+        let hash = format!("{prefix}:hash");
+        let string = format!("{prefix}:string");
+        let number = format!("{prefix}:number");
+        let array = format!("{prefix}:array");
+        let ring = format!("{prefix}:ring");
+        let stream = format!("{prefix}:stream");
+        let list_source = format!("{prefix}:list-source");
+        let list_destination = format!("{prefix}:list-destination");
+        let mset_one = format!("{prefix}:mset-one");
+        let mset_two = format!("{prefix}:mset-two");
+
+        let added = call_structured(
+            &client,
+            "redis_vadd",
+            serde_json::json!({
+                "key": vector,
+                "vector": {"type": "values", "values": [1, 0]},
+                "element": {"value": "alpha"},
+                "attributes": {"kind": "primary"}
+            }),
+        )
+        .await;
+        assert_eq!(added["changed"], true, "{protocol}");
+        call_structured(
+            &client,
+            "redis_vadd",
+            serde_json::json!({
+                "key": vector,
+                "vector": {"type": "values", "values": [0, 1]},
+                "element": {"value": "beta"}
+            }),
+        )
+        .await;
+        let cardinality =
+            call_structured(&client, "redis_vcard", serde_json::json!({"key": vector})).await;
+        assert_eq!(cardinality["cardinality"], 2, "{protocol}");
+        let dimensions =
+            call_structured(&client, "redis_vdim", serde_json::json!({"key": vector})).await;
+        assert_eq!(dimensions["dimensions"], 2, "{protocol}");
+        let embedding = call_structured(
+            &client,
+            "redis_vemb",
+            serde_json::json!({"key": vector, "element": {"value": "alpha"}}),
+        )
+        .await;
+        assert_eq!(embedding["exists"], true, "{protocol}");
+        assert_eq!(embedding["dimensions"], 2, "{protocol}");
+        let attributes = call_structured(
+            &client,
+            "redis_vgetattr",
+            serde_json::json!({"key": vector, "element": {"value": "alpha"}}),
+        )
+        .await;
+        assert_eq!(attributes["attributes"]["kind"], "primary", "{protocol}");
+        call_structured(&client, "redis_vinfo", serde_json::json!({"key": vector})).await;
+        call_structured(
+            &client,
+            "redis_vlinks",
+            serde_json::json!({"key": vector, "element": {"value": "alpha"}, "with_scores": true}),
+        )
+        .await;
+        call_structured(
+            &client,
+            "redis_vrandmember",
+            serde_json::json!({"key": vector, "count": 2}),
+        )
+        .await;
+        call_structured(
+            &client,
+            "redis_vsim",
+            serde_json::json!({
+                "key": vector,
+                "query": {"type": "element", "element": {"value": "alpha"}},
+                "with_scores": true,
+                "count": 2
+            }),
+        )
+        .await;
+        let attribute_changed = call_structured(
+            &client,
+            "redis_vsetattr",
+            serde_json::json!({
+                "key": vector,
+                "element": {"value": "alpha"},
+                "attributes": {"kind": "updated"}
+            }),
+        )
+        .await;
+        assert_eq!(attribute_changed["changed"], true, "{protocol}");
+
+        let hash_set = call_structured(
+            &client,
+            "redis_hsetex",
+            serde_json::json!({
+                "key": hash,
+                "expiration": {"type": "seconds", "value": 60},
+                "fields": [
+                    {"field": {"value": "one"}, "value": {"value": "first"}},
+                    {"field": {"value": "two"}, "value": {"value": "second"}}
+                ]
+            }),
+        )
+        .await;
+        assert_eq!(hash_set["applied"], true, "{protocol}");
+        let hash_get = call_structured(
+            &client,
+            "redis_hgetex",
+            serde_json::json!({
+                "key": hash,
+                "expiration": {"type": "milliseconds", "value": 60000},
+                "fields": [{"value": "one"}, {"value": "two"}]
+            }),
+        )
+        .await;
+        assert_eq!(hash_get["values"][0]["value"], "first", "{protocol}");
+        let hash_deleted = call_structured(
+            &client,
+            "redis_hgetdel",
+            serde_json::json!({"key": hash, "fields": [{"value": "two"}]}),
+        )
+        .await;
+        assert_eq!(hash_deleted["values"][0]["value"], "second", "{protocol}");
+
+        if version >= RedisVersion::new(8, 2, 0) {
+            let membership = call_structured(
+                &client,
+                "redis_vismember",
+                serde_json::json!({"key": vector, "element": {"value": "alpha"}}),
+            )
+            .await;
+            assert_eq!(membership["exists"], true, "{protocol}");
+        }
+
+        if version >= RedisVersion::new(8, 4, 0) {
+            call_structured(
+                &client,
+                "redis_set",
+                serde_json::json!({"key": string, "value": "delete-me"}),
+            )
+            .await;
+            let digest =
+                call_structured(&client, "redis_digest", serde_json::json!({"key": string})).await;
+            assert_eq!(digest["exists"], true, "{protocol}");
+            assert_eq!(digest["algorithm"], "xxh3-64-hex", "{protocol}");
+            let digest_value = digest["digest"]
+                .as_str()
+                .expect("DIGEST returns a hex string");
+            assert_eq!(digest_value.len(), 16, "{protocol}");
+            let deleted = call_structured(
+                &client,
+                "redis_delex",
+                serde_json::json!({
+                    "key": string,
+                    "condition": {"type": "digest_equals", "digest": digest_value}
+                }),
+            )
+            .await;
+            assert_eq!(deleted["deleted"], true, "{protocol}");
+            let mset = call_structured(
+                &client,
+                "redis_msetex",
+                serde_json::json!({
+                    "entries": [
+                        {"key": {"value": mset_one}, "value": {"value": "one"}},
+                        {"key": {"value": mset_two}, "value": {"value": "two"}}
+                    ],
+                    "expiration": {"type": "seconds", "value": 60}
+                }),
+            )
+            .await;
+            assert_eq!(mset["applied"], true, "{protocol}");
+            let range = call_structured(
+                &client,
+                "redis_vrange",
+                serde_json::json!({
+                    "key": vector,
+                    "start": {"value": "-"},
+                    "end": {"value": "+"},
+                    "count": 1
+                }),
+            )
+            .await;
+            assert_eq!(range["count"], 1, "{protocol}");
+            assert_eq!(range["complete"], false, "{protocol}");
+            assert!(range["next_start"].is_object(), "{protocol}");
+        }
+
+        for (milliseconds, value) in [(1, "one"), (2, "two"), (3, "three")] {
+            call_structured(
+                &client,
+                "redis_xadd",
+                serde_json::json!({
+                    "key": stream,
+                    "id": {"type": "explicit", "id": {"milliseconds": milliseconds, "sequence": 0}},
+                    "fields": [{"field": "value", "value": value}]
+                }),
+            )
+            .await;
+        }
+        call_structured(
+            &client,
+            "redis_xgroup_create",
+            serde_json::json!({
+                "key": stream,
+                "group": {"value": "workers"},
+                "id": {"type": "beginning"}
+            }),
+        )
+        .await;
+        call_structured(
+            &client,
+            "redis_xreadgroup",
+            serde_json::json!({
+                "group": {"value": "workers"},
+                "consumer": {"value": "worker-1"},
+                "streams": [{"key": stream, "offset": {"type": "new"}}],
+                "count": 3
+            }),
+        )
+        .await;
+        if version >= RedisVersion::new(8, 2, 0) {
+            let acked = call_structured(
+                &client,
+                "redis_xackdel",
+                serde_json::json!({
+                    "key": stream,
+                    "group": {"value": "workers"},
+                    "reference_policy": "delete_references",
+                    "ids": [{"milliseconds": 2, "sequence": 0}]
+                }),
+            )
+            .await;
+            assert_eq!(acked["results"].as_array().unwrap().len(), 1, "{protocol}");
+            let deleted = call_structured(
+                &client,
+                "redis_xdelex",
+                serde_json::json!({
+                    "key": stream,
+                    "reference_policy": "delete_references",
+                    "ids": [{"milliseconds": 3, "sequence": 0}]
+                }),
+            )
+            .await;
+            assert_eq!(
+                deleted["results"].as_array().unwrap().len(),
+                1,
+                "{protocol}"
+            );
+        }
+
+        if version >= RedisVersion::new(8, 8, 0) {
+            let incremented = call_structured(
+                &client,
+                "redis_increx",
+                serde_json::json!({
+                    "key": number,
+                    "increment": {"type": "integer", "value": "2"},
+                    "upper_bound": "10",
+                    "expiration": {"type": "seconds", "value": 60}
+                }),
+            )
+            .await;
+            assert_eq!(incremented["value"], "2", "{protocol}");
+
+            let set = call_structured(
+                &client,
+                "redis_arset",
+                serde_json::json!({
+                    "key": array,
+                    "index": 0,
+                    "values": [
+                        {"value": "alpha"},
+                        {"value": "beta"},
+                        {"value": "alphabet"}
+                    ]
+                }),
+            )
+            .await;
+            assert_eq!(set["new_slots"], 3, "{protocol}");
+            call_structured(
+                &client,
+                "redis_armset",
+                serde_json::json!({
+                    "key": array,
+                    "entries": [{"index": 5, "value": {"value": "gamma"}}]
+                }),
+            )
+            .await;
+            assert_eq!(
+                call_structured(&client, "redis_arcount", serde_json::json!({"key": array})).await
+                    ["count"],
+                4,
+                "{protocol}"
+            );
+            assert_eq!(
+                call_structured(&client, "redis_arlen", serde_json::json!({"key": array})).await["length"],
+                6,
+                "{protocol}"
+            );
+            assert_eq!(
+                call_structured(
+                    &client,
+                    "redis_arget",
+                    serde_json::json!({"key": array, "index": 1})
+                )
+                .await["value"]["value"],
+                "beta",
+                "{protocol}"
+            );
+            call_structured(
+                &client,
+                "redis_argetrange",
+                serde_json::json!({"key": array, "start": 0, "end": 5}),
+            )
+            .await;
+            call_structured(
+                &client,
+                "redis_armget",
+                serde_json::json!({"key": array, "indices": [0, 5, 4]}),
+            )
+            .await;
+            let grep = call_structured(
+                &client,
+                "redis_argrep",
+                serde_json::json!({
+                    "key": array,
+                    "start": "-",
+                    "end": "+",
+                    "predicates": [{"type": "match", "value": {"value": "alpha"}}],
+                    "with_values": true,
+                    "limit": 10
+                }),
+            )
+            .await;
+            assert_eq!(grep["count"], 2, "{protocol}");
+            call_structured(
+                &client,
+                "redis_arinfo",
+                serde_json::json!({"key": array, "full": true}),
+            )
+            .await;
+            let used = call_structured(
+                &client,
+                "redis_arop",
+                serde_json::json!({
+                    "key": array,
+                    "start": 0,
+                    "end": 5,
+                    "operation": {"type": "used"}
+                }),
+            )
+            .await;
+            assert_eq!(used["result"], 4, "{protocol}");
+            let scan = call_structured(
+                &client,
+                "redis_arscan",
+                serde_json::json!({"key": array, "start": 0, "end": 5, "limit": 10}),
+            )
+            .await;
+            assert_eq!(scan["count"], 4, "{protocol}");
+            call_structured(
+                &client,
+                "redis_arseek",
+                serde_json::json!({"key": array, "index": 6}),
+            )
+            .await;
+            let inserted = call_structured(
+                &client,
+                "redis_arinsert",
+                serde_json::json!({"key": array, "values": [{"value": "delta"}]}),
+            )
+            .await;
+            assert_eq!(inserted["last_index"], 6, "{protocol}");
+            call_structured(
+                &client,
+                "redis_arlastitems",
+                serde_json::json!({"key": array, "count": 2, "reverse": true}),
+            )
+            .await;
+            let next =
+                call_structured(&client, "redis_arnext", serde_json::json!({"key": array})).await;
+            assert_eq!(next["next_index"], 7, "{protocol}");
+            let ring_insert = call_structured(
+                &client,
+                "redis_arring",
+                serde_json::json!({
+                    "key": ring,
+                    "size": 3,
+                    "values": [
+                        {"value": "one"}, {"value": "two"},
+                        {"value": "three"}, {"value": "four"}
+                    ]
+                }),
+            )
+            .await;
+            assert_eq!(ring_insert["last_index"], 0, "{protocol}");
+            call_structured(
+                &client,
+                "redis_ardel",
+                serde_json::json!({"key": array, "indices": [1]}),
+            )
+            .await;
+            call_structured(
+                &client,
+                "redis_ardelrange",
+                serde_json::json!({"key": array, "ranges": [{"start": 2, "end": 5}]}),
+            )
+            .await;
+
+            let nacked = call_structured(
+                &client,
+                "redis_xnack",
+                serde_json::json!({
+                    "key": stream,
+                    "group": {"value": "workers"},
+                    "mode": "silent",
+                    "ids": [{"milliseconds": 1, "sequence": 0}],
+                    "retry_count": 2
+                }),
+            )
+            .await;
+            assert_eq!(nacked["released"], 1, "{protocol}");
+        }
+
+        if version >= RedisVersion::new(8, 10, 0) {
+            call_structured(
+                &client,
+                "redis_rpush",
+                serde_json::json!({
+                    "key": list_source,
+                    "elements": [
+                        {"value": "one"}, {"value": "two"}, {"value": "three"}
+                    ]
+                }),
+            )
+            .await;
+            let moved = call_structured(
+                &client,
+                "redis_lmovem",
+                serde_json::json!({
+                    "source": {"value": list_source},
+                    "destination": {"value": list_destination},
+                    "from": "right",
+                    "to": "left",
+                    "amount": {"type": "exactly", "count": 2, "ordering": "bulk"}
+                }),
+            )
+            .await;
+            assert_eq!(moved["count"], 2, "{protocol}");
+        }
+
+        let removed = call_structured(
+            &client,
+            "redis_vrem",
+            serde_json::json!({"key": vector, "element": {"value": "beta"}}),
+        )
+        .await;
+        assert_eq!(removed["changed"], true, "{protocol}");
+        call_structured(
+            &client,
+            "redis_del",
+            serde_json::json!({
+                "keys": [
+                    vector, hash, string, number, array, ring, stream,
+                    list_source, list_destination, mset_one, mset_two
+                ]
+            }),
+        )
+        .await;
     }
 }
 

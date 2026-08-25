@@ -28,20 +28,20 @@ Vector Set commands remain part of the core inventory.
 
 | Disposition | Commands | Meaning |
 | --- | ---: | --- |
-| `typed` | 140 | Covered by cataloged structured MCP tools. |
+| `typed` | 182 | Covered by cataloged structured MCP tools. |
 | `native` | 32 | Available through fail-closed classified native invocation. |
 | `session` | 40 | Implemented or planned through a bounded dedicated connection/workflow. |
-| `planned` | 136 | Assigned to a concrete command-completeness backlog issue. |
-| `excluded` | 57 | Outside the product or safety boundary with an explicit rationale. |
+| `planned` | 86 | Assigned to a concrete command-completeness backlog issue. |
+| `excluded` | 62 | Outside the product or safety boundary with an explicit rationale. |
 | `deprecated` | 21 | Redis marks the command deprecated; richer replacements are preferred. |
-| `internal` | 5 | Redis marks the command as a system command. |
+| `internal` | 8 | Redis marks the command as a system command. |
 | `container` | 18 | Namespace-only command whose useful subcommands are mapped separately. |
 
 The counts describe official Redis command definitions, not MCP tool count.
 One structured tool can compose multiple commands, and one Redis command can
 support multiple tools.
 
-Planned and session work is tied to issues #32, #57, #58, #61, #62, #63,
+Planned and session work is tied to issues #32, #58, #61, #62, #63,
 and #66. The six already-implemented Pub/Sub connection commands retain their
 closed implementation reference, #30.
 
@@ -50,6 +50,17 @@ contracts cap item counts and bitmap write extent, preserve exact integer and
 coordinate tokens, label probabilistic cardinality explicitly, and classify
 destination-overwriting forms as full access with native same-slot Cluster
 semantics.
+
+The Redis 8 modern-data slice adds 42 typed command mappings: the complete
+18-command Redis Array family, 13 vector-set operations, and 11 finite string,
+hash, list, and Stream deltas. Variable requests are capped, Array and vector
+values are binary-safe, Array indices retain their unsigned 64-bit range, and
+ARGREP, ARSCAN, and VRANGE expose continuation contracts. Minimum versions are
+enforced at Redis 8.0, 8.2, 8.4, 8.8, and 8.10, with live RESP2, RESP3, and
+three-master Cluster coverage. The remaining eight reviewed additions are
+explicitly classified as connection-local migration state, destructive
+node-local lifecycle, or internal protocol commands rather than agent-safe
+database operations.
 
 ## Enforced invariants
 

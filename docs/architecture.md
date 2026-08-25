@@ -136,14 +136,32 @@ which side effects that host permits. These decisions are orthogonal.
 
 The public taxonomy is `essentials`, `data_structures`, `json`, `search`,
 `diagnostics`, `sessions`, `admin`, `bulk`, and `raw`. The curated default enables
-`essentials`, `data_structures`, and `diagnostics`, totaling 145 tools. The
+`essentials`, `data_structures`, and `diagnostics`, totaling 187 tools. The
 module-backed `json` and `search` bundles are explicitly selected so a default
 router never advertises capabilities that its Redis target may not provide.
 The stateful `sessions` bundle is enabled only by supplying a lifecycle manager.
 Empty bundles are reserved for coherent catalog growth and do not expose
 placeholder tools. The bundled stdio executable installs the DirectRedis
-session manager itself and therefore exposes 151 tools before module or raw
+session manager itself and therefore exposes 193 tools before module or raw
 additions.
+
+The Data Structures bundle includes the current Redis 8 core data model rather
+than freezing the contract at older Redis releases. Redis 8.0 introduces typed
+vector-set and expiring-hash operations; 8.2 adds vector membership and
+reference-aware Stream deletion; 8.4 adds conditional string deletion,
+digests, expiring multi-set, and stateless vector ranges; 8.8 adds the complete
+Redis Array family, bounded numeric increment, and Stream negative
+acknowledgement; 8.10 adds multi-element list movement. Capability discovery
+hides or rejects every tool below its minimum version or when its command is
+absent. Array indices preserve Redis's unsigned 64-bit domain, binary values
+carry explicit encodings, and all variable inputs and results are bounded.
+ARGREP, ARSCAN, and VRANGE return typed continuation fields.
+
+Connection-local `HIMPORT` migration state, destructive node-local
+`TRIMSLOTS`, and internal `XCFGSET`, `XIDMPRECORD`, and `XSETID` operations are
+deliberately not advertised as ordinary database tools. MSETEX and LMOVEM keep
+their atomic same-slot contract in Cluster and fail with the stable
+`CROSSSLOT` classification before execution when their keys differ.
 
 Every catalog entry has `ToolCapabilityRequirements`: required commands,
 optional minimum Redis and module versions, and the required module. Module

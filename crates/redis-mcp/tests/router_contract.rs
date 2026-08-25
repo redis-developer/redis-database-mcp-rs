@@ -584,6 +584,76 @@ impl RedisExecutor for StubRedis {
             "PFADD" => RedisValue::Integer(1),
             "PFCOUNT" => RedisValue::Integer(42),
             "PFMERGE" => RedisValue::Okay,
+            "ARCOUNT" | "ARLEN" => RedisValue::Integer(2),
+            "ARGET" => RedisValue::BulkString(b"array-value".to_vec()),
+            "ARGETRANGE" | "ARLASTITEMS" | "ARMGET" => RedisValue::Array(vec![
+                RedisValue::BulkString(b"array-value".to_vec()),
+                RedisValue::Nil,
+            ]),
+            "ARGREP" if command.arguments().iter().any(|arg| arg == b"WITHVALUES") => {
+                RedisValue::Array(vec![
+                    RedisValue::Integer(7),
+                    RedisValue::BulkString(vec![0xff]),
+                ])
+            }
+            "ARGREP" => RedisValue::Array(vec![RedisValue::Integer(7)]),
+            "ARINFO" => RedisValue::Array(vec![
+                RedisValue::BulkString(b"count".to_vec()),
+                RedisValue::Integer(2),
+                RedisValue::BulkString(b"len".to_vec()),
+                RedisValue::Integer(8),
+            ]),
+            "ARNEXT" => RedisValue::Integer(8),
+            "AROP" => RedisValue::Integer(2),
+            "ARSCAN" => RedisValue::Array(vec![
+                RedisValue::Integer(7),
+                RedisValue::BulkString(vec![0xff]),
+            ]),
+            "ARDEL" | "ARDELRANGE" | "ARINSERT" | "ARMSET" | "ARRING" | "ARSEEK"
+            | "ARSET" => RedisValue::Integer(1),
+            "DIGEST" => RedisValue::BulkString(b"-123456789".to_vec()),
+            "DELEX" | "HSETEX" | "MSETEX" | "VADD" | "VISMEMBER" | "VREM"
+            | "VSETATTR" => RedisValue::Integer(1),
+            "HGETDEL" | "HGETEX" => RedisValue::Array(vec![
+                RedisValue::BulkString(b"hash-value".to_vec()),
+                RedisValue::Nil,
+            ]),
+            "INCREX" => RedisValue::Array(vec![
+                RedisValue::BulkString(b"3.5".to_vec()),
+                RedisValue::BulkString(b"1.5".to_vec()),
+            ]),
+            "LMOVEM" => RedisValue::Array(vec![RedisValue::BulkString(b"moved".to_vec())]),
+            "VCARD" => RedisValue::Integer(3),
+            "VDIM" => RedisValue::Integer(2),
+            "VEMB" if command.arguments().iter().any(|arg| arg == b"RAW") => {
+                RedisValue::BulkString(vec![0, 0, 0, 0, 0, 0, 128, 63])
+            }
+            "VEMB" => RedisValue::Array(vec![
+                RedisValue::BulkString(b"0".to_vec()),
+                RedisValue::BulkString(b"1".to_vec()),
+            ]),
+            "VGETATTR" => RedisValue::BulkString(br#"{"role":"primary"}"#.to_vec()),
+            "VINFO" => RedisValue::Array(vec![
+                RedisValue::BulkString(b"size".to_vec()),
+                RedisValue::Integer(3),
+                RedisValue::BulkString(b"dim".to_vec()),
+                RedisValue::Integer(2),
+            ]),
+            "VLINKS" => RedisValue::Array(vec![RedisValue::Array(vec![
+                RedisValue::BulkString(b"neighbor".to_vec()),
+                RedisValue::BulkString(b"0.9".to_vec()),
+            ])]),
+            "VRANDMEMBER" if command.arguments().len() > 1 => {
+                RedisValue::Array(vec![RedisValue::BulkString(b"member".to_vec())])
+            }
+            "VRANDMEMBER" => RedisValue::BulkString(b"member".to_vec()),
+            "VRANGE" => RedisValue::Array(vec![RedisValue::BulkString(b"member".to_vec())]),
+            "VSIM" => RedisValue::Array(vec![
+                RedisValue::BulkString(b"member".to_vec()),
+                RedisValue::BulkString(b"0.1".to_vec()),
+            ]),
+            "XACKDEL" | "XDELEX" => RedisValue::Array(vec![RedisValue::Integer(1)]),
+            "XNACK" => RedisValue::Integer(1),
             "TYPE" => RedisValue::SimpleString("string".into()),
             "TTL" => RedisValue::Integer(-1),
             "SET" | "MSET" | "RENAME" | "RESTORE" | "LSET" | "LTRIM" => RedisValue::Okay,
@@ -2994,8 +3064,8 @@ fn structured_cases() -> Vec<(&'static str, serde_json::Value, &'static str)> {
 
 #[tokio::test]
 async fn access_modes_expose_exactly_the_expected_tools() {
-    assert_eq!(tool_names(AccessMode::Full, false).len(), 145);
-    assert_eq!(tool_names(AccessMode::Full, true).len(), 146);
+    assert_eq!(tool_names(AccessMode::Full, false).len(), 187);
+    assert_eq!(tool_names(AccessMode::Full, true).len(), 188);
     for (access, raw) in [
         (AccessMode::ReadOnly, false),
         (AccessMode::ReadWrite, false),
@@ -3026,6 +3096,548 @@ async fn access_modes_expose_exactly_the_expected_tools() {
             );
             assert!(tool.annotations.is_some(), "{}", tool.name);
         }
+    }
+}
+
+#[tokio::test]
+async fn redis_eight_command_families_have_callable_typed_contracts() {
+    let client = client(AccessMode::Full, false).await;
+    let cases = vec![
+        ("redis_arcount", serde_json::json!({"key": "array"})),
+        (
+            "redis_ardel",
+            serde_json::json!({"key": "array", "indices": [7]}),
+        ),
+        (
+            "redis_ardelrange",
+            serde_json::json!({"key": "array", "ranges": [{"start": 7, "end": 8}]}),
+        ),
+        (
+            "redis_arget",
+            serde_json::json!({"key": "array", "index": 7}),
+        ),
+        (
+            "redis_argetrange",
+            serde_json::json!({"key": "array", "start": 7, "end": 8}),
+        ),
+        (
+            "redis_argrep",
+            serde_json::json!({"key": "array", "start": "0", "end": "+", "predicates": [{"type": "exact", "value": {"value": "needle"}}], "limit": 10, "with_values": true}),
+        ),
+        (
+            "redis_arinfo",
+            serde_json::json!({"key": "array", "full": true}),
+        ),
+        (
+            "redis_arinsert",
+            serde_json::json!({"key": "array", "values": [{"value": "one"}]}),
+        ),
+        (
+            "redis_arlastitems",
+            serde_json::json!({"key": "array", "count": 2}),
+        ),
+        ("redis_arlen", serde_json::json!({"key": "array"})),
+        (
+            "redis_armget",
+            serde_json::json!({"key": "array", "indices": [7, 8]}),
+        ),
+        (
+            "redis_armset",
+            serde_json::json!({"key": "array", "entries": [{"index": 7, "value": {"value": "one"}}]}),
+        ),
+        ("redis_arnext", serde_json::json!({"key": "array"})),
+        (
+            "redis_arop",
+            serde_json::json!({"key": "array", "start": 0, "end": 8, "operation": {"type": "used"}}),
+        ),
+        (
+            "redis_arring",
+            serde_json::json!({"key": "array", "size": 10, "values": [{"value": "one"}]}),
+        ),
+        (
+            "redis_arscan",
+            serde_json::json!({"key": "array", "start": 0, "end": 8, "limit": 10}),
+        ),
+        (
+            "redis_arseek",
+            serde_json::json!({"key": "array", "index": 7}),
+        ),
+        (
+            "redis_arset",
+            serde_json::json!({"key": "array", "index": 7, "values": [{"value": "one"}]}),
+        ),
+        (
+            "redis_delex",
+            serde_json::json!({"key": "string", "condition": {"type": "value_equals", "value": {"value": "one"}}}),
+        ),
+        ("redis_digest", serde_json::json!({"key": "string"})),
+        (
+            "redis_hgetdel",
+            serde_json::json!({"key": "hash", "fields": [{"value": "one"}, {"value": "two"}]}),
+        ),
+        (
+            "redis_hgetex",
+            serde_json::json!({"key": "hash", "expiration": {"type": "seconds", "value": 30}, "fields": [{"value": "one"}, {"value": "two"}]}),
+        ),
+        (
+            "redis_hsetex",
+            serde_json::json!({"key": "hash", "condition": "fields_must_not_exist", "expiration": {"type": "seconds", "value": 30}, "fields": [{"field": {"value": "one"}, "value": {"value": "value"}}]}),
+        ),
+        (
+            "redis_increx",
+            serde_json::json!({"key": "number", "increment": {"type": "float", "value": "1.5"}, "expiration": {"type": "seconds", "value": 30} }),
+        ),
+        (
+            "redis_lmovem",
+            serde_json::json!({"source": {"value": "list:{x}:source"}, "destination": {"value": "list:{x}:destination"}, "from": "left", "to": "right", "amount": {"type": "up_to", "count": 1, "ordering": "bulk"}}),
+        ),
+        (
+            "redis_msetex",
+            serde_json::json!({"entries": [{"key": {"value": "key:{x}:1"}, "value": {"value": "one"}}], "condition": "only_if_missing", "expiration": {"type": "seconds", "value": 30}}),
+        ),
+        (
+            "redis_vadd",
+            serde_json::json!({"key": "vectors", "vector": {"type": "values", "values": [0, 1]}, "element": {"value": "one"}, "attributes": {"role": "primary"}}),
+        ),
+        ("redis_vcard", serde_json::json!({"key": "vectors"})),
+        ("redis_vdim", serde_json::json!({"key": "vectors"})),
+        (
+            "redis_vemb",
+            serde_json::json!({"key": "vectors", "element": {"value": "one"}}),
+        ),
+        (
+            "redis_vgetattr",
+            serde_json::json!({"key": "vectors", "element": {"value": "one"}}),
+        ),
+        ("redis_vinfo", serde_json::json!({"key": "vectors"})),
+        (
+            "redis_vismember",
+            serde_json::json!({"key": "vectors", "element": {"value": "one"}}),
+        ),
+        (
+            "redis_vlinks",
+            serde_json::json!({"key": "vectors", "element": {"value": "one"}, "with_scores": true}),
+        ),
+        (
+            "redis_vrandmember",
+            serde_json::json!({"key": "vectors", "count": 1}),
+        ),
+        (
+            "redis_vrange",
+            serde_json::json!({"key": "vectors", "start": {"value": "-"}, "end": {"value": "+"}, "count": 10}),
+        ),
+        (
+            "redis_vrem",
+            serde_json::json!({"key": "vectors", "element": {"value": "one"}}),
+        ),
+        (
+            "redis_vsetattr",
+            serde_json::json!({"key": "vectors", "element": {"value": "one"}, "attributes": {"role": "primary"}}),
+        ),
+        (
+            "redis_vsim",
+            serde_json::json!({"key": "vectors", "query": {"type": "element", "element": {"value": "one"}}, "with_scores": true, "count": 10}),
+        ),
+        (
+            "redis_xackdel",
+            serde_json::json!({"key": "stream", "group": {"value": "workers"}, "reference_policy": "delete_references", "ids": [{"milliseconds": 1, "sequence": 0}]}),
+        ),
+        (
+            "redis_xdelex",
+            serde_json::json!({"key": "stream", "reference_policy": "only_if_acknowledged", "ids": [{"milliseconds": 1, "sequence": 0}]}),
+        ),
+        (
+            "redis_xnack",
+            serde_json::json!({"key": "stream", "group": {"value": "workers"}, "mode": "silent", "ids": [{"milliseconds": 1, "sequence": 0}]}),
+        ),
+    ];
+
+    assert_eq!(cases.len(), 42);
+    for (tool, input) in cases {
+        let result = client
+            .call_tool(tool, input)
+            .await
+            .unwrap_or_else(|error| panic!("{tool} invocation failed: {error}"));
+        assert!(!result.is_error, "{tool}: {result:?}");
+        assert!(result.structured_content.is_some(), "{tool}");
+    }
+}
+
+#[tokio::test]
+async fn redis_eight_complex_tools_emit_exact_bounded_command_shapes() {
+    let executor = FixedRedis::new(RedisValue::Array(vec![
+        RedisValue::Array(vec![
+            RedisValue::Integer(0),
+            RedisValue::BulkString(b"alpha".to_vec()),
+        ]),
+        RedisValue::Array(vec![
+            RedisValue::Integer(2),
+            RedisValue::BulkString(b"alphabet".to_vec()),
+        ]),
+    ]));
+    let commands = executor.commands.clone();
+    let client = fixed_client(executor, RedisCapabilities::unknown()).await;
+    let grep = client
+        .call_tool(
+            "redis_argrep",
+            serde_json::json!({
+                "key": "array",
+                "start": "0",
+                "end": "+",
+                "predicates": [
+                    {"type": "match", "value": {"value": "alpha"}},
+                    {"type": "glob", "pattern": "a*"}
+                ],
+                "combination": "all",
+                "no_case": true,
+                "with_values": true,
+                "limit": 2
+            }),
+        )
+        .await
+        .expect("typed ARGREP")
+        .structured_content
+        .expect("structured ARGREP");
+    assert_eq!(grep["count"], 2);
+    assert_eq!(grep["complete"], false);
+    assert_eq!(grep["next_start"], "3");
+    assert_eq!(
+        commands.lock().expect("ARGREP command")[0].arguments(),
+        &[
+            b"array".to_vec(),
+            b"0".to_vec(),
+            b"+".to_vec(),
+            b"MATCH".to_vec(),
+            b"alpha".to_vec(),
+            b"GLOB".to_vec(),
+            b"a*".to_vec(),
+            b"AND".to_vec(),
+            b"NOCASE".to_vec(),
+            b"LIMIT".to_vec(),
+            b"2".to_vec(),
+            b"WITHVALUES".to_vec(),
+        ]
+    );
+
+    let executor = FixedRedis::new(RedisValue::Integer(1));
+    let commands = executor.commands.clone();
+    let client = fixed_client(executor, RedisCapabilities::unknown()).await;
+    client
+        .call_tool(
+            "redis_vadd",
+            serde_json::json!({
+                "key": "vectors",
+                "vector": {"type": "values", "values": ["1.25", -2]},
+                "element": {"value": "/wA=", "encoding": "base64"},
+                "reduce_dimensions": 1,
+                "check_and_set": true,
+                "quantization": "no_quantization",
+                "build_exploration_factor": 32,
+                "attributes": {"kind": "test"},
+                "num_links": 16
+            }),
+        )
+        .await
+        .expect("typed VADD");
+    assert_eq!(
+        commands.lock().expect("VADD command")[0].arguments(),
+        &[
+            b"vectors".to_vec(),
+            b"REDUCE".to_vec(),
+            b"1".to_vec(),
+            b"VALUES".to_vec(),
+            b"2".to_vec(),
+            b"1.25".to_vec(),
+            b"-2".to_vec(),
+            vec![0xff, 0x00],
+            b"CAS".to_vec(),
+            b"NOQUANT".to_vec(),
+            b"EF".to_vec(),
+            b"32".to_vec(),
+            b"SETATTR".to_vec(),
+            br#"{"kind":"test"}"#.to_vec(),
+            b"M".to_vec(),
+            b"16".to_vec(),
+        ]
+    );
+
+    let executor = FixedRedis::new(RedisValue::Integer(1));
+    let commands = executor.commands.clone();
+    let client = fixed_client(executor, RedisCapabilities::unknown()).await;
+    client
+        .call_tool(
+            "redis_msetex",
+            serde_json::json!({
+                "entries": [
+                    {"key": {"value": "key:{slot}:one"}, "value": {"value": "one"}},
+                    {"key": {"value": "key:{slot}:two"}, "value": {"value": "two"}}
+                ],
+                "condition": "only_if_existing",
+                "expiration": {"type": "milliseconds", "value": 5000}
+            }),
+        )
+        .await
+        .expect("typed MSETEX");
+    assert_eq!(
+        commands.lock().expect("MSETEX command")[0].arguments(),
+        &[
+            b"2".to_vec(),
+            b"key:{slot}:one".to_vec(),
+            b"one".to_vec(),
+            b"key:{slot}:two".to_vec(),
+            b"two".to_vec(),
+            b"XX".to_vec(),
+            b"PX".to_vec(),
+            b"5000".to_vec(),
+        ]
+    );
+
+    let executor = FixedRedis::new(RedisValue::Array(vec![
+        RedisValue::BulkString(b"12.5".to_vec()),
+        RedisValue::BulkString(b"2.5".to_vec()),
+    ]));
+    let commands = executor.commands.clone();
+    let client = fixed_client(executor, RedisCapabilities::unknown()).await;
+    client
+        .call_tool(
+            "redis_increx",
+            serde_json::json!({
+                "key": "number",
+                "increment": {"type": "float", "value": "2.5"},
+                "saturate": true,
+                "lower_bound": "0",
+                "upper_bound": "20",
+                "expiration": {"type": "seconds", "value": 30},
+                "expiration_only_if_missing": true
+            }),
+        )
+        .await
+        .expect("typed INCREX");
+    assert_eq!(
+        commands.lock().expect("INCREX command")[0].arguments(),
+        &[
+            b"number".to_vec(),
+            b"BYFLOAT".to_vec(),
+            b"2.5".to_vec(),
+            b"SATURATE".to_vec(),
+            b"LBOUND".to_vec(),
+            b"0".to_vec(),
+            b"UBOUND".to_vec(),
+            b"20".to_vec(),
+            b"EX".to_vec(),
+            b"30".to_vec(),
+            b"ENX".to_vec(),
+        ]
+    );
+
+    let executor = FixedRedis::new(RedisValue::Array(vec![RedisValue::BulkString(
+        b"moved".to_vec(),
+    )]));
+    let commands = executor.commands.clone();
+    let client = fixed_client(executor, RedisCapabilities::unknown()).await;
+    client
+        .call_tool(
+            "redis_lmovem",
+            serde_json::json!({
+                "source": {"value": "list:{slot}:source"},
+                "destination": {"value": "list:{slot}:destination"},
+                "from": "right",
+                "to": "left",
+                "amount": {"type": "exactly", "count": 3, "ordering": "one_by_one"}
+            }),
+        )
+        .await
+        .expect("typed LMOVEM");
+    assert_eq!(
+        commands.lock().expect("LMOVEM command")[0].arguments(),
+        &[
+            b"list:{slot}:source".to_vec(),
+            b"list:{slot}:destination".to_vec(),
+            b"RIGHT".to_vec(),
+            b"LEFT".to_vec(),
+            b"EXACTLY".to_vec(),
+            b"3".to_vec(),
+            b"OBO".to_vec(),
+        ]
+    );
+
+    let executor = FixedRedis::new(RedisValue::Array(vec![
+        RedisValue::BulkString(b"a".to_vec()),
+        RedisValue::BulkString(vec![0xff]),
+    ]));
+    let commands = executor.commands.clone();
+    let client = fixed_client(executor, RedisCapabilities::unknown()).await;
+    let range = client
+        .call_tool(
+            "redis_vrange",
+            serde_json::json!({
+                "key": "vectors",
+                "start": {"value": "-"},
+                "end": {"value": "+"},
+                "count": 2
+            }),
+        )
+        .await
+        .expect("typed VRANGE")
+        .structured_content
+        .expect("structured VRANGE");
+    assert_eq!(range["complete"], false);
+    assert_eq!(range["next_start"]["encoding"], "base64");
+    assert_eq!(range["next_start"]["value"], "KP8=");
+    assert_eq!(
+        commands.lock().expect("VRANGE command")[0].arguments(),
+        &[
+            b"vectors".to_vec(),
+            b"-".to_vec(),
+            b"+".to_vec(),
+            b"2".to_vec()
+        ]
+    );
+
+    let executor = FixedRedis::new(RedisValue::Array(vec![
+        RedisValue::Integer(1),
+        RedisValue::Integer(2),
+    ]));
+    let commands = executor.commands.clone();
+    let client = fixed_client(executor, RedisCapabilities::unknown()).await;
+    client
+        .call_tool(
+            "redis_xackdel",
+            serde_json::json!({
+                "key": "stream",
+                "group": {"value": "workers"},
+                "reference_policy": "delete_references",
+                "ids": [
+                    {"milliseconds": 1, "sequence": 0},
+                    {"milliseconds": 2, "sequence": 3}
+                ]
+            }),
+        )
+        .await
+        .expect("typed XACKDEL");
+    assert_eq!(
+        commands.lock().expect("XACKDEL command")[0].arguments(),
+        &[
+            b"stream".to_vec(),
+            b"workers".to_vec(),
+            b"DELREF".to_vec(),
+            b"IDS".to_vec(),
+            b"2".to_vec(),
+            b"1-0".to_vec(),
+            b"2-3".to_vec(),
+        ]
+    );
+}
+
+#[tokio::test]
+async fn redis_eight_tools_are_version_gated_and_effect_annotated() {
+    let names_at = |major, minor| {
+        tool_names_for_capabilities(
+            AccessMode::Full,
+            [ToolBundle::DataStructures],
+            false,
+            &RedisCapabilities::unknown().with_redis_version(RedisVersion::new(major, minor, 0)),
+            UnavailableToolPolicy::Hide,
+        )
+    };
+
+    let redis_seven = names_at(7, 4);
+    for name in [
+        "redis_vadd",
+        "redis_hgetex",
+        "redis_xackdel",
+        "redis_delex",
+        "redis_arcount",
+        "redis_lmovem",
+    ] {
+        assert!(!redis_seven.contains(&name), "{name}");
+    }
+
+    let redis_eight = names_at(8, 0);
+    for name in [
+        "redis_vadd",
+        "redis_vsim",
+        "redis_hgetdel",
+        "redis_hgetex",
+        "redis_hsetex",
+    ] {
+        assert!(redis_eight.contains(&name), "{name}");
+    }
+    assert!(!redis_eight.contains(&"redis_vismember"));
+    assert!(!redis_eight.contains(&"redis_xackdel"));
+
+    let redis_eight_two = names_at(8, 2);
+    for name in ["redis_vismember", "redis_xackdel", "redis_xdelex"] {
+        assert!(redis_eight_two.contains(&name), "{name}");
+    }
+
+    let redis_eight_four = names_at(8, 4);
+    for name in [
+        "redis_delex",
+        "redis_digest",
+        "redis_msetex",
+        "redis_vrange",
+    ] {
+        assert!(redis_eight_four.contains(&name), "{name}");
+    }
+
+    let redis_eight_eight = names_at(8, 8);
+    for name in [
+        "redis_arcount",
+        "redis_arset",
+        "redis_increx",
+        "redis_xnack",
+    ] {
+        assert!(redis_eight_eight.contains(&name), "{name}");
+    }
+    assert!(!redis_eight_eight.contains(&"redis_lmovem"));
+    assert!(names_at(8, 10).contains(&"redis_lmovem"));
+
+    let tools = full_catalog_client()
+        .await
+        .list_tools()
+        .await
+        .expect("list modern tool annotations")
+        .tools;
+    let annotations = |name: &str| {
+        tools
+            .iter()
+            .find(|tool| tool.name == name)
+            .unwrap_or_else(|| panic!("missing {name}"))
+            .annotations
+            .clone()
+            .unwrap_or_else(|| panic!("missing annotations for {name}"))
+    };
+
+    for name in ["redis_arcount", "redis_digest", "redis_vsim"] {
+        let annotations = annotations(name);
+        assert!(annotations.read_only_hint, "{name}");
+        assert!(!annotations.destructive_hint, "{name}");
+        assert!(annotations.idempotent_hint, "{name}");
+    }
+    for name in [
+        "redis_arinsert",
+        "redis_hgetex",
+        "redis_increx",
+        "redis_vadd",
+    ] {
+        let annotations = annotations(name);
+        assert!(!annotations.read_only_hint, "{name}");
+        assert!(!annotations.destructive_hint, "{name}");
+    }
+    for name in [
+        "redis_ardel",
+        "redis_delex",
+        "redis_hgetdel",
+        "redis_lmovem",
+        "redis_vrem",
+        "redis_xackdel",
+        "redis_xdelex",
+        "redis_xnack",
+    ] {
+        let annotations = annotations(name);
+        assert!(!annotations.read_only_hint, "{name}");
+        assert!(annotations.destructive_hint, "{name}");
     }
 }
 

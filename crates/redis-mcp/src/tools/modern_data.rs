@@ -2498,7 +2498,8 @@ fn xnack_tool(state: Arc<ToolState>) -> Tool {
         .build()
 }
 
-pub(super) fn add_read_tools(mut router: McpRouter, state: Arc<ToolState>) -> McpRouter {
+#[cfg(feature = "arrays")]
+pub(super) fn add_array_read_tools(mut router: McpRouter, state: Arc<ToolState>) -> McpRouter {
     router = router.tool(array_count_tool(
         state.clone(),
         "redis_arcount",
@@ -2522,7 +2523,16 @@ pub(super) fn add_read_tools(mut router: McpRouter, state: Arc<ToolState>) -> Mc
     router = router.tool(arnext_tool(state.clone()));
     router = router.tool(arop_tool(state.clone()));
     router = router.tool(arscan_tool(state.clone()));
-    router = router.tool(digest_tool(state.clone()));
+    router
+}
+
+#[cfg(feature = "strings")]
+pub(super) fn add_string_read_tools(router: McpRouter, state: Arc<ToolState>) -> McpRouter {
+    router.tool(digest_tool(state))
+}
+
+#[cfg(feature = "vector-sets")]
+pub(super) fn add_vector_read_tools(mut router: McpRouter, state: Arc<ToolState>) -> McpRouter {
     router = router.tool(vector_integer_tool(
         state.clone(),
         "redis_vcard",
@@ -2547,27 +2557,71 @@ pub(super) fn add_read_tools(mut router: McpRouter, state: Arc<ToolState>) -> Mc
     router.tool(vsim_tool(state))
 }
 
-pub(super) fn add_write_tools(mut router: McpRouter, state: Arc<ToolState>) -> McpRouter {
+#[cfg(feature = "arrays")]
+pub(super) fn add_array_write_tools(mut router: McpRouter, state: Arc<ToolState>) -> McpRouter {
     router = router.tool(arinsert_tool(state.clone()));
     router = router.tool(armset_tool(state.clone()));
     router = router.tool(arring_tool(state.clone()));
     router = router.tool(arseek_tool(state.clone()));
     router = router.tool(arset_tool(state.clone()));
+    router
+}
+
+#[cfg(feature = "vector-sets")]
+pub(super) fn add_vector_write_tools(mut router: McpRouter, state: Arc<ToolState>) -> McpRouter {
     router = router.tool(vadd_tool(state.clone()));
     router = router.tool(vsetattr_tool(state.clone()));
+    router
+}
+
+#[cfg(feature = "hashes")]
+pub(super) fn add_hash_write_tools(mut router: McpRouter, state: Arc<ToolState>) -> McpRouter {
     router = router.tool(hgetex_tool(state.clone()));
     router = router.tool(hsetex_tool(state.clone()));
+    router
+}
+
+#[cfg(feature = "strings")]
+pub(super) fn add_string_write_tools(mut router: McpRouter, state: Arc<ToolState>) -> McpRouter {
     router = router.tool(increx_tool(state.clone()));
     router.tool(msetex_tool(state))
 }
 
-pub(super) fn add_destructive_tools(mut router: McpRouter, state: Arc<ToolState>) -> McpRouter {
+#[cfg(feature = "arrays")]
+pub(super) fn add_array_destructive_tools(
+    mut router: McpRouter,
+    state: Arc<ToolState>,
+) -> McpRouter {
     router = router.tool(ardel_tool(state.clone()));
     router = router.tool(ardelrange_tool(state.clone()));
-    router = router.tool(delex_tool(state.clone()));
-    router = router.tool(hgetdel_tool(state.clone()));
-    router = router.tool(lmovem_tool(state.clone()));
-    router = router.tool(vrem_tool(state.clone()));
+    router
+}
+
+#[cfg(feature = "strings")]
+pub(super) fn add_string_destructive_tools(router: McpRouter, state: Arc<ToolState>) -> McpRouter {
+    router.tool(delex_tool(state))
+}
+
+#[cfg(feature = "hashes")]
+pub(super) fn add_hash_destructive_tools(router: McpRouter, state: Arc<ToolState>) -> McpRouter {
+    router.tool(hgetdel_tool(state))
+}
+
+#[cfg(feature = "lists")]
+pub(super) fn add_list_destructive_tools(router: McpRouter, state: Arc<ToolState>) -> McpRouter {
+    router.tool(lmovem_tool(state))
+}
+
+#[cfg(feature = "vector-sets")]
+pub(super) fn add_vector_destructive_tools(router: McpRouter, state: Arc<ToolState>) -> McpRouter {
+    router.tool(vrem_tool(state))
+}
+
+#[cfg(feature = "streams")]
+pub(super) fn add_stream_destructive_tools(
+    mut router: McpRouter,
+    state: Arc<ToolState>,
+) -> McpRouter {
     router = router.tool(xackdel_tool(state.clone()));
     router = router.tool(xdelex_tool(state.clone()));
     router.tool(xnack_tool(state))

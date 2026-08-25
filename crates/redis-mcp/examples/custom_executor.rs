@@ -5,8 +5,9 @@ use std::sync::Arc;
 use async_trait::async_trait;
 use redis_mcp::{
     AccessMode, RedisCapabilities, RedisCommand, RedisDeployment, RedisError, RedisErrorKind,
-    RedisExecutor, RedisMcp, RedisValue, RedisVersion,
+    RedisExecutor, RedisMcp, RedisValue, RedisVersion, families,
 };
+use tower_mcp::McpRouter;
 
 /// A host-owned connection abstraction. In redisctl this layer can resolve a
 /// profile, use its connection cache, and record audit/telemetry data.
@@ -74,11 +75,18 @@ fn main() {
         .with_redis_version(RedisVersion::new(7, 4, 0))
         .with_deployment(RedisDeployment::Standalone)
         .with_command_inventory(["PING"]);
-    let router = RedisMcp::builder(executor)
+    let redis = RedisMcp::builder(executor)
         .access(AccessMode::ReadOnly)
+        .family(families::keyspace::FAMILY)
         .capabilities(capabilities)
         .build();
 
-    // A host can serve or merge the Tower-MCP router using its chosen transport.
+    // redisctl can keep its own identity and other product routers while the
+    // selected Redis families remain one shared library-owned fragment.
+    let router = McpRouter::new()
+        .server_info("redisctl", env!("CARGO_PKG_VERSION"))
+        .merge(redis);
+
+    // A host serves the composed Tower-MCP router using its chosen transport.
     let _ = router;
 }

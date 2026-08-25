@@ -1447,20 +1447,33 @@ fn unlink_tool(state: Arc<ToolState>) -> Tool {
         .build()
 }
 
-pub(super) fn add_read_tools(mut router: McpRouter, state: Arc<ToolState>) -> McpRouter {
+#[cfg(feature = "keyspace")]
+pub(super) fn add_keyspace_read_tools(mut router: McpRouter, state: Arc<ToolState>) -> McpRouter {
     router = router.tool(exists_tool(state.clone()));
-    router = router.tool(mget_tool(state.clone()));
-    router = router.tool(strlen_tool(state.clone()));
     router = router.tool(memory_usage_tool(state.clone()));
     router = router.tool(randomkey_tool(state.clone()));
-    router = router.tool(getrange_tool(state.clone()));
     router = router.tool(dump_tool(state.clone()));
     router.tool(object_inspect_tool(state))
 }
 
-pub(super) fn add_write_tools(mut router: McpRouter, state: Arc<ToolState>) -> McpRouter {
+#[cfg(feature = "strings")]
+pub(super) fn add_string_read_tools(mut router: McpRouter, state: Arc<ToolState>) -> McpRouter {
+    router = router.tool(mget_tool(state.clone()));
+    router = router.tool(strlen_tool(state.clone()));
+    router.tool(getrange_tool(state))
+}
+
+#[cfg(feature = "keyspace")]
+pub(super) fn add_keyspace_write_tools(mut router: McpRouter, state: Arc<ToolState>) -> McpRouter {
     router = router.tool(expire_tool(state.clone()));
     router = router.tool(persist_tool(state.clone()));
+    router = router.tool(copy_tool(state.clone(), false));
+    router = router.tool(touch_tool(state.clone()));
+    router.tool(restore_tool(state, false))
+}
+
+#[cfg(feature = "strings")]
+pub(super) fn add_string_write_tools(mut router: McpRouter, state: Arc<ToolState>) -> McpRouter {
     router = router.tool(mset_tool(state.clone()));
     router = router.tool(incr_tool(state.clone()));
     router = router.tool(append_tool(state.clone()));
@@ -1488,18 +1501,24 @@ pub(super) fn add_write_tools(mut router: McpRouter, state: Arc<ToolState>) -> M
         "INCRBY",
     ));
     router = router.tool(incrbyfloat_tool(state.clone()));
-    router = router.tool(copy_tool(state.clone(), false));
-    router = router.tool(touch_tool(state.clone()));
-    router.tool(restore_tool(state, false))
+    router
 }
 
-pub(super) fn add_destructive_tools(mut router: McpRouter, state: Arc<ToolState>) -> McpRouter {
+#[cfg(feature = "keyspace")]
+pub(super) fn add_keyspace_destructive_tools(
+    mut router: McpRouter,
+    state: Arc<ToolState>,
+) -> McpRouter {
     router = router.tool(unlink_tool(state.clone()));
-    router = router.tool(getdel_tool(state.clone()));
     router = router.tool(copy_tool(state.clone(), true));
     router = router.tool(rename_tool(state.clone(), false));
     router = router.tool(rename_tool(state.clone(), true));
     router.tool(restore_tool(state, true))
+}
+
+#[cfg(feature = "strings")]
+pub(super) fn add_string_destructive_tools(router: McpRouter, state: Arc<ToolState>) -> McpRouter {
+    router.tool(getdel_tool(state))
 }
 
 #[cfg(test)]

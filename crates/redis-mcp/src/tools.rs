@@ -1,14 +1,36 @@
 //! Curated Redis database MCP tools.
 
+#[cfg(any(
+    feature = "hashes",
+    feature = "lists",
+    feature = "sets",
+    feature = "sorted-sets"
+))]
 mod data_structures;
+#[cfg(feature = "diagnostics")]
 mod diagnostics;
+#[cfg(any(feature = "keyspace", feature = "strings"))]
 mod essentials;
+#[cfg(feature = "json")]
 mod json_tools;
+#[cfg(any(
+    feature = "arrays",
+    feature = "vector-sets",
+    feature = "strings",
+    feature = "hashes",
+    feature = "lists",
+    feature = "streams"
+))]
 mod modern_data;
+#[cfg(feature = "pubsub")]
 mod pubsub;
+#[cfg(feature = "sessions")]
 mod pubsub_sessions;
+#[cfg(feature = "search")]
 mod search;
+#[cfg(any(feature = "bitmaps", feature = "geospatial", feature = "hyperloglog"))]
 mod specialized_data;
+#[cfg(feature = "streams")]
 mod streams;
 
 use std::{
@@ -30,6 +52,7 @@ use tower_mcp::{
 use crate::{
     AccessMode, NativeRedisInvocation, OutputBudget, PubSubSessionManager, RedisCommand,
     RedisDeployment, RedisInvocationEngine, RedisModule, RedisValue, RedisVersion, ToolBundle,
+    ToolFamily,
     invocation::{redis_value_collection_entries, redis_value_to_json},
 };
 
@@ -324,33 +347,156 @@ pub(crate) fn add_read_only_tools(
     mut router: McpRouter,
     state: Arc<ToolState>,
     bundles: &BTreeSet<ToolBundle>,
+    families: Option<&BTreeSet<ToolFamily>>,
 ) -> McpRouter {
-    if bundles.contains(&ToolBundle::Essentials) {
+    #[cfg(feature = "keyspace")]
+    if family_selected(
+        families,
+        bundles,
+        ToolFamily::Keyspace,
+        ToolBundle::Essentials,
+    ) {
         router = router.tool(ping_tool(state.clone()));
         router = router.tool(dbsize_tool(state.clone()));
         router = router.tool(scan_tool(state.clone()));
-        router = router.tool(get_tool(state.clone()));
         router = router.tool(type_tool(state.clone()));
         router = router.tool(ttl_tool(state.clone()));
-        router = essentials::add_read_tools(router, state.clone());
-        router = pubsub::add_read_tools(router, state.clone());
+        router = essentials::add_keyspace_read_tools(router, state.clone());
     }
-    if bundles.contains(&ToolBundle::DataStructures) {
-        router = data_structures::add_read_tools(router, state.clone());
-        router = modern_data::add_read_tools(router, state.clone());
-        router = specialized_data::add_read_tools(router, state.clone());
+
+    #[cfg(feature = "strings")]
+    if family_selected(
+        families,
+        bundles,
+        ToolFamily::Strings,
+        ToolBundle::Essentials,
+    ) {
+        router = router.tool(get_tool(state.clone()));
+        router = essentials::add_string_read_tools(router, state.clone());
+    }
+    #[cfg(feature = "strings")]
+    if family_selected(
+        families,
+        bundles,
+        ToolFamily::Strings,
+        ToolBundle::DataStructures,
+    ) {
+        router = modern_data::add_string_read_tools(router, state.clone());
+    }
+
+    #[cfg(feature = "hashes")]
+    if family_selected(
+        families,
+        bundles,
+        ToolFamily::Hashes,
+        ToolBundle::DataStructures,
+    ) {
+        router = data_structures::add_hash_read_tools(router, state.clone());
+    }
+    #[cfg(feature = "lists")]
+    if family_selected(
+        families,
+        bundles,
+        ToolFamily::Lists,
+        ToolBundle::DataStructures,
+    ) {
+        router = data_structures::add_list_read_tools(router, state.clone());
+    }
+    #[cfg(feature = "sets")]
+    if family_selected(
+        families,
+        bundles,
+        ToolFamily::Sets,
+        ToolBundle::DataStructures,
+    ) {
+        router = data_structures::add_set_read_tools(router, state.clone());
+    }
+    #[cfg(feature = "sorted-sets")]
+    if family_selected(
+        families,
+        bundles,
+        ToolFamily::SortedSets,
+        ToolBundle::DataStructures,
+    ) {
+        router = data_structures::add_sorted_set_read_tools(router, state.clone());
+    }
+    #[cfg(feature = "streams")]
+    if family_selected(
+        families,
+        bundles,
+        ToolFamily::Streams,
+        ToolBundle::DataStructures,
+    ) {
         router = streams::add_read_tools(router, state.clone());
     }
-    if bundles.contains(&ToolBundle::Json) {
+    #[cfg(feature = "bitmaps")]
+    if family_selected(
+        families,
+        bundles,
+        ToolFamily::Bitmaps,
+        ToolBundle::DataStructures,
+    ) {
+        router = specialized_data::add_bitmap_read_tools(router, state.clone());
+    }
+    #[cfg(feature = "arrays")]
+    if family_selected(
+        families,
+        bundles,
+        ToolFamily::Arrays,
+        ToolBundle::DataStructures,
+    ) {
+        router = modern_data::add_array_read_tools(router, state.clone());
+    }
+    #[cfg(feature = "hyperloglog")]
+    if family_selected(
+        families,
+        bundles,
+        ToolFamily::HyperLogLog,
+        ToolBundle::DataStructures,
+    ) {
+        router = specialized_data::add_hyperloglog_read_tools(router, state.clone());
+    }
+    #[cfg(feature = "geospatial")]
+    if family_selected(
+        families,
+        bundles,
+        ToolFamily::Geospatial,
+        ToolBundle::DataStructures,
+    ) {
+        router = specialized_data::add_geospatial_read_tools(router, state.clone());
+    }
+    #[cfg(feature = "vector-sets")]
+    if family_selected(
+        families,
+        bundles,
+        ToolFamily::VectorSets,
+        ToolBundle::DataStructures,
+    ) {
+        router = modern_data::add_vector_read_tools(router, state.clone());
+    }
+    #[cfg(feature = "pubsub")]
+    if family_selected(
+        families,
+        bundles,
+        ToolFamily::PubSub,
+        ToolBundle::Essentials,
+    ) {
+        router = pubsub::add_read_tools(router, state.clone());
+    }
+    #[cfg(feature = "json")]
+    if family_selected(families, bundles, ToolFamily::Json, ToolBundle::Json) {
         router = json_tools::add_read_tools(router, state.clone());
     }
-    if bundles.contains(&ToolBundle::Search) {
+    #[cfg(feature = "search")]
+    if family_selected(families, bundles, ToolFamily::Search, ToolBundle::Search) {
         router = search::add_read_tools(router, state.clone());
     }
+    #[cfg(feature = "diagnostics")]
     if bundles.contains(&ToolBundle::Diagnostics) {
         router = router.tool(info_tool(state.clone()));
         router = diagnostics::add_read_tools(router, state.clone());
     }
+    #[cfg(feature = "sessions")]
     if bundles.contains(&ToolBundle::Sessions) {
         router = pubsub_sessions::add_tools(router, state);
     }
@@ -361,22 +507,142 @@ pub(crate) fn add_write_tools(
     mut router: McpRouter,
     state: Arc<ToolState>,
     bundles: &BTreeSet<ToolBundle>,
+    families: Option<&BTreeSet<ToolFamily>>,
 ) -> McpRouter {
-    if bundles.contains(&ToolBundle::Essentials) {
+    #[cfg(feature = "keyspace")]
+    if family_selected(
+        families,
+        bundles,
+        ToolFamily::Keyspace,
+        ToolBundle::Essentials,
+    ) {
+        router = essentials::add_keyspace_write_tools(router, state.clone());
+    }
+    #[cfg(feature = "strings")]
+    if family_selected(
+        families,
+        bundles,
+        ToolFamily::Strings,
+        ToolBundle::Essentials,
+    ) {
         router = router.tool(set_tool(state.clone()));
-        router = essentials::add_write_tools(router, state.clone());
+        router = essentials::add_string_write_tools(router, state.clone());
+    }
+    #[cfg(feature = "strings")]
+    if family_selected(
+        families,
+        bundles,
+        ToolFamily::Strings,
+        ToolBundle::DataStructures,
+    ) {
+        router = modern_data::add_string_write_tools(router, state.clone());
+    }
+    #[cfg(feature = "pubsub")]
+    if family_selected(
+        families,
+        bundles,
+        ToolFamily::PubSub,
+        ToolBundle::Essentials,
+    ) {
         router = pubsub::add_write_tools(router, state.clone());
     }
-    if bundles.contains(&ToolBundle::DataStructures) {
-        router = data_structures::add_write_tools(router, state.clone());
-        router = modern_data::add_write_tools(router, state.clone());
-        router = specialized_data::add_write_tools(router, state.clone());
+    #[cfg(feature = "hashes")]
+    if family_selected(
+        families,
+        bundles,
+        ToolFamily::Hashes,
+        ToolBundle::DataStructures,
+    ) {
+        router = data_structures::add_hash_write_tools(router, state.clone());
+        router = modern_data::add_hash_write_tools(router, state.clone());
+    }
+    #[cfg(feature = "lists")]
+    if family_selected(
+        families,
+        bundles,
+        ToolFamily::Lists,
+        ToolBundle::DataStructures,
+    ) {
+        router = data_structures::add_list_write_tools(router, state.clone());
+    }
+    #[cfg(feature = "sets")]
+    if family_selected(
+        families,
+        bundles,
+        ToolFamily::Sets,
+        ToolBundle::DataStructures,
+    ) {
+        router = data_structures::add_set_write_tools(router, state.clone());
+    }
+    #[cfg(feature = "sorted-sets")]
+    if family_selected(
+        families,
+        bundles,
+        ToolFamily::SortedSets,
+        ToolBundle::DataStructures,
+    ) {
+        router = data_structures::add_sorted_set_write_tools(router, state.clone());
+    }
+    #[cfg(feature = "streams")]
+    if family_selected(
+        families,
+        bundles,
+        ToolFamily::Streams,
+        ToolBundle::DataStructures,
+    ) {
         router = streams::add_write_tools(router, state.clone());
     }
-    if bundles.contains(&ToolBundle::Json) {
+    #[cfg(feature = "bitmaps")]
+    if family_selected(
+        families,
+        bundles,
+        ToolFamily::Bitmaps,
+        ToolBundle::DataStructures,
+    ) {
+        router = specialized_data::add_bitmap_write_tools(router, state.clone());
+    }
+    #[cfg(feature = "arrays")]
+    if family_selected(
+        families,
+        bundles,
+        ToolFamily::Arrays,
+        ToolBundle::DataStructures,
+    ) {
+        router = modern_data::add_array_write_tools(router, state.clone());
+    }
+    #[cfg(feature = "hyperloglog")]
+    if family_selected(
+        families,
+        bundles,
+        ToolFamily::HyperLogLog,
+        ToolBundle::DataStructures,
+    ) {
+        router = specialized_data::add_hyperloglog_write_tools(router, state.clone());
+    }
+    #[cfg(feature = "geospatial")]
+    if family_selected(
+        families,
+        bundles,
+        ToolFamily::Geospatial,
+        ToolBundle::DataStructures,
+    ) {
+        router = specialized_data::add_geospatial_write_tools(router, state.clone());
+    }
+    #[cfg(feature = "vector-sets")]
+    if family_selected(
+        families,
+        bundles,
+        ToolFamily::VectorSets,
+        ToolBundle::DataStructures,
+    ) {
+        router = modern_data::add_vector_write_tools(router, state.clone());
+    }
+    #[cfg(feature = "json")]
+    if family_selected(families, bundles, ToolFamily::Json, ToolBundle::Json) {
         router = json_tools::add_write_tools(router, state.clone());
     }
-    if bundles.contains(&ToolBundle::Search) {
+    #[cfg(feature = "search")]
+    if family_selected(families, bundles, ToolFamily::Search, ToolBundle::Search) {
         router = search::add_write_tools(router, state);
     }
     router
@@ -386,24 +652,149 @@ pub(crate) fn add_destructive_tools(
     mut router: McpRouter,
     state: Arc<ToolState>,
     bundles: &BTreeSet<ToolBundle>,
+    families: Option<&BTreeSet<ToolFamily>>,
 ) -> McpRouter {
-    if bundles.contains(&ToolBundle::Essentials) {
-        router =
-            essentials::add_destructive_tools(router.tool(del_tool(state.clone())), state.clone());
+    #[cfg(feature = "keyspace")]
+    if family_selected(
+        families,
+        bundles,
+        ToolFamily::Keyspace,
+        ToolBundle::Essentials,
+    ) {
+        router = essentials::add_keyspace_destructive_tools(
+            router.tool(del_tool(state.clone())),
+            state.clone(),
+        );
     }
-    if bundles.contains(&ToolBundle::DataStructures) {
-        router = data_structures::add_destructive_tools(router, state.clone());
-        router = modern_data::add_destructive_tools(router, state.clone());
-        router = specialized_data::add_destructive_tools(router, state.clone());
+    #[cfg(feature = "strings")]
+    if family_selected(
+        families,
+        bundles,
+        ToolFamily::Strings,
+        ToolBundle::Essentials,
+    ) {
+        router = essentials::add_string_destructive_tools(router, state.clone());
+    }
+    #[cfg(feature = "strings")]
+    if family_selected(
+        families,
+        bundles,
+        ToolFamily::Strings,
+        ToolBundle::DataStructures,
+    ) {
+        router = modern_data::add_string_destructive_tools(router, state.clone());
+    }
+    #[cfg(feature = "hashes")]
+    if family_selected(
+        families,
+        bundles,
+        ToolFamily::Hashes,
+        ToolBundle::DataStructures,
+    ) {
+        router = data_structures::add_hash_destructive_tools(router, state.clone());
+        router = modern_data::add_hash_destructive_tools(router, state.clone());
+    }
+    #[cfg(feature = "lists")]
+    if family_selected(
+        families,
+        bundles,
+        ToolFamily::Lists,
+        ToolBundle::DataStructures,
+    ) {
+        router = data_structures::add_list_destructive_tools(router, state.clone());
+        router = modern_data::add_list_destructive_tools(router, state.clone());
+    }
+    #[cfg(feature = "sets")]
+    if family_selected(
+        families,
+        bundles,
+        ToolFamily::Sets,
+        ToolBundle::DataStructures,
+    ) {
+        router = data_structures::add_set_destructive_tools(router, state.clone());
+    }
+    #[cfg(feature = "sorted-sets")]
+    if family_selected(
+        families,
+        bundles,
+        ToolFamily::SortedSets,
+        ToolBundle::DataStructures,
+    ) {
+        router = data_structures::add_sorted_set_destructive_tools(router, state.clone());
+    }
+    #[cfg(feature = "streams")]
+    if family_selected(
+        families,
+        bundles,
+        ToolFamily::Streams,
+        ToolBundle::DataStructures,
+    ) {
         router = streams::add_destructive_tools(router, state.clone());
+        router = modern_data::add_stream_destructive_tools(router, state.clone());
     }
-    if bundles.contains(&ToolBundle::Json) {
+    #[cfg(feature = "bitmaps")]
+    if family_selected(
+        families,
+        bundles,
+        ToolFamily::Bitmaps,
+        ToolBundle::DataStructures,
+    ) {
+        router = specialized_data::add_bitmap_destructive_tools(router, state.clone());
+    }
+    #[cfg(feature = "arrays")]
+    if family_selected(
+        families,
+        bundles,
+        ToolFamily::Arrays,
+        ToolBundle::DataStructures,
+    ) {
+        router = modern_data::add_array_destructive_tools(router, state.clone());
+    }
+    #[cfg(feature = "hyperloglog")]
+    if family_selected(
+        families,
+        bundles,
+        ToolFamily::HyperLogLog,
+        ToolBundle::DataStructures,
+    ) {
+        router = specialized_data::add_hyperloglog_destructive_tools(router, state.clone());
+    }
+    #[cfg(feature = "geospatial")]
+    if family_selected(
+        families,
+        bundles,
+        ToolFamily::Geospatial,
+        ToolBundle::DataStructures,
+    ) {
+        router = specialized_data::add_geospatial_destructive_tools(router, state.clone());
+    }
+    #[cfg(feature = "vector-sets")]
+    if family_selected(
+        families,
+        bundles,
+        ToolFamily::VectorSets,
+        ToolBundle::DataStructures,
+    ) {
+        router = modern_data::add_vector_destructive_tools(router, state.clone());
+    }
+    #[cfg(feature = "json")]
+    if family_selected(families, bundles, ToolFamily::Json, ToolBundle::Json) {
         router = json_tools::add_destructive_tools(router, state.clone());
     }
-    if bundles.contains(&ToolBundle::Search) {
+    #[cfg(feature = "search")]
+    if family_selected(families, bundles, ToolFamily::Search, ToolBundle::Search) {
         router = search::add_destructive_tools(router, state);
     }
     router
+}
+
+fn family_selected(
+    families: Option<&BTreeSet<ToolFamily>>,
+    bundles: &BTreeSet<ToolBundle>,
+    family: ToolFamily,
+    legacy_bundle: ToolBundle,
+) -> bool {
+    families.is_some_and(|families| families.contains(&family)) || bundles.contains(&legacy_bundle)
 }
 
 pub(crate) fn add_raw_tool(router: McpRouter, state: Arc<ToolState>) -> McpRouter {

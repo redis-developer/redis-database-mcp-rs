@@ -19,6 +19,49 @@ For now, `mcp-repl` dynamically derives both interactive and one-shot commands
 from the server's MCP surface, which lets the library contract drive agent and
 human workflows without duplicating command definitions.
 
+## Library-first family composition
+
+The default `redis-mcp` Cargo feature set compiles the full library surface so
+existing applications remain compatible. Smaller consumers can disable default
+features and enable only the Redis families they embed:
+
+    redis-mcp = { version = "0.1", default-features = false, features = ["strings", "hashes"] }
+
+The additive family features are `keyspace`, `strings`, `hashes`, `lists`,
+`sets`, `sorted-sets`, `streams`, `bitmaps`, `arrays`, `hyperloglog`,
+`geospatial`, `vector-sets`, `pubsub`, `json`, and `search`. The `diagnostics`
+and `sessions` features compile their corresponding cross-cutting bundles.
+`all-families` enables every data family, while `full` also enables diagnostics
+and sessions.
+
+Compile-time inclusion and runtime exposure are separate. `families(...)`
+replaces the compatibility bundle defaults with a precise family selection;
+access mode and capability filtering still apply afterward. All selected
+families are mounted in one builder pass and therefore share one executor,
+capability snapshot, output budget, and session lifecycle:
+
+```rust,ignore
+use redis_mcp::{AccessMode, RedisMcp, families};
+use tower_mcp::McpRouter;
+
+let redis = RedisMcp::builder(executor)
+    .access(AccessMode::ReadWrite)
+    .families([
+        families::strings::FAMILY,
+        families::hashes::FAMILY,
+    ])
+    .build();
+
+let app = McpRouter::new()
+    .server_info("redisctl", "1.0")
+    .merge(redis);
+```
+
+The existing `bundles(...)` API remains the convenient compatibility and
+standalone-server assembly path. See
+[`custom_executor.rs`](crates/redis-mcp/examples/custom_executor.rs) for the
+intended redisctl-style adapter and router merge boundary.
+
 ## Curated default
 
 The standalone default exposes 187 broadly useful tools:

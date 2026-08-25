@@ -1801,28 +1801,64 @@ fn pfmerge_tool(state: Arc<ToolState>) -> Tool {
         .build()
 }
 
-pub(super) fn add_read_tools(mut router: McpRouter, state: Arc<ToolState>) -> McpRouter {
+#[cfg(feature = "bitmaps")]
+pub(super) fn add_bitmap_read_tools(mut router: McpRouter, state: Arc<ToolState>) -> McpRouter {
     router = router.tool(getbit_tool(state.clone()));
     router = router.tool(bitcount_tool(state.clone()));
     router = router.tool(bitpos_tool(state.clone()));
     router = router.tool(bitfield_ro_tool(state.clone()));
+    router
+}
+
+#[cfg(feature = "geospatial")]
+pub(super) fn add_geospatial_read_tools(mut router: McpRouter, state: Arc<ToolState>) -> McpRouter {
     router = router.tool(geodist_tool(state.clone()));
     router = router.tool(geohash_tool(state.clone()));
     router = router.tool(geopos_tool(state.clone()));
     router = router.tool(geosearch_tool(state.clone()));
+    router
+}
+
+#[cfg(feature = "hyperloglog")]
+pub(super) fn add_hyperloglog_read_tools(router: McpRouter, state: Arc<ToolState>) -> McpRouter {
     router.tool(pfcount_tool(state))
 }
 
-pub(super) fn add_write_tools(mut router: McpRouter, state: Arc<ToolState>) -> McpRouter {
+#[cfg(feature = "bitmaps")]
+pub(super) fn add_bitmap_write_tools(mut router: McpRouter, state: Arc<ToolState>) -> McpRouter {
     router = router.tool(setbit_tool(state.clone()));
     router = router.tool(bitfield_tool(state.clone()));
-    router = router.tool(geoadd_tool(state.clone()));
+    router
+}
+
+#[cfg(feature = "geospatial")]
+pub(super) fn add_geospatial_write_tools(router: McpRouter, state: Arc<ToolState>) -> McpRouter {
+    router.tool(geoadd_tool(state))
+}
+
+#[cfg(feature = "hyperloglog")]
+pub(super) fn add_hyperloglog_write_tools(router: McpRouter, state: Arc<ToolState>) -> McpRouter {
     router.tool(pfadd_tool(state))
 }
 
-pub(super) fn add_destructive_tools(mut router: McpRouter, state: Arc<ToolState>) -> McpRouter {
-    router = router.tool(bitop_tool(state.clone()));
-    router = router.tool(geosearchstore_tool(state.clone()));
+#[cfg(feature = "bitmaps")]
+pub(super) fn add_bitmap_destructive_tools(router: McpRouter, state: Arc<ToolState>) -> McpRouter {
+    router.tool(bitop_tool(state))
+}
+
+#[cfg(feature = "geospatial")]
+pub(super) fn add_geospatial_destructive_tools(
+    router: McpRouter,
+    state: Arc<ToolState>,
+) -> McpRouter {
+    router.tool(geosearchstore_tool(state))
+}
+
+#[cfg(feature = "hyperloglog")]
+pub(super) fn add_hyperloglog_destructive_tools(
+    router: McpRouter,
+    state: Arc<ToolState>,
+) -> McpRouter {
     router.tool(pfmerge_tool(state))
 }
 

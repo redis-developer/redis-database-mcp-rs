@@ -1,8 +1,8 @@
 //! Stable catalog metadata and host-selectable tool bundles.
 
-use std::fmt;
+use std::{fmt, sync::OnceLock};
 
-use crate::{AccessMode, RedisVersion};
+use crate::{AccessMode, RedisVersion, ToolFamily};
 
 /// Dominant strategy a tool uses to keep successful MCP output bounded.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -193,6 +193,87 @@ pub struct ToolMetadata {
 }
 
 impl ToolMetadata {
+    /// High-level Redis command family, or `None` for a cross-cutting tool.
+    pub fn family(self) -> Option<ToolFamily> {
+        match self.bundle {
+            ToolBundle::Json => Some(ToolFamily::Json),
+            ToolBundle::Search => Some(ToolFamily::Search),
+            ToolBundle::Essentials => match self.name {
+                "redis_pubsub_channels"
+                | "redis_pubsub_numsub"
+                | "redis_pubsub_numpat"
+                | "redis_pubsub_shardchannels"
+                | "redis_pubsub_shardnumsub"
+                | "redis_publish"
+                | "redis_spublish" => Some(ToolFamily::PubSub),
+                "redis_get" | "redis_set" | "redis_mget" | "redis_strlen" | "redis_getrange"
+                | "redis_mset" | "redis_incr" | "redis_append" | "redis_getex"
+                | "redis_setrange" | "redis_decr" | "redis_decrby" | "redis_incrby"
+                | "redis_incrbyfloat" | "redis_getdel" => Some(ToolFamily::Strings),
+                _ => Some(ToolFamily::Keyspace),
+            },
+            ToolBundle::DataStructures => {
+                let name = self.name;
+                if name.starts_with("redis_ar") {
+                    Some(ToolFamily::Arrays)
+                } else if matches!(
+                    name,
+                    "redis_getbit"
+                        | "redis_setbit"
+                        | "redis_bitcount"
+                        | "redis_bitpos"
+                        | "redis_bitfield_ro"
+                        | "redis_bitfield"
+                        | "redis_bitop"
+                ) {
+                    Some(ToolFamily::Bitmaps)
+                } else if name.starts_with("redis_geo") {
+                    Some(ToolFamily::Geospatial)
+                } else if name.starts_with("redis_pf") {
+                    Some(ToolFamily::HyperLogLog)
+                } else if name.starts_with("redis_v") {
+                    Some(ToolFamily::VectorSets)
+                } else if name.starts_with("redis_x") {
+                    Some(ToolFamily::Streams)
+                } else if name.starts_with("redis_z") {
+                    Some(ToolFamily::SortedSets)
+                } else if name.starts_with("redis_s") {
+                    Some(ToolFamily::Sets)
+                } else if name.starts_with("redis_l")
+                    || matches!(name, "redis_rpush" | "redis_rpop")
+                {
+                    Some(ToolFamily::Lists)
+                } else if name.starts_with("redis_h") {
+                    Some(ToolFamily::Hashes)
+                } else if matches!(
+                    name,
+                    "redis_delex" | "redis_digest" | "redis_increx" | "redis_msetex"
+                ) {
+                    Some(ToolFamily::Strings)
+                } else {
+                    None
+                }
+            }
+            _ => None,
+        }
+    }
+
+    fn is_compiled(self) -> bool {
+        self.family().map_or_else(
+            || match self.bundle {
+                ToolBundle::Diagnostics => cfg!(feature = "diagnostics"),
+                ToolBundle::Sessions => cfg!(feature = "sessions"),
+                ToolBundle::Raw => true,
+                ToolBundle::Admin | ToolBundle::Bulk => true,
+                ToolBundle::Essentials
+                | ToolBundle::DataStructures
+                | ToolBundle::Json
+                | ToolBundle::Search => false,
+            },
+            ToolFamily::is_compiled,
+        )
+    }
+
     /// Optional Redis capability required by this tool.
     pub const fn required_module(self) -> Option<RedisModule> {
         match self.bundle {
@@ -2060,7 +2141,15 @@ pub(crate) const CATALOG: &[ToolMetadata] = &[
 
 /// Metadata for every tool implemented by this library version.
 pub fn tool_catalog() -> &'static [ToolMetadata] {
-    CATALOG
+    static COMPILED_CATALOG: OnceLock<Box<[ToolMetadata]>> = OnceLock::new();
+    COMPILED_CATALOG.get_or_init(|| {
+        CATALOG
+            .iter()
+            .copied()
+            .filter(|metadata| metadata.is_compiled())
+            .collect::<Vec<_>>()
+            .into_boxed_slice()
+    })
 }
 
 pub(crate) fn selected_tool_names(
@@ -2068,7 +2157,7 @@ pub(crate) fn selected_tool_names(
     bundles: &[ToolBundle],
     raw_enabled: bool,
 ) -> Vec<&'static str> {
-    let mut names = CATALOG
+    let mut names = tool_catalog()
         .iter()
         .filter(|tool| access.permits(tool.required_access))
         .filter(|tool| {
@@ -2077,6 +2166,23 @@ pub(crate) fn selected_tool_names(
             } else {
                 bundles.contains(&tool.bundle)
             }
+        })
+        .map(|tool| tool.name)
+        .collect::<Vec<_>>();
+    names.sort_unstable();
+    names
+}
+
+pub(crate) fn selected_family_tool_names(
+    access: AccessMode,
+    families: &[ToolFamily],
+) -> Vec<&'static str> {
+    let mut names = tool_catalog()
+        .iter()
+        .filter(|tool| access.permits(tool.required_access))
+        .filter(|tool| {
+            tool.family()
+                .is_some_and(|family| families.contains(&family))
         })
         .map(|tool| tool.name)
         .collect::<Vec<_>>();
@@ -2094,6 +2200,21 @@ mod tests {
         names.sort_unstable();
         names.dedup();
         assert_eq!(names.len(), CATALOG.len());
+    }
+
+    #[test]
+    fn every_data_tool_has_a_family() {
+        for tool in CATALOG {
+            if matches!(
+                tool.bundle,
+                ToolBundle::Essentials
+                    | ToolBundle::DataStructures
+                    | ToolBundle::Json
+                    | ToolBundle::Search
+            ) {
+                assert!(tool.family().is_some(), "{} has no family", tool.name);
+            }
+        }
     }
 
     #[test]

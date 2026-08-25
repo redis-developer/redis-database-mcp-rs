@@ -7321,6 +7321,7 @@ async fn curated_catalog_matches_checked_in_contract_snapshot() {
             let requirements = metadata.capability_requirements();
             serde_json::json!({
                 "name": metadata.name,
+                "family": metadata.family().map(|family| family.feature_name()),
                 "bundle": metadata.bundle.as_str(),
                 "required_access": metadata.required_access.as_str(),
                 "required_module": metadata.required_module().map(|module| module.as_str()),

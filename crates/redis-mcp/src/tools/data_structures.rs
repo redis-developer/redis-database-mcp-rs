@@ -4075,7 +4075,8 @@ fn zremrangebyscore_tool(state: Arc<ToolState>) -> Tool {
         .build()
 }
 
-pub(super) fn add_read_tools(mut router: McpRouter, state: Arc<ToolState>) -> McpRouter {
+#[cfg(feature = "hashes")]
+pub(super) fn add_hash_read_tools(mut router: McpRouter, state: Arc<ToolState>) -> McpRouter {
     router = router.tool(hget_tool(state.clone()));
     router = router.tool(hgetall_tool(state.clone()));
     router = router.tool(hexists_tool(state.clone()));
@@ -4086,10 +4087,20 @@ pub(super) fn add_read_tools(mut router: McpRouter, state: Arc<ToolState>) -> Mc
     router = router.tool(hstrlen_tool(state.clone()));
     router = router.tool(httl_tool(state.clone()));
     router = router.tool(hvals_tool(state.clone()));
+    router
+}
+
+#[cfg(feature = "lists")]
+pub(super) fn add_list_read_tools(mut router: McpRouter, state: Arc<ToolState>) -> McpRouter {
     router = router.tool(lindex_tool(state.clone()));
     router = router.tool(llen_tool(state.clone()));
     router = router.tool(lpos_tool(state.clone()));
     router = router.tool(lrange_tool(state.clone()));
+    router
+}
+
+#[cfg(feature = "sets")]
+pub(super) fn add_set_read_tools(mut router: McpRouter, state: Arc<ToolState>) -> McpRouter {
     router = router.tool(scard_tool(state.clone()));
     router = router.tool(set_algebra_tool(
         state.clone(),
@@ -4104,6 +4115,11 @@ pub(super) fn add_read_tools(mut router: McpRouter, state: Arc<ToolState>) -> Mc
     router = router.tool(smismember_tool(state.clone()));
     router = router.tool(sscan_tool(state.clone()));
     router = router.tool(set_algebra_tool(state.clone(), SetAlgebraOperation::Union));
+    router
+}
+
+#[cfg(feature = "sorted-sets")]
+pub(super) fn add_sorted_set_read_tools(mut router: McpRouter, state: Arc<ToolState>) -> McpRouter {
     router = router.tool(zcard_tool(state.clone()));
     router = router.tool(zcount_tool(state.clone()));
     router = router.tool(zmscore_tool(state.clone()));
@@ -4114,28 +4130,66 @@ pub(super) fn add_read_tools(mut router: McpRouter, state: Arc<ToolState>) -> Mc
     router.tool(zscan_tool(state))
 }
 
-pub(super) fn add_write_tools(mut router: McpRouter, state: Arc<ToolState>) -> McpRouter {
+#[cfg(feature = "hashes")]
+pub(super) fn add_hash_write_tools(mut router: McpRouter, state: Arc<ToolState>) -> McpRouter {
     router = router.tool(hset_tool(state.clone()));
     router = router.tool(hexpire_tool(state.clone()));
     router = router.tool(hincrby_tool(state.clone()));
     router = router.tool(hincrbyfloat_tool(state.clone()));
     router = router.tool(hpersist_tool(state.clone()));
+    router
+}
+
+#[cfg(feature = "lists")]
+pub(super) fn add_list_write_tools(mut router: McpRouter, state: Arc<ToolState>) -> McpRouter {
     router = router.tool(list_push_tool(state.clone(), true));
     router = router.tool(list_push_tool(state.clone(), false));
-    router = router.tool(sadd_tool(state.clone()));
+    router
+}
+
+#[cfg(feature = "sets")]
+pub(super) fn add_set_write_tools(router: McpRouter, state: Arc<ToolState>) -> McpRouter {
+    router.tool(sadd_tool(state))
+}
+
+#[cfg(feature = "sorted-sets")]
+pub(super) fn add_sorted_set_write_tools(
+    mut router: McpRouter,
+    state: Arc<ToolState>,
+) -> McpRouter {
     router = router.tool(zadd_tool(state.clone()));
     router.tool(zincrby_tool(state))
 }
 
-pub(super) fn add_destructive_tools(mut router: McpRouter, state: Arc<ToolState>) -> McpRouter {
-    router = router.tool(hdel_tool(state.clone()));
+#[cfg(feature = "hashes")]
+pub(super) fn add_hash_destructive_tools(router: McpRouter, state: Arc<ToolState>) -> McpRouter {
+    router.tool(hdel_tool(state))
+}
+
+#[cfg(feature = "lists")]
+pub(super) fn add_list_destructive_tools(
+    mut router: McpRouter,
+    state: Arc<ToolState>,
+) -> McpRouter {
     router = router.tool(list_pop_tool(state.clone(), true));
     router = router.tool(lmove_tool(state.clone()));
     router = router.tool(lrem_tool(state.clone()));
     router = router.tool(lset_tool(state.clone()));
     router = router.tool(ltrim_tool(state.clone()));
     router = router.tool(list_pop_tool(state.clone(), false));
-    router = router.tool(srem_tool(state.clone()));
+    router
+}
+
+#[cfg(feature = "sets")]
+pub(super) fn add_set_destructive_tools(router: McpRouter, state: Arc<ToolState>) -> McpRouter {
+    router.tool(srem_tool(state))
+}
+
+#[cfg(feature = "sorted-sets")]
+pub(super) fn add_sorted_set_destructive_tools(
+    mut router: McpRouter,
+    state: Arc<ToolState>,
+) -> McpRouter {
     router = router.tool(zpop_tool(state.clone(), ZpopDirection::Max));
     router = router.tool(zpop_tool(state.clone(), ZpopDirection::Min));
     router = router.tool(zrem_tool(state.clone()));

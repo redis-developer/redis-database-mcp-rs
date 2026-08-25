@@ -962,10 +962,10 @@ impl Default for GeoUnit {
 impl GeoUnit {
     fn redis_token(&self) -> &'static str {
         match self {
-            Self::Meters => "M",
-            Self::Kilometers => "KM",
-            Self::Feet => "FT",
-            Self::Miles => "MI",
+            Self::Meters => "m",
+            Self::Kilometers => "km",
+            Self::Feet => "ft",
+            Self::Miles => "mi",
         }
     }
 }

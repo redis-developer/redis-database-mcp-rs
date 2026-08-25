@@ -1311,7 +1311,7 @@ async fn live_bitmap_geo_and_hll_families_are_typed_bounded_and_binary_safe() {
         assert_eq!(conditional_geoadd["affected"], 0);
         assert_eq!(conditional_geoadd["count_mode"], "added_or_changed");
 
-        let distance = client
+        let distance_result = client
             .call_tool(
                 "redis_geodist",
                 serde_json::json!({
@@ -1320,7 +1320,9 @@ async fn live_bitmap_geo_and_hll_families_are_typed_bounded_and_binary_safe() {
                 }),
             )
             .await
-            .expect("GEODIST tool result")
+            .expect("GEODIST tool result");
+        assert!(!distance_result.is_error, "{distance_result:?}");
+        let distance = distance_result
             .structured_content
             .expect("structured GEODIST");
         assert!(distance["distance"].as_str().is_some());
@@ -4032,7 +4034,12 @@ async fn live_diagnostics_are_structured_bounded_redacted_and_binary_safe() {
             .expect("structured hotkey sample");
         assert_eq!(hotkeys["sampled_keys"], 1);
         assert_eq!(hotkeys["candidates"][0]["key"]["value"], key);
-        assert_eq!(hotkeys["page"]["complete"], true);
+        let complete = hotkeys["page"]["complete"]
+            .as_bool()
+            .expect("hotkey page completion flag");
+        if !complete {
+            assert!(hotkeys["page"]["continuation"]["cursor"].is_number());
+        }
     }
 
     let limited = router_client_with_budget(

@@ -21,7 +21,7 @@ human workflows without duplicating command definitions.
 
 ## Curated default
 
-The standalone default exposes 129 broadly useful tools:
+The standalone default exposes 145 broadly useful tools:
 
 - read-only essentials: `redis_ping`, `redis_dbsize`, `redis_scan`,
   `redis_get`, `redis_type`, `redis_ttl`, `redis_exists`, `redis_mget`,
@@ -49,7 +49,11 @@ The standalone default exposes 129 broadly useful tools:
   `redis_zmscore`, `redis_zrange`, `redis_zrank`, `redis_zrevrank`,
   `redis_zscan`, `redis_zscore`, `redis_zadd`, `redis_zincrby`,
   `redis_zpopmin`, `redis_zpopmax`, `redis_zrem`,
-  `redis_zremrangebyscore`, `redis_xlen`, `redis_xrange`,
+  `redis_zremrangebyscore`, `redis_getbit`, `redis_setbit`,
+  `redis_bitcount`, `redis_bitpos`, `redis_bitfield_ro`, `redis_bitfield`,
+  `redis_bitop`, `redis_geoadd`, `redis_geodist`, `redis_geohash`,
+  `redis_geopos`, `redis_geosearch`, `redis_geosearchstore`, `redis_pfadd`,
+  `redis_pfcount`, `redis_pfmerge`, `redis_xlen`, `redis_xrange`,
   `redis_xrevrange`, `redis_xread`, `redis_xinfo_stream`,
   `redis_xinfo_groups`, `redis_xinfo_consumers`, `redis_xpending`,
   `redis_xadd`, `redis_xgroup_create`, `redis_xgroup_setid`,
@@ -79,7 +83,7 @@ The standalone default exposes 129 broadly useful tools:
 The reusable router keeps the stateful `sessions` bundle opt-in because its
 lifecycle belongs to the embedding host. The included `redis-mcp-server`
 provides the built-in DirectRedis manager automatically, so its ordinary
-stdio surface contains the 129 curated defaults plus these six session tools.
+stdio surface contains the 145 curated defaults plus these six session tools.
 
 Every successful tool result includes MCP structuredContent and an output
 schema. Results are limited by default to 256 KiB for the complete encoded MCP
@@ -145,8 +149,9 @@ conflicts with the standalone `REDIS_URL`. The target remains fixed for the
 life of the server and is never exposed in tool inputs. Normal Redis Cluster
 slot rules still apply: supported multi-key commands such as `MGET`, `MSET`,
 and `DEL` are split across slots by the adapter, while commands that require
-all keys in one slot (for example `RENAME`, `LMOVE`, and set algebra) return a
-stable `CROSSSLOT` invalid-request error.
+all keys in one slot (for example `RENAME`, `LMOVE`, set algebra, `BITOP`,
+`GEOSEARCHSTORE`, `PFCOUNT`, and `PFMERGE`) return a stable `CROSSSLOT`
+invalid-request error.
 
 Every curated sorted-set operation is currently single-key and follows normal
 Cluster routing. Multi-key union/intersection tools are deliberately deferred
@@ -339,11 +344,12 @@ CI runs the complete suite on Redis 8.8 and the live router/stdio contract on
 every currently supported Redis Open Source series: 6.2, 7.2, 7.4, 8.0, 8.2,
 8.4, 8.6, 8.8, and 8.10.1. Standalone and Cluster jobs cover the latest pin,
 and a separate job regenerates the official command metadata from the pinned
-Redis image. Live tests exercise both RESP2 and RESP3, the 129-tool curated
+Redis image. Live tests exercise both RESP2 and RESP3, the 145-tool curated
 catalog, binary and nil responses, conditional and absolute expiration,
 bounded serialization/restore, complete bounded list semantics, typed
 hash-field expiration, binary-safe membership, budgeted set algebra, complete
-bounded sorted-set semantics, complete Streams and consumer-group workflows,
+bounded sorted-set semantics, typed bitmap/bitfield, geospatial, and
+HyperLogLog semantics, complete Streams and consumer-group workflows,
 finite blocking reads, binary-safe Pub/Sub publication and inspection,
 owner-isolated subscription sessions, bounded buffers and reads, cancellation,
 idle cleanup, reconnect/resubscription, bounded and redacted standalone and

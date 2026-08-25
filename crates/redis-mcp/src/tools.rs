@@ -7,6 +7,7 @@ mod json_tools;
 mod pubsub;
 mod pubsub_sessions;
 mod search;
+mod specialized_data;
 mod streams;
 
 use std::{
@@ -335,6 +336,7 @@ pub(crate) fn add_read_only_tools(
     }
     if bundles.contains(&ToolBundle::DataStructures) {
         router = data_structures::add_read_tools(router, state.clone());
+        router = specialized_data::add_read_tools(router, state.clone());
         router = streams::add_read_tools(router, state.clone());
     }
     if bundles.contains(&ToolBundle::Json) {
@@ -365,6 +367,7 @@ pub(crate) fn add_write_tools(
     }
     if bundles.contains(&ToolBundle::DataStructures) {
         router = data_structures::add_write_tools(router, state.clone());
+        router = specialized_data::add_write_tools(router, state.clone());
         router = streams::add_write_tools(router, state.clone());
     }
     if bundles.contains(&ToolBundle::Json) {
@@ -387,6 +390,7 @@ pub(crate) fn add_destructive_tools(
     }
     if bundles.contains(&ToolBundle::DataStructures) {
         router = data_structures::add_destructive_tools(router, state.clone());
+        router = specialized_data::add_destructive_tools(router, state.clone());
         router = streams::add_destructive_tools(router, state.clone());
     }
     if bundles.contains(&ToolBundle::Json) {

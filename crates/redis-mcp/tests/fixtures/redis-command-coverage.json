@@ -434,48 +434,48 @@
     },
     {
       "name": "BITCOUNT",
-      "disposition": "planned",
+      "disposition": "typed",
       "access": "read_only",
       "cluster_behavior": "key_routed",
-      "tools": [],
-      "tracking_issue": 55,
-      "rationale": "Structured coverage is planned in issue #55; unrestricted raw execution is not the completeness contract."
+      "tools": ["redis_bitcount"],
+      "tracking_issue": null,
+      "rationale": "The bounded typed tool exposes whole-string and explicit byte/bit range counts."
     },
     {
       "name": "BITFIELD",
-      "disposition": "planned",
+      "disposition": "typed",
       "access": "read_write",
       "cluster_behavior": "key_routed",
-      "tools": [],
-      "tracking_issue": 55,
-      "rationale": "Structured coverage is planned in issue #55; unrestricted raw execution is not the completeness contract."
+      "tools": ["redis_bitfield"],
+      "tracking_issue": null,
+      "rationale": "The typed tool bounds operation count and write extent while preserving widths, offsets, overflow modes, and exact integers."
     },
     {
       "name": "BITFIELD_RO",
-      "disposition": "planned",
+      "disposition": "typed",
       "access": "read_only",
       "cluster_behavior": "key_routed",
-      "tools": [],
-      "tracking_issue": 55,
-      "rationale": "Structured coverage is planned in issue #55; unrestricted raw execution is not the completeness contract."
+      "tools": ["redis_bitfield_ro"],
+      "tracking_issue": null,
+      "rationale": "The read-only typed tool bounds operation count and returns exact integer strings."
     },
     {
       "name": "BITOP",
-      "disposition": "planned",
+      "disposition": "typed",
       "access": "full",
       "cluster_behavior": "key_routed",
-      "tools": [],
-      "tracking_issue": 55,
-      "rationale": "Structured coverage is planned in issue #55; unrestricted raw execution is not the completeness contract."
+      "tools": ["redis_bitop"],
+      "tracking_issue": null,
+      "rationale": "The full-access typed tool makes destination overwrite and same-slot requirements explicit instead of treating reply bytes as an effect bound."
     },
     {
       "name": "BITPOS",
-      "disposition": "planned",
+      "disposition": "typed",
       "access": "read_only",
       "cluster_behavior": "key_routed",
-      "tools": [],
-      "tracking_issue": 55,
-      "rationale": "Structured coverage is planned in issue #55; unrestricted raw execution is not the completeness contract."
+      "tools": ["redis_bitpos"],
+      "tracking_issue": null,
+      "rationale": "The typed tool exposes explicit bit selection and bounded byte/bit range semantics."
     },
     {
       "name": "BLMOVE",
@@ -1515,39 +1515,39 @@
     },
     {
       "name": "GEOADD",
-      "disposition": "planned",
+      "disposition": "typed",
       "access": "read_write",
       "cluster_behavior": "key_routed",
-      "tools": [],
-      "tracking_issue": 55,
-      "rationale": "Structured coverage is planned in issue #55; unrestricted raw execution is not the completeness contract."
+      "tools": ["redis_geoadd"],
+      "tracking_issue": null,
+      "rationale": "The typed tool bounds binary-safe members and preserves exact finite coordinate tokens and conditional update semantics."
     },
     {
       "name": "GEODIST",
-      "disposition": "planned",
+      "disposition": "typed",
       "access": "read_only",
       "cluster_behavior": "key_routed",
-      "tools": [],
-      "tracking_issue": 55,
-      "rationale": "Structured coverage is planned in issue #55; unrestricted raw execution is not the completeness contract."
+      "tools": ["redis_geodist"],
+      "tracking_issue": null,
+      "rationale": "The typed tool uses binary-safe members, typed units, explicit nil semantics, and exact decimal output."
     },
     {
       "name": "GEOHASH",
-      "disposition": "planned",
+      "disposition": "typed",
       "access": "read_only",
       "cluster_behavior": "key_routed",
-      "tools": [],
-      "tracking_issue": 55,
-      "rationale": "Structured coverage is planned in issue #55; unrestricted raw execution is not the completeness contract."
+      "tools": ["redis_geohash"],
+      "tracking_issue": null,
+      "rationale": "The typed tool bounds binary-safe members and returns request-aligned hashes with explicit nils."
     },
     {
       "name": "GEOPOS",
-      "disposition": "planned",
+      "disposition": "typed",
       "access": "read_only",
       "cluster_behavior": "key_routed",
-      "tools": [],
-      "tracking_issue": 55,
-      "rationale": "Structured coverage is planned in issue #55; unrestricted raw execution is not the completeness contract."
+      "tools": ["redis_geopos"],
+      "tracking_issue": null,
+      "rationale": "The typed tool bounds binary-safe members and returns request-aligned exact coordinate strings with explicit nils."
     },
     {
       "name": "GEORADIUS",
@@ -1587,21 +1587,21 @@
     },
     {
       "name": "GEOSEARCH",
-      "disposition": "planned",
+      "disposition": "typed",
       "access": "read_only",
       "cluster_behavior": "key_routed",
-      "tools": [],
-      "tracking_issue": 55,
-      "rationale": "Structured coverage is planned in issue #55; unrestricted raw execution is not the completeness contract."
+      "tools": ["redis_geosearch"],
+      "tracking_issue": null,
+      "rationale": "The typed circle/box search requires a bounded count and returns binary-safe members with exact distance, hash, and coordinates."
     },
     {
       "name": "GEOSEARCHSTORE",
-      "disposition": "planned",
+      "disposition": "typed",
       "access": "full",
       "cluster_behavior": "key_routed",
-      "tools": [],
-      "tracking_issue": 55,
-      "rationale": "Structured coverage is planned in issue #55; unrestricted raw execution is not the completeness contract."
+      "tools": ["redis_geosearchstore"],
+      "tracking_issue": null,
+      "rationale": "The full-access typed tool bounds stored matches and makes destination overwrite and same-slot semantics explicit."
     },
     {
       "name": "GET",
@@ -1616,12 +1616,12 @@
     },
     {
       "name": "GETBIT",
-      "disposition": "planned",
+      "disposition": "typed",
       "access": "read_only",
       "cluster_behavior": "key_routed",
-      "tools": [],
-      "tracking_issue": 55,
-      "rationale": "Structured coverage is planned in issue #55; unrestricted raw execution is not the completeness contract."
+      "tools": ["redis_getbit"],
+      "tracking_issue": null,
+      "rationale": "The typed tool exposes an explicit bounded offset and boolean bit semantics."
     },
     {
       "name": "GETDEL",
@@ -2702,21 +2702,21 @@
     },
     {
       "name": "PFADD",
-      "disposition": "planned",
+      "disposition": "typed",
       "access": "read_write",
       "cluster_behavior": "key_routed",
-      "tools": [],
-      "tracking_issue": 55,
-      "rationale": "Structured coverage is planned in issue #55; unrestricted raw execution is not the completeness contract."
+      "tools": ["redis_pfadd"],
+      "tracking_issue": null,
+      "rationale": "The typed tool bounds binary-safe observations and distinguishes a register change from exact novelty."
     },
     {
       "name": "PFCOUNT",
-      "disposition": "planned",
+      "disposition": "typed",
       "access": "read_only",
       "cluster_behavior": "key_routed",
-      "tools": [],
-      "tracking_issue": 55,
-      "rationale": "Structured coverage is planned in issue #55; unrestricted raw execution is not the completeness contract."
+      "tools": ["redis_pfcount"],
+      "tracking_issue": null,
+      "rationale": "The typed tool bounds keys, exposes same-slot behavior, and labels the exact response string as an approximate estimate."
     },
     {
       "name": "PFDEBUG",
@@ -2729,12 +2729,12 @@
     },
     {
       "name": "PFMERGE",
-      "disposition": "planned",
+      "disposition": "typed",
       "access": "full",
       "cluster_behavior": "key_routed",
-      "tools": [],
-      "tracking_issue": 55,
-      "rationale": "Structured coverage is planned in issue #55; unrestricted raw execution is not the completeness contract."
+      "tools": ["redis_pfmerge"],
+      "tracking_issue": null,
+      "rationale": "The full-access typed tool bounds sources and makes destination overwrite, approximation, and same-slot semantics explicit."
     },
     {
       "name": "PFSELFTEST",
@@ -3211,12 +3211,12 @@
     },
     {
       "name": "SETBIT",
-      "disposition": "planned",
+      "disposition": "typed",
       "access": "read_write",
       "cluster_behavior": "key_routed",
-      "tools": [],
-      "tracking_issue": 55,
-      "rationale": "Structured coverage is planned in issue #55; unrestricted raw execution is not the completeness contract."
+      "tools": ["redis_setbit"],
+      "tracking_issue": null,
+      "rationale": "The typed tool caps string growth per call and returns explicit previous and new bit values."
     },
     {
       "name": "SETEX",

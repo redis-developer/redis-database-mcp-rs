@@ -557,6 +557,33 @@ impl RedisExecutor for StubRedis {
                 ])]),
                 RedisValue::Array(Vec::new()),
             ]),
+            "GETBIT" | "SETBIT" => RedisValue::Integer(1),
+            "BITCOUNT" => RedisValue::Integer(3),
+            "BITPOS" => RedisValue::Integer(2),
+            "BITFIELD" | "BITFIELD_RO" => RedisValue::Array(vec![RedisValue::Integer(7)]),
+            "BITOP" => RedisValue::Integer(4),
+            "GEOADD" => RedisValue::Integer(1),
+            "GEODIST" => RedisValue::BulkString(b"111.2263".to_vec()),
+            "GEOHASH" => RedisValue::Array(vec![RedisValue::BulkString(
+                b"9q8yyk8ytpx".to_vec(),
+            )]),
+            "GEOPOS" => RedisValue::Array(vec![RedisValue::Array(vec![
+                RedisValue::BulkString(b"-122.4193999171257019".to_vec()),
+                RedisValue::BulkString(b"37.77490001056517124".to_vec()),
+            ])]),
+            "GEOSEARCH" => RedisValue::Array(vec![RedisValue::Array(vec![
+                RedisValue::BulkString(b"san-francisco".to_vec()),
+                RedisValue::BulkString(b"0.0000".to_vec()),
+                RedisValue::Integer(1_366_419_482_564_889),
+                RedisValue::Array(vec![
+                    RedisValue::BulkString(b"-122.4193999171257019".to_vec()),
+                    RedisValue::BulkString(b"37.77490001056517124".to_vec()),
+                ]),
+            ])]),
+            "GEOSEARCHSTORE" => RedisValue::Integer(1),
+            "PFADD" => RedisValue::Integer(1),
+            "PFCOUNT" => RedisValue::Integer(42),
+            "PFMERGE" => RedisValue::Okay,
             "TYPE" => RedisValue::SimpleString("string".into()),
             "TTL" => RedisValue::Integer(-1),
             "SET" | "MSET" | "RENAME" | "RESTORE" | "LSET" | "LTRIM" => RedisValue::Okay,
@@ -1068,6 +1095,129 @@ async fn redis_six_rejects_sharded_pubsub_before_execution() {
         serde_json::to_string(&result)
             .expect("serialize sharded unsubscribe capability error")
             .contains("requires Redis 7.0.0 or newer")
+    );
+}
+
+#[tokio::test]
+async fn specialized_data_version_gates_fail_before_execution() {
+    let executor = FixedRedis::new(RedisValue::Integer(0));
+    let commands = executor.commands.clone();
+    let redis_six = fixed_client(
+        executor,
+        RedisCapabilities::unknown().with_redis_version(RedisVersion::new(6, 2, 0)),
+    )
+    .await;
+    let bit_range = redis_six
+        .call_tool(
+            "redis_bitcount",
+            serde_json::json!({
+                "key": "bitmap", "range": {"start": 0, "end": 7, "unit": "bit"}
+            }),
+        )
+        .await
+        .expect("Redis 6 bit-range rejection");
+    assert!(bit_range.is_error);
+    assert!(
+        serde_json::to_string(&bit_range)
+            .expect("serialize bit-range version rejection")
+            .contains("require Redis 7.0 or newer")
+    );
+    assert!(commands.lock().expect("no BITCOUNT command").is_empty());
+
+    let byte_range = redis_six
+        .call_tool(
+            "redis_bitcount",
+            serde_json::json!({
+                "key": "bitmap", "range": {"start": 0, "end": 7, "unit": "byte"}
+            }),
+        )
+        .await
+        .expect("Redis 6 byte-range BITCOUNT");
+    assert!(!byte_range.is_error);
+    {
+        let byte_range_commands = commands.lock().expect("BITCOUNT byte-range command");
+        assert_eq!(byte_range_commands.len(), 1);
+        assert_eq!(
+            byte_range_commands[0].arguments(),
+            &[b"bitmap".to_vec(), b"0".to_vec(), b"7".to_vec()]
+        );
+    }
+
+    let executor = FixedRedis::new(RedisValue::Array(Vec::new()));
+    let commands = executor.commands.clone();
+    let redis_five = fixed_client(
+        executor,
+        RedisCapabilities::unknown().with_redis_version(RedisVersion::new(5, 0, 0)),
+    )
+    .await;
+    let bitfield_ro = redis_five
+        .call_tool(
+            "redis_bitfield_ro",
+            serde_json::json!({
+                "key": "bitmap",
+                "operations": [{
+                    "encoding": {"signed": true, "width": 8},
+                    "offset": {"kind": "absolute", "value": 0}
+                }]
+            }),
+        )
+        .await
+        .expect("Redis 5 BITFIELD_RO rejection");
+    assert!(bitfield_ro.is_error);
+    assert!(commands.lock().expect("no BITFIELD_RO command").is_empty());
+
+    let geoadd = redis_five
+        .call_tool(
+            "redis_geoadd",
+            serde_json::json!({
+                "key": "places",
+                "nx": true,
+                "members": [{"member": "here", "longitude": 0, "latitude": 0}]
+            }),
+        )
+        .await
+        .expect("Redis 5 GEOADD option rejection");
+    assert!(geoadd.is_error);
+    assert!(commands.lock().expect("no GEOADD command").is_empty());
+}
+
+#[tokio::test]
+async fn geosearch_any_can_be_combined_with_explicit_sorting() {
+    let executor = FixedRedis::new(RedisValue::Array(Vec::new()));
+    let commands = executor.commands.clone();
+    let client = fixed_client(
+        executor,
+        RedisCapabilities::unknown().with_redis_version(RedisVersion::new(6, 2, 0)),
+    )
+    .await;
+    let result = client
+        .call_tool(
+            "redis_geosearch",
+            serde_json::json!({
+                "key": "places",
+                "center": {"kind": "member", "member": "here"},
+                "shape": {"kind": "radius", "radius": 1, "unit": "meters"},
+                "sort": "ascending",
+                "count": 10,
+                "any": true
+            }),
+        )
+        .await
+        .expect("sorted GEOSEARCH ANY result");
+    assert!(!result.is_error);
+    let commands = commands.lock().expect("GEOSEARCH command");
+    assert_eq!(commands.len(), 1);
+    assert!(
+        commands[0]
+            .arguments()
+            .iter()
+            .any(|argument| argument == b"ASC")
+    );
+    assert!(
+        commands[0]
+            .arguments()
+            .iter()
+            .any(|argument| argument == b"ANY")
     );
 }
 
@@ -2036,6 +2186,65 @@ fn structured_cases() -> Vec<(&'static str, serde_json::Value, &'static str)> {
             serde_json::json!({"key": "leaders", "member": "alice"}),
             "score",
         ),
+        (
+            "redis_getbit",
+            serde_json::json!({"key": "bitmap", "offset": 2}),
+            "bit",
+        ),
+        (
+            "redis_bitcount",
+            serde_json::json!({"key": "bitmap", "range": {"start": 0, "end": 1}}),
+            "set_bits",
+        ),
+        (
+            "redis_bitpos",
+            serde_json::json!({"key": "bitmap", "bit": true}),
+            "position",
+        ),
+        (
+            "redis_bitfield_ro",
+            serde_json::json!({
+                "key": "bitmap",
+                "operations": [{
+                    "encoding": {"signed": true, "width": 8},
+                    "offset": {"kind": "absolute", "value": 0}
+                }]
+            }),
+            "results",
+        ),
+        (
+            "redis_geodist",
+            serde_json::json!({
+                "key": "places", "from": "san-francisco", "to": "oakland",
+                "unit": "kilometers"
+            }),
+            "distance",
+        ),
+        (
+            "redis_geohash",
+            serde_json::json!({"key": "places", "members": ["san-francisco"]}),
+            "members",
+        ),
+        (
+            "redis_geopos",
+            serde_json::json!({"key": "places", "members": ["san-francisco"]}),
+            "members",
+        ),
+        (
+            "redis_geosearch",
+            serde_json::json!({
+                "key": "places",
+                "center": {"kind": "member", "member": "san-francisco"},
+                "shape": {"kind": "radius", "radius": "10", "unit": "kilometers"},
+                "count": 10
+            }),
+            "results",
+        ),
+        (
+            "redis_pfcount",
+            serde_json::json!({"keys": ["visitors"]}),
+            "estimated_cardinality",
+        ),
         ("redis_xlen", serde_json::json!({"key": "events"}), "length"),
         (
             "redis_xrange",
@@ -2407,6 +2616,42 @@ fn structured_cases() -> Vec<(&'static str, serde_json::Value, &'static str)> {
             "score",
         ),
         (
+            "redis_setbit",
+            serde_json::json!({"key": "bitmap", "offset": 2, "value": true}),
+            "previous",
+        ),
+        (
+            "redis_bitfield",
+            serde_json::json!({
+                "key": "bitmap",
+                "operations": [{
+                    "operation": "increment",
+                    "encoding": {"signed": true, "width": 8},
+                    "offset": {"kind": "absolute", "value": 0},
+                    "increment": "1",
+                    "overflow": "saturate"
+                }]
+            }),
+            "results",
+        ),
+        (
+            "redis_geoadd",
+            serde_json::json!({
+                "key": "places",
+                "members": [{
+                    "member": "san-francisco",
+                    "longitude": "-122.4194",
+                    "latitude": "37.7749"
+                }]
+            }),
+            "affected",
+        ),
+        (
+            "redis_pfadd",
+            serde_json::json!({"key": "visitors", "elements": ["alice"]}),
+            "register_changed",
+        ),
+        (
             "redis_xadd",
             serde_json::json!({
                 "key": "events",
@@ -2621,6 +2866,29 @@ fn structured_cases() -> Vec<(&'static str, serde_json::Value, &'static str)> {
             "removed",
         ),
         (
+            "redis_bitop",
+            serde_json::json!({
+                "destination": "bitmap:result", "operation": "and",
+                "sources": ["bitmap:left", "bitmap:right"]
+            }),
+            "result_length_bytes",
+        ),
+        (
+            "redis_geosearchstore",
+            serde_json::json!({
+                "destination": "nearby", "source": "places",
+                "center": {"kind": "member", "member": "san-francisco"},
+                "shape": {"kind": "radius", "radius": "10", "unit": "kilometers"},
+                "count": 10
+            }),
+            "stored",
+        ),
+        (
+            "redis_pfmerge",
+            serde_json::json!({"destination": "all-visitors", "sources": ["visitors"]}),
+            "destination_overwritten",
+        ),
+        (
             "redis_xdel",
             serde_json::json!({"key": "events", "ids": [{"milliseconds": 1, "sequence": 0}]}),
             "deleted",
@@ -2726,8 +2994,8 @@ fn structured_cases() -> Vec<(&'static str, serde_json::Value, &'static str)> {
 
 #[tokio::test]
 async fn access_modes_expose_exactly_the_expected_tools() {
-    assert_eq!(tool_names(AccessMode::Full, false).len(), 129);
-    assert_eq!(tool_names(AccessMode::Full, true).len(), 130);
+    assert_eq!(tool_names(AccessMode::Full, false).len(), 145);
+    assert_eq!(tool_names(AccessMode::Full, true).len(), 146);
     for (access, raw) in [
         (AccessMode::ReadOnly, false),
         (AccessMode::ReadWrite, false),
@@ -2864,6 +3132,62 @@ async fn sorted_set_annotations_match_read_write_and_destructive_semantics() {
     assert!(!annotations("redis_zpopmin").idempotent_hint);
     assert!(annotations("redis_zrem").idempotent_hint);
     assert!(annotations("redis_zremrangebyscore").idempotent_hint);
+}
+
+#[tokio::test]
+async fn bitmap_geo_and_hll_annotations_match_effect_semantics() {
+    let tools = full_catalog_client()
+        .await
+        .list_tools()
+        .await
+        .expect("list annotated specialized data tools")
+        .tools;
+    let annotations = |name: &str| {
+        tools
+            .iter()
+            .find(|tool| tool.name == name)
+            .unwrap_or_else(|| panic!("missing {name}"))
+            .annotations
+            .clone()
+            .unwrap_or_else(|| panic!("missing annotations for {name}"))
+    };
+
+    for name in [
+        "redis_getbit",
+        "redis_bitcount",
+        "redis_bitpos",
+        "redis_bitfield_ro",
+        "redis_geodist",
+        "redis_geohash",
+        "redis_geopos",
+        "redis_geosearch",
+        "redis_pfcount",
+    ] {
+        let annotation = annotations(name);
+        assert!(annotation.read_only_hint, "{name}");
+        assert!(!annotation.destructive_hint, "{name}");
+        assert!(annotation.idempotent_hint, "{name}");
+    }
+
+    for name in ["redis_setbit", "redis_geoadd", "redis_pfadd"] {
+        let annotation = annotations(name);
+        assert!(!annotation.read_only_hint, "{name}");
+        assert!(!annotation.destructive_hint, "{name}");
+        assert!(annotation.idempotent_hint, "{name}");
+    }
+    let name = "redis_bitfield";
+    let annotation = annotations(name);
+    assert!(!annotation.read_only_hint, "{name}");
+    assert!(!annotation.destructive_hint, "{name}");
+    assert!(!annotation.idempotent_hint, "{name}");
+    for name in ["redis_bitop", "redis_geosearchstore", "redis_pfmerge"] {
+        let annotation = annotations(name);
+        assert!(!annotation.read_only_hint, "{name}");
+        assert!(annotation.destructive_hint, "{name}");
+    }
+    assert!(!annotations("redis_bitop").idempotent_hint);
+    assert!(!annotations("redis_geosearchstore").idempotent_hint);
+    assert!(annotations("redis_pfmerge").idempotent_hint);
 }
 
 #[tokio::test]
@@ -3841,6 +4165,60 @@ async fn malformed_and_unbounded_inputs_fail_as_tool_results() {
                     "max": {"kind": "positive_infinity"},
                     "limit": 10
                 }
+            }),
+        ),
+        (
+            "redis_setbit",
+            serde_json::json!({"key": "bitmap", "offset": 134217728, "value": true}),
+        ),
+        (
+            "redis_bitfield",
+            serde_json::json!({"key": "bitmap", "operations": []}),
+        ),
+        (
+            "redis_bitfield",
+            serde_json::json!({
+                "key": "bitmap",
+                "operations": [{
+                    "operation": "get",
+                    "encoding": {"signed": false, "width": 64},
+                    "offset": {"kind": "absolute", "value": 0}
+                }]
+            }),
+        ),
+        (
+            "redis_bitop",
+            serde_json::json!({
+                "destination": "result", "operation": "not", "sources": ["one", "two"]
+            }),
+        ),
+        (
+            "redis_geoadd",
+            serde_json::json!({
+                "key": "places", "nx": true, "xx": true,
+                "members": [{"member": "here", "longitude": 0, "latitude": 0}]
+            }),
+        ),
+        (
+            "redis_geoadd",
+            serde_json::json!({
+                "key": "places",
+                "members": [{"member": "here", "longitude": 181, "latitude": 0}]
+            }),
+        ),
+        (
+            "redis_geosearch",
+            serde_json::json!({
+                "key": "places",
+                "center": {"kind": "member", "member": "here"},
+                "shape": {"kind": "radius", "radius": 0, "unit": "meters"},
+                "count": 10
+            }),
+        ),
+        (
+            "redis_geohash",
+            serde_json::json!({
+                "key": "places", "members": [{"value": "not-base64", "encoding": "base64"}]
             }),
         ),
         (

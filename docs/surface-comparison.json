@@ -963,6 +963,31 @@
       "reason": "The diagnostics bundle is a structured superset of competitor INFO, DBSIZE, and CLIENT LIST workflows: caller-bounded all-node fan-out exposes partial failures, node addresses are pseudonymous by default, client/module/slowlog secrets require Full access, server errors are redacted without losing categories, unknown fields remain binary-safe, and hot-key analysis covers exactly one explicit SCAN cursor page."
     },
     {
+      "id": "bitmap_geo_hll.expansion",
+      "redis_mcp_tools": [],
+      "redisctl_tools": [],
+      "library_tools": [
+        "redis_bitcount",
+        "redis_bitfield",
+        "redis_bitfield_ro",
+        "redis_bitop",
+        "redis_bitpos",
+        "redis_geoadd",
+        "redis_geodist",
+        "redis_geohash",
+        "redis_geopos",
+        "redis_geosearch",
+        "redis_geosearchstore",
+        "redis_getbit",
+        "redis_pfadd",
+        "redis_pfcount",
+        "redis_pfmerge",
+        "redis_setbit"
+      ],
+      "disposition": "implemented",
+      "reason": "The library exposes the complete Redis bitmap, geospatial, and HyperLogLog command families with typed binary-safe inputs, exact numeric strings, bounded searches and mutations, request-aligned nil results, explicit overwrite and same-slot Cluster contracts, version gates, ACL enforcement, and live RESP2/RESP3 and Cluster coverage."
+    },
+    {
       "id": "admin.guarded",
       "redis_mcp_tools": [],
       "redisctl_tools": ["redis_acl_list", "redis_config_get", "redis_config_set", "redis_flushdb"],

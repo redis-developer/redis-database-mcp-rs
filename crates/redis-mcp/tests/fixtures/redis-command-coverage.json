@@ -1,0 +1,4460 @@
+{
+  "source": {
+    "repository": "https://github.com/redis/redis",
+    "release": "8.10.1",
+    "tag": "8.10.1",
+    "commit": "3399357e7c17b668289386b8a15a3037bc4527b1",
+    "extracted_from": [
+      "COMMAND",
+      "COMMAND DOCS"
+    ],
+    "generator": "scripts/update_redis_commands.py"
+  },
+  "source_command_count": 449,
+  "dispositions": [
+    "typed",
+    "composed",
+    "native",
+    "session",
+    "planned",
+    "excluded",
+    "deprecated",
+    "internal",
+    "container"
+  ],
+  "commands": [
+    {
+      "name": "ACL",
+      "disposition": "container",
+      "access": "full",
+      "cluster_behavior": "node_local",
+      "tools": [],
+      "tracking_issue": null,
+      "rationale": "Command namespace container; independently useful subcommands are mapped separately."
+    },
+    {
+      "name": "ACL CAT",
+      "disposition": "planned",
+      "access": "read_only",
+      "cluster_behavior": "node_local",
+      "tools": [],
+      "tracking_issue": 32,
+      "rationale": "Structured coverage is planned in issue #32; unrestricted raw execution is not the completeness contract."
+    },
+    {
+      "name": "ACL DELUSER",
+      "disposition": "excluded",
+      "access": "full",
+      "cluster_behavior": "all_nodes",
+      "tools": [],
+      "tracking_issue": null,
+      "rationale": "Connection-local mode or protocol state belongs to server configuration, not independent MCP calls."
+    },
+    {
+      "name": "ACL DRYRUN",
+      "disposition": "planned",
+      "access": "read_only",
+      "cluster_behavior": "node_local",
+      "tools": [],
+      "tracking_issue": 32,
+      "rationale": "Structured coverage is planned in issue #32; unrestricted raw execution is not the completeness contract."
+    },
+    {
+      "name": "ACL GENPASS",
+      "disposition": "planned",
+      "access": "read_only",
+      "cluster_behavior": "node_local",
+      "tools": [],
+      "tracking_issue": 32,
+      "rationale": "Structured coverage is planned in issue #32; unrestricted raw execution is not the completeness contract."
+    },
+    {
+      "name": "ACL GETUSER",
+      "disposition": "planned",
+      "access": "read_only",
+      "cluster_behavior": "node_local",
+      "tools": [],
+      "tracking_issue": 32,
+      "rationale": "Structured coverage is planned in issue #32; unrestricted raw execution is not the completeness contract."
+    },
+    {
+      "name": "ACL HELP",
+      "disposition": "excluded",
+      "access": "full",
+      "cluster_behavior": "node_local",
+      "tools": [],
+      "tracking_issue": null,
+      "rationale": "Command help text duplicates the pinned command metadata and is not a database operation."
+    },
+    {
+      "name": "ACL LIST",
+      "disposition": "planned",
+      "access": "read_only",
+      "cluster_behavior": "node_local",
+      "tools": [],
+      "tracking_issue": 32,
+      "rationale": "Structured coverage is planned in issue #32; unrestricted raw execution is not the completeness contract."
+    },
+    {
+      "name": "ACL LOAD",
+      "disposition": "excluded",
+      "access": "full",
+      "cluster_behavior": "node_local",
+      "tools": [],
+      "tracking_issue": null,
+      "rationale": "Connection-local mode or protocol state belongs to server configuration, not independent MCP calls."
+    },
+    {
+      "name": "ACL LOG",
+      "disposition": "planned",
+      "access": "full",
+      "cluster_behavior": "node_local",
+      "tools": [],
+      "tracking_issue": 32,
+      "rationale": "Structured coverage is planned in issue #32; unrestricted raw execution is not the completeness contract."
+    },
+    {
+      "name": "ACL SAVE",
+      "disposition": "excluded",
+      "access": "full",
+      "cluster_behavior": "all_nodes",
+      "tools": [],
+      "tracking_issue": null,
+      "rationale": "Connection-local mode or protocol state belongs to server configuration, not independent MCP calls."
+    },
+    {
+      "name": "ACL SETUSER",
+      "disposition": "excluded",
+      "access": "full",
+      "cluster_behavior": "all_nodes",
+      "tools": [],
+      "tracking_issue": null,
+      "rationale": "Connection-local mode or protocol state belongs to server configuration, not independent MCP calls."
+    },
+    {
+      "name": "ACL USERS",
+      "disposition": "planned",
+      "access": "read_only",
+      "cluster_behavior": "node_local",
+      "tools": [],
+      "tracking_issue": 32,
+      "rationale": "Structured coverage is planned in issue #32; unrestricted raw execution is not the completeness contract."
+    },
+    {
+      "name": "ACL WHOAMI",
+      "disposition": "typed",
+      "access": "read_only",
+      "cluster_behavior": "node_local",
+      "tools": [
+        "redis_acl_whoami"
+      ],
+      "tracking_issue": null,
+      "rationale": "Covered by one or more cataloged structured MCP tools."
+    },
+    {
+      "name": "APPEND",
+      "disposition": "typed",
+      "access": "read_write",
+      "cluster_behavior": "key_routed",
+      "tools": [
+        "redis_append"
+      ],
+      "tracking_issue": null,
+      "rationale": "Covered by one or more cataloged structured MCP tools."
+    },
+    {
+      "name": "ARCOUNT",
+      "disposition": "planned",
+      "access": "read_only",
+      "cluster_behavior": "key_routed",
+      "tools": [],
+      "tracking_issue": 57,
+      "rationale": "Structured coverage is planned in issue #57; unrestricted raw execution is not the completeness contract."
+    },
+    {
+      "name": "ARDEL",
+      "disposition": "planned",
+      "access": "full",
+      "cluster_behavior": "key_routed",
+      "tools": [],
+      "tracking_issue": 57,
+      "rationale": "Structured coverage is planned in issue #57; unrestricted raw execution is not the completeness contract."
+    },
+    {
+      "name": "ARDELRANGE",
+      "disposition": "planned",
+      "access": "full",
+      "cluster_behavior": "key_routed",
+      "tools": [],
+      "tracking_issue": 57,
+      "rationale": "Structured coverage is planned in issue #57; unrestricted raw execution is not the completeness contract."
+    },
+    {
+      "name": "ARGET",
+      "disposition": "planned",
+      "access": "read_only",
+      "cluster_behavior": "key_routed",
+      "tools": [],
+      "tracking_issue": 57,
+      "rationale": "Structured coverage is planned in issue #57; unrestricted raw execution is not the completeness contract."
+    },
+    {
+      "name": "ARGETRANGE",
+      "disposition": "planned",
+      "access": "read_only",
+      "cluster_behavior": "key_routed",
+      "tools": [],
+      "tracking_issue": 57,
+      "rationale": "Structured coverage is planned in issue #57; unrestricted raw execution is not the completeness contract."
+    },
+    {
+      "name": "ARGREP",
+      "disposition": "planned",
+      "access": "read_only",
+      "cluster_behavior": "key_routed",
+      "tools": [],
+      "tracking_issue": 57,
+      "rationale": "Structured coverage is planned in issue #57; unrestricted raw execution is not the completeness contract."
+    },
+    {
+      "name": "ARINFO",
+      "disposition": "planned",
+      "access": "read_only",
+      "cluster_behavior": "key_routed",
+      "tools": [],
+      "tracking_issue": 57,
+      "rationale": "Structured coverage is planned in issue #57; unrestricted raw execution is not the completeness contract."
+    },
+    {
+      "name": "ARINSERT",
+      "disposition": "planned",
+      "access": "read_write",
+      "cluster_behavior": "key_routed",
+      "tools": [],
+      "tracking_issue": 57,
+      "rationale": "Structured coverage is planned in issue #57; unrestricted raw execution is not the completeness contract."
+    },
+    {
+      "name": "ARLASTITEMS",
+      "disposition": "planned",
+      "access": "read_only",
+      "cluster_behavior": "key_routed",
+      "tools": [],
+      "tracking_issue": 57,
+      "rationale": "Structured coverage is planned in issue #57; unrestricted raw execution is not the completeness contract."
+    },
+    {
+      "name": "ARLEN",
+      "disposition": "planned",
+      "access": "read_only",
+      "cluster_behavior": "key_routed",
+      "tools": [],
+      "tracking_issue": 57,
+      "rationale": "Structured coverage is planned in issue #57; unrestricted raw execution is not the completeness contract."
+    },
+    {
+      "name": "ARMGET",
+      "disposition": "planned",
+      "access": "read_only",
+      "cluster_behavior": "key_routed",
+      "tools": [],
+      "tracking_issue": 57,
+      "rationale": "Structured coverage is planned in issue #57; unrestricted raw execution is not the completeness contract."
+    },
+    {
+      "name": "ARMSET",
+      "disposition": "planned",
+      "access": "read_write",
+      "cluster_behavior": "key_routed",
+      "tools": [],
+      "tracking_issue": 57,
+      "rationale": "Structured coverage is planned in issue #57; unrestricted raw execution is not the completeness contract."
+    },
+    {
+      "name": "ARNEXT",
+      "disposition": "planned",
+      "access": "read_only",
+      "cluster_behavior": "key_routed",
+      "tools": [],
+      "tracking_issue": 57,
+      "rationale": "Structured coverage is planned in issue #57; unrestricted raw execution is not the completeness contract."
+    },
+    {
+      "name": "AROP",
+      "disposition": "planned",
+      "access": "read_only",
+      "cluster_behavior": "key_routed",
+      "tools": [],
+      "tracking_issue": 57,
+      "rationale": "Structured coverage is planned in issue #57; unrestricted raw execution is not the completeness contract."
+    },
+    {
+      "name": "ARRING",
+      "disposition": "planned",
+      "access": "read_write",
+      "cluster_behavior": "key_routed",
+      "tools": [],
+      "tracking_issue": 57,
+      "rationale": "Structured coverage is planned in issue #57; unrestricted raw execution is not the completeness contract."
+    },
+    {
+      "name": "ARSCAN",
+      "disposition": "planned",
+      "access": "read_only",
+      "cluster_behavior": "key_routed",
+      "tools": [],
+      "tracking_issue": 57,
+      "rationale": "Structured coverage is planned in issue #57; unrestricted raw execution is not the completeness contract."
+    },
+    {
+      "name": "ARSEEK",
+      "disposition": "planned",
+      "access": "read_write",
+      "cluster_behavior": "key_routed",
+      "tools": [],
+      "tracking_issue": 57,
+      "rationale": "Structured coverage is planned in issue #57; unrestricted raw execution is not the completeness contract."
+    },
+    {
+      "name": "ARSET",
+      "disposition": "planned",
+      "access": "read_write",
+      "cluster_behavior": "key_routed",
+      "tools": [],
+      "tracking_issue": 57,
+      "rationale": "Structured coverage is planned in issue #57; unrestricted raw execution is not the completeness contract."
+    },
+    {
+      "name": "ASKING",
+      "disposition": "excluded",
+      "access": "full",
+      "cluster_behavior": "cluster_control_plane",
+      "tools": [],
+      "tracking_issue": null,
+      "rationale": "Connection-local mode or protocol state belongs to server configuration, not independent MCP calls."
+    },
+    {
+      "name": "AUTH",
+      "disposition": "excluded",
+      "access": "full",
+      "cluster_behavior": "node_local",
+      "tools": [],
+      "tracking_issue": null,
+      "rationale": "Connection-local mode or protocol state belongs to server configuration, not independent MCP calls."
+    },
+    {
+      "name": "BACKUP",
+      "disposition": "container",
+      "access": "full",
+      "cluster_behavior": "node_local",
+      "tools": [],
+      "tracking_issue": null,
+      "rationale": "Command namespace container; independently useful subcommands are mapped separately."
+    },
+    {
+      "name": "BACKUP ABORT",
+      "disposition": "planned",
+      "access": "full",
+      "cluster_behavior": "node_local",
+      "tools": [],
+      "tracking_issue": 32,
+      "rationale": "Structured coverage is planned in issue #32; unrestricted raw execution is not the completeness contract."
+    },
+    {
+      "name": "BACKUP CLEANUP",
+      "disposition": "planned",
+      "access": "full",
+      "cluster_behavior": "node_local",
+      "tools": [],
+      "tracking_issue": 32,
+      "rationale": "Structured coverage is planned in issue #32; unrestricted raw execution is not the completeness contract."
+    },
+    {
+      "name": "BACKUP HELP",
+      "disposition": "excluded",
+      "access": "full",
+      "cluster_behavior": "node_local",
+      "tools": [],
+      "tracking_issue": null,
+      "rationale": "Command help text duplicates the pinned command metadata and is not a database operation."
+    },
+    {
+      "name": "BACKUP LIST",
+      "disposition": "planned",
+      "access": "read_only",
+      "cluster_behavior": "node_local",
+      "tools": [],
+      "tracking_issue": 32,
+      "rationale": "Structured coverage is planned in issue #32; unrestricted raw execution is not the completeness contract."
+    },
+    {
+      "name": "BACKUP SEAL",
+      "disposition": "planned",
+      "access": "full",
+      "cluster_behavior": "node_local",
+      "tools": [],
+      "tracking_issue": 32,
+      "rationale": "Structured coverage is planned in issue #32; unrestricted raw execution is not the completeness contract."
+    },
+    {
+      "name": "BACKUP START",
+      "disposition": "planned",
+      "access": "full",
+      "cluster_behavior": "node_local",
+      "tools": [],
+      "tracking_issue": 32,
+      "rationale": "Structured coverage is planned in issue #32; unrestricted raw execution is not the completeness contract."
+    },
+    {
+      "name": "BACKUP STATUS",
+      "disposition": "planned",
+      "access": "read_only",
+      "cluster_behavior": "node_local",
+      "tools": [],
+      "tracking_issue": 32,
+      "rationale": "Structured coverage is planned in issue #32; unrestricted raw execution is not the completeness contract."
+    },
+    {
+      "name": "BGREWRITEAOF",
+      "disposition": "excluded",
+      "access": "full",
+      "cluster_behavior": "node_local",
+      "tools": [],
+      "tracking_issue": null,
+      "rationale": "Replication or server lifecycle control is outside the fixed-target database interface."
+    },
+    {
+      "name": "BGSAVE",
+      "disposition": "excluded",
+      "access": "full",
+      "cluster_behavior": "node_local",
+      "tools": [],
+      "tracking_issue": null,
+      "rationale": "Replication or server lifecycle control is outside the fixed-target database interface."
+    },
+    {
+      "name": "BITCOUNT",
+      "disposition": "planned",
+      "access": "read_only",
+      "cluster_behavior": "key_routed",
+      "tools": [],
+      "tracking_issue": 55,
+      "rationale": "Structured coverage is planned in issue #55; unrestricted raw execution is not the completeness contract."
+    },
+    {
+      "name": "BITFIELD",
+      "disposition": "planned",
+      "access": "read_write",
+      "cluster_behavior": "key_routed",
+      "tools": [],
+      "tracking_issue": 55,
+      "rationale": "Structured coverage is planned in issue #55; unrestricted raw execution is not the completeness contract."
+    },
+    {
+      "name": "BITFIELD_RO",
+      "disposition": "planned",
+      "access": "read_only",
+      "cluster_behavior": "key_routed",
+      "tools": [],
+      "tracking_issue": 55,
+      "rationale": "Structured coverage is planned in issue #55; unrestricted raw execution is not the completeness contract."
+    },
+    {
+      "name": "BITOP",
+      "disposition": "planned",
+      "access": "full",
+      "cluster_behavior": "key_routed",
+      "tools": [],
+      "tracking_issue": 55,
+      "rationale": "Structured coverage is planned in issue #55; unrestricted raw execution is not the completeness contract."
+    },
+    {
+      "name": "BITPOS",
+      "disposition": "planned",
+      "access": "read_only",
+      "cluster_behavior": "key_routed",
+      "tools": [],
+      "tracking_issue": 55,
+      "rationale": "Structured coverage is planned in issue #55; unrestricted raw execution is not the completeness contract."
+    },
+    {
+      "name": "BLMOVE",
+      "disposition": "session",
+      "access": "full",
+      "cluster_behavior": "key_routed",
+      "tools": [],
+      "tracking_issue": 66,
+      "rationale": "Blocking or streaming behavior requires a finite owner-isolated lifecycle rather than an ordinary tool call."
+    },
+    {
+      "name": "BLMOVEM",
+      "disposition": "session",
+      "access": "full",
+      "cluster_behavior": "key_routed",
+      "tools": [],
+      "tracking_issue": 66,
+      "rationale": "Blocking or streaming behavior requires a finite owner-isolated lifecycle rather than an ordinary tool call."
+    },
+    {
+      "name": "BLMPOP",
+      "disposition": "session",
+      "access": "full",
+      "cluster_behavior": "key_routed",
+      "tools": [],
+      "tracking_issue": 66,
+      "rationale": "Blocking or streaming behavior requires a finite owner-isolated lifecycle rather than an ordinary tool call."
+    },
+    {
+      "name": "BLPOP",
+      "disposition": "session",
+      "access": "full",
+      "cluster_behavior": "key_routed",
+      "tools": [],
+      "tracking_issue": 66,
+      "rationale": "Blocking or streaming behavior requires a finite owner-isolated lifecycle rather than an ordinary tool call."
+    },
+    {
+      "name": "BRPOP",
+      "disposition": "session",
+      "access": "full",
+      "cluster_behavior": "key_routed",
+      "tools": [],
+      "tracking_issue": 66,
+      "rationale": "Blocking or streaming behavior requires a finite owner-isolated lifecycle rather than an ordinary tool call."
+    },
+    {
+      "name": "BRPOPLPUSH",
+      "disposition": "deprecated",
+      "access": "full",
+      "cluster_behavior": "key_routed",
+      "tools": [
+        "redis_lmove"
+      ],
+      "tracking_issue": null,
+      "rationale": "Redis deprecated this command; use `BLMOVE` with the `RIGHT` and `LEFT` arguments instead."
+    },
+    {
+      "name": "BZMPOP",
+      "disposition": "session",
+      "access": "full",
+      "cluster_behavior": "key_routed",
+      "tools": [],
+      "tracking_issue": 66,
+      "rationale": "Blocking or streaming behavior requires a finite owner-isolated lifecycle rather than an ordinary tool call."
+    },
+    {
+      "name": "BZPOPMAX",
+      "disposition": "session",
+      "access": "full",
+      "cluster_behavior": "key_routed",
+      "tools": [],
+      "tracking_issue": 66,
+      "rationale": "Blocking or streaming behavior requires a finite owner-isolated lifecycle rather than an ordinary tool call."
+    },
+    {
+      "name": "BZPOPMIN",
+      "disposition": "session",
+      "access": "full",
+      "cluster_behavior": "key_routed",
+      "tools": [],
+      "tracking_issue": 66,
+      "rationale": "Blocking or streaming behavior requires a finite owner-isolated lifecycle rather than an ordinary tool call."
+    },
+    {
+      "name": "CLIENT",
+      "disposition": "container",
+      "access": "read_only",
+      "cluster_behavior": "node_local",
+      "tools": [],
+      "tracking_issue": null,
+      "rationale": "Command namespace container; independently useful subcommands are mapped separately."
+    },
+    {
+      "name": "CLIENT CACHING",
+      "disposition": "excluded",
+      "access": "read_only",
+      "cluster_behavior": "node_local",
+      "tools": [],
+      "tracking_issue": null,
+      "rationale": "Connection-local mode or protocol state belongs to server configuration, not independent MCP calls."
+    },
+    {
+      "name": "CLIENT GETNAME",
+      "disposition": "excluded",
+      "access": "read_only",
+      "cluster_behavior": "node_local",
+      "tools": [],
+      "tracking_issue": null,
+      "rationale": "Connection-local mode or protocol state belongs to server configuration, not independent MCP calls."
+    },
+    {
+      "name": "CLIENT GETREDIR",
+      "disposition": "excluded",
+      "access": "read_only",
+      "cluster_behavior": "node_local",
+      "tools": [],
+      "tracking_issue": null,
+      "rationale": "Connection-local mode or protocol state belongs to server configuration, not independent MCP calls."
+    },
+    {
+      "name": "CLIENT HELP",
+      "disposition": "excluded",
+      "access": "read_only",
+      "cluster_behavior": "node_local",
+      "tools": [],
+      "tracking_issue": null,
+      "rationale": "Command help text duplicates the pinned command metadata and is not a database operation."
+    },
+    {
+      "name": "CLIENT ID",
+      "disposition": "excluded",
+      "access": "read_only",
+      "cluster_behavior": "node_local",
+      "tools": [],
+      "tracking_issue": null,
+      "rationale": "Connection-local mode or protocol state belongs to server configuration, not independent MCP calls."
+    },
+    {
+      "name": "CLIENT INFO",
+      "disposition": "excluded",
+      "access": "read_only",
+      "cluster_behavior": "node_local",
+      "tools": [],
+      "tracking_issue": null,
+      "rationale": "Connection-local mode or protocol state belongs to server configuration, not independent MCP calls."
+    },
+    {
+      "name": "CLIENT KILL",
+      "disposition": "planned",
+      "access": "full",
+      "cluster_behavior": "node_local",
+      "tools": [],
+      "tracking_issue": 32,
+      "rationale": "Structured coverage is planned in issue #32; unrestricted raw execution is not the completeness contract."
+    },
+    {
+      "name": "CLIENT LIST",
+      "disposition": "typed",
+      "access": "read_only",
+      "cluster_behavior": "node_local",
+      "tools": [
+        "redis_client_list"
+      ],
+      "tracking_issue": null,
+      "rationale": "Covered by one or more cataloged structured MCP tools."
+    },
+    {
+      "name": "CLIENT NO-EVICT",
+      "disposition": "excluded",
+      "access": "full",
+      "cluster_behavior": "node_local",
+      "tools": [],
+      "tracking_issue": null,
+      "rationale": "Connection-local mode or protocol state belongs to server configuration, not independent MCP calls."
+    },
+    {
+      "name": "CLIENT NO-TOUCH",
+      "disposition": "excluded",
+      "access": "read_only",
+      "cluster_behavior": "node_local",
+      "tools": [],
+      "tracking_issue": null,
+      "rationale": "Connection-local mode or protocol state belongs to server configuration, not independent MCP calls."
+    },
+    {
+      "name": "CLIENT PAUSE",
+      "disposition": "excluded",
+      "access": "full",
+      "cluster_behavior": "node_local",
+      "tools": [],
+      "tracking_issue": null,
+      "rationale": "Connection-local mode or protocol state belongs to server configuration, not independent MCP calls."
+    },
+    {
+      "name": "CLIENT REPLY",
+      "disposition": "excluded",
+      "access": "read_only",
+      "cluster_behavior": "node_local",
+      "tools": [],
+      "tracking_issue": null,
+      "rationale": "Connection-local mode or protocol state belongs to server configuration, not independent MCP calls."
+    },
+    {
+      "name": "CLIENT SETINFO",
+      "disposition": "excluded",
+      "access": "read_only",
+      "cluster_behavior": "all_nodes",
+      "tools": [],
+      "tracking_issue": null,
+      "rationale": "Connection-local mode or protocol state belongs to server configuration, not independent MCP calls."
+    },
+    {
+      "name": "CLIENT SETNAME",
+      "disposition": "excluded",
+      "access": "read_only",
+      "cluster_behavior": "all_nodes",
+      "tools": [],
+      "tracking_issue": null,
+      "rationale": "Connection-local mode or protocol state belongs to server configuration, not independent MCP calls."
+    },
+    {
+      "name": "CLIENT TRACKING",
+      "disposition": "excluded",
+      "access": "read_only",
+      "cluster_behavior": "node_local",
+      "tools": [],
+      "tracking_issue": null,
+      "rationale": "Connection-local mode or protocol state belongs to server configuration, not independent MCP calls."
+    },
+    {
+      "name": "CLIENT TRACKINGINFO",
+      "disposition": "excluded",
+      "access": "read_only",
+      "cluster_behavior": "node_local",
+      "tools": [],
+      "tracking_issue": null,
+      "rationale": "Connection-local mode or protocol state belongs to server configuration, not independent MCP calls."
+    },
+    {
+      "name": "CLIENT UNBLOCK",
+      "disposition": "planned",
+      "access": "full",
+      "cluster_behavior": "node_local",
+      "tools": [],
+      "tracking_issue": 32,
+      "rationale": "Structured coverage is planned in issue #32; unrestricted raw execution is not the completeness contract."
+    },
+    {
+      "name": "CLIENT UNPAUSE",
+      "disposition": "planned",
+      "access": "full",
+      "cluster_behavior": "node_local",
+      "tools": [],
+      "tracking_issue": 32,
+      "rationale": "Structured coverage is planned in issue #32; unrestricted raw execution is not the completeness contract."
+    },
+    {
+      "name": "CLUSTER",
+      "disposition": "container",
+      "access": "full",
+      "cluster_behavior": "cluster_control_plane",
+      "tools": [],
+      "tracking_issue": null,
+      "rationale": "Command namespace container; independently useful subcommands are mapped separately."
+    },
+    {
+      "name": "CLUSTER ADDSLOTS",
+      "disposition": "planned",
+      "access": "full",
+      "cluster_behavior": "cluster_control_plane",
+      "tools": [],
+      "tracking_issue": 32,
+      "rationale": "Structured coverage is planned in issue #32; unrestricted raw execution is not the completeness contract."
+    },
+    {
+      "name": "CLUSTER ADDSLOTSRANGE",
+      "disposition": "planned",
+      "access": "full",
+      "cluster_behavior": "cluster_control_plane",
+      "tools": [],
+      "tracking_issue": 32,
+      "rationale": "Structured coverage is planned in issue #32; unrestricted raw execution is not the completeness contract."
+    },
+    {
+      "name": "CLUSTER BUMPEPOCH",
+      "disposition": "planned",
+      "access": "full",
+      "cluster_behavior": "cluster_control_plane",
+      "tools": [],
+      "tracking_issue": 32,
+      "rationale": "Structured coverage is planned in issue #32; unrestricted raw execution is not the completeness contract."
+    },
+    {
+      "name": "CLUSTER COUNT-FAILURE-REPORTS",
+      "disposition": "planned",
+      "access": "read_only",
+      "cluster_behavior": "cluster_control_plane",
+      "tools": [],
+      "tracking_issue": 32,
+      "rationale": "Structured coverage is planned in issue #32; unrestricted raw execution is not the completeness contract."
+    },
+    {
+      "name": "CLUSTER COUNTKEYSINSLOT",
+      "disposition": "planned",
+      "access": "read_only",
+      "cluster_behavior": "cluster_control_plane",
+      "tools": [],
+      "tracking_issue": 32,
+      "rationale": "Structured coverage is planned in issue #32; unrestricted raw execution is not the completeness contract."
+    },
+    {
+      "name": "CLUSTER DELSLOTS",
+      "disposition": "planned",
+      "access": "full",
+      "cluster_behavior": "cluster_control_plane",
+      "tools": [],
+      "tracking_issue": 32,
+      "rationale": "Structured coverage is planned in issue #32; unrestricted raw execution is not the completeness contract."
+    },
+    {
+      "name": "CLUSTER DELSLOTSRANGE",
+      "disposition": "planned",
+      "access": "full",
+      "cluster_behavior": "cluster_control_plane",
+      "tools": [],
+      "tracking_issue": 32,
+      "rationale": "Structured coverage is planned in issue #32; unrestricted raw execution is not the completeness contract."
+    },
+    {
+      "name": "CLUSTER FAILOVER",
+      "disposition": "planned",
+      "access": "full",
+      "cluster_behavior": "cluster_control_plane",
+      "tools": [],
+      "tracking_issue": 32,
+      "rationale": "Structured coverage is planned in issue #32; unrestricted raw execution is not the completeness contract."
+    },
+    {
+      "name": "CLUSTER FLUSHSLOTS",
+      "disposition": "planned",
+      "access": "full",
+      "cluster_behavior": "cluster_control_plane",
+      "tools": [],
+      "tracking_issue": 32,
+      "rationale": "Structured coverage is planned in issue #32; unrestricted raw execution is not the completeness contract."
+    },
+    {
+      "name": "CLUSTER FORGET",
+      "disposition": "planned",
+      "access": "full",
+      "cluster_behavior": "cluster_control_plane",
+      "tools": [],
+      "tracking_issue": 32,
+      "rationale": "Structured coverage is planned in issue #32; unrestricted raw execution is not the completeness contract."
+    },
+    {
+      "name": "CLUSTER GETKEYSINSLOT",
+      "disposition": "planned",
+      "access": "read_only",
+      "cluster_behavior": "cluster_control_plane",
+      "tools": [],
+      "tracking_issue": 32,
+      "rationale": "Structured coverage is planned in issue #32; unrestricted raw execution is not the completeness contract."
+    },
+    {
+      "name": "CLUSTER HELP",
+      "disposition": "excluded",
+      "access": "full",
+      "cluster_behavior": "cluster_control_plane",
+      "tools": [],
+      "tracking_issue": null,
+      "rationale": "Command help text duplicates the pinned command metadata and is not a database operation."
+    },
+    {
+      "name": "CLUSTER INFO",
+      "disposition": "typed",
+      "access": "read_only",
+      "cluster_behavior": "cluster_control_plane",
+      "tools": [
+        "redis_cluster_info"
+      ],
+      "tracking_issue": null,
+      "rationale": "Covered by one or more cataloged structured MCP tools."
+    },
+    {
+      "name": "CLUSTER KEYSLOT",
+      "disposition": "planned",
+      "access": "read_only",
+      "cluster_behavior": "cluster_control_plane",
+      "tools": [],
+      "tracking_issue": 32,
+      "rationale": "Structured coverage is planned in issue #32; unrestricted raw execution is not the completeness contract."
+    },
+    {
+      "name": "CLUSTER LINKS",
+      "disposition": "planned",
+      "access": "read_only",
+      "cluster_behavior": "cluster_control_plane",
+      "tools": [],
+      "tracking_issue": 32,
+      "rationale": "Structured coverage is planned in issue #32; unrestricted raw execution is not the completeness contract."
+    },
+    {
+      "name": "CLUSTER MEET",
+      "disposition": "planned",
+      "access": "full",
+      "cluster_behavior": "cluster_control_plane",
+      "tools": [],
+      "tracking_issue": 32,
+      "rationale": "Structured coverage is planned in issue #32; unrestricted raw execution is not the completeness contract."
+    },
+    {
+      "name": "CLUSTER MIGRATION",
+      "disposition": "planned",
+      "access": "full",
+      "cluster_behavior": "cluster_control_plane",
+      "tools": [],
+      "tracking_issue": 32,
+      "rationale": "Structured coverage is planned in issue #32; unrestricted raw execution is not the completeness contract."
+    },
+    {
+      "name": "CLUSTER MYID",
+      "disposition": "planned",
+      "access": "read_only",
+      "cluster_behavior": "cluster_control_plane",
+      "tools": [],
+      "tracking_issue": 32,
+      "rationale": "Structured coverage is planned in issue #32; unrestricted raw execution is not the completeness contract."
+    },
+    {
+      "name": "CLUSTER MYSHARDID",
+      "disposition": "planned",
+      "access": "read_only",
+      "cluster_behavior": "cluster_control_plane",
+      "tools": [],
+      "tracking_issue": 32,
+      "rationale": "Structured coverage is planned in issue #32; unrestricted raw execution is not the completeness contract."
+    },
+    {
+      "name": "CLUSTER NODES",
+      "disposition": "planned",
+      "access": "read_only",
+      "cluster_behavior": "cluster_control_plane",
+      "tools": [],
+      "tracking_issue": 32,
+      "rationale": "Structured coverage is planned in issue #32; unrestricted raw execution is not the completeness contract."
+    },
+    {
+      "name": "CLUSTER REPLICAS",
+      "disposition": "planned",
+      "access": "read_only",
+      "cluster_behavior": "cluster_control_plane",
+      "tools": [],
+      "tracking_issue": 32,
+      "rationale": "Structured coverage is planned in issue #32; unrestricted raw execution is not the completeness contract."
+    },
+    {
+      "name": "CLUSTER REPLICATE",
+      "disposition": "planned",
+      "access": "full",
+      "cluster_behavior": "cluster_control_plane",
+      "tools": [],
+      "tracking_issue": 32,
+      "rationale": "Structured coverage is planned in issue #32; unrestricted raw execution is not the completeness contract."
+    },
+    {
+      "name": "CLUSTER RESET",
+      "disposition": "planned",
+      "access": "full",
+      "cluster_behavior": "cluster_control_plane",
+      "tools": [],
+      "tracking_issue": 32,
+      "rationale": "Structured coverage is planned in issue #32; unrestricted raw execution is not the completeness contract."
+    },
+    {
+      "name": "CLUSTER SAVECONFIG",
+      "disposition": "planned",
+      "access": "full",
+      "cluster_behavior": "cluster_control_plane",
+      "tools": [],
+      "tracking_issue": 32,
+      "rationale": "Structured coverage is planned in issue #32; unrestricted raw execution is not the completeness contract."
+    },
+    {
+      "name": "CLUSTER SET-CONFIG-EPOCH",
+      "disposition": "planned",
+      "access": "full",
+      "cluster_behavior": "cluster_control_plane",
+      "tools": [],
+      "tracking_issue": 32,
+      "rationale": "Structured coverage is planned in issue #32; unrestricted raw execution is not the completeness contract."
+    },
+    {
+      "name": "CLUSTER SETSLOT",
+      "disposition": "planned",
+      "access": "full",
+      "cluster_behavior": "cluster_control_plane",
+      "tools": [],
+      "tracking_issue": 32,
+      "rationale": "Structured coverage is planned in issue #32; unrestricted raw execution is not the completeness contract."
+    },
+    {
+      "name": "CLUSTER SHARDS",
+      "disposition": "planned",
+      "access": "read_only",
+      "cluster_behavior": "cluster_control_plane",
+      "tools": [],
+      "tracking_issue": 32,
+      "rationale": "Structured coverage is planned in issue #32; unrestricted raw execution is not the completeness contract."
+    },
+    {
+      "name": "CLUSTER SLAVES",
+      "disposition": "deprecated",
+      "access": "full",
+      "cluster_behavior": "cluster_control_plane",
+      "tools": [],
+      "tracking_issue": null,
+      "rationale": "Redis deprecated this command; use `CLUSTER REPLICAS` instead."
+    },
+    {
+      "name": "CLUSTER SLOT-STATS",
+      "disposition": "planned",
+      "access": "read_only",
+      "cluster_behavior": "all_shards",
+      "tools": [],
+      "tracking_issue": 32,
+      "rationale": "Structured coverage is planned in issue #32; unrestricted raw execution is not the completeness contract."
+    },
+    {
+      "name": "CLUSTER SLOTS",
+      "disposition": "deprecated",
+      "access": "full",
+      "cluster_behavior": "cluster_control_plane",
+      "tools": [],
+      "tracking_issue": null,
+      "rationale": "Redis deprecated this command; use `CLUSTER SHARDS` instead."
+    },
+    {
+      "name": "CLUSTER SYNCSLOTS",
+      "disposition": "planned",
+      "access": "full",
+      "cluster_behavior": "cluster_control_plane",
+      "tools": [],
+      "tracking_issue": 32,
+      "rationale": "Structured coverage is planned in issue #32; unrestricted raw execution is not the completeness contract."
+    },
+    {
+      "name": "COMMAND",
+      "disposition": "container",
+      "access": "full",
+      "cluster_behavior": "node_local",
+      "tools": [],
+      "tracking_issue": null,
+      "rationale": "Command namespace container; independently useful subcommands are mapped separately."
+    },
+    {
+      "name": "COMMAND COUNT",
+      "disposition": "native",
+      "access": "read_only",
+      "cluster_behavior": "node_local",
+      "tools": [],
+      "tracking_issue": null,
+      "rationale": "Finite request/response command is available through the fail-closed classified native invocation policy.",
+      "invocation": [
+        "COMMAND",
+        "COUNT"
+      ]
+    },
+    {
+      "name": "COMMAND DOCS",
+      "disposition": "native",
+      "access": "read_only",
+      "cluster_behavior": "node_local",
+      "tools": [],
+      "tracking_issue": null,
+      "rationale": "Finite request/response command is available through the fail-closed classified native invocation policy.",
+      "invocation": [
+        "COMMAND",
+        "DOCS"
+      ]
+    },
+    {
+      "name": "COMMAND GETKEYS",
+      "disposition": "native",
+      "access": "read_only",
+      "cluster_behavior": "node_local",
+      "tools": [],
+      "tracking_issue": null,
+      "rationale": "Finite request/response command is available through the fail-closed classified native invocation policy.",
+      "invocation": [
+        "COMMAND",
+        "GETKEYS"
+      ]
+    },
+    {
+      "name": "COMMAND GETKEYSANDFLAGS",
+      "disposition": "native",
+      "access": "read_only",
+      "cluster_behavior": "node_local",
+      "tools": [],
+      "tracking_issue": null,
+      "rationale": "Finite request/response command is available through the fail-closed classified native invocation policy.",
+      "invocation": [
+        "COMMAND",
+        "GETKEYSANDFLAGS"
+      ]
+    },
+    {
+      "name": "COMMAND HELP",
+      "disposition": "excluded",
+      "access": "full",
+      "cluster_behavior": "node_local",
+      "tools": [],
+      "tracking_issue": null,
+      "rationale": "Command help text duplicates the pinned command metadata and is not a database operation."
+    },
+    {
+      "name": "COMMAND INFO",
+      "disposition": "native",
+      "access": "read_only",
+      "cluster_behavior": "node_local",
+      "tools": [],
+      "tracking_issue": null,
+      "rationale": "Finite request/response command is available through the fail-closed classified native invocation policy.",
+      "invocation": [
+        "COMMAND",
+        "INFO"
+      ]
+    },
+    {
+      "name": "COMMAND LIST",
+      "disposition": "native",
+      "access": "read_only",
+      "cluster_behavior": "node_local",
+      "tools": [],
+      "tracking_issue": null,
+      "rationale": "Finite request/response command is available through the fail-closed classified native invocation policy.",
+      "invocation": [
+        "COMMAND",
+        "LIST"
+      ]
+    },
+    {
+      "name": "CONFIG",
+      "disposition": "container",
+      "access": "full",
+      "cluster_behavior": "node_local",
+      "tools": [],
+      "tracking_issue": null,
+      "rationale": "Command namespace container; independently useful subcommands are mapped separately."
+    },
+    {
+      "name": "CONFIG GET",
+      "disposition": "planned",
+      "access": "read_only",
+      "cluster_behavior": "node_local",
+      "tools": [],
+      "tracking_issue": 32,
+      "rationale": "Structured coverage is planned in issue #32; unrestricted raw execution is not the completeness contract."
+    },
+    {
+      "name": "CONFIG HELP",
+      "disposition": "excluded",
+      "access": "full",
+      "cluster_behavior": "node_local",
+      "tools": [],
+      "tracking_issue": null,
+      "rationale": "Command help text duplicates the pinned command metadata and is not a database operation."
+    },
+    {
+      "name": "CONFIG RESETSTAT",
+      "disposition": "planned",
+      "access": "full",
+      "cluster_behavior": "all_nodes",
+      "tools": [],
+      "tracking_issue": 32,
+      "rationale": "Structured coverage is planned in issue #32; unrestricted raw execution is not the completeness contract."
+    },
+    {
+      "name": "CONFIG REWRITE",
+      "disposition": "planned",
+      "access": "full",
+      "cluster_behavior": "all_nodes",
+      "tools": [],
+      "tracking_issue": 32,
+      "rationale": "Structured coverage is planned in issue #32; unrestricted raw execution is not the completeness contract."
+    },
+    {
+      "name": "CONFIG SET",
+      "disposition": "planned",
+      "access": "full",
+      "cluster_behavior": "all_nodes",
+      "tools": [],
+      "tracking_issue": 32,
+      "rationale": "Structured coverage is planned in issue #32; unrestricted raw execution is not the completeness contract."
+    },
+    {
+      "name": "COPY",
+      "disposition": "typed",
+      "access": "read_write",
+      "cluster_behavior": "key_routed",
+      "tools": [
+        "redis_copy"
+      ],
+      "tracking_issue": null,
+      "rationale": "Covered by one or more cataloged structured MCP tools."
+    },
+    {
+      "name": "DBSIZE",
+      "disposition": "typed",
+      "access": "read_only",
+      "cluster_behavior": "all_shards",
+      "tools": [
+        "redis_dbsize"
+      ],
+      "tracking_issue": null,
+      "rationale": "Covered by one or more cataloged structured MCP tools."
+    },
+    {
+      "name": "DEBUG",
+      "disposition": "internal",
+      "access": "full",
+      "cluster_behavior": "node_local",
+      "tools": [],
+      "tracking_issue": null,
+      "rationale": "Redis marks this as a system command; it is not part of the supported agent surface."
+    },
+    {
+      "name": "DECR",
+      "disposition": "typed",
+      "access": "read_write",
+      "cluster_behavior": "key_routed",
+      "tools": [
+        "redis_decr"
+      ],
+      "tracking_issue": null,
+      "rationale": "Covered by one or more cataloged structured MCP tools."
+    },
+    {
+      "name": "DECRBY",
+      "disposition": "typed",
+      "access": "read_write",
+      "cluster_behavior": "key_routed",
+      "tools": [
+        "redis_decrby"
+      ],
+      "tracking_issue": null,
+      "rationale": "Covered by one or more cataloged structured MCP tools."
+    },
+    {
+      "name": "DEL",
+      "disposition": "typed",
+      "access": "full",
+      "cluster_behavior": "multi_shard",
+      "tools": [
+        "redis_del"
+      ],
+      "tracking_issue": null,
+      "rationale": "Covered by one or more cataloged structured MCP tools."
+    },
+    {
+      "name": "DELEX",
+      "disposition": "planned",
+      "access": "full",
+      "cluster_behavior": "key_routed",
+      "tools": [],
+      "tracking_issue": 57,
+      "rationale": "Structured coverage is planned in issue #57; unrestricted raw execution is not the completeness contract."
+    },
+    {
+      "name": "DIGEST",
+      "disposition": "planned",
+      "access": "read_only",
+      "cluster_behavior": "key_routed",
+      "tools": [],
+      "tracking_issue": 57,
+      "rationale": "Structured coverage is planned in issue #57; unrestricted raw execution is not the completeness contract."
+    },
+    {
+      "name": "DISCARD",
+      "disposition": "session",
+      "access": "read_only",
+      "cluster_behavior": "node_local",
+      "tools": [],
+      "tracking_issue": 61,
+      "rationale": "Transaction state requires one bounded dedicated connection and is tracked as a structured workflow."
+    },
+    {
+      "name": "DUMP",
+      "disposition": "typed",
+      "access": "read_only",
+      "cluster_behavior": "key_routed",
+      "tools": [
+        "redis_dump"
+      ],
+      "tracking_issue": null,
+      "rationale": "Covered by one or more cataloged structured MCP tools."
+    },
+    {
+      "name": "ECHO",
+      "disposition": "native",
+      "access": "read_only",
+      "cluster_behavior": "node_local",
+      "tools": [],
+      "tracking_issue": null,
+      "rationale": "Finite request/response command is available through the fail-closed classified native invocation policy.",
+      "invocation": [
+        "ECHO"
+      ]
+    },
+    {
+      "name": "EVAL",
+      "disposition": "session",
+      "access": "full",
+      "cluster_behavior": "key_routed",
+      "tools": [],
+      "tracking_issue": 58,
+      "rationale": "Script execution and lifecycle require explicit keys, result budgets, and a dedicated bounded API."
+    },
+    {
+      "name": "EVALSHA",
+      "disposition": "session",
+      "access": "full",
+      "cluster_behavior": "key_routed",
+      "tools": [],
+      "tracking_issue": 58,
+      "rationale": "Script execution and lifecycle require explicit keys, result budgets, and a dedicated bounded API."
+    },
+    {
+      "name": "EVALSHA_RO",
+      "disposition": "session",
+      "access": "read_only",
+      "cluster_behavior": "key_routed",
+      "tools": [],
+      "tracking_issue": 58,
+      "rationale": "Script execution and lifecycle require explicit keys, result budgets, and a dedicated bounded API."
+    },
+    {
+      "name": "EVAL_RO",
+      "disposition": "session",
+      "access": "read_only",
+      "cluster_behavior": "key_routed",
+      "tools": [],
+      "tracking_issue": 58,
+      "rationale": "Script execution and lifecycle require explicit keys, result budgets, and a dedicated bounded API."
+    },
+    {
+      "name": "EXEC",
+      "disposition": "session",
+      "access": "full",
+      "cluster_behavior": "node_local",
+      "tools": [],
+      "tracking_issue": 61,
+      "rationale": "Transaction state requires one bounded dedicated connection and is tracked as a structured workflow."
+    },
+    {
+      "name": "EXISTS",
+      "disposition": "typed",
+      "access": "read_only",
+      "cluster_behavior": "multi_shard",
+      "tools": [
+        "redis_exists"
+      ],
+      "tracking_issue": null,
+      "rationale": "Covered by one or more cataloged structured MCP tools."
+    },
+    {
+      "name": "EXPIRE",
+      "disposition": "typed",
+      "access": "read_write",
+      "cluster_behavior": "key_routed",
+      "tools": [
+        "redis_expire"
+      ],
+      "tracking_issue": null,
+      "rationale": "Covered by one or more cataloged structured MCP tools."
+    },
+    {
+      "name": "EXPIREAT",
+      "disposition": "native",
+      "access": "read_write",
+      "cluster_behavior": "key_routed",
+      "tools": [],
+      "tracking_issue": null,
+      "rationale": "Finite request/response command is available through the fail-closed classified native invocation policy.",
+      "invocation": [
+        "EXPIREAT"
+      ]
+    },
+    {
+      "name": "EXPIRETIME",
+      "disposition": "native",
+      "access": "read_only",
+      "cluster_behavior": "key_routed",
+      "tools": [],
+      "tracking_issue": null,
+      "rationale": "Finite request/response command is available through the fail-closed classified native invocation policy.",
+      "invocation": [
+        "EXPIRETIME"
+      ]
+    },
+    {
+      "name": "FAILOVER",
+      "disposition": "excluded",
+      "access": "full",
+      "cluster_behavior": "node_local",
+      "tools": [],
+      "tracking_issue": null,
+      "rationale": "Replication or server lifecycle control is outside the fixed-target database interface."
+    },
+    {
+      "name": "FCALL",
+      "disposition": "session",
+      "access": "full",
+      "cluster_behavior": "key_routed",
+      "tools": [],
+      "tracking_issue": 58,
+      "rationale": "Script execution and lifecycle require explicit keys, result budgets, and a dedicated bounded API."
+    },
+    {
+      "name": "FCALL_RO",
+      "disposition": "session",
+      "access": "read_only",
+      "cluster_behavior": "key_routed",
+      "tools": [],
+      "tracking_issue": 58,
+      "rationale": "Script execution and lifecycle require explicit keys, result budgets, and a dedicated bounded API."
+    },
+    {
+      "name": "FLUSHALL",
+      "disposition": "planned",
+      "access": "full",
+      "cluster_behavior": "all_shards",
+      "tools": [],
+      "tracking_issue": 32,
+      "rationale": "Structured coverage is planned in issue #32; unrestricted raw execution is not the completeness contract."
+    },
+    {
+      "name": "FLUSHDB",
+      "disposition": "planned",
+      "access": "full",
+      "cluster_behavior": "all_shards",
+      "tools": [],
+      "tracking_issue": 32,
+      "rationale": "Structured coverage is planned in issue #32; unrestricted raw execution is not the completeness contract."
+    },
+    {
+      "name": "FUNCTION",
+      "disposition": "container",
+      "access": "read_only",
+      "cluster_behavior": "node_local",
+      "tools": [],
+      "tracking_issue": null,
+      "rationale": "Command namespace container; independently useful subcommands are mapped separately."
+    },
+    {
+      "name": "FUNCTION DELETE",
+      "disposition": "session",
+      "access": "full",
+      "cluster_behavior": "all_shards",
+      "tools": [],
+      "tracking_issue": 58,
+      "rationale": "Script execution and lifecycle require explicit keys, result budgets, and a dedicated bounded API."
+    },
+    {
+      "name": "FUNCTION DUMP",
+      "disposition": "session",
+      "access": "full",
+      "cluster_behavior": "node_local",
+      "tools": [],
+      "tracking_issue": 58,
+      "rationale": "Script execution and lifecycle require explicit keys, result budgets, and a dedicated bounded API."
+    },
+    {
+      "name": "FUNCTION FLUSH",
+      "disposition": "session",
+      "access": "full",
+      "cluster_behavior": "all_shards",
+      "tools": [],
+      "tracking_issue": 58,
+      "rationale": "Script execution and lifecycle require explicit keys, result budgets, and a dedicated bounded API."
+    },
+    {
+      "name": "FUNCTION HELP",
+      "disposition": "excluded",
+      "access": "full",
+      "cluster_behavior": "node_local",
+      "tools": [],
+      "tracking_issue": null,
+      "rationale": "Command help text duplicates the pinned command metadata and is not a database operation."
+    },
+    {
+      "name": "FUNCTION KILL",
+      "disposition": "session",
+      "access": "full",
+      "cluster_behavior": "all_shards",
+      "tools": [],
+      "tracking_issue": 58,
+      "rationale": "Script execution and lifecycle require explicit keys, result budgets, and a dedicated bounded API."
+    },
+    {
+      "name": "FUNCTION LIST",
+      "disposition": "session",
+      "access": "full",
+      "cluster_behavior": "node_local",
+      "tools": [],
+      "tracking_issue": 58,
+      "rationale": "Script execution and lifecycle require explicit keys, result budgets, and a dedicated bounded API."
+    },
+    {
+      "name": "FUNCTION LOAD",
+      "disposition": "session",
+      "access": "full",
+      "cluster_behavior": "all_shards",
+      "tools": [],
+      "tracking_issue": 58,
+      "rationale": "Script execution and lifecycle require explicit keys, result budgets, and a dedicated bounded API."
+    },
+    {
+      "name": "FUNCTION RESTORE",
+      "disposition": "session",
+      "access": "full",
+      "cluster_behavior": "all_shards",
+      "tools": [],
+      "tracking_issue": 58,
+      "rationale": "Script execution and lifecycle require explicit keys, result budgets, and a dedicated bounded API."
+    },
+    {
+      "name": "FUNCTION STATS",
+      "disposition": "session",
+      "access": "full",
+      "cluster_behavior": "all_shards",
+      "tools": [],
+      "tracking_issue": 58,
+      "rationale": "Script execution and lifecycle require explicit keys, result budgets, and a dedicated bounded API."
+    },
+    {
+      "name": "GEOADD",
+      "disposition": "planned",
+      "access": "read_write",
+      "cluster_behavior": "key_routed",
+      "tools": [],
+      "tracking_issue": 55,
+      "rationale": "Structured coverage is planned in issue #55; unrestricted raw execution is not the completeness contract."
+    },
+    {
+      "name": "GEODIST",
+      "disposition": "planned",
+      "access": "read_only",
+      "cluster_behavior": "key_routed",
+      "tools": [],
+      "tracking_issue": 55,
+      "rationale": "Structured coverage is planned in issue #55; unrestricted raw execution is not the completeness contract."
+    },
+    {
+      "name": "GEOHASH",
+      "disposition": "planned",
+      "access": "read_only",
+      "cluster_behavior": "key_routed",
+      "tools": [],
+      "tracking_issue": 55,
+      "rationale": "Structured coverage is planned in issue #55; unrestricted raw execution is not the completeness contract."
+    },
+    {
+      "name": "GEOPOS",
+      "disposition": "planned",
+      "access": "read_only",
+      "cluster_behavior": "key_routed",
+      "tools": [],
+      "tracking_issue": 55,
+      "rationale": "Structured coverage is planned in issue #55; unrestricted raw execution is not the completeness contract."
+    },
+    {
+      "name": "GEORADIUS",
+      "disposition": "deprecated",
+      "access": "read_write",
+      "cluster_behavior": "key_routed",
+      "tools": [],
+      "tracking_issue": null,
+      "rationale": "Redis deprecated this command; use `GEOSEARCH` and `GEOSEARCHSTORE` with the `BYRADIUS` argument instead."
+    },
+    {
+      "name": "GEORADIUSBYMEMBER",
+      "disposition": "deprecated",
+      "access": "read_write",
+      "cluster_behavior": "key_routed",
+      "tools": [],
+      "tracking_issue": null,
+      "rationale": "Redis deprecated this command; use `GEOSEARCH` and `GEOSEARCHSTORE` with the `BYRADIUS` and `FROMMEMBER` arguments instead."
+    },
+    {
+      "name": "GEORADIUSBYMEMBER_RO",
+      "disposition": "deprecated",
+      "access": "read_only",
+      "cluster_behavior": "key_routed",
+      "tools": [],
+      "tracking_issue": null,
+      "rationale": "Redis deprecated this command; use `GEOSEARCH` with the `BYRADIUS` and `FROMMEMBER` arguments instead."
+    },
+    {
+      "name": "GEORADIUS_RO",
+      "disposition": "deprecated",
+      "access": "read_only",
+      "cluster_behavior": "key_routed",
+      "tools": [],
+      "tracking_issue": null,
+      "rationale": "Redis deprecated this command; use `GEOSEARCH` with the `BYRADIUS` argument instead."
+    },
+    {
+      "name": "GEOSEARCH",
+      "disposition": "planned",
+      "access": "read_only",
+      "cluster_behavior": "key_routed",
+      "tools": [],
+      "tracking_issue": 55,
+      "rationale": "Structured coverage is planned in issue #55; unrestricted raw execution is not the completeness contract."
+    },
+    {
+      "name": "GEOSEARCHSTORE",
+      "disposition": "planned",
+      "access": "full",
+      "cluster_behavior": "key_routed",
+      "tools": [],
+      "tracking_issue": 55,
+      "rationale": "Structured coverage is planned in issue #55; unrestricted raw execution is not the completeness contract."
+    },
+    {
+      "name": "GET",
+      "disposition": "typed",
+      "access": "read_only",
+      "cluster_behavior": "key_routed",
+      "tools": [
+        "redis_get"
+      ],
+      "tracking_issue": null,
+      "rationale": "Covered by one or more cataloged structured MCP tools."
+    },
+    {
+      "name": "GETBIT",
+      "disposition": "planned",
+      "access": "read_only",
+      "cluster_behavior": "key_routed",
+      "tools": [],
+      "tracking_issue": 55,
+      "rationale": "Structured coverage is planned in issue #55; unrestricted raw execution is not the completeness contract."
+    },
+    {
+      "name": "GETDEL",
+      "disposition": "typed",
+      "access": "full",
+      "cluster_behavior": "key_routed",
+      "tools": [
+        "redis_getdel"
+      ],
+      "tracking_issue": null,
+      "rationale": "Covered by one or more cataloged structured MCP tools."
+    },
+    {
+      "name": "GETEX",
+      "disposition": "typed",
+      "access": "read_write",
+      "cluster_behavior": "key_routed",
+      "tools": [
+        "redis_getex"
+      ],
+      "tracking_issue": null,
+      "rationale": "Covered by one or more cataloged structured MCP tools."
+    },
+    {
+      "name": "GETRANGE",
+      "disposition": "typed",
+      "access": "read_only",
+      "cluster_behavior": "key_routed",
+      "tools": [
+        "redis_getrange"
+      ],
+      "tracking_issue": null,
+      "rationale": "Covered by one or more cataloged structured MCP tools."
+    },
+    {
+      "name": "GETSET",
+      "disposition": "deprecated",
+      "access": "read_write",
+      "cluster_behavior": "key_routed",
+      "tools": [
+        "redis_set"
+      ],
+      "tracking_issue": null,
+      "rationale": "Redis deprecated this command; use `SET` with the `!GET` argument instead."
+    },
+    {
+      "name": "HDEL",
+      "disposition": "typed",
+      "access": "full",
+      "cluster_behavior": "key_routed",
+      "tools": [
+        "redis_hdel"
+      ],
+      "tracking_issue": null,
+      "rationale": "Covered by one or more cataloged structured MCP tools."
+    },
+    {
+      "name": "HELLO",
+      "disposition": "excluded",
+      "access": "full",
+      "cluster_behavior": "node_local",
+      "tools": [],
+      "tracking_issue": null,
+      "rationale": "Connection-local mode or protocol state belongs to server configuration, not independent MCP calls."
+    },
+    {
+      "name": "HEXISTS",
+      "disposition": "typed",
+      "access": "read_only",
+      "cluster_behavior": "key_routed",
+      "tools": [
+        "redis_hexists"
+      ],
+      "tracking_issue": null,
+      "rationale": "Covered by one or more cataloged structured MCP tools."
+    },
+    {
+      "name": "HEXPIRE",
+      "disposition": "typed",
+      "access": "read_write",
+      "cluster_behavior": "key_routed",
+      "tools": [
+        "redis_hexpire"
+      ],
+      "tracking_issue": null,
+      "rationale": "Covered by one or more cataloged structured MCP tools."
+    },
+    {
+      "name": "HEXPIREAT",
+      "disposition": "planned",
+      "access": "read_write",
+      "cluster_behavior": "key_routed",
+      "tools": [],
+      "tracking_issue": 62,
+      "rationale": "Structured coverage is planned in issue #62; unrestricted raw execution is not the completeness contract."
+    },
+    {
+      "name": "HEXPIRETIME",
+      "disposition": "planned",
+      "access": "read_only",
+      "cluster_behavior": "key_routed",
+      "tools": [],
+      "tracking_issue": 62,
+      "rationale": "Structured coverage is planned in issue #62; unrestricted raw execution is not the completeness contract."
+    },
+    {
+      "name": "HGET",
+      "disposition": "typed",
+      "access": "read_only",
+      "cluster_behavior": "key_routed",
+      "tools": [
+        "redis_hget"
+      ],
+      "tracking_issue": null,
+      "rationale": "Covered by one or more cataloged structured MCP tools."
+    },
+    {
+      "name": "HGETALL",
+      "disposition": "typed",
+      "access": "read_only",
+      "cluster_behavior": "key_routed",
+      "tools": [
+        "redis_hgetall"
+      ],
+      "tracking_issue": null,
+      "rationale": "Covered by one or more cataloged structured MCP tools."
+    },
+    {
+      "name": "HGETDEL",
+      "disposition": "planned",
+      "access": "full",
+      "cluster_behavior": "key_routed",
+      "tools": [],
+      "tracking_issue": 57,
+      "rationale": "Structured coverage is planned in issue #57; unrestricted raw execution is not the completeness contract."
+    },
+    {
+      "name": "HGETEX",
+      "disposition": "planned",
+      "access": "read_write",
+      "cluster_behavior": "key_routed",
+      "tools": [],
+      "tracking_issue": 57,
+      "rationale": "Structured coverage is planned in issue #57; unrestricted raw execution is not the completeness contract."
+    },
+    {
+      "name": "HIMPORT",
+      "disposition": "container",
+      "access": "read_only",
+      "cluster_behavior": "node_local",
+      "tools": [],
+      "tracking_issue": null,
+      "rationale": "Command namespace container; independently useful subcommands are mapped separately."
+    },
+    {
+      "name": "HIMPORT DISCARD",
+      "disposition": "planned",
+      "access": "full",
+      "cluster_behavior": "all_shards",
+      "tools": [],
+      "tracking_issue": 57,
+      "rationale": "Structured coverage is planned in issue #57; unrestricted raw execution is not the completeness contract."
+    },
+    {
+      "name": "HIMPORT DISCARDALL",
+      "disposition": "planned",
+      "access": "full",
+      "cluster_behavior": "all_shards",
+      "tools": [],
+      "tracking_issue": 57,
+      "rationale": "Structured coverage is planned in issue #57; unrestricted raw execution is not the completeness contract."
+    },
+    {
+      "name": "HIMPORT PREPARE",
+      "disposition": "planned",
+      "access": "full",
+      "cluster_behavior": "all_shards",
+      "tools": [],
+      "tracking_issue": 57,
+      "rationale": "Structured coverage is planned in issue #57; unrestricted raw execution is not the completeness contract."
+    },
+    {
+      "name": "HIMPORT SET",
+      "disposition": "planned",
+      "access": "read_write",
+      "cluster_behavior": "key_routed",
+      "tools": [],
+      "tracking_issue": 57,
+      "rationale": "Structured coverage is planned in issue #57; unrestricted raw execution is not the completeness contract."
+    },
+    {
+      "name": "HINCRBY",
+      "disposition": "typed",
+      "access": "read_write",
+      "cluster_behavior": "key_routed",
+      "tools": [
+        "redis_hincrby"
+      ],
+      "tracking_issue": null,
+      "rationale": "Covered by one or more cataloged structured MCP tools."
+    },
+    {
+      "name": "HINCRBYFLOAT",
+      "disposition": "typed",
+      "access": "read_write",
+      "cluster_behavior": "key_routed",
+      "tools": [
+        "redis_hincrbyfloat"
+      ],
+      "tracking_issue": null,
+      "rationale": "Covered by one or more cataloged structured MCP tools."
+    },
+    {
+      "name": "HKEYS",
+      "disposition": "typed",
+      "access": "read_only",
+      "cluster_behavior": "key_routed",
+      "tools": [
+        "redis_hkeys"
+      ],
+      "tracking_issue": null,
+      "rationale": "Covered by one or more cataloged structured MCP tools."
+    },
+    {
+      "name": "HLEN",
+      "disposition": "typed",
+      "access": "read_only",
+      "cluster_behavior": "key_routed",
+      "tools": [
+        "redis_hlen"
+      ],
+      "tracking_issue": null,
+      "rationale": "Covered by one or more cataloged structured MCP tools."
+    },
+    {
+      "name": "HMGET",
+      "disposition": "typed",
+      "access": "read_only",
+      "cluster_behavior": "key_routed",
+      "tools": [
+        "redis_hmget"
+      ],
+      "tracking_issue": null,
+      "rationale": "Covered by one or more cataloged structured MCP tools."
+    },
+    {
+      "name": "HMSET",
+      "disposition": "deprecated",
+      "access": "read_write",
+      "cluster_behavior": "key_routed",
+      "tools": [
+        "redis_hset"
+      ],
+      "tracking_issue": null,
+      "rationale": "Redis deprecated this command; use `HSET` with multiple field-value pairs instead."
+    },
+    {
+      "name": "HOTKEYS",
+      "disposition": "container",
+      "access": "full",
+      "cluster_behavior": "node_local",
+      "tools": [],
+      "tracking_issue": null,
+      "rationale": "Command namespace container; independently useful subcommands are mapped separately."
+    },
+    {
+      "name": "HOTKEYS GET",
+      "disposition": "planned",
+      "access": "read_only",
+      "cluster_behavior": "special",
+      "tools": [],
+      "tracking_issue": 32,
+      "rationale": "Structured coverage is planned in issue #32; unrestricted raw execution is not the completeness contract."
+    },
+    {
+      "name": "HOTKEYS HELP",
+      "disposition": "excluded",
+      "access": "full",
+      "cluster_behavior": "node_local",
+      "tools": [],
+      "tracking_issue": null,
+      "rationale": "Command help text duplicates the pinned command metadata and is not a database operation."
+    },
+    {
+      "name": "HOTKEYS RESET",
+      "disposition": "planned",
+      "access": "full",
+      "cluster_behavior": "special",
+      "tools": [],
+      "tracking_issue": 32,
+      "rationale": "Structured coverage is planned in issue #32; unrestricted raw execution is not the completeness contract."
+    },
+    {
+      "name": "HOTKEYS START",
+      "disposition": "planned",
+      "access": "full",
+      "cluster_behavior": "special",
+      "tools": [],
+      "tracking_issue": 32,
+      "rationale": "Structured coverage is planned in issue #32; unrestricted raw execution is not the completeness contract."
+    },
+    {
+      "name": "HOTKEYS STOP",
+      "disposition": "planned",
+      "access": "full",
+      "cluster_behavior": "special",
+      "tools": [],
+      "tracking_issue": 32,
+      "rationale": "Structured coverage is planned in issue #32; unrestricted raw execution is not the completeness contract."
+    },
+    {
+      "name": "HPERSIST",
+      "disposition": "typed",
+      "access": "read_write",
+      "cluster_behavior": "key_routed",
+      "tools": [
+        "redis_hpersist"
+      ],
+      "tracking_issue": null,
+      "rationale": "Covered by one or more cataloged structured MCP tools."
+    },
+    {
+      "name": "HPEXPIRE",
+      "disposition": "planned",
+      "access": "read_write",
+      "cluster_behavior": "key_routed",
+      "tools": [],
+      "tracking_issue": 62,
+      "rationale": "Structured coverage is planned in issue #62; unrestricted raw execution is not the completeness contract."
+    },
+    {
+      "name": "HPEXPIREAT",
+      "disposition": "planned",
+      "access": "read_write",
+      "cluster_behavior": "key_routed",
+      "tools": [],
+      "tracking_issue": 62,
+      "rationale": "Structured coverage is planned in issue #62; unrestricted raw execution is not the completeness contract."
+    },
+    {
+      "name": "HPEXPIRETIME",
+      "disposition": "planned",
+      "access": "read_only",
+      "cluster_behavior": "key_routed",
+      "tools": [],
+      "tracking_issue": 62,
+      "rationale": "Structured coverage is planned in issue #62; unrestricted raw execution is not the completeness contract."
+    },
+    {
+      "name": "HPTTL",
+      "disposition": "planned",
+      "access": "read_only",
+      "cluster_behavior": "key_routed",
+      "tools": [],
+      "tracking_issue": 62,
+      "rationale": "Structured coverage is planned in issue #62; unrestricted raw execution is not the completeness contract."
+    },
+    {
+      "name": "HRANDFIELD",
+      "disposition": "planned",
+      "access": "read_only",
+      "cluster_behavior": "key_routed",
+      "tools": [],
+      "tracking_issue": 62,
+      "rationale": "Structured coverage is planned in issue #62; unrestricted raw execution is not the completeness contract."
+    },
+    {
+      "name": "HSCAN",
+      "disposition": "typed",
+      "access": "read_only",
+      "cluster_behavior": "key_routed",
+      "tools": [
+        "redis_hscan"
+      ],
+      "tracking_issue": null,
+      "rationale": "Covered by one or more cataloged structured MCP tools."
+    },
+    {
+      "name": "HSET",
+      "disposition": "typed",
+      "access": "read_write",
+      "cluster_behavior": "key_routed",
+      "tools": [
+        "redis_hset"
+      ],
+      "tracking_issue": null,
+      "rationale": "Covered by one or more cataloged structured MCP tools."
+    },
+    {
+      "name": "HSETEX",
+      "disposition": "planned",
+      "access": "read_write",
+      "cluster_behavior": "key_routed",
+      "tools": [],
+      "tracking_issue": 57,
+      "rationale": "Structured coverage is planned in issue #57; unrestricted raw execution is not the completeness contract."
+    },
+    {
+      "name": "HSETNX",
+      "disposition": "native",
+      "access": "read_write",
+      "cluster_behavior": "key_routed",
+      "tools": [],
+      "tracking_issue": null,
+      "rationale": "Finite request/response command is available through the fail-closed classified native invocation policy.",
+      "invocation": [
+        "HSETNX"
+      ]
+    },
+    {
+      "name": "HSTRLEN",
+      "disposition": "typed",
+      "access": "read_only",
+      "cluster_behavior": "key_routed",
+      "tools": [
+        "redis_hstrlen"
+      ],
+      "tracking_issue": null,
+      "rationale": "Covered by one or more cataloged structured MCP tools."
+    },
+    {
+      "name": "HTTL",
+      "disposition": "typed",
+      "access": "read_only",
+      "cluster_behavior": "key_routed",
+      "tools": [
+        "redis_httl"
+      ],
+      "tracking_issue": null,
+      "rationale": "Covered by one or more cataloged structured MCP tools."
+    },
+    {
+      "name": "HVALS",
+      "disposition": "typed",
+      "access": "read_only",
+      "cluster_behavior": "key_routed",
+      "tools": [
+        "redis_hvals"
+      ],
+      "tracking_issue": null,
+      "rationale": "Covered by one or more cataloged structured MCP tools."
+    },
+    {
+      "name": "INCR",
+      "disposition": "typed",
+      "access": "read_write",
+      "cluster_behavior": "key_routed",
+      "tools": [
+        "redis_incr"
+      ],
+      "tracking_issue": null,
+      "rationale": "Covered by one or more cataloged structured MCP tools."
+    },
+    {
+      "name": "INCRBY",
+      "disposition": "typed",
+      "access": "read_write",
+      "cluster_behavior": "key_routed",
+      "tools": [
+        "redis_incrby"
+      ],
+      "tracking_issue": null,
+      "rationale": "Covered by one or more cataloged structured MCP tools."
+    },
+    {
+      "name": "INCRBYFLOAT",
+      "disposition": "typed",
+      "access": "read_write",
+      "cluster_behavior": "key_routed",
+      "tools": [
+        "redis_incrbyfloat"
+      ],
+      "tracking_issue": null,
+      "rationale": "Covered by one or more cataloged structured MCP tools."
+    },
+    {
+      "name": "INCREX",
+      "disposition": "planned",
+      "access": "read_write",
+      "cluster_behavior": "key_routed",
+      "tools": [],
+      "tracking_issue": 57,
+      "rationale": "Structured coverage is planned in issue #57; unrestricted raw execution is not the completeness contract."
+    },
+    {
+      "name": "INFO",
+      "disposition": "typed",
+      "access": "read_only",
+      "cluster_behavior": "all_shards",
+      "tools": [
+        "redis_info"
+      ],
+      "tracking_issue": null,
+      "rationale": "Covered by one or more cataloged structured MCP tools."
+    },
+    {
+      "name": "KEYS",
+      "disposition": "excluded",
+      "access": "read_only",
+      "cluster_behavior": "all_shards",
+      "tools": [],
+      "tracking_issue": null,
+      "rationale": "Unbounded whole-keyspace enumeration is replaced by bounded cursor-based SCAN tools."
+    },
+    {
+      "name": "LASTSAVE",
+      "disposition": "planned",
+      "access": "read_only",
+      "cluster_behavior": "node_local",
+      "tools": [],
+      "tracking_issue": 32,
+      "rationale": "Structured coverage is planned in issue #32; unrestricted raw execution is not the completeness contract."
+    },
+    {
+      "name": "LATENCY",
+      "disposition": "container",
+      "access": "full",
+      "cluster_behavior": "node_local",
+      "tools": [],
+      "tracking_issue": null,
+      "rationale": "Command namespace container; independently useful subcommands are mapped separately."
+    },
+    {
+      "name": "LATENCY DOCTOR",
+      "disposition": "planned",
+      "access": "read_only",
+      "cluster_behavior": "all_nodes",
+      "tools": [],
+      "tracking_issue": 32,
+      "rationale": "Structured coverage is planned in issue #32; unrestricted raw execution is not the completeness contract."
+    },
+    {
+      "name": "LATENCY GRAPH",
+      "disposition": "planned",
+      "access": "read_only",
+      "cluster_behavior": "all_nodes",
+      "tools": [],
+      "tracking_issue": 32,
+      "rationale": "Structured coverage is planned in issue #32; unrestricted raw execution is not the completeness contract."
+    },
+    {
+      "name": "LATENCY HELP",
+      "disposition": "excluded",
+      "access": "full",
+      "cluster_behavior": "node_local",
+      "tools": [],
+      "tracking_issue": null,
+      "rationale": "Command help text duplicates the pinned command metadata and is not a database operation."
+    },
+    {
+      "name": "LATENCY HISTOGRAM",
+      "disposition": "planned",
+      "access": "read_only",
+      "cluster_behavior": "all_nodes",
+      "tools": [],
+      "tracking_issue": 32,
+      "rationale": "Structured coverage is planned in issue #32; unrestricted raw execution is not the completeness contract."
+    },
+    {
+      "name": "LATENCY HISTORY",
+      "disposition": "typed",
+      "access": "read_only",
+      "cluster_behavior": "all_nodes",
+      "tools": [
+        "redis_latency_history"
+      ],
+      "tracking_issue": null,
+      "rationale": "Covered by one or more cataloged structured MCP tools."
+    },
+    {
+      "name": "LATENCY LATEST",
+      "disposition": "planned",
+      "access": "read_only",
+      "cluster_behavior": "all_nodes",
+      "tools": [],
+      "tracking_issue": 32,
+      "rationale": "Structured coverage is planned in issue #32; unrestricted raw execution is not the completeness contract."
+    },
+    {
+      "name": "LATENCY RESET",
+      "disposition": "planned",
+      "access": "full",
+      "cluster_behavior": "all_nodes",
+      "tools": [],
+      "tracking_issue": 32,
+      "rationale": "Structured coverage is planned in issue #32; unrestricted raw execution is not the completeness contract."
+    },
+    {
+      "name": "LCS",
+      "disposition": "native",
+      "access": "read_only",
+      "cluster_behavior": "key_routed",
+      "tools": [],
+      "tracking_issue": null,
+      "rationale": "Finite request/response command is available through the fail-closed classified native invocation policy.",
+      "invocation": [
+        "LCS"
+      ]
+    },
+    {
+      "name": "LINDEX",
+      "disposition": "typed",
+      "access": "read_only",
+      "cluster_behavior": "key_routed",
+      "tools": [
+        "redis_lindex"
+      ],
+      "tracking_issue": null,
+      "rationale": "Covered by one or more cataloged structured MCP tools."
+    },
+    {
+      "name": "LINSERT",
+      "disposition": "native",
+      "access": "read_write",
+      "cluster_behavior": "key_routed",
+      "tools": [],
+      "tracking_issue": null,
+      "rationale": "Finite request/response command is available through the fail-closed classified native invocation policy.",
+      "invocation": [
+        "LINSERT"
+      ]
+    },
+    {
+      "name": "LLEN",
+      "disposition": "typed",
+      "access": "read_only",
+      "cluster_behavior": "key_routed",
+      "tools": [
+        "redis_llen"
+      ],
+      "tracking_issue": null,
+      "rationale": "Covered by one or more cataloged structured MCP tools."
+    },
+    {
+      "name": "LMOVE",
+      "disposition": "typed",
+      "access": "full",
+      "cluster_behavior": "key_routed",
+      "tools": [
+        "redis_lmove"
+      ],
+      "tracking_issue": null,
+      "rationale": "Covered by one or more cataloged structured MCP tools."
+    },
+    {
+      "name": "LMOVEM",
+      "disposition": "planned",
+      "access": "read_write",
+      "cluster_behavior": "key_routed",
+      "tools": [],
+      "tracking_issue": 57,
+      "rationale": "Structured coverage is planned in issue #57; unrestricted raw execution is not the completeness contract."
+    },
+    {
+      "name": "LMPOP",
+      "disposition": "native",
+      "access": "full",
+      "cluster_behavior": "key_routed",
+      "tools": [],
+      "tracking_issue": null,
+      "rationale": "Finite request/response command is available through the fail-closed classified native invocation policy.",
+      "invocation": [
+        "LMPOP"
+      ]
+    },
+    {
+      "name": "LOLWUT",
+      "disposition": "excluded",
+      "access": "read_only",
+      "cluster_behavior": "node_local",
+      "tools": [],
+      "tracking_issue": null,
+      "rationale": "Novelty output has no dependable agent or database-management contract."
+    },
+    {
+      "name": "LPOP",
+      "disposition": "typed",
+      "access": "full",
+      "cluster_behavior": "key_routed",
+      "tools": [
+        "redis_lpop"
+      ],
+      "tracking_issue": null,
+      "rationale": "Covered by one or more cataloged structured MCP tools."
+    },
+    {
+      "name": "LPOS",
+      "disposition": "typed",
+      "access": "read_only",
+      "cluster_behavior": "key_routed",
+      "tools": [
+        "redis_lpos"
+      ],
+      "tracking_issue": null,
+      "rationale": "Covered by one or more cataloged structured MCP tools."
+    },
+    {
+      "name": "LPUSH",
+      "disposition": "typed",
+      "access": "read_write",
+      "cluster_behavior": "key_routed",
+      "tools": [
+        "redis_lpush"
+      ],
+      "tracking_issue": null,
+      "rationale": "Covered by one or more cataloged structured MCP tools."
+    },
+    {
+      "name": "LPUSHX",
+      "disposition": "native",
+      "access": "read_write",
+      "cluster_behavior": "key_routed",
+      "tools": [],
+      "tracking_issue": null,
+      "rationale": "Finite request/response command is available through the fail-closed classified native invocation policy.",
+      "invocation": [
+        "LPUSHX"
+      ]
+    },
+    {
+      "name": "LRANGE",
+      "disposition": "typed",
+      "access": "read_only",
+      "cluster_behavior": "key_routed",
+      "tools": [
+        "redis_lrange"
+      ],
+      "tracking_issue": null,
+      "rationale": "Covered by one or more cataloged structured MCP tools."
+    },
+    {
+      "name": "LREM",
+      "disposition": "typed",
+      "access": "full",
+      "cluster_behavior": "key_routed",
+      "tools": [
+        "redis_lrem"
+      ],
+      "tracking_issue": null,
+      "rationale": "Covered by one or more cataloged structured MCP tools."
+    },
+    {
+      "name": "LSET",
+      "disposition": "typed",
+      "access": "full",
+      "cluster_behavior": "key_routed",
+      "tools": [
+        "redis_lset"
+      ],
+      "tracking_issue": null,
+      "rationale": "Covered by one or more cataloged structured MCP tools."
+    },
+    {
+      "name": "LTRIM",
+      "disposition": "typed",
+      "access": "full",
+      "cluster_behavior": "key_routed",
+      "tools": [
+        "redis_ltrim"
+      ],
+      "tracking_issue": null,
+      "rationale": "Covered by one or more cataloged structured MCP tools."
+    },
+    {
+      "name": "MEMORY",
+      "disposition": "container",
+      "access": "full",
+      "cluster_behavior": "node_local",
+      "tools": [],
+      "tracking_issue": null,
+      "rationale": "Command namespace container; independently useful subcommands are mapped separately."
+    },
+    {
+      "name": "MEMORY DOCTOR",
+      "disposition": "planned",
+      "access": "read_only",
+      "cluster_behavior": "all_shards",
+      "tools": [],
+      "tracking_issue": 32,
+      "rationale": "Structured coverage is planned in issue #32; unrestricted raw execution is not the completeness contract."
+    },
+    {
+      "name": "MEMORY HELP",
+      "disposition": "excluded",
+      "access": "full",
+      "cluster_behavior": "node_local",
+      "tools": [],
+      "tracking_issue": null,
+      "rationale": "Command help text duplicates the pinned command metadata and is not a database operation."
+    },
+    {
+      "name": "MEMORY MALLOC-STATS",
+      "disposition": "planned",
+      "access": "read_only",
+      "cluster_behavior": "all_shards",
+      "tools": [],
+      "tracking_issue": 32,
+      "rationale": "Structured coverage is planned in issue #32; unrestricted raw execution is not the completeness contract."
+    },
+    {
+      "name": "MEMORY PURGE",
+      "disposition": "planned",
+      "access": "full",
+      "cluster_behavior": "all_shards",
+      "tools": [],
+      "tracking_issue": 32,
+      "rationale": "Structured coverage is planned in issue #32; unrestricted raw execution is not the completeness contract."
+    },
+    {
+      "name": "MEMORY STATS",
+      "disposition": "typed",
+      "access": "read_only",
+      "cluster_behavior": "all_shards",
+      "tools": [
+        "redis_memory_stats",
+        "redis_memory_summary"
+      ],
+      "tracking_issue": null,
+      "rationale": "Covered by one or more cataloged structured MCP tools."
+    },
+    {
+      "name": "MEMORY USAGE",
+      "disposition": "typed",
+      "access": "read_only",
+      "cluster_behavior": "key_routed",
+      "tools": [
+        "redis_memory_usage",
+        "redis_key_summary",
+        "redis_hotkeys"
+      ],
+      "tracking_issue": null,
+      "rationale": "Covered by one or more cataloged structured MCP tools."
+    },
+    {
+      "name": "MGET",
+      "disposition": "typed",
+      "access": "read_only",
+      "cluster_behavior": "multi_shard",
+      "tools": [
+        "redis_mget"
+      ],
+      "tracking_issue": null,
+      "rationale": "Covered by one or more cataloged structured MCP tools."
+    },
+    {
+      "name": "MIGRATE",
+      "disposition": "excluded",
+      "access": "read_write",
+      "cluster_behavior": "key_routed",
+      "tools": [],
+      "tracking_issue": null,
+      "rationale": "Replication or server lifecycle control is outside the fixed-target database interface."
+    },
+    {
+      "name": "MODULE",
+      "disposition": "container",
+      "access": "full",
+      "cluster_behavior": "node_local",
+      "tools": [],
+      "tracking_issue": null,
+      "rationale": "Command namespace container; independently useful subcommands are mapped separately."
+    },
+    {
+      "name": "MODULE HELP",
+      "disposition": "excluded",
+      "access": "full",
+      "cluster_behavior": "node_local",
+      "tools": [],
+      "tracking_issue": null,
+      "rationale": "Command help text duplicates the pinned command metadata and is not a database operation."
+    },
+    {
+      "name": "MODULE LIST",
+      "disposition": "typed",
+      "access": "read_only",
+      "cluster_behavior": "node_local",
+      "tools": [
+        "redis_module_list"
+      ],
+      "tracking_issue": null,
+      "rationale": "Covered by one or more cataloged structured MCP tools."
+    },
+    {
+      "name": "MODULE LOAD",
+      "disposition": "excluded",
+      "access": "full",
+      "cluster_behavior": "node_local",
+      "tools": [],
+      "tracking_issue": null,
+      "rationale": "Connection-local mode or protocol state belongs to server configuration, not independent MCP calls."
+    },
+    {
+      "name": "MODULE LOADEX",
+      "disposition": "excluded",
+      "access": "full",
+      "cluster_behavior": "node_local",
+      "tools": [],
+      "tracking_issue": null,
+      "rationale": "Connection-local mode or protocol state belongs to server configuration, not independent MCP calls."
+    },
+    {
+      "name": "MODULE UNLOAD",
+      "disposition": "excluded",
+      "access": "full",
+      "cluster_behavior": "node_local",
+      "tools": [],
+      "tracking_issue": null,
+      "rationale": "Connection-local mode or protocol state belongs to server configuration, not independent MCP calls."
+    },
+    {
+      "name": "MONITOR",
+      "disposition": "session",
+      "access": "full",
+      "cluster_behavior": "node_local",
+      "tools": [],
+      "tracking_issue": 66,
+      "rationale": "Blocking or streaming behavior requires a finite owner-isolated lifecycle rather than an ordinary tool call."
+    },
+    {
+      "name": "MOVE",
+      "disposition": "excluded",
+      "access": "read_write",
+      "cluster_behavior": "key_routed",
+      "tools": [],
+      "tracking_issue": null,
+      "rationale": "Connection-local mode or protocol state belongs to server configuration, not independent MCP calls."
+    },
+    {
+      "name": "MSET",
+      "disposition": "typed",
+      "access": "read_write",
+      "cluster_behavior": "multi_shard",
+      "tools": [
+        "redis_mset"
+      ],
+      "tracking_issue": null,
+      "rationale": "Covered by one or more cataloged structured MCP tools."
+    },
+    {
+      "name": "MSETEX",
+      "disposition": "planned",
+      "access": "read_write",
+      "cluster_behavior": "multi_shard",
+      "tools": [],
+      "tracking_issue": 57,
+      "rationale": "Structured coverage is planned in issue #57; unrestricted raw execution is not the completeness contract."
+    },
+    {
+      "name": "MSETNX",
+      "disposition": "native",
+      "access": "read_write",
+      "cluster_behavior": "key_routed",
+      "tools": [],
+      "tracking_issue": null,
+      "rationale": "Finite request/response command is available through the fail-closed classified native invocation policy.",
+      "invocation": [
+        "MSETNX"
+      ]
+    },
+    {
+      "name": "MULTI",
+      "disposition": "session",
+      "access": "full",
+      "cluster_behavior": "node_local",
+      "tools": [],
+      "tracking_issue": 61,
+      "rationale": "Transaction state requires one bounded dedicated connection and is tracked as a structured workflow."
+    },
+    {
+      "name": "OBJECT",
+      "disposition": "container",
+      "access": "read_only",
+      "cluster_behavior": "node_local",
+      "tools": [],
+      "tracking_issue": null,
+      "rationale": "Command namespace container; independently useful subcommands are mapped separately."
+    },
+    {
+      "name": "OBJECT ENCODING",
+      "disposition": "typed",
+      "access": "read_only",
+      "cluster_behavior": "key_routed",
+      "tools": [
+        "redis_object_inspect",
+        "redis_key_summary"
+      ],
+      "tracking_issue": null,
+      "rationale": "Covered by one or more cataloged structured MCP tools."
+    },
+    {
+      "name": "OBJECT FREQ",
+      "disposition": "typed",
+      "access": "read_only",
+      "cluster_behavior": "key_routed",
+      "tools": [
+        "redis_object_inspect"
+      ],
+      "tracking_issue": null,
+      "rationale": "Covered by one or more cataloged structured MCP tools."
+    },
+    {
+      "name": "OBJECT HELP",
+      "disposition": "excluded",
+      "access": "read_only",
+      "cluster_behavior": "node_local",
+      "tools": [],
+      "tracking_issue": null,
+      "rationale": "Command help text duplicates the pinned command metadata and is not a database operation."
+    },
+    {
+      "name": "OBJECT IDLETIME",
+      "disposition": "typed",
+      "access": "read_only",
+      "cluster_behavior": "key_routed",
+      "tools": [
+        "redis_object_inspect"
+      ],
+      "tracking_issue": null,
+      "rationale": "Covered by one or more cataloged structured MCP tools."
+    },
+    {
+      "name": "OBJECT REFCOUNT",
+      "disposition": "typed",
+      "access": "read_only",
+      "cluster_behavior": "key_routed",
+      "tools": [
+        "redis_object_inspect"
+      ],
+      "tracking_issue": null,
+      "rationale": "Covered by one or more cataloged structured MCP tools."
+    },
+    {
+      "name": "PERSIST",
+      "disposition": "typed",
+      "access": "read_write",
+      "cluster_behavior": "key_routed",
+      "tools": [
+        "redis_persist"
+      ],
+      "tracking_issue": null,
+      "rationale": "Covered by one or more cataloged structured MCP tools."
+    },
+    {
+      "name": "PEXPIRE",
+      "disposition": "native",
+      "access": "read_write",
+      "cluster_behavior": "key_routed",
+      "tools": [],
+      "tracking_issue": null,
+      "rationale": "Finite request/response command is available through the fail-closed classified native invocation policy.",
+      "invocation": [
+        "PEXPIRE"
+      ]
+    },
+    {
+      "name": "PEXPIREAT",
+      "disposition": "native",
+      "access": "read_write",
+      "cluster_behavior": "key_routed",
+      "tools": [],
+      "tracking_issue": null,
+      "rationale": "Finite request/response command is available through the fail-closed classified native invocation policy.",
+      "invocation": [
+        "PEXPIREAT"
+      ]
+    },
+    {
+      "name": "PEXPIRETIME",
+      "disposition": "native",
+      "access": "read_only",
+      "cluster_behavior": "key_routed",
+      "tools": [],
+      "tracking_issue": null,
+      "rationale": "Finite request/response command is available through the fail-closed classified native invocation policy.",
+      "invocation": [
+        "PEXPIRETIME"
+      ]
+    },
+    {
+      "name": "PFADD",
+      "disposition": "planned",
+      "access": "read_write",
+      "cluster_behavior": "key_routed",
+      "tools": [],
+      "tracking_issue": 55,
+      "rationale": "Structured coverage is planned in issue #55; unrestricted raw execution is not the completeness contract."
+    },
+    {
+      "name": "PFCOUNT",
+      "disposition": "planned",
+      "access": "read_only",
+      "cluster_behavior": "key_routed",
+      "tools": [],
+      "tracking_issue": 55,
+      "rationale": "Structured coverage is planned in issue #55; unrestricted raw execution is not the completeness contract."
+    },
+    {
+      "name": "PFDEBUG",
+      "disposition": "internal",
+      "access": "read_write",
+      "cluster_behavior": "key_routed",
+      "tools": [],
+      "tracking_issue": null,
+      "rationale": "Redis marks this as a system command; it is not part of the supported agent surface."
+    },
+    {
+      "name": "PFMERGE",
+      "disposition": "planned",
+      "access": "full",
+      "cluster_behavior": "key_routed",
+      "tools": [],
+      "tracking_issue": 55,
+      "rationale": "Structured coverage is planned in issue #55; unrestricted raw execution is not the completeness contract."
+    },
+    {
+      "name": "PFSELFTEST",
+      "disposition": "internal",
+      "access": "full",
+      "cluster_behavior": "node_local",
+      "tools": [],
+      "tracking_issue": null,
+      "rationale": "Redis marks this as a system command; it is not part of the supported agent surface."
+    },
+    {
+      "name": "PING",
+      "disposition": "typed",
+      "access": "read_only",
+      "cluster_behavior": "all_shards",
+      "tools": [
+        "redis_ping"
+      ],
+      "tracking_issue": null,
+      "rationale": "Covered by one or more cataloged structured MCP tools."
+    },
+    {
+      "name": "PSETEX",
+      "disposition": "deprecated",
+      "access": "read_write",
+      "cluster_behavior": "key_routed",
+      "tools": [
+        "redis_set"
+      ],
+      "tracking_issue": null,
+      "rationale": "Redis deprecated this command; use `SET` with the `PX` argument instead."
+    },
+    {
+      "name": "PSUBSCRIBE",
+      "disposition": "session",
+      "access": "read_only",
+      "cluster_behavior": "node_local",
+      "tools": [
+        "redis_psubscribe"
+      ],
+      "tracking_issue": 30,
+      "rationale": "Connection-stateful Pub/Sub is implemented through owner-isolated bounded session tools."
+    },
+    {
+      "name": "PSYNC",
+      "disposition": "excluded",
+      "access": "full",
+      "cluster_behavior": "node_local",
+      "tools": [],
+      "tracking_issue": null,
+      "rationale": "Replication or server lifecycle control is outside the fixed-target database interface."
+    },
+    {
+      "name": "PTTL",
+      "disposition": "native",
+      "access": "read_only",
+      "cluster_behavior": "key_routed",
+      "tools": [],
+      "tracking_issue": null,
+      "rationale": "Finite request/response command is available through the fail-closed classified native invocation policy.",
+      "invocation": [
+        "PTTL"
+      ]
+    },
+    {
+      "name": "PUBLISH",
+      "disposition": "typed",
+      "access": "read_write",
+      "cluster_behavior": "node_local",
+      "tools": [
+        "redis_publish"
+      ],
+      "tracking_issue": null,
+      "rationale": "Covered by one or more cataloged structured MCP tools."
+    },
+    {
+      "name": "PUBSUB",
+      "disposition": "container",
+      "access": "read_only",
+      "cluster_behavior": "node_local",
+      "tools": [],
+      "tracking_issue": null,
+      "rationale": "Command namespace container; independently useful subcommands are mapped separately."
+    },
+    {
+      "name": "PUBSUB CHANNELS",
+      "disposition": "typed",
+      "access": "read_only",
+      "cluster_behavior": "node_local",
+      "tools": [
+        "redis_pubsub_channels"
+      ],
+      "tracking_issue": null,
+      "rationale": "Covered by one or more cataloged structured MCP tools."
+    },
+    {
+      "name": "PUBSUB HELP",
+      "disposition": "excluded",
+      "access": "read_only",
+      "cluster_behavior": "node_local",
+      "tools": [],
+      "tracking_issue": null,
+      "rationale": "Command help text duplicates the pinned command metadata and is not a database operation."
+    },
+    {
+      "name": "PUBSUB NUMPAT",
+      "disposition": "typed",
+      "access": "read_only",
+      "cluster_behavior": "node_local",
+      "tools": [
+        "redis_pubsub_numpat"
+      ],
+      "tracking_issue": null,
+      "rationale": "Covered by one or more cataloged structured MCP tools."
+    },
+    {
+      "name": "PUBSUB NUMSUB",
+      "disposition": "typed",
+      "access": "read_only",
+      "cluster_behavior": "node_local",
+      "tools": [
+        "redis_pubsub_numsub"
+      ],
+      "tracking_issue": null,
+      "rationale": "Covered by one or more cataloged structured MCP tools."
+    },
+    {
+      "name": "PUBSUB SHARDCHANNELS",
+      "disposition": "typed",
+      "access": "read_only",
+      "cluster_behavior": "node_local",
+      "tools": [
+        "redis_pubsub_shardchannels"
+      ],
+      "tracking_issue": null,
+      "rationale": "Covered by one or more cataloged structured MCP tools."
+    },
+    {
+      "name": "PUBSUB SHARDNUMSUB",
+      "disposition": "typed",
+      "access": "read_only",
+      "cluster_behavior": "node_local",
+      "tools": [
+        "redis_pubsub_shardnumsub"
+      ],
+      "tracking_issue": null,
+      "rationale": "Covered by one or more cataloged structured MCP tools."
+    },
+    {
+      "name": "PUNSUBSCRIBE",
+      "disposition": "session",
+      "access": "read_only",
+      "cluster_behavior": "node_local",
+      "tools": [
+        "redis_pubsub_unsubscribe"
+      ],
+      "tracking_issue": 30,
+      "rationale": "Connection-stateful Pub/Sub is implemented through owner-isolated bounded session tools."
+    },
+    {
+      "name": "QUIT",
+      "disposition": "deprecated",
+      "access": "read_only",
+      "cluster_behavior": "node_local",
+      "tools": [],
+      "tracking_issue": null,
+      "rationale": "Redis deprecated this command; use just closing the connection instead."
+    },
+    {
+      "name": "RANDOMKEY",
+      "disposition": "typed",
+      "access": "read_only",
+      "cluster_behavior": "all_shards",
+      "tools": [
+        "redis_randomkey"
+      ],
+      "tracking_issue": null,
+      "rationale": "Covered by one or more cataloged structured MCP tools."
+    },
+    {
+      "name": "READONLY",
+      "disposition": "excluded",
+      "access": "full",
+      "cluster_behavior": "cluster_control_plane",
+      "tools": [],
+      "tracking_issue": null,
+      "rationale": "Connection-local mode or protocol state belongs to server configuration, not independent MCP calls."
+    },
+    {
+      "name": "READWRITE",
+      "disposition": "excluded",
+      "access": "full",
+      "cluster_behavior": "cluster_control_plane",
+      "tools": [],
+      "tracking_issue": null,
+      "rationale": "Connection-local mode or protocol state belongs to server configuration, not independent MCP calls."
+    },
+    {
+      "name": "RENAME",
+      "disposition": "typed",
+      "access": "full",
+      "cluster_behavior": "key_routed",
+      "tools": [
+        "redis_rename"
+      ],
+      "tracking_issue": null,
+      "rationale": "Covered by one or more cataloged structured MCP tools."
+    },
+    {
+      "name": "RENAMENX",
+      "disposition": "typed",
+      "access": "full",
+      "cluster_behavior": "key_routed",
+      "tools": [
+        "redis_renamenx"
+      ],
+      "tracking_issue": null,
+      "rationale": "Covered by one or more cataloged structured MCP tools."
+    },
+    {
+      "name": "REPLCONF",
+      "disposition": "internal",
+      "access": "full",
+      "cluster_behavior": "node_local",
+      "tools": [],
+      "tracking_issue": null,
+      "rationale": "Redis marks this as a system command; it is not part of the supported agent surface."
+    },
+    {
+      "name": "REPLICAOF",
+      "disposition": "excluded",
+      "access": "full",
+      "cluster_behavior": "node_local",
+      "tools": [],
+      "tracking_issue": null,
+      "rationale": "Replication or server lifecycle control is outside the fixed-target database interface."
+    },
+    {
+      "name": "RESET",
+      "disposition": "excluded",
+      "access": "full",
+      "cluster_behavior": "node_local",
+      "tools": [],
+      "tracking_issue": null,
+      "rationale": "Connection-local mode or protocol state belongs to server configuration, not independent MCP calls."
+    },
+    {
+      "name": "RESTORE",
+      "disposition": "typed",
+      "access": "read_write",
+      "cluster_behavior": "key_routed",
+      "tools": [
+        "redis_restore"
+      ],
+      "tracking_issue": null,
+      "rationale": "Covered by one or more cataloged structured MCP tools."
+    },
+    {
+      "name": "RESTORE-ASKING",
+      "disposition": "internal",
+      "access": "read_write",
+      "cluster_behavior": "key_routed",
+      "tools": [],
+      "tracking_issue": null,
+      "rationale": "Redis marks this as a system command; it is not part of the supported agent surface."
+    },
+    {
+      "name": "ROLE",
+      "disposition": "planned",
+      "access": "read_only",
+      "cluster_behavior": "node_local",
+      "tools": [],
+      "tracking_issue": 32,
+      "rationale": "Structured coverage is planned in issue #32; unrestricted raw execution is not the completeness contract."
+    },
+    {
+      "name": "RPOP",
+      "disposition": "typed",
+      "access": "full",
+      "cluster_behavior": "key_routed",
+      "tools": [
+        "redis_rpop"
+      ],
+      "tracking_issue": null,
+      "rationale": "Covered by one or more cataloged structured MCP tools."
+    },
+    {
+      "name": "RPOPLPUSH",
+      "disposition": "deprecated",
+      "access": "full",
+      "cluster_behavior": "key_routed",
+      "tools": [
+        "redis_lmove"
+      ],
+      "tracking_issue": null,
+      "rationale": "Redis deprecated this command; use `LMOVE` with the `RIGHT` and `LEFT` arguments instead."
+    },
+    {
+      "name": "RPUSH",
+      "disposition": "typed",
+      "access": "read_write",
+      "cluster_behavior": "key_routed",
+      "tools": [
+        "redis_rpush"
+      ],
+      "tracking_issue": null,
+      "rationale": "Covered by one or more cataloged structured MCP tools."
+    },
+    {
+      "name": "RPUSHX",
+      "disposition": "native",
+      "access": "read_write",
+      "cluster_behavior": "key_routed",
+      "tools": [],
+      "tracking_issue": null,
+      "rationale": "Finite request/response command is available through the fail-closed classified native invocation policy.",
+      "invocation": [
+        "RPUSHX"
+      ]
+    },
+    {
+      "name": "SADD",
+      "disposition": "typed",
+      "access": "read_write",
+      "cluster_behavior": "key_routed",
+      "tools": [
+        "redis_sadd"
+      ],
+      "tracking_issue": null,
+      "rationale": "Covered by one or more cataloged structured MCP tools."
+    },
+    {
+      "name": "SAVE",
+      "disposition": "excluded",
+      "access": "full",
+      "cluster_behavior": "node_local",
+      "tools": [],
+      "tracking_issue": null,
+      "rationale": "Replication or server lifecycle control is outside the fixed-target database interface."
+    },
+    {
+      "name": "SCAN",
+      "disposition": "typed",
+      "access": "read_only",
+      "cluster_behavior": "special",
+      "tools": [
+        "redis_scan"
+      ],
+      "tracking_issue": null,
+      "rationale": "Covered by one or more cataloged structured MCP tools."
+    },
+    {
+      "name": "SCARD",
+      "disposition": "typed",
+      "access": "read_only",
+      "cluster_behavior": "key_routed",
+      "tools": [
+        "redis_scard"
+      ],
+      "tracking_issue": null,
+      "rationale": "Covered by one or more cataloged structured MCP tools."
+    },
+    {
+      "name": "SCRIPT",
+      "disposition": "container",
+      "access": "read_only",
+      "cluster_behavior": "node_local",
+      "tools": [],
+      "tracking_issue": null,
+      "rationale": "Command namespace container; independently useful subcommands are mapped separately."
+    },
+    {
+      "name": "SCRIPT DEBUG",
+      "disposition": "excluded",
+      "access": "full",
+      "cluster_behavior": "node_local",
+      "tools": [],
+      "tracking_issue": null,
+      "rationale": "Connection-local mode or protocol state belongs to server configuration, not independent MCP calls."
+    },
+    {
+      "name": "SCRIPT EXISTS",
+      "disposition": "session",
+      "access": "read_only",
+      "cluster_behavior": "all_shards",
+      "tools": [],
+      "tracking_issue": 58,
+      "rationale": "Script execution and lifecycle require explicit keys, result budgets, and a dedicated bounded API."
+    },
+    {
+      "name": "SCRIPT FLUSH",
+      "disposition": "session",
+      "access": "full",
+      "cluster_behavior": "all_nodes",
+      "tools": [],
+      "tracking_issue": 58,
+      "rationale": "Script execution and lifecycle require explicit keys, result budgets, and a dedicated bounded API."
+    },
+    {
+      "name": "SCRIPT HELP",
+      "disposition": "excluded",
+      "access": "read_only",
+      "cluster_behavior": "node_local",
+      "tools": [],
+      "tracking_issue": null,
+      "rationale": "Command help text duplicates the pinned command metadata and is not a database operation."
+    },
+    {
+      "name": "SCRIPT KILL",
+      "disposition": "session",
+      "access": "full",
+      "cluster_behavior": "all_shards",
+      "tools": [],
+      "tracking_issue": 58,
+      "rationale": "Script execution and lifecycle require explicit keys, result budgets, and a dedicated bounded API."
+    },
+    {
+      "name": "SCRIPT LOAD",
+      "disposition": "session",
+      "access": "full",
+      "cluster_behavior": "all_nodes",
+      "tools": [],
+      "tracking_issue": 58,
+      "rationale": "Script execution and lifecycle require explicit keys, result budgets, and a dedicated bounded API."
+    },
+    {
+      "name": "SDIFF",
+      "disposition": "typed",
+      "access": "read_only",
+      "cluster_behavior": "key_routed",
+      "tools": [
+        "redis_sdiff"
+      ],
+      "tracking_issue": null,
+      "rationale": "Covered by one or more cataloged structured MCP tools."
+    },
+    {
+      "name": "SDIFFCARD",
+      "disposition": "planned",
+      "access": "read_only",
+      "cluster_behavior": "key_routed",
+      "tools": [],
+      "tracking_issue": 63,
+      "rationale": "Structured coverage is planned in issue #63; unrestricted raw execution is not the completeness contract."
+    },
+    {
+      "name": "SDIFFSTORE",
+      "disposition": "planned",
+      "access": "full",
+      "cluster_behavior": "key_routed",
+      "tools": [],
+      "tracking_issue": 63,
+      "rationale": "Structured coverage is planned in issue #63; unrestricted raw execution is not the completeness contract."
+    },
+    {
+      "name": "SELECT",
+      "disposition": "excluded",
+      "access": "full",
+      "cluster_behavior": "node_local",
+      "tools": [],
+      "tracking_issue": null,
+      "rationale": "Connection-local mode or protocol state belongs to server configuration, not independent MCP calls."
+    },
+    {
+      "name": "SET",
+      "disposition": "typed",
+      "access": "read_write",
+      "cluster_behavior": "key_routed",
+      "tools": [
+        "redis_set"
+      ],
+      "tracking_issue": null,
+      "rationale": "Covered by one or more cataloged structured MCP tools."
+    },
+    {
+      "name": "SETBIT",
+      "disposition": "planned",
+      "access": "read_write",
+      "cluster_behavior": "key_routed",
+      "tools": [],
+      "tracking_issue": 55,
+      "rationale": "Structured coverage is planned in issue #55; unrestricted raw execution is not the completeness contract."
+    },
+    {
+      "name": "SETEX",
+      "disposition": "deprecated",
+      "access": "read_write",
+      "cluster_behavior": "key_routed",
+      "tools": [
+        "redis_set"
+      ],
+      "tracking_issue": null,
+      "rationale": "Redis deprecated this command; use `SET` with the `EX` argument instead."
+    },
+    {
+      "name": "SETNX",
+      "disposition": "deprecated",
+      "access": "read_write",
+      "cluster_behavior": "key_routed",
+      "tools": [
+        "redis_set"
+      ],
+      "tracking_issue": null,
+      "rationale": "Redis deprecated this command; use `SET` with the `NX` argument instead."
+    },
+    {
+      "name": "SETRANGE",
+      "disposition": "typed",
+      "access": "read_write",
+      "cluster_behavior": "key_routed",
+      "tools": [
+        "redis_setrange"
+      ],
+      "tracking_issue": null,
+      "rationale": "Covered by one or more cataloged structured MCP tools."
+    },
+    {
+      "name": "SHUTDOWN",
+      "disposition": "excluded",
+      "access": "full",
+      "cluster_behavior": "node_local",
+      "tools": [],
+      "tracking_issue": null,
+      "rationale": "Replication or server lifecycle control is outside the fixed-target database interface."
+    },
+    {
+      "name": "SINTER",
+      "disposition": "typed",
+      "access": "read_only",
+      "cluster_behavior": "key_routed",
+      "tools": [
+        "redis_sinter"
+      ],
+      "tracking_issue": null,
+      "rationale": "Covered by one or more cataloged structured MCP tools."
+    },
+    {
+      "name": "SINTERCARD",
+      "disposition": "native",
+      "access": "read_only",
+      "cluster_behavior": "key_routed",
+      "tools": [],
+      "tracking_issue": null,
+      "rationale": "Finite request/response command is available through the fail-closed classified native invocation policy.",
+      "invocation": [
+        "SINTERCARD"
+      ]
+    },
+    {
+      "name": "SINTERSTORE",
+      "disposition": "planned",
+      "access": "full",
+      "cluster_behavior": "key_routed",
+      "tools": [],
+      "tracking_issue": 63,
+      "rationale": "Structured coverage is planned in issue #63; unrestricted raw execution is not the completeness contract."
+    },
+    {
+      "name": "SISMEMBER",
+      "disposition": "typed",
+      "access": "read_only",
+      "cluster_behavior": "key_routed",
+      "tools": [
+        "redis_sismember"
+      ],
+      "tracking_issue": null,
+      "rationale": "Covered by one or more cataloged structured MCP tools."
+    },
+    {
+      "name": "SLAVEOF",
+      "disposition": "deprecated",
+      "access": "full",
+      "cluster_behavior": "node_local",
+      "tools": [],
+      "tracking_issue": null,
+      "rationale": "Redis deprecated this command; use `REPLICAOF` instead."
+    },
+    {
+      "name": "SLOWLOG",
+      "disposition": "container",
+      "access": "full",
+      "cluster_behavior": "node_local",
+      "tools": [],
+      "tracking_issue": null,
+      "rationale": "Command namespace container; independently useful subcommands are mapped separately."
+    },
+    {
+      "name": "SLOWLOG GET",
+      "disposition": "typed",
+      "access": "read_only",
+      "cluster_behavior": "all_nodes",
+      "tools": [
+        "redis_slowlog"
+      ],
+      "tracking_issue": null,
+      "rationale": "Covered by one or more cataloged structured MCP tools."
+    },
+    {
+      "name": "SLOWLOG HELP",
+      "disposition": "excluded",
+      "access": "full",
+      "cluster_behavior": "node_local",
+      "tools": [],
+      "tracking_issue": null,
+      "rationale": "Command help text duplicates the pinned command metadata and is not a database operation."
+    },
+    {
+      "name": "SLOWLOG LEN",
+      "disposition": "planned",
+      "access": "read_only",
+      "cluster_behavior": "all_nodes",
+      "tools": [],
+      "tracking_issue": 32,
+      "rationale": "Structured coverage is planned in issue #32; unrestricted raw execution is not the completeness contract."
+    },
+    {
+      "name": "SLOWLOG RESET",
+      "disposition": "planned",
+      "access": "full",
+      "cluster_behavior": "all_nodes",
+      "tools": [],
+      "tracking_issue": 32,
+      "rationale": "Structured coverage is planned in issue #32; unrestricted raw execution is not the completeness contract."
+    },
+    {
+      "name": "SMEMBERS",
+      "disposition": "typed",
+      "access": "read_only",
+      "cluster_behavior": "key_routed",
+      "tools": [
+        "redis_smembers"
+      ],
+      "tracking_issue": null,
+      "rationale": "Covered by one or more cataloged structured MCP tools."
+    },
+    {
+      "name": "SMISMEMBER",
+      "disposition": "typed",
+      "access": "read_only",
+      "cluster_behavior": "key_routed",
+      "tools": [
+        "redis_smismember"
+      ],
+      "tracking_issue": null,
+      "rationale": "Covered by one or more cataloged structured MCP tools."
+    },
+    {
+      "name": "SMOVE",
+      "disposition": "native",
+      "access": "full",
+      "cluster_behavior": "key_routed",
+      "tools": [],
+      "tracking_issue": null,
+      "rationale": "Finite request/response command is available through the fail-closed classified native invocation policy.",
+      "invocation": [
+        "SMOVE"
+      ]
+    },
+    {
+      "name": "SORT",
+      "disposition": "planned",
+      "access": "full",
+      "cluster_behavior": "key_routed",
+      "tools": [],
+      "tracking_issue": 62,
+      "rationale": "Structured coverage is planned in issue #62; unrestricted raw execution is not the completeness contract."
+    },
+    {
+      "name": "SORT_RO",
+      "disposition": "planned",
+      "access": "read_only",
+      "cluster_behavior": "key_routed",
+      "tools": [],
+      "tracking_issue": 62,
+      "rationale": "Structured coverage is planned in issue #62; unrestricted raw execution is not the completeness contract."
+    },
+    {
+      "name": "SPOP",
+      "disposition": "native",
+      "access": "full",
+      "cluster_behavior": "key_routed",
+      "tools": [],
+      "tracking_issue": null,
+      "rationale": "Finite request/response command is available through the fail-closed classified native invocation policy.",
+      "invocation": [
+        "SPOP"
+      ]
+    },
+    {
+      "name": "SPUBLISH",
+      "disposition": "typed",
+      "access": "read_write",
+      "cluster_behavior": "key_routed",
+      "tools": [
+        "redis_spublish"
+      ],
+      "tracking_issue": null,
+      "rationale": "Covered by one or more cataloged structured MCP tools."
+    },
+    {
+      "name": "SRANDMEMBER",
+      "disposition": "native",
+      "access": "read_only",
+      "cluster_behavior": "key_routed",
+      "tools": [],
+      "tracking_issue": null,
+      "rationale": "Finite request/response command is available through the fail-closed classified native invocation policy.",
+      "invocation": [
+        "SRANDMEMBER"
+      ]
+    },
+    {
+      "name": "SREM",
+      "disposition": "typed",
+      "access": "full",
+      "cluster_behavior": "key_routed",
+      "tools": [
+        "redis_srem"
+      ],
+      "tracking_issue": null,
+      "rationale": "Covered by one or more cataloged structured MCP tools."
+    },
+    {
+      "name": "SSCAN",
+      "disposition": "typed",
+      "access": "read_only",
+      "cluster_behavior": "key_routed",
+      "tools": [
+        "redis_sscan"
+      ],
+      "tracking_issue": null,
+      "rationale": "Covered by one or more cataloged structured MCP tools."
+    },
+    {
+      "name": "SSUBSCRIBE",
+      "disposition": "session",
+      "access": "read_only",
+      "cluster_behavior": "key_routed",
+      "tools": [
+        "redis_ssubscribe"
+      ],
+      "tracking_issue": 30,
+      "rationale": "Connection-stateful Pub/Sub is implemented through owner-isolated bounded session tools."
+    },
+    {
+      "name": "STRLEN",
+      "disposition": "typed",
+      "access": "read_only",
+      "cluster_behavior": "key_routed",
+      "tools": [
+        "redis_strlen"
+      ],
+      "tracking_issue": null,
+      "rationale": "Covered by one or more cataloged structured MCP tools."
+    },
+    {
+      "name": "SUBSCRIBE",
+      "disposition": "session",
+      "access": "read_only",
+      "cluster_behavior": "node_local",
+      "tools": [
+        "redis_subscribe"
+      ],
+      "tracking_issue": 30,
+      "rationale": "Connection-stateful Pub/Sub is implemented through owner-isolated bounded session tools."
+    },
+    {
+      "name": "SUBSTR",
+      "disposition": "deprecated",
+      "access": "read_only",
+      "cluster_behavior": "key_routed",
+      "tools": [
+        "redis_getrange"
+      ],
+      "tracking_issue": null,
+      "rationale": "Redis deprecated this command; use `GETRANGE` instead."
+    },
+    {
+      "name": "SUNION",
+      "disposition": "typed",
+      "access": "read_only",
+      "cluster_behavior": "key_routed",
+      "tools": [
+        "redis_sunion"
+      ],
+      "tracking_issue": null,
+      "rationale": "Covered by one or more cataloged structured MCP tools."
+    },
+    {
+      "name": "SUNIONCARD",
+      "disposition": "planned",
+      "access": "read_only",
+      "cluster_behavior": "key_routed",
+      "tools": [],
+      "tracking_issue": 63,
+      "rationale": "Structured coverage is planned in issue #63; unrestricted raw execution is not the completeness contract."
+    },
+    {
+      "name": "SUNIONSTORE",
+      "disposition": "planned",
+      "access": "full",
+      "cluster_behavior": "key_routed",
+      "tools": [],
+      "tracking_issue": 63,
+      "rationale": "Structured coverage is planned in issue #63; unrestricted raw execution is not the completeness contract."
+    },
+    {
+      "name": "SUNSUBSCRIBE",
+      "disposition": "session",
+      "access": "read_only",
+      "cluster_behavior": "key_routed",
+      "tools": [
+        "redis_pubsub_unsubscribe"
+      ],
+      "tracking_issue": 30,
+      "rationale": "Connection-stateful Pub/Sub is implemented through owner-isolated bounded session tools."
+    },
+    {
+      "name": "SWAPDB",
+      "disposition": "planned",
+      "access": "full",
+      "cluster_behavior": "node_local",
+      "tools": [],
+      "tracking_issue": 32,
+      "rationale": "Structured coverage is planned in issue #32; unrestricted raw execution is not the completeness contract."
+    },
+    {
+      "name": "SYNC",
+      "disposition": "excluded",
+      "access": "full",
+      "cluster_behavior": "node_local",
+      "tools": [],
+      "tracking_issue": null,
+      "rationale": "Replication or server lifecycle control is outside the fixed-target database interface."
+    },
+    {
+      "name": "TIME",
+      "disposition": "planned",
+      "access": "read_only",
+      "cluster_behavior": "node_local",
+      "tools": [],
+      "tracking_issue": 32,
+      "rationale": "Structured coverage is planned in issue #32; unrestricted raw execution is not the completeness contract."
+    },
+    {
+      "name": "TOUCH",
+      "disposition": "typed",
+      "access": "read_write",
+      "cluster_behavior": "multi_shard",
+      "tools": [
+        "redis_touch"
+      ],
+      "tracking_issue": null,
+      "rationale": "Covered by one or more cataloged structured MCP tools."
+    },
+    {
+      "name": "TRIMSLOTS",
+      "disposition": "planned",
+      "access": "full",
+      "cluster_behavior": "node_local",
+      "tools": [],
+      "tracking_issue": 57,
+      "rationale": "Structured coverage is planned in issue #57; unrestricted raw execution is not the completeness contract."
+    },
+    {
+      "name": "TTL",
+      "disposition": "typed",
+      "access": "read_only",
+      "cluster_behavior": "key_routed",
+      "tools": [
+        "redis_ttl"
+      ],
+      "tracking_issue": null,
+      "rationale": "Covered by one or more cataloged structured MCP tools."
+    },
+    {
+      "name": "TYPE",
+      "disposition": "typed",
+      "access": "read_only",
+      "cluster_behavior": "key_routed",
+      "tools": [
+        "redis_type"
+      ],
+      "tracking_issue": null,
+      "rationale": "Covered by one or more cataloged structured MCP tools."
+    },
+    {
+      "name": "UNLINK",
+      "disposition": "typed",
+      "access": "full",
+      "cluster_behavior": "multi_shard",
+      "tools": [
+        "redis_unlink"
+      ],
+      "tracking_issue": null,
+      "rationale": "Covered by one or more cataloged structured MCP tools."
+    },
+    {
+      "name": "UNSUBSCRIBE",
+      "disposition": "session",
+      "access": "read_only",
+      "cluster_behavior": "node_local",
+      "tools": [
+        "redis_pubsub_unsubscribe"
+      ],
+      "tracking_issue": 30,
+      "rationale": "Connection-stateful Pub/Sub is implemented through owner-isolated bounded session tools."
+    },
+    {
+      "name": "UNWATCH",
+      "disposition": "session",
+      "access": "read_only",
+      "cluster_behavior": "node_local",
+      "tools": [],
+      "tracking_issue": 61,
+      "rationale": "Transaction state requires one bounded dedicated connection and is tracked as a structured workflow."
+    },
+    {
+      "name": "VADD",
+      "disposition": "planned",
+      "access": "read_write",
+      "cluster_behavior": "key_routed",
+      "tools": [],
+      "tracking_issue": 57,
+      "rationale": "Structured coverage is planned in issue #57; unrestricted raw execution is not the completeness contract."
+    },
+    {
+      "name": "VCARD",
+      "disposition": "planned",
+      "access": "read_only",
+      "cluster_behavior": "key_routed",
+      "tools": [],
+      "tracking_issue": 57,
+      "rationale": "Structured coverage is planned in issue #57; unrestricted raw execution is not the completeness contract."
+    },
+    {
+      "name": "VDIM",
+      "disposition": "planned",
+      "access": "read_only",
+      "cluster_behavior": "key_routed",
+      "tools": [],
+      "tracking_issue": 57,
+      "rationale": "Structured coverage is planned in issue #57; unrestricted raw execution is not the completeness contract."
+    },
+    {
+      "name": "VEMB",
+      "disposition": "planned",
+      "access": "read_only",
+      "cluster_behavior": "key_routed",
+      "tools": [],
+      "tracking_issue": 57,
+      "rationale": "Structured coverage is planned in issue #57; unrestricted raw execution is not the completeness contract."
+    },
+    {
+      "name": "VGETATTR",
+      "disposition": "planned",
+      "access": "read_only",
+      "cluster_behavior": "key_routed",
+      "tools": [],
+      "tracking_issue": 57,
+      "rationale": "Structured coverage is planned in issue #57; unrestricted raw execution is not the completeness contract."
+    },
+    {
+      "name": "VINFO",
+      "disposition": "planned",
+      "access": "read_only",
+      "cluster_behavior": "key_routed",
+      "tools": [],
+      "tracking_issue": 57,
+      "rationale": "Structured coverage is planned in issue #57; unrestricted raw execution is not the completeness contract."
+    },
+    {
+      "name": "VISMEMBER",
+      "disposition": "planned",
+      "access": "read_only",
+      "cluster_behavior": "key_routed",
+      "tools": [],
+      "tracking_issue": 57,
+      "rationale": "Structured coverage is planned in issue #57; unrestricted raw execution is not the completeness contract."
+    },
+    {
+      "name": "VLINKS",
+      "disposition": "planned",
+      "access": "read_only",
+      "cluster_behavior": "key_routed",
+      "tools": [],
+      "tracking_issue": 57,
+      "rationale": "Structured coverage is planned in issue #57; unrestricted raw execution is not the completeness contract."
+    },
+    {
+      "name": "VRANDMEMBER",
+      "disposition": "planned",
+      "access": "read_only",
+      "cluster_behavior": "key_routed",
+      "tools": [],
+      "tracking_issue": 57,
+      "rationale": "Structured coverage is planned in issue #57; unrestricted raw execution is not the completeness contract."
+    },
+    {
+      "name": "VRANGE",
+      "disposition": "planned",
+      "access": "read_only",
+      "cluster_behavior": "key_routed",
+      "tools": [],
+      "tracking_issue": 57,
+      "rationale": "Structured coverage is planned in issue #57; unrestricted raw execution is not the completeness contract."
+    },
+    {
+      "name": "VREM",
+      "disposition": "planned",
+      "access": "full",
+      "cluster_behavior": "key_routed",
+      "tools": [],
+      "tracking_issue": 57,
+      "rationale": "Structured coverage is planned in issue #57; unrestricted raw execution is not the completeness contract."
+    },
+    {
+      "name": "VSETATTR",
+      "disposition": "planned",
+      "access": "read_write",
+      "cluster_behavior": "key_routed",
+      "tools": [],
+      "tracking_issue": 57,
+      "rationale": "Structured coverage is planned in issue #57; unrestricted raw execution is not the completeness contract."
+    },
+    {
+      "name": "VSIM",
+      "disposition": "planned",
+      "access": "read_only",
+      "cluster_behavior": "key_routed",
+      "tools": [],
+      "tracking_issue": 57,
+      "rationale": "Structured coverage is planned in issue #57; unrestricted raw execution is not the completeness contract."
+    },
+    {
+      "name": "WAIT",
+      "disposition": "session",
+      "access": "full",
+      "cluster_behavior": "all_shards",
+      "tools": [],
+      "tracking_issue": 66,
+      "rationale": "Blocking or streaming behavior requires a finite owner-isolated lifecycle rather than an ordinary tool call."
+    },
+    {
+      "name": "WAITAOF",
+      "disposition": "session",
+      "access": "full",
+      "cluster_behavior": "all_shards",
+      "tools": [],
+      "tracking_issue": 66,
+      "rationale": "Blocking or streaming behavior requires a finite owner-isolated lifecycle rather than an ordinary tool call."
+    },
+    {
+      "name": "WATCH",
+      "disposition": "session",
+      "access": "read_only",
+      "cluster_behavior": "key_routed",
+      "tools": [],
+      "tracking_issue": 61,
+      "rationale": "Transaction state requires one bounded dedicated connection and is tracked as a structured workflow."
+    },
+    {
+      "name": "XACK",
+      "disposition": "typed",
+      "access": "read_write",
+      "cluster_behavior": "key_routed",
+      "tools": [
+        "redis_xack"
+      ],
+      "tracking_issue": null,
+      "rationale": "Covered by one or more cataloged structured MCP tools."
+    },
+    {
+      "name": "XACKDEL",
+      "disposition": "planned",
+      "access": "full",
+      "cluster_behavior": "key_routed",
+      "tools": [],
+      "tracking_issue": 57,
+      "rationale": "Structured coverage is planned in issue #57; unrestricted raw execution is not the completeness contract."
+    },
+    {
+      "name": "XADD",
+      "disposition": "typed",
+      "access": "read_write",
+      "cluster_behavior": "key_routed",
+      "tools": [
+        "redis_xadd"
+      ],
+      "tracking_issue": null,
+      "rationale": "Covered by one or more cataloged structured MCP tools."
+    },
+    {
+      "name": "XAUTOCLAIM",
+      "disposition": "typed",
+      "access": "read_write",
+      "cluster_behavior": "key_routed",
+      "tools": [
+        "redis_xautoclaim"
+      ],
+      "tracking_issue": null,
+      "rationale": "Covered by one or more cataloged structured MCP tools."
+    },
+    {
+      "name": "XCFGSET",
+      "disposition": "planned",
+      "access": "read_write",
+      "cluster_behavior": "key_routed",
+      "tools": [],
+      "tracking_issue": 57,
+      "rationale": "Structured coverage is planned in issue #57; unrestricted raw execution is not the completeness contract."
+    },
+    {
+      "name": "XCLAIM",
+      "disposition": "typed",
+      "access": "read_write",
+      "cluster_behavior": "key_routed",
+      "tools": [
+        "redis_xclaim"
+      ],
+      "tracking_issue": null,
+      "rationale": "Covered by one or more cataloged structured MCP tools."
+    },
+    {
+      "name": "XDEL",
+      "disposition": "typed",
+      "access": "full",
+      "cluster_behavior": "key_routed",
+      "tools": [
+        "redis_xdel"
+      ],
+      "tracking_issue": null,
+      "rationale": "Covered by one or more cataloged structured MCP tools."
+    },
+    {
+      "name": "XDELEX",
+      "disposition": "planned",
+      "access": "full",
+      "cluster_behavior": "key_routed",
+      "tools": [],
+      "tracking_issue": 57,
+      "rationale": "Structured coverage is planned in issue #57; unrestricted raw execution is not the completeness contract."
+    },
+    {
+      "name": "XGROUP",
+      "disposition": "container",
+      "access": "read_only",
+      "cluster_behavior": "node_local",
+      "tools": [],
+      "tracking_issue": null,
+      "rationale": "Command namespace container; independently useful subcommands are mapped separately."
+    },
+    {
+      "name": "XGROUP CREATE",
+      "disposition": "typed",
+      "access": "read_write",
+      "cluster_behavior": "key_routed",
+      "tools": [
+        "redis_xgroup_create"
+      ],
+      "tracking_issue": null,
+      "rationale": "Covered by one or more cataloged structured MCP tools."
+    },
+    {
+      "name": "XGROUP CREATECONSUMER",
+      "disposition": "typed",
+      "access": "read_write",
+      "cluster_behavior": "key_routed",
+      "tools": [
+        "redis_xgroup_createconsumer"
+      ],
+      "tracking_issue": null,
+      "rationale": "Covered by one or more cataloged structured MCP tools."
+    },
+    {
+      "name": "XGROUP DELCONSUMER",
+      "disposition": "typed",
+      "access": "full",
+      "cluster_behavior": "key_routed",
+      "tools": [
+        "redis_xgroup_delconsumer"
+      ],
+      "tracking_issue": null,
+      "rationale": "Covered by one or more cataloged structured MCP tools."
+    },
+    {
+      "name": "XGROUP DESTROY",
+      "disposition": "typed",
+      "access": "full",
+      "cluster_behavior": "key_routed",
+      "tools": [
+        "redis_xgroup_destroy"
+      ],
+      "tracking_issue": null,
+      "rationale": "Covered by one or more cataloged structured MCP tools."
+    },
+    {
+      "name": "XGROUP HELP",
+      "disposition": "excluded",
+      "access": "read_only",
+      "cluster_behavior": "node_local",
+      "tools": [],
+      "tracking_issue": null,
+      "rationale": "Command help text duplicates the pinned command metadata and is not a database operation."
+    },
+    {
+      "name": "XGROUP SETID",
+      "disposition": "typed",
+      "access": "read_write",
+      "cluster_behavior": "key_routed",
+      "tools": [
+        "redis_xgroup_setid"
+      ],
+      "tracking_issue": null,
+      "rationale": "Covered by one or more cataloged structured MCP tools."
+    },
+    {
+      "name": "XIDMPRECORD",
+      "disposition": "planned",
+      "access": "read_write",
+      "cluster_behavior": "key_routed",
+      "tools": [],
+      "tracking_issue": 57,
+      "rationale": "Structured coverage is planned in issue #57; unrestricted raw execution is not the completeness contract."
+    },
+    {
+      "name": "XINFO",
+      "disposition": "container",
+      "access": "read_only",
+      "cluster_behavior": "node_local",
+      "tools": [],
+      "tracking_issue": null,
+      "rationale": "Command namespace container; independently useful subcommands are mapped separately."
+    },
+    {
+      "name": "XINFO CONSUMERS",
+      "disposition": "typed",
+      "access": "read_only",
+      "cluster_behavior": "key_routed",
+      "tools": [
+        "redis_xinfo_consumers"
+      ],
+      "tracking_issue": null,
+      "rationale": "Covered by one or more cataloged structured MCP tools."
+    },
+    {
+      "name": "XINFO GROUPS",
+      "disposition": "typed",
+      "access": "read_only",
+      "cluster_behavior": "key_routed",
+      "tools": [
+        "redis_xinfo_groups"
+      ],
+      "tracking_issue": null,
+      "rationale": "Covered by one or more cataloged structured MCP tools."
+    },
+    {
+      "name": "XINFO HELP",
+      "disposition": "excluded",
+      "access": "read_only",
+      "cluster_behavior": "node_local",
+      "tools": [],
+      "tracking_issue": null,
+      "rationale": "Command help text duplicates the pinned command metadata and is not a database operation."
+    },
+    {
+      "name": "XINFO STREAM",
+      "disposition": "typed",
+      "access": "read_only",
+      "cluster_behavior": "key_routed",
+      "tools": [
+        "redis_xinfo_stream"
+      ],
+      "tracking_issue": null,
+      "rationale": "Covered by one or more cataloged structured MCP tools."
+    },
+    {
+      "name": "XLEN",
+      "disposition": "typed",
+      "access": "read_only",
+      "cluster_behavior": "key_routed",
+      "tools": [
+        "redis_xlen"
+      ],
+      "tracking_issue": null,
+      "rationale": "Covered by one or more cataloged structured MCP tools."
+    },
+    {
+      "name": "XNACK",
+      "disposition": "planned",
+      "access": "full",
+      "cluster_behavior": "key_routed",
+      "tools": [],
+      "tracking_issue": 57,
+      "rationale": "Structured coverage is planned in issue #57; unrestricted raw execution is not the completeness contract."
+    },
+    {
+      "name": "XPENDING",
+      "disposition": "typed",
+      "access": "read_only",
+      "cluster_behavior": "key_routed",
+      "tools": [
+        "redis_xpending"
+      ],
+      "tracking_issue": null,
+      "rationale": "Covered by one or more cataloged structured MCP tools."
+    },
+    {
+      "name": "XRANGE",
+      "disposition": "typed",
+      "access": "read_only",
+      "cluster_behavior": "key_routed",
+      "tools": [
+        "redis_xrange"
+      ],
+      "tracking_issue": null,
+      "rationale": "Covered by one or more cataloged structured MCP tools."
+    },
+    {
+      "name": "XREAD",
+      "disposition": "typed",
+      "access": "read_only",
+      "cluster_behavior": "key_routed",
+      "tools": [
+        "redis_xread"
+      ],
+      "tracking_issue": null,
+      "rationale": "Covered by one or more cataloged structured MCP tools."
+    },
+    {
+      "name": "XREADGROUP",
+      "disposition": "typed",
+      "access": "read_write",
+      "cluster_behavior": "key_routed",
+      "tools": [
+        "redis_xreadgroup"
+      ],
+      "tracking_issue": null,
+      "rationale": "Covered by one or more cataloged structured MCP tools."
+    },
+    {
+      "name": "XREVRANGE",
+      "disposition": "typed",
+      "access": "read_only",
+      "cluster_behavior": "key_routed",
+      "tools": [
+        "redis_xrevrange"
+      ],
+      "tracking_issue": null,
+      "rationale": "Covered by one or more cataloged structured MCP tools."
+    },
+    {
+      "name": "XSETID",
+      "disposition": "planned",
+      "access": "read_write",
+      "cluster_behavior": "key_routed",
+      "tools": [],
+      "tracking_issue": 57,
+      "rationale": "Structured coverage is planned in issue #57; unrestricted raw execution is not the completeness contract."
+    },
+    {
+      "name": "XTRIM",
+      "disposition": "typed",
+      "access": "full",
+      "cluster_behavior": "key_routed",
+      "tools": [
+        "redis_xtrim"
+      ],
+      "tracking_issue": null,
+      "rationale": "Covered by one or more cataloged structured MCP tools."
+    },
+    {
+      "name": "ZADD",
+      "disposition": "typed",
+      "access": "read_write",
+      "cluster_behavior": "key_routed",
+      "tools": [
+        "redis_zadd"
+      ],
+      "tracking_issue": null,
+      "rationale": "Covered by one or more cataloged structured MCP tools."
+    },
+    {
+      "name": "ZCARD",
+      "disposition": "typed",
+      "access": "read_only",
+      "cluster_behavior": "key_routed",
+      "tools": [
+        "redis_zcard"
+      ],
+      "tracking_issue": null,
+      "rationale": "Covered by one or more cataloged structured MCP tools."
+    },
+    {
+      "name": "ZCOUNT",
+      "disposition": "typed",
+      "access": "read_only",
+      "cluster_behavior": "key_routed",
+      "tools": [
+        "redis_zcount"
+      ],
+      "tracking_issue": null,
+      "rationale": "Covered by one or more cataloged structured MCP tools."
+    },
+    {
+      "name": "ZDIFF",
+      "disposition": "native",
+      "access": "read_only",
+      "cluster_behavior": "key_routed",
+      "tools": [],
+      "tracking_issue": null,
+      "rationale": "Finite request/response command is available through the fail-closed classified native invocation policy.",
+      "invocation": [
+        "ZDIFF"
+      ]
+    },
+    {
+      "name": "ZDIFFSTORE",
+      "disposition": "planned",
+      "access": "full",
+      "cluster_behavior": "key_routed",
+      "tools": [],
+      "tracking_issue": 63,
+      "rationale": "Structured coverage is planned in issue #63; unrestricted raw execution is not the completeness contract."
+    },
+    {
+      "name": "ZINCRBY",
+      "disposition": "typed",
+      "access": "read_write",
+      "cluster_behavior": "key_routed",
+      "tools": [
+        "redis_zincrby"
+      ],
+      "tracking_issue": null,
+      "rationale": "Covered by one or more cataloged structured MCP tools."
+    },
+    {
+      "name": "ZINTER",
+      "disposition": "native",
+      "access": "read_only",
+      "cluster_behavior": "key_routed",
+      "tools": [],
+      "tracking_issue": null,
+      "rationale": "Finite request/response command is available through the fail-closed classified native invocation policy.",
+      "invocation": [
+        "ZINTER"
+      ]
+    },
+    {
+      "name": "ZINTERCARD",
+      "disposition": "planned",
+      "access": "read_only",
+      "cluster_behavior": "key_routed",
+      "tools": [],
+      "tracking_issue": 63,
+      "rationale": "Structured coverage is planned in issue #63; unrestricted raw execution is not the completeness contract."
+    },
+    {
+      "name": "ZINTERSTORE",
+      "disposition": "planned",
+      "access": "full",
+      "cluster_behavior": "key_routed",
+      "tools": [],
+      "tracking_issue": 63,
+      "rationale": "Structured coverage is planned in issue #63; unrestricted raw execution is not the completeness contract."
+    },
+    {
+      "name": "ZLEXCOUNT",
+      "disposition": "native",
+      "access": "read_only",
+      "cluster_behavior": "key_routed",
+      "tools": [],
+      "tracking_issue": null,
+      "rationale": "Finite request/response command is available through the fail-closed classified native invocation policy.",
+      "invocation": [
+        "ZLEXCOUNT"
+      ]
+    },
+    {
+      "name": "ZMPOP",
+      "disposition": "native",
+      "access": "full",
+      "cluster_behavior": "key_routed",
+      "tools": [],
+      "tracking_issue": null,
+      "rationale": "Finite request/response command is available through the fail-closed classified native invocation policy.",
+      "invocation": [
+        "ZMPOP"
+      ]
+    },
+    {
+      "name": "ZMSCORE",
+      "disposition": "typed",
+      "access": "read_only",
+      "cluster_behavior": "key_routed",
+      "tools": [
+        "redis_zmscore"
+      ],
+      "tracking_issue": null,
+      "rationale": "Covered by one or more cataloged structured MCP tools."
+    },
+    {
+      "name": "ZPOPMAX",
+      "disposition": "typed",
+      "access": "full",
+      "cluster_behavior": "key_routed",
+      "tools": [
+        "redis_zpopmax"
+      ],
+      "tracking_issue": null,
+      "rationale": "Covered by one or more cataloged structured MCP tools."
+    },
+    {
+      "name": "ZPOPMIN",
+      "disposition": "typed",
+      "access": "full",
+      "cluster_behavior": "key_routed",
+      "tools": [
+        "redis_zpopmin"
+      ],
+      "tracking_issue": null,
+      "rationale": "Covered by one or more cataloged structured MCP tools."
+    },
+    {
+      "name": "ZRANDMEMBER",
+      "disposition": "native",
+      "access": "read_only",
+      "cluster_behavior": "key_routed",
+      "tools": [],
+      "tracking_issue": null,
+      "rationale": "Finite request/response command is available through the fail-closed classified native invocation policy.",
+      "invocation": [
+        "ZRANDMEMBER"
+      ]
+    },
+    {
+      "name": "ZRANGE",
+      "disposition": "typed",
+      "access": "read_only",
+      "cluster_behavior": "key_routed",
+      "tools": [
+        "redis_zrange"
+      ],
+      "tracking_issue": null,
+      "rationale": "Covered by one or more cataloged structured MCP tools."
+    },
+    {
+      "name": "ZRANGEBYLEX",
+      "disposition": "deprecated",
+      "access": "read_only",
+      "cluster_behavior": "key_routed",
+      "tools": [
+        "redis_zrange"
+      ],
+      "tracking_issue": null,
+      "rationale": "Redis deprecated this command; use `ZRANGE` with the `BYLEX` argument instead."
+    },
+    {
+      "name": "ZRANGEBYSCORE",
+      "disposition": "deprecated",
+      "access": "read_only",
+      "cluster_behavior": "key_routed",
+      "tools": [
+        "redis_zrange"
+      ],
+      "tracking_issue": null,
+      "rationale": "Redis deprecated this command; use `ZRANGE` with the `BYSCORE` argument instead."
+    },
+    {
+      "name": "ZRANGESTORE",
+      "disposition": "planned",
+      "access": "full",
+      "cluster_behavior": "key_routed",
+      "tools": [],
+      "tracking_issue": 63,
+      "rationale": "Structured coverage is planned in issue #63; unrestricted raw execution is not the completeness contract."
+    },
+    {
+      "name": "ZRANK",
+      "disposition": "typed",
+      "access": "read_only",
+      "cluster_behavior": "key_routed",
+      "tools": [
+        "redis_zrank"
+      ],
+      "tracking_issue": null,
+      "rationale": "Covered by one or more cataloged structured MCP tools."
+    },
+    {
+      "name": "ZREM",
+      "disposition": "typed",
+      "access": "full",
+      "cluster_behavior": "key_routed",
+      "tools": [
+        "redis_zrem"
+      ],
+      "tracking_issue": null,
+      "rationale": "Covered by one or more cataloged structured MCP tools."
+    },
+    {
+      "name": "ZREMRANGEBYLEX",
+      "disposition": "native",
+      "access": "full",
+      "cluster_behavior": "key_routed",
+      "tools": [],
+      "tracking_issue": null,
+      "rationale": "Finite request/response command is available through the fail-closed classified native invocation policy.",
+      "invocation": [
+        "ZREMRANGEBYLEX"
+      ]
+    },
+    {
+      "name": "ZREMRANGEBYRANK",
+      "disposition": "native",
+      "access": "full",
+      "cluster_behavior": "key_routed",
+      "tools": [],
+      "tracking_issue": null,
+      "rationale": "Finite request/response command is available through the fail-closed classified native invocation policy.",
+      "invocation": [
+        "ZREMRANGEBYRANK"
+      ]
+    },
+    {
+      "name": "ZREMRANGEBYSCORE",
+      "disposition": "typed",
+      "access": "full",
+      "cluster_behavior": "key_routed",
+      "tools": [
+        "redis_zremrangebyscore"
+      ],
+      "tracking_issue": null,
+      "rationale": "Covered by one or more cataloged structured MCP tools."
+    },
+    {
+      "name": "ZREVRANGE",
+      "disposition": "deprecated",
+      "access": "read_only",
+      "cluster_behavior": "key_routed",
+      "tools": [
+        "redis_zrange"
+      ],
+      "tracking_issue": null,
+      "rationale": "Redis deprecated this command; use `ZRANGE` with the `REV` argument instead."
+    },
+    {
+      "name": "ZREVRANGEBYLEX",
+      "disposition": "deprecated",
+      "access": "read_only",
+      "cluster_behavior": "key_routed",
+      "tools": [
+        "redis_zrange"
+      ],
+      "tracking_issue": null,
+      "rationale": "Redis deprecated this command; use `ZRANGE` with the `REV` and `BYLEX` arguments instead."
+    },
+    {
+      "name": "ZREVRANGEBYSCORE",
+      "disposition": "deprecated",
+      "access": "read_only",
+      "cluster_behavior": "key_routed",
+      "tools": [
+        "redis_zrange"
+      ],
+      "tracking_issue": null,
+      "rationale": "Redis deprecated this command; use `ZRANGE` with the `REV` and `BYSCORE` arguments instead."
+    },
+    {
+      "name": "ZREVRANK",
+      "disposition": "typed",
+      "access": "read_only",
+      "cluster_behavior": "key_routed",
+      "tools": [
+        "redis_zrevrank"
+      ],
+      "tracking_issue": null,
+      "rationale": "Covered by one or more cataloged structured MCP tools."
+    },
+    {
+      "name": "ZSCAN",
+      "disposition": "typed",
+      "access": "read_only",
+      "cluster_behavior": "key_routed",
+      "tools": [
+        "redis_zscan"
+      ],
+      "tracking_issue": null,
+      "rationale": "Covered by one or more cataloged structured MCP tools."
+    },
+    {
+      "name": "ZSCORE",
+      "disposition": "typed",
+      "access": "read_only",
+      "cluster_behavior": "key_routed",
+      "tools": [
+        "redis_zscore"
+      ],
+      "tracking_issue": null,
+      "rationale": "Covered by one or more cataloged structured MCP tools."
+    },
+    {
+      "name": "ZUNION",
+      "disposition": "native",
+      "access": "read_only",
+      "cluster_behavior": "key_routed",
+      "tools": [],
+      "tracking_issue": null,
+      "rationale": "Finite request/response command is available through the fail-closed classified native invocation policy.",
+      "invocation": [
+        "ZUNION"
+      ]
+    },
+    {
+      "name": "ZUNIONSTORE",
+      "disposition": "planned",
+      "access": "full",
+      "cluster_behavior": "key_routed",
+      "tools": [],
+      "tracking_issue": 63,
+      "rationale": "Structured coverage is planned in issue #63; unrestricted raw execution is not the completeness contract."
+    }
+  ]
+}

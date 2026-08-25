@@ -379,3 +379,11 @@ tool's name, bundle, access tier, deployment requirement, Redis/module version
 and command requirements, raw opt-in, description, input schema, output schema,
 annotations, and representative structured result. Any deliberate public
 contract change updates that snapshot in the same review.
+
+`crates/redis-mcp/tests/fixtures/redis-commands-8.10.1.json` separately pins the
+official Redis command metadata extracted from `COMMAND` and `COMMAND DOCS`.
+`crates/redis-mcp/tests/fixtures/redis-command-coverage.json` maps every
+definition to typed/composed catalog evidence, classified native invocation, a
+dedicated session/workflow, an explicit backlog issue, or a documented
+exclusion. See `docs/redis-command-coverage.md` for the enforced invariants and
+update process.

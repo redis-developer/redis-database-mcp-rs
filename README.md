@@ -307,7 +307,9 @@ Tower-MCP boundary and fixed-target model, and the
 132-tool read-only baseline and known contract differences. The
 [command-surface scorecard](docs/surface-comparison.md) pins both redisctl and
 `redis/mcp-redis`, maps every baseline tool, and defines the objective gate for
-the library surface roadmap.
+the earlier competitor-parity gate. The
+[official Redis command ledger](docs/redis-command-coverage.md) pins Redis
+8.10.1 itself and is the command-completeness source of truth.
 
 ## Compatibility and testing
 
@@ -335,7 +337,9 @@ three-node Cluster routing.
 
 CI runs the complete suite on Redis 8.8 and the live router/stdio contract on
 every currently supported Redis Open Source series: 6.2, 7.2, 7.4, 8.0, 8.2,
-8.4, 8.6, and 8.8. Live tests exercise both RESP2 and RESP3, the 129-tool curated
+8.4, 8.6, 8.8, and 8.10.1. Standalone and Cluster jobs cover the latest pin,
+and a separate job regenerates the official command metadata from the pinned
+Redis image. Live tests exercise both RESP2 and RESP3, the 129-tool curated
 catalog, binary and nil responses, conditional and absolute expiration,
 bounded serialization/restore, complete bounded list semantics, typed
 hash-field expiration, binary-safe membership, budgeted set algebra, complete

@@ -54,13 +54,38 @@ jobs:
             --manifest-path "$server_dir/Cargo.toml" \
             --config "patch.crates-io.redis-mcp.path=\"$library_dir\""
 
+  command-ledger:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: Start pinned Redis
+        run: >-
+          docker run --detach --name redis-command-ledger
+          --entrypoint redis-server redis:8.10.1
+          --save "" --appendonly no
+      - name: Wait for Redis
+        shell: bash
+        run: |
+          for attempt in {1..50}; do
+            if docker exec redis-command-ledger redis-cli ping; then
+              exit 0
+            fi
+            sleep 0.2
+          done
+          exit 1
+      - name: Verify pinned command metadata
+        run: >-
+          python3 scripts/update_redis_commands.py
+          --redis-cli-command "docker exec redis-command-ledger redis-cli"
+          --check
+
   redis-compatibility:
     name: Redis ${{ matrix.redis }}
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
       matrix:
-        redis: ["6.2", "7.2", "7.4", "8.0", "8.2", "8.4", "8.6"]
+        redis: ["6.2", "7.2", "7.4", "8.0", "8.2", "8.4", "8.6", "8.10.1"]
     services:
       redis:
         image: redis:${{ matrix.redis }}
@@ -110,7 +135,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        redis: ["6.2", "8.8"]
+        redis: ["6.2", "8.8", "8.10.1"]
     env:
       REDIS_CLUSTER_URLS: redis://127.0.0.1:7000,redis://127.0.0.1:7001,redis://127.0.0.1:7002
     steps:

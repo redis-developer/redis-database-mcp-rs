@@ -309,6 +309,20 @@ fn module_requirement(command: &str) -> (Option<RedisModule>, Option<RedisVersio
 #[cfg(test)]
 mod tests {
     use super::*;
+    use serde::Deserialize;
+
+    #[derive(Deserialize)]
+    struct CoverageLedger {
+        commands: Vec<CoveredCommand>,
+    }
+
+    #[derive(Deserialize)]
+    struct CoveredCommand {
+        name: String,
+        disposition: String,
+        access: String,
+        invocation: Option<Vec<String>>,
+    }
 
     fn invocation(command: &str, arguments: &[&str]) -> Result<NativeCommandMetadata, RedisError> {
         classify_command(
@@ -319,6 +333,41 @@ mod tests {
                 .collect::<Vec<_>>(),
             RawCommandPolicy::Classified,
         )
+    }
+
+    #[test]
+    fn official_native_ledger_entries_stay_fail_closed_and_classified() {
+        let ledger: CoverageLedger = serde_json::from_str(include_str!(
+            "../tests/fixtures/redis-command-coverage.json"
+        ))
+        .expect("Redis command coverage ledger");
+        let native = ledger
+            .commands
+            .into_iter()
+            .filter(|command| command.disposition == "native")
+            .collect::<Vec<_>>();
+        assert_eq!(native.len(), 32);
+
+        for covered in native {
+            let invocation = covered.invocation.expect("native invocation evidence");
+            let (command, arguments) = invocation.split_first().expect("native command name");
+            let arguments = arguments
+                .iter()
+                .map(|argument| argument.as_bytes().to_vec())
+                .collect::<Vec<_>>();
+            let metadata =
+                classify_command(command.as_bytes(), &arguments, RawCommandPolicy::Classified)
+                    .unwrap_or_else(|error| {
+                        panic!("{} must remain classified: {error}", covered.name)
+                    });
+            assert!(metadata.is_classified(), "{}", covered.name);
+            assert_eq!(
+                metadata.required_access().as_str(),
+                covered.access,
+                "{}",
+                covered.name
+            );
+        }
     }
 
     #[test]

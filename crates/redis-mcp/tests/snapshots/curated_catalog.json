@@ -257,6 +257,2244 @@
       "capability_requirements": {
         "deployment": "any",
         "minimum_module_version": null,
+        "minimum_redis_version": "8.8.0",
+        "required_commands": [
+          "ARCOUNT"
+        ],
+        "required_module": null
+      },
+      "name": "redis_arcount",
+      "output_policy": "intrinsically_bounded",
+      "protocol": {
+        "annotations": {
+          "destructiveHint": false,
+          "idempotentHint": true,
+          "readOnlyHint": true
+        },
+        "description": "Return the number of allocated (non-empty) elements in a Redis Array.",
+        "inputSchema": {
+          "$defs": {
+            "InputEncoding": {
+              "enum": [
+                "utf8",
+                "base64"
+              ],
+              "type": "string"
+            }
+          },
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "key": {
+              "description": "Redis key.",
+              "type": "string"
+            },
+            "key_encoding": {
+              "$ref": "#/$defs/InputEncoding",
+              "default": "utf8",
+              "description": "Encoding of `key`."
+            }
+          },
+          "required": [
+            "key"
+          ],
+          "title": "KeyInput",
+          "type": "object"
+        },
+        "name": "redis_arcount",
+        "outputSchema": {
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "count": {
+              "format": "uint64",
+              "minimum": 0,
+              "type": "integer"
+            }
+          },
+          "required": [
+            "count"
+          ],
+          "title": "ArrayCountOutput",
+          "type": "object"
+        },
+        "title": "Count Redis Array Elements"
+      },
+      "required_access": "read_only",
+      "required_module": null,
+      "requires_raw_opt_in": false
+    },
+    {
+      "bundle": "data_structures",
+      "capability_requirements": {
+        "deployment": "any",
+        "minimum_module_version": null,
+        "minimum_redis_version": "8.8.0",
+        "required_commands": [
+          "ARDEL"
+        ],
+        "required_module": null
+      },
+      "name": "redis_ardel",
+      "output_policy": "intrinsically_bounded",
+      "protocol": {
+        "annotations": {
+          "idempotentHint": true
+        },
+        "description": "Permanently delete a bounded explicit set of Redis Array indices. Requires full access.",
+        "inputSchema": {
+          "$defs": {
+            "InputEncoding": {
+              "enum": [
+                "utf8",
+                "base64"
+              ],
+              "type": "string"
+            }
+          },
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "indices": {
+              "items": {
+                "format": "uint64",
+                "minimum": 0,
+                "type": "integer"
+              },
+              "maxItems": 1000,
+              "minItems": 1,
+              "type": "array"
+            },
+            "key": {
+              "type": "string"
+            },
+            "key_encoding": {
+              "$ref": "#/$defs/InputEncoding",
+              "default": "utf8"
+            }
+          },
+          "required": [
+            "key",
+            "indices"
+          ],
+          "title": "ArdelInput",
+          "type": "object"
+        },
+        "name": "redis_ardel",
+        "outputSchema": {
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "deleted": {
+              "format": "uint64",
+              "minimum": 0,
+              "type": "integer"
+            }
+          },
+          "required": [
+            "deleted"
+          ],
+          "title": "ArrayDeleteOutput",
+          "type": "object"
+        },
+        "title": "Delete Redis Array Elements"
+      },
+      "required_access": "full",
+      "required_module": null,
+      "requires_raw_opt_in": false
+    },
+    {
+      "bundle": "data_structures",
+      "capability_requirements": {
+        "deployment": "any",
+        "minimum_module_version": null,
+        "minimum_redis_version": "8.8.0",
+        "required_commands": [
+          "ARDELRANGE"
+        ],
+        "required_module": null
+      },
+      "name": "redis_ardelrange",
+      "output_policy": "intrinsically_bounded",
+      "protocol": {
+        "annotations": {
+          "idempotentHint": true
+        },
+        "description": "Permanently delete one or more explicit inclusive Redis Array ranges. Requires full access.",
+        "inputSchema": {
+          "$defs": {
+            "IndexRangeInput": {
+              "additionalProperties": false,
+              "properties": {
+                "end": {
+                  "format": "uint64",
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                "start": {
+                  "format": "uint64",
+                  "minimum": 0,
+                  "type": "integer"
+                }
+              },
+              "required": [
+                "start",
+                "end"
+              ],
+              "type": "object"
+            },
+            "InputEncoding": {
+              "enum": [
+                "utf8",
+                "base64"
+              ],
+              "type": "string"
+            }
+          },
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "key": {
+              "type": "string"
+            },
+            "key_encoding": {
+              "$ref": "#/$defs/InputEncoding",
+              "default": "utf8"
+            },
+            "ranges": {
+              "items": {
+                "$ref": "#/$defs/IndexRangeInput"
+              },
+              "maxItems": 1000,
+              "minItems": 1,
+              "type": "array"
+            }
+          },
+          "required": [
+            "key",
+            "ranges"
+          ],
+          "title": "ArdelrangeInput",
+          "type": "object"
+        },
+        "name": "redis_ardelrange",
+        "outputSchema": {
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "deleted": {
+              "format": "uint64",
+              "minimum": 0,
+              "type": "integer"
+            }
+          },
+          "required": [
+            "deleted"
+          ],
+          "title": "ArrayDeleteOutput",
+          "type": "object"
+        },
+        "title": "Delete Redis Array Ranges"
+      },
+      "required_access": "full",
+      "required_module": null,
+      "requires_raw_opt_in": false
+    },
+    {
+      "bundle": "data_structures",
+      "capability_requirements": {
+        "deployment": "any",
+        "minimum_module_version": null,
+        "minimum_redis_version": "8.8.0",
+        "required_commands": [
+          "ARGET"
+        ],
+        "required_module": null
+      },
+      "name": "redis_arget",
+      "output_policy": "intrinsically_bounded",
+      "protocol": {
+        "annotations": {
+          "destructiveHint": false,
+          "idempotentHint": true,
+          "readOnlyHint": true
+        },
+        "description": "Read one binary-safe Redis Array element by unsigned 64-bit index.",
+        "inputSchema": {
+          "$defs": {
+            "InputEncoding": {
+              "enum": [
+                "utf8",
+                "base64"
+              ],
+              "type": "string"
+            }
+          },
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "index": {
+              "format": "uint64",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "key": {
+              "type": "string"
+            },
+            "key_encoding": {
+              "$ref": "#/$defs/InputEncoding",
+              "default": "utf8"
+            }
+          },
+          "required": [
+            "key",
+            "index"
+          ],
+          "title": "ArrayIndexInput",
+          "type": "object"
+        },
+        "name": "redis_arget",
+        "outputSchema": {
+          "$defs": {
+            "BinaryOutput": {
+              "additionalProperties": false,
+              "properties": {
+                "encoding": {
+                  "$ref": "#/$defs/ValueEncoding"
+                },
+                "value": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "value",
+                "encoding"
+              ],
+              "type": "object"
+            },
+            "ValueEncoding": {
+              "enum": [
+                "utf8",
+                "base64"
+              ],
+              "type": "string"
+            }
+          },
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "exists": {
+              "type": "boolean"
+            },
+            "index": {
+              "format": "uint64",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "value": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/BinaryOutput"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          },
+          "required": [
+            "index",
+            "exists"
+          ],
+          "title": "ArrayGetOutput",
+          "type": "object"
+        },
+        "title": "Get Redis Array Element"
+      },
+      "required_access": "read_only",
+      "required_module": null,
+      "requires_raw_opt_in": false
+    },
+    {
+      "bundle": "data_structures",
+      "capability_requirements": {
+        "deployment": "any",
+        "minimum_module_version": null,
+        "minimum_redis_version": "8.8.0",
+        "required_commands": [
+          "ARGETRANGE"
+        ],
+        "required_module": null
+      },
+      "name": "redis_argetrange",
+      "output_policy": "intrinsically_bounded",
+      "protocol": {
+        "annotations": {
+          "destructiveHint": false,
+          "idempotentHint": true,
+          "readOnlyHint": true
+        },
+        "description": "Read one explicitly bounded inclusive Redis Array range, preserving empty slots as null values.",
+        "inputSchema": {
+          "$defs": {
+            "InputEncoding": {
+              "enum": [
+                "utf8",
+                "base64"
+              ],
+              "type": "string"
+            }
+          },
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "end": {
+              "format": "uint64",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "key": {
+              "type": "string"
+            },
+            "key_encoding": {
+              "$ref": "#/$defs/InputEncoding",
+              "default": "utf8"
+            },
+            "start": {
+              "format": "uint64",
+              "minimum": 0,
+              "type": "integer"
+            }
+          },
+          "required": [
+            "key",
+            "start",
+            "end"
+          ],
+          "title": "ArrayRangeInput",
+          "type": "object"
+        },
+        "name": "redis_argetrange",
+        "outputSchema": {
+          "$defs": {
+            "BinaryOutput": {
+              "additionalProperties": false,
+              "properties": {
+                "encoding": {
+                  "$ref": "#/$defs/ValueEncoding"
+                },
+                "value": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "value",
+                "encoding"
+              ],
+              "type": "object"
+            },
+            "ValueEncoding": {
+              "enum": [
+                "utf8",
+                "base64"
+              ],
+              "type": "string"
+            }
+          },
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "end": {
+              "format": "uint64",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "start": {
+              "format": "uint64",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "values": {
+              "items": {
+                "anyOf": [
+                  {
+                    "$ref": "#/$defs/BinaryOutput"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "type": "array"
+            }
+          },
+          "required": [
+            "start",
+            "end",
+            "values"
+          ],
+          "title": "ArrayRangeOutput",
+          "type": "object"
+        },
+        "title": "Get Redis Array Range"
+      },
+      "required_access": "read_only",
+      "required_module": null,
+      "requires_raw_opt_in": false
+    },
+    {
+      "bundle": "data_structures",
+      "capability_requirements": {
+        "deployment": "any",
+        "minimum_module_version": null,
+        "minimum_redis_version": "8.8.0",
+        "required_commands": [
+          "ARGREP"
+        ],
+        "required_module": null
+      },
+      "name": "redis_argrep",
+      "output_policy": "range_paginated",
+      "protocol": {
+        "annotations": {
+          "destructiveHint": false,
+          "idempotentHint": true,
+          "readOnlyHint": true
+        },
+        "description": "Search a Redis Array with typed exact, substring, glob, or regular-expression predicates and a mandatory result limit.",
+        "inputSchema": {
+          "$defs": {
+            "ArrayPredicate": {
+              "oneOf": [
+                {
+                  "additionalProperties": false,
+                  "properties": {
+                    "type": {
+                      "const": "exact",
+                      "type": "string"
+                    },
+                    "value": {
+                      "$ref": "#/$defs/BinaryInput"
+                    }
+                  },
+                  "required": [
+                    "type",
+                    "value"
+                  ],
+                  "type": "object"
+                },
+                {
+                  "additionalProperties": false,
+                  "properties": {
+                    "type": {
+                      "const": "match",
+                      "type": "string"
+                    },
+                    "value": {
+                      "$ref": "#/$defs/BinaryInput"
+                    }
+                  },
+                  "required": [
+                    "type",
+                    "value"
+                  ],
+                  "type": "object"
+                },
+                {
+                  "additionalProperties": false,
+                  "properties": {
+                    "pattern": {
+                      "type": "string"
+                    },
+                    "type": {
+                      "const": "glob",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "type",
+                    "pattern"
+                  ],
+                  "type": "object"
+                },
+                {
+                  "additionalProperties": false,
+                  "properties": {
+                    "pattern": {
+                      "type": "string"
+                    },
+                    "type": {
+                      "const": "regex",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "type",
+                    "pattern"
+                  ],
+                  "type": "object"
+                }
+              ]
+            },
+            "BinaryInput": {
+              "additionalProperties": false,
+              "properties": {
+                "encoding": {
+                  "$ref": "#/$defs/InputEncoding",
+                  "default": "utf8",
+                  "description": "Encoding of `value`."
+                },
+                "value": {
+                  "description": "Binary-safe value.",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "value"
+              ],
+              "type": "object"
+            },
+            "InputEncoding": {
+              "enum": [
+                "utf8",
+                "base64"
+              ],
+              "type": "string"
+            },
+            "PredicateCombination": {
+              "enum": [
+                "all",
+                "any"
+              ],
+              "type": "string"
+            }
+          },
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "combination": {
+              "$ref": "#/$defs/PredicateCombination",
+              "default": "any"
+            },
+            "end": {
+              "description": "Inclusive textual end bound accepted by Redis, including special array bounds.",
+              "type": "string"
+            },
+            "key": {
+              "type": "string"
+            },
+            "key_encoding": {
+              "$ref": "#/$defs/InputEncoding",
+              "default": "utf8"
+            },
+            "limit": {
+              "format": "uint",
+              "maximum": 1000,
+              "minimum": 1,
+              "type": "integer"
+            },
+            "no_case": {
+              "default": false,
+              "type": "boolean"
+            },
+            "predicates": {
+              "items": {
+                "$ref": "#/$defs/ArrayPredicate"
+              },
+              "maxItems": 250,
+              "minItems": 1,
+              "type": "array"
+            },
+            "start": {
+              "description": "Inclusive textual start bound accepted by Redis, including special array bounds.",
+              "type": "string"
+            },
+            "with_values": {
+              "default": false,
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "key",
+            "start",
+            "end",
+            "predicates",
+            "limit"
+          ],
+          "title": "ArgrepInput",
+          "type": "object"
+        },
+        "name": "redis_argrep",
+        "outputSchema": {
+          "$defs": {
+            "ArrayEntryOutput": {
+              "additionalProperties": false,
+              "properties": {
+                "index": {
+                  "format": "uint64",
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                "value": {
+                  "$ref": "#/$defs/BinaryOutput"
+                }
+              },
+              "required": [
+                "index",
+                "value"
+              ],
+              "type": "object"
+            },
+            "BinaryOutput": {
+              "additionalProperties": false,
+              "properties": {
+                "encoding": {
+                  "$ref": "#/$defs/ValueEncoding"
+                },
+                "value": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "value",
+                "encoding"
+              ],
+              "type": "object"
+            },
+            "ValueEncoding": {
+              "enum": [
+                "utf8",
+                "base64"
+              ],
+              "type": "string"
+            }
+          },
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "complete": {
+              "type": "boolean"
+            },
+            "count": {
+              "format": "uint",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "entries": {
+              "items": {
+                "$ref": "#/$defs/ArrayEntryOutput"
+              },
+              "type": "array"
+            },
+            "indices": {
+              "items": {
+                "format": "uint64",
+                "minimum": 0,
+                "type": "integer"
+              },
+              "type": "array"
+            },
+            "next_start": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "with_values": {
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "count",
+            "with_values",
+            "indices",
+            "entries",
+            "complete"
+          ],
+          "title": "ArgrepOutput",
+          "type": "object"
+        },
+        "title": "Search Redis Array"
+      },
+      "required_access": "read_only",
+      "required_module": null,
+      "requires_raw_opt_in": false
+    },
+    {
+      "bundle": "data_structures",
+      "capability_requirements": {
+        "deployment": "any",
+        "minimum_module_version": null,
+        "minimum_redis_version": "8.8.0",
+        "required_commands": [
+          "ARINFO"
+        ],
+        "required_module": null
+      },
+      "name": "redis_arinfo",
+      "output_policy": "intrinsically_bounded",
+      "protocol": {
+        "annotations": {
+          "destructiveHint": false,
+          "idempotentHint": true,
+          "readOnlyHint": true
+        },
+        "description": "Return normalized Redis Array metadata. FULL adds bounded per-layout statistics, not element values.",
+        "inputSchema": {
+          "$defs": {
+            "InputEncoding": {
+              "enum": [
+                "utf8",
+                "base64"
+              ],
+              "type": "string"
+            }
+          },
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "full": {
+              "default": false,
+              "type": "boolean"
+            },
+            "key": {
+              "type": "string"
+            },
+            "key_encoding": {
+              "$ref": "#/$defs/InputEncoding",
+              "default": "utf8"
+            }
+          },
+          "required": [
+            "key"
+          ],
+          "title": "ArinfoInput",
+          "type": "object"
+        },
+        "name": "redis_arinfo",
+        "outputSchema": {
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "exists": {
+              "type": "boolean"
+            },
+            "fields": {
+              "additionalProperties": true,
+              "type": "object"
+            }
+          },
+          "required": [
+            "exists",
+            "fields"
+          ],
+          "title": "MapOutput",
+          "type": "object"
+        },
+        "title": "Inspect Redis Array"
+      },
+      "required_access": "read_only",
+      "required_module": null,
+      "requires_raw_opt_in": false
+    },
+    {
+      "bundle": "data_structures",
+      "capability_requirements": {
+        "deployment": "any",
+        "minimum_module_version": null,
+        "minimum_redis_version": "8.8.0",
+        "required_commands": [
+          "ARINSERT"
+        ],
+        "required_module": null
+      },
+      "name": "redis_arinsert",
+      "output_policy": "intrinsically_bounded",
+      "protocol": {
+        "annotations": {
+          "destructiveHint": false
+        },
+        "description": "Insert a bounded sequence of binary-safe values at the array's current insertion cursor.",
+        "inputSchema": {
+          "$defs": {
+            "BinaryInput": {
+              "additionalProperties": false,
+              "properties": {
+                "encoding": {
+                  "$ref": "#/$defs/InputEncoding",
+                  "default": "utf8",
+                  "description": "Encoding of `value`."
+                },
+                "value": {
+                  "description": "Binary-safe value.",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "value"
+              ],
+              "type": "object"
+            },
+            "InputEncoding": {
+              "enum": [
+                "utf8",
+                "base64"
+              ],
+              "type": "string"
+            }
+          },
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "key": {
+              "type": "string"
+            },
+            "key_encoding": {
+              "$ref": "#/$defs/InputEncoding",
+              "default": "utf8"
+            },
+            "values": {
+              "items": {
+                "$ref": "#/$defs/BinaryInput"
+              },
+              "maxItems": 1000,
+              "minItems": 1,
+              "type": "array"
+            }
+          },
+          "required": [
+            "key",
+            "values"
+          ],
+          "title": "ArrayValuesInput",
+          "type": "object"
+        },
+        "name": "redis_arinsert",
+        "outputSchema": {
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "last_index": {
+              "format": "uint64",
+              "minimum": 0,
+              "type": "integer"
+            }
+          },
+          "required": [
+            "last_index"
+          ],
+          "title": "ArrayLastIndexOutput",
+          "type": "object"
+        },
+        "title": "Insert Redis Array Values"
+      },
+      "required_access": "read_write",
+      "required_module": null,
+      "requires_raw_opt_in": false
+    },
+    {
+      "bundle": "data_structures",
+      "capability_requirements": {
+        "deployment": "any",
+        "minimum_module_version": null,
+        "minimum_redis_version": "8.8.0",
+        "required_commands": [
+          "ARLASTITEMS"
+        ],
+        "required_module": null
+      },
+      "name": "redis_arlastitems",
+      "output_policy": "intrinsically_bounded",
+      "protocol": {
+        "annotations": {
+          "destructiveHint": false,
+          "idempotentHint": true,
+          "readOnlyHint": true
+        },
+        "description": "Return a bounded number of the most recently inserted Redis Array elements, preserving empty positions as null.",
+        "inputSchema": {
+          "$defs": {
+            "InputEncoding": {
+              "enum": [
+                "utf8",
+                "base64"
+              ],
+              "type": "string"
+            }
+          },
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "count": {
+              "format": "uint",
+              "maximum": 1000,
+              "minimum": 1,
+              "type": "integer"
+            },
+            "key": {
+              "type": "string"
+            },
+            "key_encoding": {
+              "$ref": "#/$defs/InputEncoding",
+              "default": "utf8"
+            },
+            "reverse": {
+              "default": false,
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "key",
+            "count"
+          ],
+          "title": "ArlastitemsInput",
+          "type": "object"
+        },
+        "name": "redis_arlastitems",
+        "outputSchema": {
+          "$defs": {
+            "BinaryOutput": {
+              "additionalProperties": false,
+              "properties": {
+                "encoding": {
+                  "$ref": "#/$defs/ValueEncoding"
+                },
+                "value": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "value",
+                "encoding"
+              ],
+              "type": "object"
+            },
+            "ValueEncoding": {
+              "enum": [
+                "utf8",
+                "base64"
+              ],
+              "type": "string"
+            }
+          },
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "count": {
+              "format": "uint",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "values": {
+              "items": {
+                "anyOf": [
+                  {
+                    "$ref": "#/$defs/BinaryOutput"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "type": "array"
+            }
+          },
+          "required": [
+            "count",
+            "values"
+          ],
+          "title": "BinaryValuesOutput",
+          "type": "object"
+        },
+        "title": "Read Recent Redis Array Items"
+      },
+      "required_access": "read_only",
+      "required_module": null,
+      "requires_raw_opt_in": false
+    },
+    {
+      "bundle": "data_structures",
+      "capability_requirements": {
+        "deployment": "any",
+        "minimum_module_version": null,
+        "minimum_redis_version": "8.8.0",
+        "required_commands": [
+          "ARLEN"
+        ],
+        "required_module": null
+      },
+      "name": "redis_arlen",
+      "output_policy": "intrinsically_bounded",
+      "protocol": {
+        "annotations": {
+          "destructiveHint": false,
+          "idempotentHint": true,
+          "readOnlyHint": true
+        },
+        "description": "Return a Redis Array's logical length (highest index plus one).",
+        "inputSchema": {
+          "$defs": {
+            "InputEncoding": {
+              "enum": [
+                "utf8",
+                "base64"
+              ],
+              "type": "string"
+            }
+          },
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "key": {
+              "description": "Redis key.",
+              "type": "string"
+            },
+            "key_encoding": {
+              "$ref": "#/$defs/InputEncoding",
+              "default": "utf8",
+              "description": "Encoding of `key`."
+            }
+          },
+          "required": [
+            "key"
+          ],
+          "title": "KeyInput",
+          "type": "object"
+        },
+        "name": "redis_arlen",
+        "outputSchema": {
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "length": {
+              "format": "uint64",
+              "minimum": 0,
+              "type": "integer"
+            }
+          },
+          "required": [
+            "length"
+          ],
+          "title": "ArrayLengthOutput",
+          "type": "object"
+        },
+        "title": "Read Redis Array Length"
+      },
+      "required_access": "read_only",
+      "required_module": null,
+      "requires_raw_opt_in": false
+    },
+    {
+      "bundle": "data_structures",
+      "capability_requirements": {
+        "deployment": "any",
+        "minimum_module_version": null,
+        "minimum_redis_version": "8.8.0",
+        "required_commands": [
+          "ARMGET"
+        ],
+        "required_module": null
+      },
+      "name": "redis_armget",
+      "output_policy": "intrinsically_bounded",
+      "protocol": {
+        "annotations": {
+          "destructiveHint": false,
+          "idempotentHint": true,
+          "readOnlyHint": true
+        },
+        "description": "Read an explicit bounded set of Redis Array indices in request order, preserving missing elements as null.",
+        "inputSchema": {
+          "$defs": {
+            "InputEncoding": {
+              "enum": [
+                "utf8",
+                "base64"
+              ],
+              "type": "string"
+            }
+          },
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "indices": {
+              "items": {
+                "format": "uint64",
+                "minimum": 0,
+                "type": "integer"
+              },
+              "maxItems": 1000,
+              "minItems": 1,
+              "type": "array"
+            },
+            "key": {
+              "type": "string"
+            },
+            "key_encoding": {
+              "$ref": "#/$defs/InputEncoding",
+              "default": "utf8"
+            }
+          },
+          "required": [
+            "key",
+            "indices"
+          ],
+          "title": "ArmgetInput",
+          "type": "object"
+        },
+        "name": "redis_armget",
+        "outputSchema": {
+          "$defs": {
+            "BinaryOutput": {
+              "additionalProperties": false,
+              "properties": {
+                "encoding": {
+                  "$ref": "#/$defs/ValueEncoding"
+                },
+                "value": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "value",
+                "encoding"
+              ],
+              "type": "object"
+            },
+            "ValueEncoding": {
+              "enum": [
+                "utf8",
+                "base64"
+              ],
+              "type": "string"
+            }
+          },
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "count": {
+              "format": "uint",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "values": {
+              "items": {
+                "anyOf": [
+                  {
+                    "$ref": "#/$defs/BinaryOutput"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "type": "array"
+            }
+          },
+          "required": [
+            "count",
+            "values"
+          ],
+          "title": "BinaryValuesOutput",
+          "type": "object"
+        },
+        "title": "Get Redis Array Elements"
+      },
+      "required_access": "read_only",
+      "required_module": null,
+      "requires_raw_opt_in": false
+    },
+    {
+      "bundle": "data_structures",
+      "capability_requirements": {
+        "deployment": "any",
+        "minimum_module_version": null,
+        "minimum_redis_version": "8.8.0",
+        "required_commands": [
+          "ARMSET"
+        ],
+        "required_module": null
+      },
+      "name": "redis_armset",
+      "output_policy": "intrinsically_bounded",
+      "protocol": {
+        "annotations": {
+          "destructiveHint": false,
+          "idempotentHint": true
+        },
+        "description": "Set a bounded list of explicit index/value pairs in a Redis Array.",
+        "inputSchema": {
+          "$defs": {
+            "ArrayPairInput": {
+              "additionalProperties": false,
+              "properties": {
+                "index": {
+                  "format": "uint64",
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                "value": {
+                  "$ref": "#/$defs/BinaryInput"
+                }
+              },
+              "required": [
+                "index",
+                "value"
+              ],
+              "type": "object"
+            },
+            "BinaryInput": {
+              "additionalProperties": false,
+              "properties": {
+                "encoding": {
+                  "$ref": "#/$defs/InputEncoding",
+                  "default": "utf8",
+                  "description": "Encoding of `value`."
+                },
+                "value": {
+                  "description": "Binary-safe value.",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "value"
+              ],
+              "type": "object"
+            },
+            "InputEncoding": {
+              "enum": [
+                "utf8",
+                "base64"
+              ],
+              "type": "string"
+            }
+          },
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "entries": {
+              "items": {
+                "$ref": "#/$defs/ArrayPairInput"
+              },
+              "maxItems": 1000,
+              "minItems": 1,
+              "type": "array"
+            },
+            "key": {
+              "type": "string"
+            },
+            "key_encoding": {
+              "$ref": "#/$defs/InputEncoding",
+              "default": "utf8"
+            }
+          },
+          "required": [
+            "key",
+            "entries"
+          ],
+          "title": "ArmsetInput",
+          "type": "object"
+        },
+        "name": "redis_armset",
+        "outputSchema": {
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "new_slots": {
+              "format": "uint64",
+              "minimum": 0,
+              "type": "integer"
+            }
+          },
+          "required": [
+            "new_slots"
+          ],
+          "title": "ArraySetOutput",
+          "type": "object"
+        },
+        "title": "Set Redis Array Elements"
+      },
+      "required_access": "read_write",
+      "required_module": null,
+      "requires_raw_opt_in": false
+    },
+    {
+      "bundle": "data_structures",
+      "capability_requirements": {
+        "deployment": "any",
+        "minimum_module_version": null,
+        "minimum_redis_version": "8.8.0",
+        "required_commands": [
+          "ARNEXT"
+        ],
+        "required_module": null
+      },
+      "name": "redis_arnext",
+      "output_policy": "intrinsically_bounded",
+      "protocol": {
+        "annotations": {
+          "destructiveHint": false,
+          "idempotentHint": true,
+          "readOnlyHint": true
+        },
+        "description": "Return the next index ARINSERT would use, or report that the cursor is exhausted.",
+        "inputSchema": {
+          "$defs": {
+            "InputEncoding": {
+              "enum": [
+                "utf8",
+                "base64"
+              ],
+              "type": "string"
+            }
+          },
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "key": {
+              "description": "Redis key.",
+              "type": "string"
+            },
+            "key_encoding": {
+              "$ref": "#/$defs/InputEncoding",
+              "default": "utf8",
+              "description": "Encoding of `key`."
+            }
+          },
+          "required": [
+            "key"
+          ],
+          "title": "KeyInput",
+          "type": "object"
+        },
+        "name": "redis_arnext",
+        "outputSchema": {
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "exhausted": {
+              "type": "boolean"
+            },
+            "next_index": {
+              "format": "uint64",
+              "minimum": 0,
+              "type": [
+                "integer",
+                "null"
+              ]
+            }
+          },
+          "required": [
+            "exhausted"
+          ],
+          "title": "ArnextOutput",
+          "type": "object"
+        },
+        "title": "Read Redis Array Insert Cursor"
+      },
+      "required_access": "read_only",
+      "required_module": null,
+      "requires_raw_opt_in": false
+    },
+    {
+      "bundle": "data_structures",
+      "capability_requirements": {
+        "deployment": "any",
+        "minimum_module_version": null,
+        "minimum_redis_version": "8.8.0",
+        "required_commands": [
+          "AROP"
+        ],
+        "required_module": null
+      },
+      "name": "redis_arop",
+      "output_policy": "intrinsically_bounded",
+      "protocol": {
+        "annotations": {
+          "destructiveHint": false,
+          "idempotentHint": true,
+          "readOnlyHint": true
+        },
+        "description": "Run one typed Redis Array aggregate over an inclusive range. Redis visits only allocated array positions where possible.",
+        "inputSchema": {
+          "$defs": {
+            "ArrayAggregate": {
+              "oneOf": [
+                {
+                  "additionalProperties": false,
+                  "properties": {
+                    "type": {
+                      "const": "sum",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "type"
+                  ],
+                  "type": "object"
+                },
+                {
+                  "additionalProperties": false,
+                  "properties": {
+                    "type": {
+                      "const": "min",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "type"
+                  ],
+                  "type": "object"
+                },
+                {
+                  "additionalProperties": false,
+                  "properties": {
+                    "type": {
+                      "const": "max",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "type"
+                  ],
+                  "type": "object"
+                },
+                {
+                  "additionalProperties": false,
+                  "properties": {
+                    "type": {
+                      "const": "and",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "type"
+                  ],
+                  "type": "object"
+                },
+                {
+                  "additionalProperties": false,
+                  "properties": {
+                    "type": {
+                      "const": "or",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "type"
+                  ],
+                  "type": "object"
+                },
+                {
+                  "additionalProperties": false,
+                  "properties": {
+                    "type": {
+                      "const": "xor",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "type"
+                  ],
+                  "type": "object"
+                },
+                {
+                  "additionalProperties": false,
+                  "properties": {
+                    "type": {
+                      "const": "match",
+                      "type": "string"
+                    },
+                    "value": {
+                      "$ref": "#/$defs/BinaryInput"
+                    }
+                  },
+                  "required": [
+                    "type",
+                    "value"
+                  ],
+                  "type": "object"
+                },
+                {
+                  "additionalProperties": false,
+                  "properties": {
+                    "type": {
+                      "const": "used",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "type"
+                  ],
+                  "type": "object"
+                }
+              ]
+            },
+            "BinaryInput": {
+              "additionalProperties": false,
+              "properties": {
+                "encoding": {
+                  "$ref": "#/$defs/InputEncoding",
+                  "default": "utf8",
+                  "description": "Encoding of `value`."
+                },
+                "value": {
+                  "description": "Binary-safe value.",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "value"
+              ],
+              "type": "object"
+            },
+            "InputEncoding": {
+              "enum": [
+                "utf8",
+                "base64"
+              ],
+              "type": "string"
+            }
+          },
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "end": {
+              "format": "uint64",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "key": {
+              "type": "string"
+            },
+            "key_encoding": {
+              "$ref": "#/$defs/InputEncoding",
+              "default": "utf8"
+            },
+            "operation": {
+              "$ref": "#/$defs/ArrayAggregate"
+            },
+            "start": {
+              "format": "uint64",
+              "minimum": 0,
+              "type": "integer"
+            }
+          },
+          "required": [
+            "key",
+            "start",
+            "end",
+            "operation"
+          ],
+          "title": "AropInput",
+          "type": "object"
+        },
+        "name": "redis_arop",
+        "outputSchema": {
+          "$defs": {
+            "ArrayAggregate": {
+              "oneOf": [
+                {
+                  "additionalProperties": false,
+                  "properties": {
+                    "type": {
+                      "const": "sum",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "type"
+                  ],
+                  "type": "object"
+                },
+                {
+                  "additionalProperties": false,
+                  "properties": {
+                    "type": {
+                      "const": "min",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "type"
+                  ],
+                  "type": "object"
+                },
+                {
+                  "additionalProperties": false,
+                  "properties": {
+                    "type": {
+                      "const": "max",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "type"
+                  ],
+                  "type": "object"
+                },
+                {
+                  "additionalProperties": false,
+                  "properties": {
+                    "type": {
+                      "const": "and",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "type"
+                  ],
+                  "type": "object"
+                },
+                {
+                  "additionalProperties": false,
+                  "properties": {
+                    "type": {
+                      "const": "or",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "type"
+                  ],
+                  "type": "object"
+                },
+                {
+                  "additionalProperties": false,
+                  "properties": {
+                    "type": {
+                      "const": "xor",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "type"
+                  ],
+                  "type": "object"
+                },
+                {
+                  "additionalProperties": false,
+                  "properties": {
+                    "type": {
+                      "const": "match",
+                      "type": "string"
+                    },
+                    "value": {
+                      "$ref": "#/$defs/BinaryInput"
+                    }
+                  },
+                  "required": [
+                    "type",
+                    "value"
+                  ],
+                  "type": "object"
+                },
+                {
+                  "additionalProperties": false,
+                  "properties": {
+                    "type": {
+                      "const": "used",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "type"
+                  ],
+                  "type": "object"
+                }
+              ]
+            },
+            "BinaryInput": {
+              "additionalProperties": false,
+              "properties": {
+                "encoding": {
+                  "$ref": "#/$defs/InputEncoding",
+                  "default": "utf8",
+                  "description": "Encoding of `value`."
+                },
+                "value": {
+                  "description": "Binary-safe value.",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "value"
+              ],
+              "type": "object"
+            },
+            "InputEncoding": {
+              "enum": [
+                "utf8",
+                "base64"
+              ],
+              "type": "string"
+            }
+          },
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "operation": {
+              "$ref": "#/$defs/ArrayAggregate"
+            },
+            "result": true
+          },
+          "required": [
+            "operation",
+            "result"
+          ],
+          "title": "AropOutput",
+          "type": "object"
+        },
+        "title": "Aggregate Redis Array Range"
+      },
+      "required_access": "read_only",
+      "required_module": null,
+      "requires_raw_opt_in": false
+    },
+    {
+      "bundle": "data_structures",
+      "capability_requirements": {
+        "deployment": "any",
+        "minimum_module_version": null,
+        "minimum_redis_version": "8.8.0",
+        "required_commands": [
+          "ARRING"
+        ],
+        "required_module": null
+      },
+      "name": "redis_arring",
+      "output_policy": "intrinsically_bounded",
+      "protocol": {
+        "annotations": {
+          "destructiveHint": false
+        },
+        "description": "Insert a bounded sequence into a Redis Array ring, resizing and truncating the ring to the requested positive size.",
+        "inputSchema": {
+          "$defs": {
+            "BinaryInput": {
+              "additionalProperties": false,
+              "properties": {
+                "encoding": {
+                  "$ref": "#/$defs/InputEncoding",
+                  "default": "utf8",
+                  "description": "Encoding of `value`."
+                },
+                "value": {
+                  "description": "Binary-safe value.",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "value"
+              ],
+              "type": "object"
+            },
+            "InputEncoding": {
+              "enum": [
+                "utf8",
+                "base64"
+              ],
+              "type": "string"
+            }
+          },
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "key": {
+              "type": "string"
+            },
+            "key_encoding": {
+              "$ref": "#/$defs/InputEncoding",
+              "default": "utf8"
+            },
+            "size": {
+              "format": "uint64",
+              "minimum": 1,
+              "type": "integer"
+            },
+            "values": {
+              "items": {
+                "$ref": "#/$defs/BinaryInput"
+              },
+              "maxItems": 1000,
+              "minItems": 1,
+              "type": "array"
+            }
+          },
+          "required": [
+            "key",
+            "size",
+            "values"
+          ],
+          "title": "ArringInput",
+          "type": "object"
+        },
+        "name": "redis_arring",
+        "outputSchema": {
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "last_index": {
+              "format": "uint64",
+              "minimum": 0,
+              "type": "integer"
+            }
+          },
+          "required": [
+            "last_index"
+          ],
+          "title": "ArrayLastIndexOutput",
+          "type": "object"
+        },
+        "title": "Append Redis Array Ring"
+      },
+      "required_access": "read_write",
+      "required_module": null,
+      "requires_raw_opt_in": false
+    },
+    {
+      "bundle": "data_structures",
+      "capability_requirements": {
+        "deployment": "any",
+        "minimum_module_version": null,
+        "minimum_redis_version": "8.8.0",
+        "required_commands": [
+          "ARSCAN"
+        ],
+        "required_module": null
+      },
+      "name": "redis_arscan",
+      "output_policy": "range_paginated",
+      "protocol": {
+        "annotations": {
+          "destructiveHint": false,
+          "idempotentHint": true,
+          "readOnlyHint": true
+        },
+        "description": "Read one bounded page of allocated Redis Array elements. Continue with next_start until complete is true.",
+        "inputSchema": {
+          "$defs": {
+            "InputEncoding": {
+              "enum": [
+                "utf8",
+                "base64"
+              ],
+              "type": "string"
+            }
+          },
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "end": {
+              "format": "uint64",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "key": {
+              "type": "string"
+            },
+            "key_encoding": {
+              "$ref": "#/$defs/InputEncoding",
+              "default": "utf8"
+            },
+            "limit": {
+              "format": "uint",
+              "maximum": 1000,
+              "minimum": 1,
+              "type": "integer"
+            },
+            "start": {
+              "format": "uint64",
+              "minimum": 0,
+              "type": "integer"
+            }
+          },
+          "required": [
+            "key",
+            "start",
+            "end",
+            "limit"
+          ],
+          "title": "ArscanInput",
+          "type": "object"
+        },
+        "name": "redis_arscan",
+        "outputSchema": {
+          "$defs": {
+            "ArrayEntryOutput": {
+              "additionalProperties": false,
+              "properties": {
+                "index": {
+                  "format": "uint64",
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                "value": {
+                  "$ref": "#/$defs/BinaryOutput"
+                }
+              },
+              "required": [
+                "index",
+                "value"
+              ],
+              "type": "object"
+            },
+            "BinaryOutput": {
+              "additionalProperties": false,
+              "properties": {
+                "encoding": {
+                  "$ref": "#/$defs/ValueEncoding"
+                },
+                "value": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "value",
+                "encoding"
+              ],
+              "type": "object"
+            },
+            "ValueEncoding": {
+              "enum": [
+                "utf8",
+                "base64"
+              ],
+              "type": "string"
+            }
+          },
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "complete": {
+              "type": "boolean"
+            },
+            "count": {
+              "format": "uint",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "end": {
+              "format": "uint64",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "entries": {
+              "items": {
+                "$ref": "#/$defs/ArrayEntryOutput"
+              },
+              "type": "array"
+            },
+            "next_start": {
+              "format": "uint64",
+              "minimum": 0,
+              "type": [
+                "integer",
+                "null"
+              ]
+            },
+            "start": {
+              "format": "uint64",
+              "minimum": 0,
+              "type": "integer"
+            }
+          },
+          "required": [
+            "start",
+            "end",
+            "count",
+            "entries",
+            "complete"
+          ],
+          "title": "ArscanOutput",
+          "type": "object"
+        },
+        "title": "Scan Redis Array Range"
+      },
+      "required_access": "read_only",
+      "required_module": null,
+      "requires_raw_opt_in": false
+    },
+    {
+      "bundle": "data_structures",
+      "capability_requirements": {
+        "deployment": "any",
+        "minimum_module_version": null,
+        "minimum_redis_version": "8.8.0",
+        "required_commands": [
+          "ARSEEK"
+        ],
+        "required_module": null
+      },
+      "name": "redis_arseek",
+      "output_policy": "intrinsically_bounded",
+      "protocol": {
+        "annotations": {
+          "destructiveHint": false,
+          "idempotentHint": true
+        },
+        "description": "Set the insertion cursor for a Redis Array to one explicit unsigned 64-bit index.",
+        "inputSchema": {
+          "$defs": {
+            "InputEncoding": {
+              "enum": [
+                "utf8",
+                "base64"
+              ],
+              "type": "string"
+            }
+          },
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "index": {
+              "format": "uint64",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "key": {
+              "type": "string"
+            },
+            "key_encoding": {
+              "$ref": "#/$defs/InputEncoding",
+              "default": "utf8"
+            }
+          },
+          "required": [
+            "key",
+            "index"
+          ],
+          "title": "ArrayIndexInput",
+          "type": "object"
+        },
+        "name": "redis_arseek",
+        "outputSchema": {
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "set": {
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "set"
+          ],
+          "title": "ArraySeekOutput",
+          "type": "object"
+        },
+        "title": "Set Redis Array Insert Cursor"
+      },
+      "required_access": "read_write",
+      "required_module": null,
+      "requires_raw_opt_in": false
+    },
+    {
+      "bundle": "data_structures",
+      "capability_requirements": {
+        "deployment": "any",
+        "minimum_module_version": null,
+        "minimum_redis_version": "8.8.0",
+        "required_commands": [
+          "ARSET"
+        ],
+        "required_module": null
+      },
+      "name": "redis_arset",
+      "output_policy": "intrinsically_bounded",
+      "protocol": {
+        "annotations": {
+          "destructiveHint": false,
+          "idempotentHint": true
+        },
+        "description": "Set a bounded contiguous sequence of binary-safe Redis Array values starting at one index.",
+        "inputSchema": {
+          "$defs": {
+            "BinaryInput": {
+              "additionalProperties": false,
+              "properties": {
+                "encoding": {
+                  "$ref": "#/$defs/InputEncoding",
+                  "default": "utf8",
+                  "description": "Encoding of `value`."
+                },
+                "value": {
+                  "description": "Binary-safe value.",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "value"
+              ],
+              "type": "object"
+            },
+            "InputEncoding": {
+              "enum": [
+                "utf8",
+                "base64"
+              ],
+              "type": "string"
+            }
+          },
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "index": {
+              "format": "uint64",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "key": {
+              "type": "string"
+            },
+            "key_encoding": {
+              "$ref": "#/$defs/InputEncoding",
+              "default": "utf8"
+            },
+            "values": {
+              "items": {
+                "$ref": "#/$defs/BinaryInput"
+              },
+              "maxItems": 1000,
+              "minItems": 1,
+              "type": "array"
+            }
+          },
+          "required": [
+            "key",
+            "index",
+            "values"
+          ],
+          "title": "ArsetInput",
+          "type": "object"
+        },
+        "name": "redis_arset",
+        "outputSchema": {
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "new_slots": {
+              "format": "uint64",
+              "minimum": 0,
+              "type": "integer"
+            }
+          },
+          "required": [
+            "new_slots"
+          ],
+          "title": "ArraySetOutput",
+          "type": "object"
+        },
+        "title": "Set Redis Array Range"
+      },
+      "required_access": "read_write",
+      "required_module": null,
+      "requires_raw_opt_in": false
+    },
+    {
+      "bundle": "data_structures",
+      "capability_requirements": {
+        "deployment": "any",
+        "minimum_module_version": null,
         "minimum_redis_version": "2.6.0",
         "required_commands": [
           "BITCOUNT"
@@ -2800,6 +5038,252 @@
         "title": "Delete Redis Keys"
       },
       "required_access": "full",
+      "required_module": null,
+      "requires_raw_opt_in": false
+    },
+    {
+      "bundle": "data_structures",
+      "capability_requirements": {
+        "deployment": "any",
+        "minimum_module_version": null,
+        "minimum_redis_version": "8.4.0",
+        "required_commands": [
+          "DELEX"
+        ],
+        "required_module": null
+      },
+      "name": "redis_delex",
+      "output_policy": "intrinsically_bounded",
+      "protocol": {
+        "annotations": {
+          "idempotentHint": true
+        },
+        "description": "Permanently delete a Redis string only when an optional binary value or XXH3 digest condition passes. Requires full access.",
+        "inputSchema": {
+          "$defs": {
+            "BinaryInput": {
+              "additionalProperties": false,
+              "properties": {
+                "encoding": {
+                  "$ref": "#/$defs/InputEncoding",
+                  "default": "utf8",
+                  "description": "Encoding of `value`."
+                },
+                "value": {
+                  "description": "Binary-safe value.",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "value"
+              ],
+              "type": "object"
+            },
+            "DelexCondition": {
+              "oneOf": [
+                {
+                  "additionalProperties": false,
+                  "properties": {
+                    "type": {
+                      "const": "value_equals",
+                      "type": "string"
+                    },
+                    "value": {
+                      "$ref": "#/$defs/BinaryInput"
+                    }
+                  },
+                  "required": [
+                    "type",
+                    "value"
+                  ],
+                  "type": "object"
+                },
+                {
+                  "additionalProperties": false,
+                  "properties": {
+                    "type": {
+                      "const": "value_not_equals",
+                      "type": "string"
+                    },
+                    "value": {
+                      "$ref": "#/$defs/BinaryInput"
+                    }
+                  },
+                  "required": [
+                    "type",
+                    "value"
+                  ],
+                  "type": "object"
+                },
+                {
+                  "additionalProperties": false,
+                  "properties": {
+                    "digest": {
+                      "type": "string"
+                    },
+                    "type": {
+                      "const": "digest_equals",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "type",
+                    "digest"
+                  ],
+                  "type": "object"
+                },
+                {
+                  "additionalProperties": false,
+                  "properties": {
+                    "digest": {
+                      "type": "string"
+                    },
+                    "type": {
+                      "const": "digest_not_equals",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "type",
+                    "digest"
+                  ],
+                  "type": "object"
+                }
+              ]
+            },
+            "InputEncoding": {
+              "enum": [
+                "utf8",
+                "base64"
+              ],
+              "type": "string"
+            }
+          },
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "condition": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/DelexCondition"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "key": {
+              "type": "string"
+            },
+            "key_encoding": {
+              "$ref": "#/$defs/InputEncoding",
+              "default": "utf8"
+            }
+          },
+          "required": [
+            "key"
+          ],
+          "title": "DelexInput",
+          "type": "object"
+        },
+        "name": "redis_delex",
+        "outputSchema": {
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "deleted": {
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "deleted"
+          ],
+          "title": "DeletedOutput",
+          "type": "object"
+        },
+        "title": "Conditionally Delete Redis String"
+      },
+      "required_access": "full",
+      "required_module": null,
+      "requires_raw_opt_in": false
+    },
+    {
+      "bundle": "data_structures",
+      "capability_requirements": {
+        "deployment": "any",
+        "minimum_module_version": null,
+        "minimum_redis_version": "8.4.0",
+        "required_commands": [
+          "DIGEST"
+        ],
+        "required_module": null
+      },
+      "name": "redis_digest",
+      "output_policy": "intrinsically_bounded",
+      "protocol": {
+        "annotations": {
+          "destructiveHint": false,
+          "idempotentHint": true,
+          "readOnlyHint": true
+        },
+        "description": "Return the 16-character hexadecimal XXH3-64 digest of one Redis string without retrieving its value.",
+        "inputSchema": {
+          "$defs": {
+            "InputEncoding": {
+              "enum": [
+                "utf8",
+                "base64"
+              ],
+              "type": "string"
+            }
+          },
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "key": {
+              "description": "Redis key.",
+              "type": "string"
+            },
+            "key_encoding": {
+              "$ref": "#/$defs/InputEncoding",
+              "default": "utf8",
+              "description": "Encoding of `key`."
+            }
+          },
+          "required": [
+            "key"
+          ],
+          "title": "KeyInput",
+          "type": "object"
+        },
+        "name": "redis_digest",
+        "outputSchema": {
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "algorithm": {
+              "type": "string"
+            },
+            "digest": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "exists": {
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "exists",
+            "algorithm"
+          ],
+          "title": "DigestOutput",
+          "type": "object"
+        },
+        "title": "Digest Redis String"
+      },
+      "required_access": "read_only",
       "required_module": null,
       "requires_raw_opt_in": false
     },
@@ -10154,6 +12638,377 @@
       "capability_requirements": {
         "deployment": "any",
         "minimum_module_version": null,
+        "minimum_redis_version": "8.0.0",
+        "required_commands": [
+          "HGETDEL"
+        ],
+        "required_module": null
+      },
+      "name": "redis_hgetdel",
+      "output_policy": "intrinsically_bounded",
+      "protocol": {
+        "annotations": {
+          "idempotentHint": true
+        },
+        "description": "Return and permanently delete an explicit bounded set of binary-safe hash fields. Requires full access.",
+        "inputSchema": {
+          "$defs": {
+            "BinaryInput": {
+              "additionalProperties": false,
+              "properties": {
+                "encoding": {
+                  "$ref": "#/$defs/InputEncoding",
+                  "default": "utf8",
+                  "description": "Encoding of `value`."
+                },
+                "value": {
+                  "description": "Binary-safe value.",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "value"
+              ],
+              "type": "object"
+            },
+            "InputEncoding": {
+              "enum": [
+                "utf8",
+                "base64"
+              ],
+              "type": "string"
+            }
+          },
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "fields": {
+              "items": {
+                "$ref": "#/$defs/BinaryInput"
+              },
+              "maxItems": 1000,
+              "minItems": 1,
+              "type": "array"
+            },
+            "key": {
+              "type": "string"
+            },
+            "key_encoding": {
+              "$ref": "#/$defs/InputEncoding",
+              "default": "utf8"
+            }
+          },
+          "required": [
+            "key",
+            "fields"
+          ],
+          "title": "HashFieldsInput",
+          "type": "object"
+        },
+        "name": "redis_hgetdel",
+        "outputSchema": {
+          "$defs": {
+            "BinaryOutput": {
+              "additionalProperties": false,
+              "properties": {
+                "encoding": {
+                  "$ref": "#/$defs/ValueEncoding"
+                },
+                "value": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "value",
+                "encoding"
+              ],
+              "type": "object"
+            },
+            "ValueEncoding": {
+              "enum": [
+                "utf8",
+                "base64"
+              ],
+              "type": "string"
+            }
+          },
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "count": {
+              "format": "uint",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "values": {
+              "items": {
+                "anyOf": [
+                  {
+                    "$ref": "#/$defs/BinaryOutput"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "type": "array"
+            }
+          },
+          "required": [
+            "count",
+            "values"
+          ],
+          "title": "BinaryValuesOutput",
+          "type": "object"
+        },
+        "title": "Get and Delete Redis Hash Fields"
+      },
+      "required_access": "full",
+      "required_module": null,
+      "requires_raw_opt_in": false
+    },
+    {
+      "bundle": "data_structures",
+      "capability_requirements": {
+        "deployment": "any",
+        "minimum_module_version": null,
+        "minimum_redis_version": "8.0.0",
+        "required_commands": [
+          "HGETEX"
+        ],
+        "required_module": null
+      },
+      "name": "redis_hgetex",
+      "output_policy": "intrinsically_bounded",
+      "protocol": {
+        "annotations": {
+          "destructiveHint": false
+        },
+        "description": "Read an explicit bounded set of hash fields and optionally atomically change their expiration.",
+        "inputSchema": {
+          "$defs": {
+            "BinaryInput": {
+              "additionalProperties": false,
+              "properties": {
+                "encoding": {
+                  "$ref": "#/$defs/InputEncoding",
+                  "default": "utf8",
+                  "description": "Encoding of `value`."
+                },
+                "value": {
+                  "description": "Binary-safe value.",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "value"
+              ],
+              "type": "object"
+            },
+            "GetFieldExpiration": {
+              "oneOf": [
+                {
+                  "additionalProperties": false,
+                  "properties": {
+                    "type": {
+                      "const": "seconds",
+                      "type": "string"
+                    },
+                    "value": {
+                      "format": "uint64",
+                      "minimum": 0,
+                      "type": "integer"
+                    }
+                  },
+                  "required": [
+                    "type",
+                    "value"
+                  ],
+                  "type": "object"
+                },
+                {
+                  "additionalProperties": false,
+                  "properties": {
+                    "type": {
+                      "const": "milliseconds",
+                      "type": "string"
+                    },
+                    "value": {
+                      "format": "uint64",
+                      "minimum": 0,
+                      "type": "integer"
+                    }
+                  },
+                  "required": [
+                    "type",
+                    "value"
+                  ],
+                  "type": "object"
+                },
+                {
+                  "additionalProperties": false,
+                  "properties": {
+                    "type": {
+                      "const": "unix_seconds",
+                      "type": "string"
+                    },
+                    "value": {
+                      "format": "uint64",
+                      "minimum": 0,
+                      "type": "integer"
+                    }
+                  },
+                  "required": [
+                    "type",
+                    "value"
+                  ],
+                  "type": "object"
+                },
+                {
+                  "additionalProperties": false,
+                  "properties": {
+                    "type": {
+                      "const": "unix_milliseconds",
+                      "type": "string"
+                    },
+                    "value": {
+                      "format": "uint64",
+                      "minimum": 0,
+                      "type": "integer"
+                    }
+                  },
+                  "required": [
+                    "type",
+                    "value"
+                  ],
+                  "type": "object"
+                },
+                {
+                  "additionalProperties": false,
+                  "properties": {
+                    "type": {
+                      "const": "persist",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "type"
+                  ],
+                  "type": "object"
+                }
+              ]
+            },
+            "InputEncoding": {
+              "enum": [
+                "utf8",
+                "base64"
+              ],
+              "type": "string"
+            }
+          },
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "expiration": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/GetFieldExpiration"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "fields": {
+              "items": {
+                "$ref": "#/$defs/BinaryInput"
+              },
+              "maxItems": 1000,
+              "minItems": 1,
+              "type": "array"
+            },
+            "key": {
+              "type": "string"
+            },
+            "key_encoding": {
+              "$ref": "#/$defs/InputEncoding",
+              "default": "utf8"
+            }
+          },
+          "required": [
+            "key",
+            "fields"
+          ],
+          "title": "HgetexInput",
+          "type": "object"
+        },
+        "name": "redis_hgetex",
+        "outputSchema": {
+          "$defs": {
+            "BinaryOutput": {
+              "additionalProperties": false,
+              "properties": {
+                "encoding": {
+                  "$ref": "#/$defs/ValueEncoding"
+                },
+                "value": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "value",
+                "encoding"
+              ],
+              "type": "object"
+            },
+            "ValueEncoding": {
+              "enum": [
+                "utf8",
+                "base64"
+              ],
+              "type": "string"
+            }
+          },
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "count": {
+              "format": "uint",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "values": {
+              "items": {
+                "anyOf": [
+                  {
+                    "$ref": "#/$defs/BinaryOutput"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "type": "array"
+            }
+          },
+          "required": [
+            "count",
+            "values"
+          ],
+          "title": "BinaryValuesOutput",
+          "type": "object"
+        },
+        "title": "Get and Expire Redis Hash Fields"
+      },
+      "required_access": "read_write",
+      "required_module": null,
+      "requires_raw_opt_in": false
+    },
+    {
+      "bundle": "data_structures",
+      "capability_requirements": {
+        "deployment": "any",
+        "minimum_module_version": null,
         "minimum_redis_version": null,
         "required_commands": [
           "HINCRBY"
@@ -11587,6 +14442,236 @@
       "capability_requirements": {
         "deployment": "any",
         "minimum_module_version": null,
+        "minimum_redis_version": "8.0.0",
+        "required_commands": [
+          "HSETEX"
+        ],
+        "required_module": null
+      },
+      "name": "redis_hsetex",
+      "output_policy": "intrinsically_bounded",
+      "protocol": {
+        "annotations": {
+          "destructiveHint": false
+        },
+        "description": "Atomically set a bounded group of binary-safe hash fields with an optional field condition and shared expiration.",
+        "inputSchema": {
+          "$defs": {
+            "BinaryInput": {
+              "additionalProperties": false,
+              "properties": {
+                "encoding": {
+                  "$ref": "#/$defs/InputEncoding",
+                  "default": "utf8",
+                  "description": "Encoding of `value`."
+                },
+                "value": {
+                  "description": "Binary-safe value.",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "value"
+              ],
+              "type": "object"
+            },
+            "HashFieldValueInput": {
+              "additionalProperties": false,
+              "properties": {
+                "field": {
+                  "$ref": "#/$defs/BinaryInput"
+                },
+                "value": {
+                  "$ref": "#/$defs/BinaryInput"
+                }
+              },
+              "required": [
+                "field",
+                "value"
+              ],
+              "type": "object"
+            },
+            "HashSetCondition": {
+              "enum": [
+                "fields_must_not_exist",
+                "fields_must_exist"
+              ],
+              "type": "string"
+            },
+            "InputEncoding": {
+              "enum": [
+                "utf8",
+                "base64"
+              ],
+              "type": "string"
+            },
+            "SetExpiration": {
+              "oneOf": [
+                {
+                  "additionalProperties": false,
+                  "properties": {
+                    "type": {
+                      "const": "seconds",
+                      "type": "string"
+                    },
+                    "value": {
+                      "format": "uint64",
+                      "minimum": 0,
+                      "type": "integer"
+                    }
+                  },
+                  "required": [
+                    "type",
+                    "value"
+                  ],
+                  "type": "object"
+                },
+                {
+                  "additionalProperties": false,
+                  "properties": {
+                    "type": {
+                      "const": "milliseconds",
+                      "type": "string"
+                    },
+                    "value": {
+                      "format": "uint64",
+                      "minimum": 0,
+                      "type": "integer"
+                    }
+                  },
+                  "required": [
+                    "type",
+                    "value"
+                  ],
+                  "type": "object"
+                },
+                {
+                  "additionalProperties": false,
+                  "properties": {
+                    "type": {
+                      "const": "unix_seconds",
+                      "type": "string"
+                    },
+                    "value": {
+                      "format": "uint64",
+                      "minimum": 0,
+                      "type": "integer"
+                    }
+                  },
+                  "required": [
+                    "type",
+                    "value"
+                  ],
+                  "type": "object"
+                },
+                {
+                  "additionalProperties": false,
+                  "properties": {
+                    "type": {
+                      "const": "unix_milliseconds",
+                      "type": "string"
+                    },
+                    "value": {
+                      "format": "uint64",
+                      "minimum": 0,
+                      "type": "integer"
+                    }
+                  },
+                  "required": [
+                    "type",
+                    "value"
+                  ],
+                  "type": "object"
+                },
+                {
+                  "additionalProperties": false,
+                  "properties": {
+                    "type": {
+                      "const": "keep_ttl",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "type"
+                  ],
+                  "type": "object"
+                }
+              ]
+            }
+          },
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "condition": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/HashSetCondition"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null
+            },
+            "expiration": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/SetExpiration"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "fields": {
+              "items": {
+                "$ref": "#/$defs/HashFieldValueInput"
+              },
+              "maxItems": 1000,
+              "minItems": 1,
+              "type": "array"
+            },
+            "key": {
+              "type": "string"
+            },
+            "key_encoding": {
+              "$ref": "#/$defs/InputEncoding",
+              "default": "utf8"
+            }
+          },
+          "required": [
+            "key",
+            "fields"
+          ],
+          "title": "HsetexInput",
+          "type": "object"
+        },
+        "name": "redis_hsetex",
+        "outputSchema": {
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "applied": {
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "applied"
+          ],
+          "title": "SetAppliedOutput",
+          "type": "object"
+        },
+        "title": "Set Expiring Redis Hash Fields"
+      },
+      "required_access": "read_write",
+      "required_module": null,
+      "requires_raw_opt_in": false
+    },
+    {
+      "bundle": "data_structures",
+      "capability_requirements": {
+        "deployment": "any",
+        "minimum_module_version": null,
         "minimum_redis_version": "3.2.0",
         "required_commands": [
           "HSTRLEN",
@@ -12268,6 +15353,262 @@
           "type": "object"
         },
         "title": "Increment Redis Float"
+      },
+      "required_access": "read_write",
+      "required_module": null,
+      "requires_raw_opt_in": false
+    },
+    {
+      "bundle": "data_structures",
+      "capability_requirements": {
+        "deployment": "any",
+        "minimum_module_version": null,
+        "minimum_redis_version": "8.8.0",
+        "required_commands": [
+          "INCREX"
+        ],
+        "required_module": null
+      },
+      "name": "redis_increx",
+      "output_policy": "intrinsically_bounded",
+      "protocol": {
+        "annotations": {
+          "destructiveHint": false
+        },
+        "description": "Atomically increment a Redis numeric string with optional bounds, saturation, and expiration controls.",
+        "inputSchema": {
+          "$defs": {
+            "ExactDecimalInput": {
+              "anyOf": [
+                {
+                  "description": "JSON number shorthand. Use a string when every decimal digit matters.",
+                  "format": "double",
+                  "type": "number"
+                },
+                {
+                  "description": "Exact finite Redis decimal string.",
+                  "type": "string"
+                }
+              ]
+            },
+            "GetFieldExpiration": {
+              "oneOf": [
+                {
+                  "additionalProperties": false,
+                  "properties": {
+                    "type": {
+                      "const": "seconds",
+                      "type": "string"
+                    },
+                    "value": {
+                      "format": "uint64",
+                      "minimum": 0,
+                      "type": "integer"
+                    }
+                  },
+                  "required": [
+                    "type",
+                    "value"
+                  ],
+                  "type": "object"
+                },
+                {
+                  "additionalProperties": false,
+                  "properties": {
+                    "type": {
+                      "const": "milliseconds",
+                      "type": "string"
+                    },
+                    "value": {
+                      "format": "uint64",
+                      "minimum": 0,
+                      "type": "integer"
+                    }
+                  },
+                  "required": [
+                    "type",
+                    "value"
+                  ],
+                  "type": "object"
+                },
+                {
+                  "additionalProperties": false,
+                  "properties": {
+                    "type": {
+                      "const": "unix_seconds",
+                      "type": "string"
+                    },
+                    "value": {
+                      "format": "uint64",
+                      "minimum": 0,
+                      "type": "integer"
+                    }
+                  },
+                  "required": [
+                    "type",
+                    "value"
+                  ],
+                  "type": "object"
+                },
+                {
+                  "additionalProperties": false,
+                  "properties": {
+                    "type": {
+                      "const": "unix_milliseconds",
+                      "type": "string"
+                    },
+                    "value": {
+                      "format": "uint64",
+                      "minimum": 0,
+                      "type": "integer"
+                    }
+                  },
+                  "required": [
+                    "type",
+                    "value"
+                  ],
+                  "type": "object"
+                },
+                {
+                  "additionalProperties": false,
+                  "properties": {
+                    "type": {
+                      "const": "persist",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "type"
+                  ],
+                  "type": "object"
+                }
+              ]
+            },
+            "IncrementValue": {
+              "oneOf": [
+                {
+                  "additionalProperties": false,
+                  "properties": {
+                    "type": {
+                      "const": "integer",
+                      "type": "string"
+                    },
+                    "value": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "type",
+                    "value"
+                  ],
+                  "type": "object"
+                },
+                {
+                  "additionalProperties": false,
+                  "properties": {
+                    "type": {
+                      "const": "float",
+                      "type": "string"
+                    },
+                    "value": {
+                      "$ref": "#/$defs/ExactDecimalInput"
+                    }
+                  },
+                  "required": [
+                    "type",
+                    "value"
+                  ],
+                  "type": "object"
+                }
+              ]
+            },
+            "InputEncoding": {
+              "enum": [
+                "utf8",
+                "base64"
+              ],
+              "type": "string"
+            }
+          },
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "expiration": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/GetFieldExpiration"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "expiration_only_if_missing": {
+              "default": false,
+              "type": "boolean"
+            },
+            "increment": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/IncrementValue"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "key": {
+              "type": "string"
+            },
+            "key_encoding": {
+              "$ref": "#/$defs/InputEncoding",
+              "default": "utf8"
+            },
+            "lower_bound": {
+              "default": null,
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "saturate": {
+              "default": false,
+              "type": "boolean"
+            },
+            "upper_bound": {
+              "default": null,
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          "required": [
+            "key"
+          ],
+          "title": "IncrexInput",
+          "type": "object"
+        },
+        "name": "redis_increx",
+        "outputSchema": {
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "actual_increment": {
+              "type": "string"
+            },
+            "value": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "value",
+            "actual_increment"
+          ],
+          "title": "IncrexOutput",
+          "type": "object"
+        },
+        "title": "Increment and Expire Redis String"
       },
       "required_access": "read_write",
       "required_module": null,
@@ -15077,6 +18418,211 @@
       "capability_requirements": {
         "deployment": "any",
         "minimum_module_version": null,
+        "minimum_redis_version": "8.10.0",
+        "required_commands": [
+          "LMOVEM"
+        ],
+        "required_module": null
+      },
+      "name": "redis_lmovem",
+      "output_policy": "intrinsically_bounded",
+      "protocol": {
+        "annotations": {},
+        "description": "Move one or a bounded batch of elements between same-slot Redis lists. This removes source elements and requires full access.",
+        "inputSchema": {
+          "$defs": {
+            "BinaryInput": {
+              "additionalProperties": false,
+              "properties": {
+                "encoding": {
+                  "$ref": "#/$defs/InputEncoding",
+                  "default": "utf8",
+                  "description": "Encoding of `value`."
+                },
+                "value": {
+                  "description": "Binary-safe value.",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "value"
+              ],
+              "type": "object"
+            },
+            "InputEncoding": {
+              "enum": [
+                "utf8",
+                "base64"
+              ],
+              "type": "string"
+            },
+            "ListEnd": {
+              "enum": [
+                "left",
+                "right"
+              ],
+              "type": "string"
+            },
+            "MoveAmount": {
+              "oneOf": [
+                {
+                  "additionalProperties": false,
+                  "properties": {
+                    "count": {
+                      "format": "uint",
+                      "minimum": 0,
+                      "type": "integer"
+                    },
+                    "ordering": {
+                      "$ref": "#/$defs/MoveOrdering"
+                    },
+                    "type": {
+                      "const": "up_to",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "type",
+                    "count",
+                    "ordering"
+                  ],
+                  "type": "object"
+                },
+                {
+                  "additionalProperties": false,
+                  "properties": {
+                    "count": {
+                      "format": "uint",
+                      "minimum": 0,
+                      "type": "integer"
+                    },
+                    "ordering": {
+                      "$ref": "#/$defs/MoveOrdering"
+                    },
+                    "type": {
+                      "const": "exactly",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "type",
+                    "count",
+                    "ordering"
+                  ],
+                  "type": "object"
+                }
+              ]
+            },
+            "MoveOrdering": {
+              "enum": [
+                "one_by_one",
+                "bulk"
+              ],
+              "type": "string"
+            }
+          },
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "amount": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/MoveAmount"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "destination": {
+              "$ref": "#/$defs/BinaryInput"
+            },
+            "from": {
+              "$ref": "#/$defs/ListEnd"
+            },
+            "source": {
+              "$ref": "#/$defs/BinaryInput"
+            },
+            "to": {
+              "$ref": "#/$defs/ListEnd"
+            }
+          },
+          "required": [
+            "source",
+            "destination",
+            "from",
+            "to"
+          ],
+          "title": "LmovemInput",
+          "type": "object"
+        },
+        "name": "redis_lmovem",
+        "outputSchema": {
+          "$defs": {
+            "BinaryOutput": {
+              "additionalProperties": false,
+              "properties": {
+                "encoding": {
+                  "$ref": "#/$defs/ValueEncoding"
+                },
+                "value": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "value",
+                "encoding"
+              ],
+              "type": "object"
+            },
+            "ValueEncoding": {
+              "enum": [
+                "utf8",
+                "base64"
+              ],
+              "type": "string"
+            }
+          },
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "count": {
+              "format": "uint",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "values": {
+              "items": {
+                "anyOf": [
+                  {
+                    "$ref": "#/$defs/BinaryOutput"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "type": "array"
+            }
+          },
+          "required": [
+            "count",
+            "values"
+          ],
+          "title": "BinaryValuesOutput",
+          "type": "object"
+        },
+        "title": "Move Redis List Elements"
+      },
+      "required_access": "full",
+      "required_module": null,
+      "requires_raw_opt_in": false
+    },
+    {
+      "bundle": "data_structures",
+      "capability_requirements": {
+        "deployment": "any",
+        "minimum_module_version": null,
         "minimum_redis_version": "6.2.0",
         "required_commands": [
           "LPOP"
@@ -17057,6 +20603,228 @@
           "type": "object"
         },
         "title": "Set Multiple Redis Strings"
+      },
+      "required_access": "read_write",
+      "required_module": null,
+      "requires_raw_opt_in": false
+    },
+    {
+      "bundle": "data_structures",
+      "capability_requirements": {
+        "deployment": "any",
+        "minimum_module_version": null,
+        "minimum_redis_version": "8.4.0",
+        "required_commands": [
+          "MSETEX"
+        ],
+        "required_module": null
+      },
+      "name": "redis_msetex",
+      "output_policy": "intrinsically_bounded",
+      "protocol": {
+        "annotations": {
+          "destructiveHint": false
+        },
+        "description": "Atomically set a bounded group of binary-safe strings with an optional all-keys condition and shared expiration. Cluster keys must share a slot.",
+        "inputSchema": {
+          "$defs": {
+            "BinaryInput": {
+              "additionalProperties": false,
+              "properties": {
+                "encoding": {
+                  "$ref": "#/$defs/InputEncoding",
+                  "default": "utf8",
+                  "description": "Encoding of `value`."
+                },
+                "value": {
+                  "description": "Binary-safe value.",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "value"
+              ],
+              "type": "object"
+            },
+            "InputEncoding": {
+              "enum": [
+                "utf8",
+                "base64"
+              ],
+              "type": "string"
+            },
+            "KeyValueInput": {
+              "additionalProperties": false,
+              "properties": {
+                "key": {
+                  "$ref": "#/$defs/BinaryInput"
+                },
+                "value": {
+                  "$ref": "#/$defs/BinaryInput"
+                }
+              },
+              "required": [
+                "key",
+                "value"
+              ],
+              "type": "object"
+            },
+            "SetCondition": {
+              "enum": [
+                "only_if_missing",
+                "only_if_existing"
+              ],
+              "type": "string"
+            },
+            "SetExpiration": {
+              "oneOf": [
+                {
+                  "additionalProperties": false,
+                  "properties": {
+                    "type": {
+                      "const": "seconds",
+                      "type": "string"
+                    },
+                    "value": {
+                      "format": "uint64",
+                      "minimum": 0,
+                      "type": "integer"
+                    }
+                  },
+                  "required": [
+                    "type",
+                    "value"
+                  ],
+                  "type": "object"
+                },
+                {
+                  "additionalProperties": false,
+                  "properties": {
+                    "type": {
+                      "const": "milliseconds",
+                      "type": "string"
+                    },
+                    "value": {
+                      "format": "uint64",
+                      "minimum": 0,
+                      "type": "integer"
+                    }
+                  },
+                  "required": [
+                    "type",
+                    "value"
+                  ],
+                  "type": "object"
+                },
+                {
+                  "additionalProperties": false,
+                  "properties": {
+                    "type": {
+                      "const": "unix_seconds",
+                      "type": "string"
+                    },
+                    "value": {
+                      "format": "uint64",
+                      "minimum": 0,
+                      "type": "integer"
+                    }
+                  },
+                  "required": [
+                    "type",
+                    "value"
+                  ],
+                  "type": "object"
+                },
+                {
+                  "additionalProperties": false,
+                  "properties": {
+                    "type": {
+                      "const": "unix_milliseconds",
+                      "type": "string"
+                    },
+                    "value": {
+                      "format": "uint64",
+                      "minimum": 0,
+                      "type": "integer"
+                    }
+                  },
+                  "required": [
+                    "type",
+                    "value"
+                  ],
+                  "type": "object"
+                },
+                {
+                  "additionalProperties": false,
+                  "properties": {
+                    "type": {
+                      "const": "keep_ttl",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "type"
+                  ],
+                  "type": "object"
+                }
+              ]
+            }
+          },
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "condition": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/SetCondition"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null
+            },
+            "entries": {
+              "items": {
+                "$ref": "#/$defs/KeyValueInput"
+              },
+              "maxItems": 1000,
+              "minItems": 1,
+              "type": "array"
+            },
+            "expiration": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/SetExpiration"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          },
+          "required": [
+            "entries"
+          ],
+          "title": "MsetexInput",
+          "type": "object"
+        },
+        "name": "redis_msetex",
+        "outputSchema": {
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "applied": {
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "applied"
+          ],
+          "title": "SetAppliedOutput",
+          "type": "object"
+        },
+        "title": "Set Expiring Redis Strings"
       },
       "required_access": "read_write",
       "required_module": null,
@@ -23695,6 +27463,354 @@
       "requires_raw_opt_in": false
     },
     {
+      "bundle": "data_structures",
+      "capability_requirements": {
+        "deployment": "any",
+        "minimum_module_version": null,
+        "minimum_redis_version": "8.0.0",
+        "required_commands": [
+          "VADD"
+        ],
+        "required_module": null
+      },
+      "name": "redis_vadd",
+      "output_policy": "intrinsically_bounded",
+      "protocol": {
+        "annotations": {
+          "destructiveHint": false
+        },
+        "description": "Add or update one binary-safe vector-set element using typed numeric values or a little-endian FP32 blob.",
+        "inputSchema": {
+          "$defs": {
+            "BinaryInput": {
+              "additionalProperties": false,
+              "properties": {
+                "encoding": {
+                  "$ref": "#/$defs/InputEncoding",
+                  "default": "utf8",
+                  "description": "Encoding of `value`."
+                },
+                "value": {
+                  "description": "Binary-safe value.",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "value"
+              ],
+              "type": "object"
+            },
+            "ExactDecimalInput": {
+              "anyOf": [
+                {
+                  "description": "JSON number shorthand. Use a string when every decimal digit matters.",
+                  "format": "double",
+                  "type": "number"
+                },
+                {
+                  "description": "Exact finite Redis decimal string.",
+                  "type": "string"
+                }
+              ]
+            },
+            "InputEncoding": {
+              "enum": [
+                "utf8",
+                "base64"
+              ],
+              "type": "string"
+            },
+            "VectorInput": {
+              "oneOf": [
+                {
+                  "additionalProperties": false,
+                  "properties": {
+                    "type": {
+                      "const": "values",
+                      "type": "string"
+                    },
+                    "values": {
+                      "items": {
+                        "$ref": "#/$defs/ExactDecimalInput"
+                      },
+                      "maxItems": 65536,
+                      "minItems": 1,
+                      "type": "array"
+                    }
+                  },
+                  "required": [
+                    "type",
+                    "values"
+                  ],
+                  "type": "object"
+                },
+                {
+                  "additionalProperties": false,
+                  "description": "Little-endian packed IEEE-754 single-precision values.",
+                  "properties": {
+                    "data": {
+                      "$ref": "#/$defs/BinaryInput"
+                    },
+                    "type": {
+                      "const": "fp32",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "type",
+                    "data"
+                  ],
+                  "type": "object"
+                }
+              ]
+            },
+            "VectorQuantization": {
+              "enum": [
+                "no_quantization",
+                "q8",
+                "binary"
+              ],
+              "type": "string"
+            }
+          },
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "attributes": {
+              "default": null
+            },
+            "build_exploration_factor": {
+              "default": null,
+              "format": "uint",
+              "maximum": 1000000,
+              "minimum": 1,
+              "type": [
+                "integer",
+                "null"
+              ]
+            },
+            "check_and_set": {
+              "default": false,
+              "type": "boolean"
+            },
+            "element": {
+              "$ref": "#/$defs/BinaryInput"
+            },
+            "key": {
+              "type": "string"
+            },
+            "key_encoding": {
+              "$ref": "#/$defs/InputEncoding",
+              "default": "utf8"
+            },
+            "num_links": {
+              "default": null,
+              "format": "uint",
+              "maximum": 4096,
+              "minimum": 4,
+              "type": [
+                "integer",
+                "null"
+              ]
+            },
+            "quantization": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/VectorQuantization"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null
+            },
+            "reduce_dimensions": {
+              "default": null,
+              "format": "uint",
+              "minimum": 0,
+              "type": [
+                "integer",
+                "null"
+              ]
+            },
+            "vector": {
+              "$ref": "#/$defs/VectorInput"
+            }
+          },
+          "required": [
+            "key",
+            "vector",
+            "element"
+          ],
+          "title": "VaddInput",
+          "type": "object"
+        },
+        "name": "redis_vadd",
+        "outputSchema": {
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "changed": {
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "changed"
+          ],
+          "title": "BooleanMutationOutput",
+          "type": "object"
+        },
+        "title": "Add Redis Vector"
+      },
+      "required_access": "read_write",
+      "required_module": null,
+      "requires_raw_opt_in": false
+    },
+    {
+      "bundle": "data_structures",
+      "capability_requirements": {
+        "deployment": "any",
+        "minimum_module_version": null,
+        "minimum_redis_version": "8.0.0",
+        "required_commands": [
+          "VCARD"
+        ],
+        "required_module": null
+      },
+      "name": "redis_vcard",
+      "output_policy": "intrinsically_bounded",
+      "protocol": {
+        "annotations": {
+          "destructiveHint": false,
+          "idempotentHint": true,
+          "readOnlyHint": true
+        },
+        "description": "Return the number of elements in a Redis vector set.",
+        "inputSchema": {
+          "$defs": {
+            "InputEncoding": {
+              "enum": [
+                "utf8",
+                "base64"
+              ],
+              "type": "string"
+            }
+          },
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "key": {
+              "description": "Redis key.",
+              "type": "string"
+            },
+            "key_encoding": {
+              "$ref": "#/$defs/InputEncoding",
+              "default": "utf8",
+              "description": "Encoding of `key`."
+            }
+          },
+          "required": [
+            "key"
+          ],
+          "title": "KeyInput",
+          "type": "object"
+        },
+        "name": "redis_vcard",
+        "outputSchema": {
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "cardinality": {
+              "format": "uint64",
+              "minimum": 0,
+              "type": "integer"
+            }
+          },
+          "required": [
+            "cardinality"
+          ],
+          "title": "VectorCardinalityOutput",
+          "type": "object"
+        },
+        "title": "Count Redis Vector Members"
+      },
+      "required_access": "read_only",
+      "required_module": null,
+      "requires_raw_opt_in": false
+    },
+    {
+      "bundle": "data_structures",
+      "capability_requirements": {
+        "deployment": "any",
+        "minimum_module_version": null,
+        "minimum_redis_version": "8.0.0",
+        "required_commands": [
+          "VDIM"
+        ],
+        "required_module": null
+      },
+      "name": "redis_vdim",
+      "output_policy": "intrinsically_bounded",
+      "protocol": {
+        "annotations": {
+          "destructiveHint": false,
+          "idempotentHint": true,
+          "readOnlyHint": true
+        },
+        "description": "Return the vector dimension configured for a Redis vector set.",
+        "inputSchema": {
+          "$defs": {
+            "InputEncoding": {
+              "enum": [
+                "utf8",
+                "base64"
+              ],
+              "type": "string"
+            }
+          },
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "key": {
+              "description": "Redis key.",
+              "type": "string"
+            },
+            "key_encoding": {
+              "$ref": "#/$defs/InputEncoding",
+              "default": "utf8",
+              "description": "Encoding of `key`."
+            }
+          },
+          "required": [
+            "key"
+          ],
+          "title": "KeyInput",
+          "type": "object"
+        },
+        "name": "redis_vdim",
+        "outputSchema": {
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "dimensions": {
+              "format": "uint64",
+              "minimum": 0,
+              "type": "integer"
+            }
+          },
+          "required": [
+            "dimensions"
+          ],
+          "title": "VectorDimensionsOutput",
+          "type": "object"
+        },
+        "title": "Read Redis Vector Dimensions"
+      },
+      "required_access": "read_only",
+      "required_module": null,
+      "requires_raw_opt_in": false
+    },
+    {
       "bundle": "search",
       "capability_requirements": {
         "deployment": "any",
@@ -23946,6 +28062,1177 @@
       "capability_requirements": {
         "deployment": "any",
         "minimum_module_version": null,
+        "minimum_redis_version": "8.0.0",
+        "required_commands": [
+          "VEMB"
+        ],
+        "required_module": null
+      },
+      "name": "redis_vemb",
+      "output_policy": "budget_guarded",
+      "protocol": {
+        "annotations": {
+          "destructiveHint": false,
+          "idempotentHint": true,
+          "readOnlyHint": true
+        },
+        "description": "Read one vector-set embedding as exact decimal tokens or a binary-safe packed FP32 blob.",
+        "inputSchema": {
+          "$defs": {
+            "BinaryInput": {
+              "additionalProperties": false,
+              "properties": {
+                "encoding": {
+                  "$ref": "#/$defs/InputEncoding",
+                  "default": "utf8",
+                  "description": "Encoding of `value`."
+                },
+                "value": {
+                  "description": "Binary-safe value.",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "value"
+              ],
+              "type": "object"
+            },
+            "InputEncoding": {
+              "enum": [
+                "utf8",
+                "base64"
+              ],
+              "type": "string"
+            }
+          },
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "element": {
+              "$ref": "#/$defs/BinaryInput"
+            },
+            "key": {
+              "type": "string"
+            },
+            "key_encoding": {
+              "$ref": "#/$defs/InputEncoding",
+              "default": "utf8"
+            },
+            "raw": {
+              "default": false,
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "key",
+            "element"
+          ],
+          "title": "VembInput",
+          "type": "object"
+        },
+        "name": "redis_vemb",
+        "outputSchema": {
+          "$defs": {
+            "BinaryOutput": {
+              "additionalProperties": false,
+              "properties": {
+                "encoding": {
+                  "$ref": "#/$defs/ValueEncoding"
+                },
+                "value": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "value",
+                "encoding"
+              ],
+              "type": "object"
+            },
+            "ValueEncoding": {
+              "enum": [
+                "utf8",
+                "base64"
+              ],
+              "type": "string"
+            }
+          },
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "dimensions": {
+              "format": "uint",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "exists": {
+              "type": "boolean"
+            },
+            "raw": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/BinaryOutput"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "values": {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            }
+          },
+          "required": [
+            "exists",
+            "dimensions",
+            "values"
+          ],
+          "title": "VembOutput",
+          "type": "object"
+        },
+        "title": "Get Redis Vector Embedding"
+      },
+      "required_access": "read_only",
+      "required_module": null,
+      "requires_raw_opt_in": false
+    },
+    {
+      "bundle": "data_structures",
+      "capability_requirements": {
+        "deployment": "any",
+        "minimum_module_version": null,
+        "minimum_redis_version": "8.0.0",
+        "required_commands": [
+          "VGETATTR"
+        ],
+        "required_module": null
+      },
+      "name": "redis_vgetattr",
+      "output_policy": "intrinsically_bounded",
+      "protocol": {
+        "annotations": {
+          "destructiveHint": false,
+          "idempotentHint": true,
+          "readOnlyHint": true
+        },
+        "description": "Read and parse the JSON attributes associated with one vector-set element.",
+        "inputSchema": {
+          "$defs": {
+            "BinaryInput": {
+              "additionalProperties": false,
+              "properties": {
+                "encoding": {
+                  "$ref": "#/$defs/InputEncoding",
+                  "default": "utf8",
+                  "description": "Encoding of `value`."
+                },
+                "value": {
+                  "description": "Binary-safe value.",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "value"
+              ],
+              "type": "object"
+            },
+            "InputEncoding": {
+              "enum": [
+                "utf8",
+                "base64"
+              ],
+              "type": "string"
+            }
+          },
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "element": {
+              "$ref": "#/$defs/BinaryInput"
+            },
+            "key": {
+              "type": "string"
+            },
+            "key_encoding": {
+              "$ref": "#/$defs/InputEncoding",
+              "default": "utf8"
+            }
+          },
+          "required": [
+            "key",
+            "element"
+          ],
+          "title": "VectorElementInput",
+          "type": "object"
+        },
+        "name": "redis_vgetattr",
+        "outputSchema": {
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "attributes": true,
+            "exists": {
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "exists"
+          ],
+          "title": "JsonAttributeOutput",
+          "type": "object"
+        },
+        "title": "Get Redis Vector Attributes"
+      },
+      "required_access": "read_only",
+      "required_module": null,
+      "requires_raw_opt_in": false
+    },
+    {
+      "bundle": "data_structures",
+      "capability_requirements": {
+        "deployment": "any",
+        "minimum_module_version": null,
+        "minimum_redis_version": "8.0.0",
+        "required_commands": [
+          "VINFO"
+        ],
+        "required_module": null
+      },
+      "name": "redis_vinfo",
+      "output_policy": "budget_guarded",
+      "protocol": {
+        "annotations": {
+          "destructiveHint": false,
+          "idempotentHint": true,
+          "readOnlyHint": true
+        },
+        "description": "Return normalized bounded metadata for one Redis vector set.",
+        "inputSchema": {
+          "$defs": {
+            "InputEncoding": {
+              "enum": [
+                "utf8",
+                "base64"
+              ],
+              "type": "string"
+            }
+          },
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "key": {
+              "description": "Redis key.",
+              "type": "string"
+            },
+            "key_encoding": {
+              "$ref": "#/$defs/InputEncoding",
+              "default": "utf8",
+              "description": "Encoding of `key`."
+            }
+          },
+          "required": [
+            "key"
+          ],
+          "title": "KeyInput",
+          "type": "object"
+        },
+        "name": "redis_vinfo",
+        "outputSchema": {
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "exists": {
+              "type": "boolean"
+            },
+            "fields": {
+              "additionalProperties": true,
+              "type": "object"
+            }
+          },
+          "required": [
+            "exists",
+            "fields"
+          ],
+          "title": "MapOutput",
+          "type": "object"
+        },
+        "title": "Inspect Redis Vector Set"
+      },
+      "required_access": "read_only",
+      "required_module": null,
+      "requires_raw_opt_in": false
+    },
+    {
+      "bundle": "data_structures",
+      "capability_requirements": {
+        "deployment": "any",
+        "minimum_module_version": null,
+        "minimum_redis_version": "8.2.0",
+        "required_commands": [
+          "VISMEMBER"
+        ],
+        "required_module": null
+      },
+      "name": "redis_vismember",
+      "output_policy": "intrinsically_bounded",
+      "protocol": {
+        "annotations": {
+          "destructiveHint": false,
+          "idempotentHint": true,
+          "readOnlyHint": true
+        },
+        "description": "Check whether one binary-safe element exists in a Redis vector set.",
+        "inputSchema": {
+          "$defs": {
+            "BinaryInput": {
+              "additionalProperties": false,
+              "properties": {
+                "encoding": {
+                  "$ref": "#/$defs/InputEncoding",
+                  "default": "utf8",
+                  "description": "Encoding of `value`."
+                },
+                "value": {
+                  "description": "Binary-safe value.",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "value"
+              ],
+              "type": "object"
+            },
+            "InputEncoding": {
+              "enum": [
+                "utf8",
+                "base64"
+              ],
+              "type": "string"
+            }
+          },
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "element": {
+              "$ref": "#/$defs/BinaryInput"
+            },
+            "key": {
+              "type": "string"
+            },
+            "key_encoding": {
+              "$ref": "#/$defs/InputEncoding",
+              "default": "utf8"
+            }
+          },
+          "required": [
+            "key",
+            "element"
+          ],
+          "title": "VectorElementInput",
+          "type": "object"
+        },
+        "name": "redis_vismember",
+        "outputSchema": {
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "exists": {
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "exists"
+          ],
+          "title": "MembershipOutput",
+          "type": "object"
+        },
+        "title": "Check Redis Vector Element"
+      },
+      "required_access": "read_only",
+      "required_module": null,
+      "requires_raw_opt_in": false
+    },
+    {
+      "bundle": "data_structures",
+      "capability_requirements": {
+        "deployment": "any",
+        "minimum_module_version": null,
+        "minimum_redis_version": "8.0.0",
+        "required_commands": [
+          "VLINKS"
+        ],
+        "required_module": null
+      },
+      "name": "redis_vlinks",
+      "output_policy": "budget_guarded",
+      "protocol": {
+        "annotations": {
+          "destructiveHint": false,
+          "idempotentHint": true,
+          "readOnlyHint": true
+        },
+        "description": "Inspect the bounded HNSW neighbors of one vector-set element, optionally including scores.",
+        "inputSchema": {
+          "$defs": {
+            "BinaryInput": {
+              "additionalProperties": false,
+              "properties": {
+                "encoding": {
+                  "$ref": "#/$defs/InputEncoding",
+                  "default": "utf8",
+                  "description": "Encoding of `value`."
+                },
+                "value": {
+                  "description": "Binary-safe value.",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "value"
+              ],
+              "type": "object"
+            },
+            "InputEncoding": {
+              "enum": [
+                "utf8",
+                "base64"
+              ],
+              "type": "string"
+            }
+          },
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "element": {
+              "$ref": "#/$defs/BinaryInput"
+            },
+            "key": {
+              "type": "string"
+            },
+            "key_encoding": {
+              "$ref": "#/$defs/InputEncoding",
+              "default": "utf8"
+            },
+            "with_scores": {
+              "default": false,
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "key",
+            "element"
+          ],
+          "title": "VlinksInput",
+          "type": "object"
+        },
+        "name": "redis_vlinks",
+        "outputSchema": {
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "entries": {
+              "format": "uint",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "result": true
+          },
+          "required": [
+            "entries",
+            "result"
+          ],
+          "title": "StructuredOutput",
+          "type": "object"
+        },
+        "title": "Inspect Redis Vector Links"
+      },
+      "required_access": "read_only",
+      "required_module": null,
+      "requires_raw_opt_in": false
+    },
+    {
+      "bundle": "data_structures",
+      "capability_requirements": {
+        "deployment": "any",
+        "minimum_module_version": null,
+        "minimum_redis_version": "8.0.0",
+        "required_commands": [
+          "VRANDMEMBER"
+        ],
+        "required_module": null
+      },
+      "name": "redis_vrandmember",
+      "output_policy": "intrinsically_bounded",
+      "protocol": {
+        "annotations": {
+          "destructiveHint": false,
+          "idempotentHint": true,
+          "readOnlyHint": true
+        },
+        "description": "Return one member or a bounded positive/negative-count sample from a Redis vector set.",
+        "inputSchema": {
+          "$defs": {
+            "InputEncoding": {
+              "enum": [
+                "utf8",
+                "base64"
+              ],
+              "type": "string"
+            }
+          },
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "count": {
+              "default": null,
+              "format": "int64",
+              "type": [
+                "integer",
+                "null"
+              ]
+            },
+            "key": {
+              "type": "string"
+            },
+            "key_encoding": {
+              "$ref": "#/$defs/InputEncoding",
+              "default": "utf8"
+            }
+          },
+          "required": [
+            "key"
+          ],
+          "title": "VrandmemberInput",
+          "type": "object"
+        },
+        "name": "redis_vrandmember",
+        "outputSchema": {
+          "$defs": {
+            "BinaryOutput": {
+              "additionalProperties": false,
+              "properties": {
+                "encoding": {
+                  "$ref": "#/$defs/ValueEncoding"
+                },
+                "value": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "value",
+                "encoding"
+              ],
+              "type": "object"
+            },
+            "ValueEncoding": {
+              "enum": [
+                "utf8",
+                "base64"
+              ],
+              "type": "string"
+            }
+          },
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "count": {
+              "format": "uint",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "values": {
+              "items": {
+                "anyOf": [
+                  {
+                    "$ref": "#/$defs/BinaryOutput"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "type": "array"
+            }
+          },
+          "required": [
+            "count",
+            "values"
+          ],
+          "title": "BinaryValuesOutput",
+          "type": "object"
+        },
+        "title": "Sample Redis Vector Members"
+      },
+      "required_access": "read_only",
+      "required_module": null,
+      "requires_raw_opt_in": false
+    },
+    {
+      "bundle": "data_structures",
+      "capability_requirements": {
+        "deployment": "any",
+        "minimum_module_version": null,
+        "minimum_redis_version": "8.4.0",
+        "required_commands": [
+          "VRANGE"
+        ],
+        "required_module": null
+      },
+      "name": "redis_vrange",
+      "output_policy": "range_paginated",
+      "protocol": {
+        "annotations": {
+          "destructiveHint": false,
+          "idempotentHint": true,
+          "readOnlyHint": true
+        },
+        "description": "Return a bounded lexicographical range of binary-safe vector-set members.",
+        "inputSchema": {
+          "$defs": {
+            "BinaryInput": {
+              "additionalProperties": false,
+              "properties": {
+                "encoding": {
+                  "$ref": "#/$defs/InputEncoding",
+                  "default": "utf8",
+                  "description": "Encoding of `value`."
+                },
+                "value": {
+                  "description": "Binary-safe value.",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "value"
+              ],
+              "type": "object"
+            },
+            "InputEncoding": {
+              "enum": [
+                "utf8",
+                "base64"
+              ],
+              "type": "string"
+            }
+          },
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "count": {
+              "format": "uint",
+              "maximum": 1000,
+              "minimum": 1,
+              "type": "integer"
+            },
+            "end": {
+              "$ref": "#/$defs/BinaryInput"
+            },
+            "key": {
+              "type": "string"
+            },
+            "key_encoding": {
+              "$ref": "#/$defs/InputEncoding",
+              "default": "utf8"
+            },
+            "start": {
+              "$ref": "#/$defs/BinaryInput"
+            }
+          },
+          "required": [
+            "key",
+            "start",
+            "end",
+            "count"
+          ],
+          "title": "VrangeInput",
+          "type": "object"
+        },
+        "name": "redis_vrange",
+        "outputSchema": {
+          "$defs": {
+            "BinaryOutput": {
+              "additionalProperties": false,
+              "properties": {
+                "encoding": {
+                  "$ref": "#/$defs/ValueEncoding"
+                },
+                "value": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "value",
+                "encoding"
+              ],
+              "type": "object"
+            },
+            "ValueEncoding": {
+              "enum": [
+                "utf8",
+                "base64"
+              ],
+              "type": "string"
+            }
+          },
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "complete": {
+              "type": "boolean"
+            },
+            "count": {
+              "format": "uint",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "next_start": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/BinaryOutput"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Exclusive binary-safe start bound for the next page."
+            },
+            "values": {
+              "items": {
+                "$ref": "#/$defs/BinaryOutput"
+              },
+              "type": "array"
+            }
+          },
+          "required": [
+            "count",
+            "values",
+            "complete"
+          ],
+          "title": "VrangeOutput",
+          "type": "object"
+        },
+        "title": "Range Redis Vector Members"
+      },
+      "required_access": "read_only",
+      "required_module": null,
+      "requires_raw_opt_in": false
+    },
+    {
+      "bundle": "data_structures",
+      "capability_requirements": {
+        "deployment": "any",
+        "minimum_module_version": null,
+        "minimum_redis_version": "8.0.0",
+        "required_commands": [
+          "VREM"
+        ],
+        "required_module": null
+      },
+      "name": "redis_vrem",
+      "output_policy": "intrinsically_bounded",
+      "protocol": {
+        "annotations": {
+          "idempotentHint": true
+        },
+        "description": "Permanently remove one binary-safe vector-set element. Requires full access.",
+        "inputSchema": {
+          "$defs": {
+            "BinaryInput": {
+              "additionalProperties": false,
+              "properties": {
+                "encoding": {
+                  "$ref": "#/$defs/InputEncoding",
+                  "default": "utf8",
+                  "description": "Encoding of `value`."
+                },
+                "value": {
+                  "description": "Binary-safe value.",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "value"
+              ],
+              "type": "object"
+            },
+            "InputEncoding": {
+              "enum": [
+                "utf8",
+                "base64"
+              ],
+              "type": "string"
+            }
+          },
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "element": {
+              "$ref": "#/$defs/BinaryInput"
+            },
+            "key": {
+              "type": "string"
+            },
+            "key_encoding": {
+              "$ref": "#/$defs/InputEncoding",
+              "default": "utf8"
+            }
+          },
+          "required": [
+            "key",
+            "element"
+          ],
+          "title": "VectorElementInput",
+          "type": "object"
+        },
+        "name": "redis_vrem",
+        "outputSchema": {
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "changed": {
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "changed"
+          ],
+          "title": "BooleanMutationOutput",
+          "type": "object"
+        },
+        "title": "Remove Redis Vector Element"
+      },
+      "required_access": "full",
+      "required_module": null,
+      "requires_raw_opt_in": false
+    },
+    {
+      "bundle": "data_structures",
+      "capability_requirements": {
+        "deployment": "any",
+        "minimum_module_version": null,
+        "minimum_redis_version": "8.0.0",
+        "required_commands": [
+          "VSETATTR"
+        ],
+        "required_module": null
+      },
+      "name": "redis_vsetattr",
+      "output_policy": "intrinsically_bounded",
+      "protocol": {
+        "annotations": {
+          "destructiveHint": false,
+          "idempotentHint": true
+        },
+        "description": "Replace or remove the JSON attributes associated with one vector-set element.",
+        "inputSchema": {
+          "$defs": {
+            "BinaryInput": {
+              "additionalProperties": false,
+              "properties": {
+                "encoding": {
+                  "$ref": "#/$defs/InputEncoding",
+                  "default": "utf8",
+                  "description": "Encoding of `value`."
+                },
+                "value": {
+                  "description": "Binary-safe value.",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "value"
+              ],
+              "type": "object"
+            },
+            "InputEncoding": {
+              "enum": [
+                "utf8",
+                "base64"
+              ],
+              "type": "string"
+            }
+          },
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "attributes": {
+              "default": null,
+              "description": "JSON attributes, or null to remove existing attributes."
+            },
+            "element": {
+              "$ref": "#/$defs/BinaryInput"
+            },
+            "key": {
+              "type": "string"
+            },
+            "key_encoding": {
+              "$ref": "#/$defs/InputEncoding",
+              "default": "utf8"
+            }
+          },
+          "required": [
+            "key",
+            "element"
+          ],
+          "title": "VsetattrInput",
+          "type": "object"
+        },
+        "name": "redis_vsetattr",
+        "outputSchema": {
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "changed": {
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "changed"
+          ],
+          "title": "BooleanMutationOutput",
+          "type": "object"
+        },
+        "title": "Set Redis Vector Attributes"
+      },
+      "required_access": "read_write",
+      "required_module": null,
+      "requires_raw_opt_in": false
+    },
+    {
+      "bundle": "data_structures",
+      "capability_requirements": {
+        "deployment": "any",
+        "minimum_module_version": null,
+        "minimum_redis_version": "8.0.0",
+        "required_commands": [
+          "VSIM"
+        ],
+        "required_module": null
+      },
+      "name": "redis_vsim",
+      "output_policy": "intrinsically_bounded",
+      "protocol": {
+        "annotations": {
+          "destructiveHint": false,
+          "idempotentHint": true,
+          "readOnlyHint": true
+        },
+        "description": "Run one bounded vector similarity search by element, numeric values, or packed FP32 data, with typed search controls.",
+        "inputSchema": {
+          "$defs": {
+            "BinaryInput": {
+              "additionalProperties": false,
+              "properties": {
+                "encoding": {
+                  "$ref": "#/$defs/InputEncoding",
+                  "default": "utf8",
+                  "description": "Encoding of `value`."
+                },
+                "value": {
+                  "description": "Binary-safe value.",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "value"
+              ],
+              "type": "object"
+            },
+            "ExactDecimalInput": {
+              "anyOf": [
+                {
+                  "description": "JSON number shorthand. Use a string when every decimal digit matters.",
+                  "format": "double",
+                  "type": "number"
+                },
+                {
+                  "description": "Exact finite Redis decimal string.",
+                  "type": "string"
+                }
+              ]
+            },
+            "InputEncoding": {
+              "enum": [
+                "utf8",
+                "base64"
+              ],
+              "type": "string"
+            },
+            "VectorQuery": {
+              "oneOf": [
+                {
+                  "additionalProperties": false,
+                  "properties": {
+                    "element": {
+                      "$ref": "#/$defs/BinaryInput"
+                    },
+                    "type": {
+                      "const": "element",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "type",
+                    "element"
+                  ],
+                  "type": "object"
+                },
+                {
+                  "additionalProperties": false,
+                  "properties": {
+                    "type": {
+                      "const": "values",
+                      "type": "string"
+                    },
+                    "values": {
+                      "items": {
+                        "$ref": "#/$defs/ExactDecimalInput"
+                      },
+                      "maxItems": 65536,
+                      "minItems": 1,
+                      "type": "array"
+                    }
+                  },
+                  "required": [
+                    "type",
+                    "values"
+                  ],
+                  "type": "object"
+                },
+                {
+                  "additionalProperties": false,
+                  "properties": {
+                    "data": {
+                      "$ref": "#/$defs/BinaryInput"
+                    },
+                    "type": {
+                      "const": "fp32",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "type",
+                    "data"
+                  ],
+                  "type": "object"
+                }
+              ]
+            }
+          },
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "count": {
+              "format": "uint",
+              "maximum": 1000,
+              "minimum": 1,
+              "type": "integer"
+            },
+            "exact_truth": {
+              "default": false,
+              "type": "boolean"
+            },
+            "filter": {
+              "default": null,
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "key": {
+              "type": "string"
+            },
+            "key_encoding": {
+              "$ref": "#/$defs/InputEncoding",
+              "default": "utf8"
+            },
+            "max_distance": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/ExactDecimalInput"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null
+            },
+            "max_filtering_effort": {
+              "default": null,
+              "format": "uint",
+              "minimum": 0,
+              "type": [
+                "integer",
+                "null"
+              ]
+            },
+            "no_thread": {
+              "default": false,
+              "type": "boolean"
+            },
+            "query": {
+              "$ref": "#/$defs/VectorQuery"
+            },
+            "search_exploration_factor": {
+              "default": null,
+              "format": "uint",
+              "maximum": 1000000,
+              "minimum": 1,
+              "type": [
+                "integer",
+                "null"
+              ]
+            },
+            "with_attributes": {
+              "default": false,
+              "type": "boolean"
+            },
+            "with_scores": {
+              "default": false,
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "key",
+            "query",
+            "count"
+          ],
+          "title": "VsimInput",
+          "type": "object"
+        },
+        "name": "redis_vsim",
+        "outputSchema": {
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "entries": {
+              "format": "uint",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "result": true
+          },
+          "required": [
+            "entries",
+            "result"
+          ],
+          "title": "StructuredOutput",
+          "type": "object"
+        },
+        "title": "Search Redis Vector Set"
+      },
+      "required_access": "read_only",
+      "required_module": null,
+      "requires_raw_opt_in": false
+    },
+    {
+      "bundle": "data_structures",
+      "capability_requirements": {
+        "deployment": "any",
+        "minimum_module_version": null,
         "minimum_redis_version": "5.0.0",
         "required_commands": [
           "XACK"
@@ -24087,6 +29374,152 @@
         "title": "Acknowledge Redis Stream Entries"
       },
       "required_access": "read_write",
+      "required_module": null,
+      "requires_raw_opt_in": false
+    },
+    {
+      "bundle": "data_structures",
+      "capability_requirements": {
+        "deployment": "any",
+        "minimum_module_version": null,
+        "minimum_redis_version": "8.2.0",
+        "required_commands": [
+          "XACKDEL"
+        ],
+        "required_module": null
+      },
+      "name": "redis_xackdel",
+      "output_policy": "intrinsically_bounded",
+      "protocol": {
+        "annotations": {
+          "idempotentHint": true
+        },
+        "description": "Acknowledge and permanently delete a bounded set of stream entries under an explicit reference policy. Requires full access.",
+        "inputSchema": {
+          "$defs": {
+            "BinaryInput": {
+              "additionalProperties": false,
+              "properties": {
+                "encoding": {
+                  "$ref": "#/$defs/InputEncoding",
+                  "default": "utf8",
+                  "description": "Encoding of `value`."
+                },
+                "value": {
+                  "description": "Binary-safe value.",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "value"
+              ],
+              "type": "object"
+            },
+            "InputEncoding": {
+              "enum": [
+                "utf8",
+                "base64"
+              ],
+              "type": "string"
+            },
+            "StreamId": {
+              "additionalProperties": false,
+              "properties": {
+                "milliseconds": {
+                  "format": "uint64",
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                "sequence": {
+                  "format": "uint64",
+                  "minimum": 0,
+                  "type": "integer"
+                }
+              },
+              "required": [
+                "milliseconds",
+                "sequence"
+              ],
+              "type": "object"
+            },
+            "StreamReferencePolicy": {
+              "enum": [
+                "keep_references",
+                "delete_references",
+                "only_if_acknowledged"
+              ],
+              "type": "string"
+            }
+          },
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "group": {
+              "$ref": "#/$defs/BinaryInput"
+            },
+            "ids": {
+              "items": {
+                "$ref": "#/$defs/StreamId"
+              },
+              "maxItems": 1000,
+              "minItems": 1,
+              "type": "array"
+            },
+            "key": {
+              "type": "string"
+            },
+            "key_encoding": {
+              "$ref": "#/$defs/InputEncoding",
+              "default": "utf8"
+            },
+            "reference_policy": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/StreamReferencePolicy"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null
+            }
+          },
+          "required": [
+            "key",
+            "group",
+            "ids"
+          ],
+          "title": "XackdelInput",
+          "type": "object"
+        },
+        "name": "redis_xackdel",
+        "outputSchema": {
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "requested": {
+              "format": "uint",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "results": {
+              "items": {
+                "format": "int64",
+                "type": "integer"
+              },
+              "type": "array"
+            }
+          },
+          "required": [
+            "requested",
+            "results"
+          ],
+          "title": "StreamDeleteOutput",
+          "type": "object"
+        },
+        "title": "Acknowledge and Delete Redis Stream Entries"
+      },
+      "required_access": "full",
       "required_module": null,
       "requires_raw_opt_in": false
     },
@@ -25043,6 +30476,130 @@
           "type": "object"
         },
         "title": "Delete Redis Stream Entries"
+      },
+      "required_access": "full",
+      "required_module": null,
+      "requires_raw_opt_in": false
+    },
+    {
+      "bundle": "data_structures",
+      "capability_requirements": {
+        "deployment": "any",
+        "minimum_module_version": null,
+        "minimum_redis_version": "8.2.0",
+        "required_commands": [
+          "XDELEX"
+        ],
+        "required_module": null
+      },
+      "name": "redis_xdelex",
+      "output_policy": "intrinsically_bounded",
+      "protocol": {
+        "annotations": {
+          "idempotentHint": true
+        },
+        "description": "Permanently delete a bounded set of stream entries under an explicit consumer-group reference policy. Requires full access.",
+        "inputSchema": {
+          "$defs": {
+            "InputEncoding": {
+              "enum": [
+                "utf8",
+                "base64"
+              ],
+              "type": "string"
+            },
+            "StreamId": {
+              "additionalProperties": false,
+              "properties": {
+                "milliseconds": {
+                  "format": "uint64",
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                "sequence": {
+                  "format": "uint64",
+                  "minimum": 0,
+                  "type": "integer"
+                }
+              },
+              "required": [
+                "milliseconds",
+                "sequence"
+              ],
+              "type": "object"
+            },
+            "StreamReferencePolicy": {
+              "enum": [
+                "keep_references",
+                "delete_references",
+                "only_if_acknowledged"
+              ],
+              "type": "string"
+            }
+          },
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "ids": {
+              "items": {
+                "$ref": "#/$defs/StreamId"
+              },
+              "maxItems": 1000,
+              "minItems": 1,
+              "type": "array"
+            },
+            "key": {
+              "type": "string"
+            },
+            "key_encoding": {
+              "$ref": "#/$defs/InputEncoding",
+              "default": "utf8"
+            },
+            "reference_policy": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/StreamReferencePolicy"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null
+            }
+          },
+          "required": [
+            "key",
+            "ids"
+          ],
+          "title": "XdelexInput",
+          "type": "object"
+        },
+        "name": "redis_xdelex",
+        "outputSchema": {
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "requested": {
+              "format": "uint",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "results": {
+              "items": {
+                "format": "int64",
+                "type": "integer"
+              },
+              "type": "array"
+            }
+          },
+          "required": [
+            "requested",
+            "results"
+          ],
+          "title": "StreamDeleteOutput",
+          "type": "object"
+        },
+        "title": "Delete Redis Stream Entries with References"
       },
       "required_access": "full",
       "required_module": null,
@@ -26400,6 +31957,154 @@
         "title": "Redis Stream Length"
       },
       "required_access": "read_only",
+      "required_module": null,
+      "requires_raw_opt_in": false
+    },
+    {
+      "bundle": "data_structures",
+      "capability_requirements": {
+        "deployment": "any",
+        "minimum_module_version": null,
+        "minimum_redis_version": "8.8.0",
+        "required_commands": [
+          "XNACK"
+        ],
+        "required_module": null
+      },
+      "name": "redis_xnack",
+      "output_policy": "intrinsically_bounded",
+      "protocol": {
+        "annotations": {},
+        "description": "Release a bounded set of claimed messages back to a consumer group's pending-entry list. Requires full access.",
+        "inputSchema": {
+          "$defs": {
+            "BinaryInput": {
+              "additionalProperties": false,
+              "properties": {
+                "encoding": {
+                  "$ref": "#/$defs/InputEncoding",
+                  "default": "utf8",
+                  "description": "Encoding of `value`."
+                },
+                "value": {
+                  "description": "Binary-safe value.",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "value"
+              ],
+              "type": "object"
+            },
+            "InputEncoding": {
+              "enum": [
+                "utf8",
+                "base64"
+              ],
+              "type": "string"
+            },
+            "NackMode": {
+              "enum": [
+                "silent",
+                "fail",
+                "fatal"
+              ],
+              "type": "string"
+            },
+            "StreamId": {
+              "additionalProperties": false,
+              "properties": {
+                "milliseconds": {
+                  "format": "uint64",
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                "sequence": {
+                  "format": "uint64",
+                  "minimum": 0,
+                  "type": "integer"
+                }
+              },
+              "required": [
+                "milliseconds",
+                "sequence"
+              ],
+              "type": "object"
+            }
+          },
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "force": {
+              "default": false,
+              "type": "boolean"
+            },
+            "group": {
+              "$ref": "#/$defs/BinaryInput"
+            },
+            "ids": {
+              "items": {
+                "$ref": "#/$defs/StreamId"
+              },
+              "maxItems": 1000,
+              "minItems": 1,
+              "type": "array"
+            },
+            "key": {
+              "type": "string"
+            },
+            "key_encoding": {
+              "$ref": "#/$defs/InputEncoding",
+              "default": "utf8"
+            },
+            "mode": {
+              "$ref": "#/$defs/NackMode"
+            },
+            "retry_count": {
+              "default": null,
+              "format": "uint64",
+              "minimum": 0,
+              "type": [
+                "integer",
+                "null"
+              ]
+            }
+          },
+          "required": [
+            "key",
+            "group",
+            "mode",
+            "ids"
+          ],
+          "title": "XnackInput",
+          "type": "object"
+        },
+        "name": "redis_xnack",
+        "outputSchema": {
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "released": {
+              "format": "uint64",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "requested": {
+              "format": "uint",
+              "minimum": 0,
+              "type": "integer"
+            }
+          },
+          "required": [
+            "requested",
+            "released"
+          ],
+          "title": "XnackOutput",
+          "type": "object"
+        },
+        "title": "Release Redis Stream Claims"
+      },
+      "required_access": "full",
       "required_module": null,
       "requires_raw_opt_in": false
     },

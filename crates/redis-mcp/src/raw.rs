@@ -137,12 +137,11 @@ fn unsupported(
 
 fn unsupported_boundary(command: &str) -> Option<(&'static str, &'static str)> {
     match command {
-        "AUTH" | "CLIENT" | "HELLO" | "QUIT" | "READONLY" | "READWRITE" | "RESET" | "SELECT" => {
-            Some((
-                "SESSION_COMMAND_UNSUPPORTED",
-                "requires a dedicated connection-session API",
-            ))
-        }
+        "AUTH" | "CLIENT" | "HELLO" | "HIMPORT" | "QUIT" | "READONLY" | "READWRITE" | "RESET"
+        | "SELECT" => Some((
+            "SESSION_COMMAND_UNSUPPORTED",
+            "requires a dedicated connection-session API",
+        )),
         "EXEC" | "MULTI" | "UNWATCH" | "WATCH" => Some((
             "TRANSACTION_COMMAND_UNSUPPORTED",
             "requires a dedicated transaction-session API",
@@ -166,9 +165,13 @@ fn unsupported_boundary(command: &str) -> Option<(&'static str, &'static str)> {
             "requires a dedicated script execution API",
         )),
         "BGREWRITEAOF" | "BGSAVE" | "DEBUG" | "FAILOVER" | "MIGRATE" | "REPLICAOF" | "SAVE"
-        | "SHUTDOWN" | "SLAVEOF" => Some((
+        | "SHUTDOWN" | "SLAVEOF" | "TRIMSLOTS" => Some((
             "SERVER_LIFECYCLE_COMMAND_UNSUPPORTED",
             "is outside native request/response invocation",
+        )),
+        "XCFGSET" | "XIDMPRECORD" | "XSETID" => Some((
+            "INTERNAL_COMMAND_UNSUPPORTED",
+            "is an internal Redis command outside supported invocation",
         )),
         _ => None,
     }
@@ -213,11 +216,13 @@ fn classified_access(command: &str, arguments: &[Vec<u8>]) -> Option<AccessMode>
         };
     }
     let access = match command {
-        "ACL" | "BITOP" | "DEL" | "GEOSEARCHSTORE" | "GETDEL" | "HDEL" | "JSON.ARRPOP"
-        | "JSON.ARRTRIM" | "JSON.CLEAR" | "JSON.DEL" | "LPOP" | "LMOVE" | "LMPOP" | "LREM"
-        | "LSET" | "LTRIM" | "PFMERGE" | "RENAME" | "RENAMENX" | "RPOP" | "RPOPLPUSH" | "SMOVE"
-        | "SPOP" | "SREM" | "UNLINK" | "XDEL" | "XTRIM" | "ZMPOP" | "ZPOPMAX" | "ZPOPMIN"
-        | "ZREM" | "ZREMRANGEBYLEX" | "ZREMRANGEBYRANK" | "ZREMRANGEBYSCORE" => AccessMode::Full,
+        "ACL" | "ARDEL" | "ARDELRANGE" | "BITOP" | "DEL" | "DELEX" | "GEOSEARCHSTORE"
+        | "GETDEL" | "HDEL" | "HGETDEL" | "JSON.ARRPOP" | "JSON.ARRTRIM" | "JSON.CLEAR"
+        | "JSON.DEL" | "LMOVEM" | "LPOP" | "LMOVE" | "LMPOP" | "LREM" | "LSET" | "LTRIM"
+        | "PFMERGE" | "RENAME" | "RENAMENX" | "RPOP" | "RPOPLPUSH" | "SMOVE" | "SPOP" | "SREM"
+        | "UNLINK" | "VREM" | "XACKDEL" | "XDEL" | "XDELEX" | "XNACK" | "XTRIM" | "ZMPOP"
+        | "ZPOPMAX" | "ZPOPMIN" | "ZREM" | "ZREMRANGEBYLEX" | "ZREMRANGEBYRANK"
+        | "ZREMRANGEBYSCORE" => AccessMode::Full,
         "COPY" | "RESTORE"
             if arguments
                 .iter()
@@ -232,24 +237,28 @@ fn classified_access(command: &str, arguments: &[Vec<u8>]) -> Option<AccessMode>
         {
             AccessMode::Full
         }
-        "APPEND" | "BITFIELD" | "COPY" | "DECR" | "DECRBY" | "EXPIRE" | "EXPIREAT" | "GEOADD"
-        | "GETEX" | "GETSET" | "HEXPIRE" | "HINCRBY" | "HINCRBYFLOAT" | "HMSET" | "HPERSIST"
-        | "HSET" | "HSETNX" | "INCR" | "INCRBY" | "INCRBYFLOAT" | "JSON.ARRAPPEND"
+        "APPEND" | "ARINSERT" | "ARMSET" | "ARRING" | "ARSEEK" | "ARSET" | "BITFIELD" | "COPY"
+        | "DECR" | "DECRBY" | "EXPIRE" | "EXPIREAT" | "GEOADD" | "GETEX" | "GETSET" | "HEXPIRE"
+        | "HGETEX" | "HINCRBY" | "HINCRBYFLOAT" | "HMSET" | "HPERSIST" | "HSET" | "HSETEX"
+        | "HSETNX" | "INCR" | "INCRBY" | "INCRBYFLOAT" | "INCREX" | "JSON.ARRAPPEND"
         | "JSON.ARRINSERT" | "JSON.NUMINCRBY" | "JSON.SET" | "JSON.TOGGLE" | "LINSERT"
-        | "LPUSH" | "LPUSHX" | "MSET" | "MSETNX" | "PERSIST" | "PEXPIRE" | "PEXPIREAT"
-        | "PFADD" | "PSETEX" | "RESTORE" | "RPUSH" | "RPUSHX" | "SADD" | "SET" | "SETBIT"
-        | "SETEX" | "TOUCH" | "XACK" | "XADD" | "XAUTOCLAIM" | "XCLAIM" | "XREADGROUP" | "ZADD"
-        | "ZINCRBY" => AccessMode::ReadWrite,
+        | "LPUSH" | "LPUSHX" | "MSET" | "MSETEX" | "MSETNX" | "PERSIST" | "PEXPIRE"
+        | "PEXPIREAT" | "PFADD" | "PSETEX" | "RESTORE" | "RPUSH" | "RPUSHX" | "SADD" | "SET"
+        | "SETBIT" | "SETEX" | "TOUCH" | "VADD" | "VSETATTR" | "XACK" | "XADD" | "XAUTOCLAIM"
+        | "XCLAIM" | "XREADGROUP" | "ZADD" | "ZINCRBY" => AccessMode::ReadWrite,
         "MODULE" => AccessMode::Full,
-        "BITCOUNT" | "BITFIELD_RO" | "BITPOS" | "COMMAND" | "DBSIZE" | "DUMP" | "ECHO"
-        | "EXISTS" | "EXPIRETIME" | "GEODIST" | "GEOHASH" | "GEOPOS" | "GEOSEARCH" | "GET"
-        | "GETBIT" | "GETRANGE" | "HEXISTS" | "HGET" | "HGETALL" | "HKEYS" | "HLEN" | "HMGET"
-        | "HSCAN" | "HSTRLEN" | "HTTL" | "HVALS" | "INFO" | "JSON.ARRLEN" | "JSON.GET"
-        | "JSON.MGET" | "JSON.OBJKEYS" | "JSON.OBJLEN" | "JSON.STRLEN" | "JSON.TYPE" | "LCS"
-        | "LINDEX" | "LLEN" | "LPOS" | "LRANGE" | "MEMORY" | "MGET" | "OBJECT" | "PEXPIRETIME"
-        | "PFCOUNT" | "PING" | "PTTL" | "RANDOMKEY" | "SCAN" | "SCARD" | "SDIFF" | "SINTER"
-        | "SINTERCARD" | "SISMEMBER" | "SMEMBERS" | "SMISMEMBER" | "SRANDMEMBER" | "SSCAN"
-        | "STRLEN" | "SUNION" | "TTL" | "TYPE" | "XINFO" | "XLEN" | "XPENDING" | "XRANGE"
+        "ARCOUNT" | "ARGET" | "ARGETRANGE" | "ARGREP" | "ARINFO" | "ARLASTITEMS" | "ARLEN"
+        | "ARMGET" | "ARNEXT" | "AROP" | "ARSCAN" | "BITCOUNT" | "BITFIELD_RO" | "BITPOS"
+        | "COMMAND" | "DBSIZE" | "DIGEST" | "DUMP" | "ECHO" | "EXISTS" | "EXPIRETIME"
+        | "GEODIST" | "GEOHASH" | "GEOPOS" | "GEOSEARCH" | "GET" | "GETBIT" | "GETRANGE"
+        | "HEXISTS" | "HGET" | "HGETALL" | "HKEYS" | "HLEN" | "HMGET" | "HSCAN" | "HSTRLEN"
+        | "HTTL" | "HVALS" | "INFO" | "JSON.ARRLEN" | "JSON.GET" | "JSON.MGET" | "JSON.OBJKEYS"
+        | "JSON.OBJLEN" | "JSON.STRLEN" | "JSON.TYPE" | "LCS" | "LINDEX" | "LLEN" | "LPOS"
+        | "LRANGE" | "MEMORY" | "MGET" | "OBJECT" | "PEXPIRETIME" | "PFCOUNT" | "PING" | "PTTL"
+        | "RANDOMKEY" | "SCAN" | "SCARD" | "SDIFF" | "SINTER" | "SINTERCARD" | "SISMEMBER"
+        | "SMEMBERS" | "SMISMEMBER" | "SRANDMEMBER" | "SSCAN" | "STRLEN" | "SUNION" | "TTL"
+        | "TYPE" | "VCARD" | "VDIM" | "VEMB" | "VGETATTR" | "VINFO" | "VISMEMBER" | "VLINKS"
+        | "VRANDMEMBER" | "VRANGE" | "VSIM" | "XINFO" | "XLEN" | "XPENDING" | "XRANGE"
         | "XREAD" | "XREVRANGE" | "ZCARD" | "ZCOUNT" | "ZDIFF" | "ZINTER" | "ZLEXCOUNT"
         | "ZMSCORE" | "ZRANDMEMBER" | "ZRANGE" | "ZRANK" | "ZREVRANK" | "ZSCAN" | "ZSCORE"
         | "ZUNION" => AccessMode::ReadOnly,
@@ -321,6 +330,14 @@ fn minimum_redis_version(command: &str, arguments: &[Vec<u8>]) -> Option<RedisVe
         | "ZINTER" | "ZMSCORE" | "ZRANDMEMBER" | "ZUNION" => (6, 2),
         "EXPIRETIME" | "LCS" | "LMPOP" | "PEXPIRETIME" | "SINTERCARD" | "ZMPOP" => (7, 0),
         "HEXPIRE" | "HPERSIST" | "HTTL" => (7, 4),
+        "HGETDEL" | "HGETEX" | "HSETEX" | "VADD" | "VCARD" | "VDIM" | "VEMB" | "VGETATTR"
+        | "VINFO" | "VLINKS" | "VRANDMEMBER" | "VREM" | "VSETATTR" | "VSIM" => (8, 0),
+        "VISMEMBER" | "XACKDEL" | "XDELEX" => (8, 2),
+        "DELEX" | "DIGEST" | "MSETEX" | "VRANGE" => (8, 4),
+        "ARCOUNT" | "ARDEL" | "ARDELRANGE" | "ARGET" | "ARGETRANGE" | "ARGREP" | "ARINFO"
+        | "ARINSERT" | "ARLASTITEMS" | "ARLEN" | "ARMGET" | "ARMSET" | "ARNEXT" | "AROP"
+        | "ARRING" | "ARSCAN" | "ARSEEK" | "ARSET" | "INCREX" | "XNACK" => (8, 8),
+        "LMOVEM" => (8, 10),
         _ => return None,
     };
     Some(RedisVersion::new(version.0, version.1, 0))
@@ -414,12 +431,17 @@ mod tests {
     fn hard_blocks_apply_to_unrestricted_policy() {
         for (command, code) in [
             ("AUTH", "SESSION_COMMAND_UNSUPPORTED"),
+            ("HIMPORT", "SESSION_COMMAND_UNSUPPORTED"),
             ("MULTI", "TRANSACTION_COMMAND_UNSUPPORTED"),
             ("SUBSCRIBE", "SUBSCRIPTION_COMMAND_UNSUPPORTED"),
             ("MONITOR", "STREAMING_COMMAND_UNSUPPORTED"),
             ("BLPOP", "BLOCKING_COMMAND_UNSUPPORTED"),
             ("EVAL", "SCRIPT_COMMAND_UNSUPPORTED"),
             ("BGSAVE", "SERVER_LIFECYCLE_COMMAND_UNSUPPORTED"),
+            ("TRIMSLOTS", "SERVER_LIFECYCLE_COMMAND_UNSUPPORTED"),
+            ("XCFGSET", "INTERNAL_COMMAND_UNSUPPORTED"),
+            ("XIDMPRECORD", "INTERNAL_COMMAND_UNSUPPORTED"),
+            ("XSETID", "INTERNAL_COMMAND_UNSUPPORTED"),
         ] {
             let error = classify_command(command.as_bytes(), &[], RawCommandPolicy::Unrestricted)
                 .expect_err("hard boundary");
@@ -441,6 +463,149 @@ mod tests {
             )
             .is_err()
         );
+    }
+
+    #[test]
+    fn redis_eight_modern_commands_have_explicit_access_and_version_metadata() {
+        let access_groups = [
+            (
+                AccessMode::ReadOnly,
+                &[
+                    "ARCOUNT",
+                    "ARGET",
+                    "ARGETRANGE",
+                    "ARGREP",
+                    "ARINFO",
+                    "ARLASTITEMS",
+                    "ARLEN",
+                    "ARMGET",
+                    "ARNEXT",
+                    "AROP",
+                    "ARSCAN",
+                    "DIGEST",
+                    "VCARD",
+                    "VDIM",
+                    "VEMB",
+                    "VGETATTR",
+                    "VINFO",
+                    "VISMEMBER",
+                    "VLINKS",
+                    "VRANDMEMBER",
+                    "VRANGE",
+                    "VSIM",
+                ][..],
+            ),
+            (
+                AccessMode::ReadWrite,
+                &[
+                    "ARINSERT", "ARMSET", "ARRING", "ARSEEK", "ARSET", "HGETEX", "HSETEX",
+                    "INCREX", "MSETEX", "VADD", "VSETATTR",
+                ][..],
+            ),
+            (
+                AccessMode::Full,
+                &[
+                    "ARDEL",
+                    "ARDELRANGE",
+                    "DELEX",
+                    "HGETDEL",
+                    "LMOVEM",
+                    "VREM",
+                    "XACKDEL",
+                    "XDELEX",
+                    "XNACK",
+                ][..],
+            ),
+        ];
+        assert_eq!(
+            access_groups
+                .iter()
+                .map(|(_, commands)| commands.len())
+                .sum::<usize>(),
+            42
+        );
+        for (expected_access, commands) in access_groups {
+            for command in commands {
+                let metadata = invocation(command, &[])
+                    .unwrap_or_else(|error| panic!("{command} metadata: {error}"));
+                assert!(metadata.is_classified(), "{command}");
+                assert_eq!(metadata.required_access(), expected_access, "{command}");
+            }
+        }
+
+        let version_groups = [
+            (
+                RedisVersion::new(8, 0, 0),
+                &[
+                    "HGETDEL",
+                    "HGETEX",
+                    "HSETEX",
+                    "VADD",
+                    "VCARD",
+                    "VDIM",
+                    "VEMB",
+                    "VGETATTR",
+                    "VINFO",
+                    "VLINKS",
+                    "VRANDMEMBER",
+                    "VREM",
+                    "VSETATTR",
+                    "VSIM",
+                ][..],
+            ),
+            (
+                RedisVersion::new(8, 2, 0),
+                &["VISMEMBER", "XACKDEL", "XDELEX"][..],
+            ),
+            (
+                RedisVersion::new(8, 4, 0),
+                &["DELEX", "DIGEST", "MSETEX", "VRANGE"][..],
+            ),
+            (
+                RedisVersion::new(8, 8, 0),
+                &[
+                    "ARCOUNT",
+                    "ARDEL",
+                    "ARDELRANGE",
+                    "ARGET",
+                    "ARGETRANGE",
+                    "ARGREP",
+                    "ARINFO",
+                    "ARINSERT",
+                    "ARLASTITEMS",
+                    "ARLEN",
+                    "ARMGET",
+                    "ARMSET",
+                    "ARNEXT",
+                    "AROP",
+                    "ARRING",
+                    "ARSCAN",
+                    "ARSEEK",
+                    "ARSET",
+                    "INCREX",
+                    "XNACK",
+                ][..],
+            ),
+            (RedisVersion::new(8, 10, 0), &["LMOVEM"][..]),
+        ];
+        assert_eq!(
+            version_groups
+                .iter()
+                .map(|(_, commands)| commands.len())
+                .sum::<usize>(),
+            42
+        );
+        for (expected_version, commands) in version_groups {
+            for command in commands {
+                let metadata = invocation(command, &[])
+                    .unwrap_or_else(|error| panic!("{command} metadata: {error}"));
+                assert_eq!(
+                    metadata.minimum_redis_version(),
+                    Some(expected_version),
+                    "{command}"
+                );
+            }
+        }
     }
 
     #[test]

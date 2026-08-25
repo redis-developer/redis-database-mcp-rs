@@ -176,6 +176,238 @@ async fn bitmap_geo_and_hll_multi_key_tools_enforce_same_slot_cluster_contracts(
     }
 }
 
+#[tokio::test]
+async fn redis_eight_modern_tools_route_and_enforce_atomic_slots_in_cluster() {
+    let _cluster_guard = CLUSTER_TEST_LOCK.lock().await;
+    let Some(cluster) = TestCluster::start().await else {
+        return;
+    };
+    let discovery = DirectRedisCluster::connect(&cluster.seed_urls)
+        .await
+        .expect("connect cluster-aware Redis 8 discovery adapter");
+    let capabilities = discovery
+        .discover_capabilities()
+        .await
+        .expect("discover Redis 8 Cluster capabilities");
+    let version = capabilities
+        .redis_version()
+        .expect("Redis Cluster reports its version");
+    if version < RedisVersion::new(8, 0, 0) {
+        return;
+    }
+
+    for protocol in ["resp2", "resp3"] {
+        let urls = cluster
+            .seed_urls
+            .iter()
+            .map(|url| with_protocol(url, protocol))
+            .collect::<Vec<_>>();
+        let executor = DirectRedisCluster::connect(&urls)
+            .await
+            .expect("connect Redis 8 Cluster protocol adapter");
+        let client = router_client(executor).await;
+        let same = format!(
+            "redis-mcp:modern:{{same-{}}}:{protocol}",
+            std::process::id()
+        );
+        let other = format!(
+            "redis-mcp:modern:{{other-{}}}:{protocol}",
+            std::process::id()
+        );
+        let vector = format!("{same}:vectors");
+        let array = format!("{same}:array");
+        let source = format!("{same}:source");
+        let destination = format!("{same}:destination");
+        let cross_destination = format!("{other}:destination");
+        let mset_one = format!("{same}:mset-one");
+        let mset_two = format!("{same}:mset-two");
+        let cross_mset = format!("{other}:mset");
+        let stream = format!("{same}:stream");
+
+        let added = client
+            .call_tool(
+                "redis_vadd",
+                serde_json::json!({
+                    "key": vector,
+                    "vector": {"type": "values", "values": [1, 0]},
+                    "element": {"value": "alpha"}
+                }),
+            )
+            .await
+            .expect("Cluster VADD")
+            .structured_content
+            .expect("structured Cluster VADD");
+        assert_eq!(added["changed"], true, "{protocol}");
+        let cardinality = client
+            .call_tool("redis_vcard", serde_json::json!({"key": vector}))
+            .await
+            .expect("routed Cluster VCARD")
+            .structured_content
+            .expect("structured Cluster VCARD");
+        assert_eq!(cardinality["cardinality"], 1, "{protocol}");
+
+        if version >= RedisVersion::new(8, 4, 0) {
+            let same_slot = client
+                .call_tool(
+                    "redis_msetex",
+                    serde_json::json!({
+                        "entries": [
+                            {"key": {"value": mset_one}, "value": {"value": "one"}},
+                            {"key": {"value": mset_two}, "value": {"value": "two"}}
+                        ],
+                        "expiration": {"type": "seconds", "value": 60}
+                    }),
+                )
+                .await
+                .expect("same-slot Cluster MSETEX")
+                .structured_content
+                .expect("structured same-slot Cluster MSETEX");
+            assert_eq!(same_slot["applied"], true, "{protocol}");
+
+            let cross_slot = client
+                .call_tool(
+                    "redis_msetex",
+                    serde_json::json!({
+                        "entries": [
+                            {"key": {"value": mset_one}, "value": {"value": "one"}},
+                            {"key": {"value": cross_mset}, "value": {"value": "other"}}
+                        ]
+                    }),
+                )
+                .await
+                .expect("cross-slot MSETEX is represented as a tool result");
+            assert!(cross_slot.is_error, "{protocol}: {cross_slot:?}");
+            assert!(
+                serde_json::to_string(&cross_slot)
+                    .expect("serialize MSETEX CROSSSLOT")
+                    .contains("CROSSSLOT"),
+                "{protocol}: {cross_slot:?}"
+            );
+        }
+
+        if version >= RedisVersion::new(8, 8, 0) {
+            let set = client
+                .call_tool(
+                    "redis_arset",
+                    serde_json::json!({
+                        "key": array,
+                        "index": 0,
+                        "values": [{"value": "one"}, {"value": "two"}]
+                    }),
+                )
+                .await
+                .expect("routed Cluster ARSET")
+                .structured_content
+                .expect("structured Cluster ARSET");
+            assert_eq!(set["new_slots"], 2, "{protocol}");
+            let scan = client
+                .call_tool(
+                    "redis_arscan",
+                    serde_json::json!({"key": array, "start": 0, "end": 10, "limit": 10}),
+                )
+                .await
+                .expect("routed Cluster ARSCAN")
+                .structured_content
+                .expect("structured Cluster ARSCAN");
+            assert_eq!(scan["count"], 2, "{protocol}");
+        }
+
+        client
+            .call_tool(
+                "redis_xadd",
+                serde_json::json!({
+                    "key": stream,
+                    "id": {"type": "explicit", "id": {"milliseconds": 1, "sequence": 0}},
+                    "fields": [{"field": "value", "value": "cluster"}]
+                }),
+            )
+            .await
+            .expect("routed Cluster XADD");
+        if version >= RedisVersion::new(8, 2, 0) {
+            let deleted = client
+                .call_tool(
+                    "redis_xdelex",
+                    serde_json::json!({
+                        "key": stream,
+                        "reference_policy": "delete_references",
+                        "ids": [{"milliseconds": 1, "sequence": 0}]
+                    }),
+                )
+                .await
+                .expect("routed Cluster XDELEX")
+                .structured_content
+                .expect("structured Cluster XDELEX");
+            assert_eq!(
+                deleted["results"].as_array().unwrap().len(),
+                1,
+                "{protocol}"
+            );
+        }
+
+        if version >= RedisVersion::new(8, 10, 0) {
+            client
+                .call_tool(
+                    "redis_rpush",
+                    serde_json::json!({
+                        "key": source,
+                        "elements": [{"value": "one"}, {"value": "two"}]
+                    }),
+                )
+                .await
+                .expect("seed same-slot LMOVEM source");
+            let moved = client
+                .call_tool(
+                    "redis_lmovem",
+                    serde_json::json!({
+                        "source": {"value": source},
+                        "destination": {"value": destination},
+                        "from": "right",
+                        "to": "left",
+                        "amount": {"type": "up_to", "count": 2, "ordering": "bulk"}
+                    }),
+                )
+                .await
+                .expect("same-slot Cluster LMOVEM")
+                .structured_content
+                .expect("structured same-slot Cluster LMOVEM");
+            assert_eq!(moved["count"], 2, "{protocol}");
+
+            let cross_slot = client
+                .call_tool(
+                    "redis_lmovem",
+                    serde_json::json!({
+                        "source": {"value": source},
+                        "destination": {"value": cross_destination},
+                        "from": "left",
+                        "to": "right"
+                    }),
+                )
+                .await
+                .expect("cross-slot LMOVEM is represented as a tool result");
+            assert!(cross_slot.is_error, "{protocol}: {cross_slot:?}");
+            assert!(
+                serde_json::to_string(&cross_slot)
+                    .expect("serialize LMOVEM CROSSSLOT")
+                    .contains("CROSSSLOT"),
+                "{protocol}: {cross_slot:?}"
+            );
+        }
+
+        client
+            .call_tool(
+                "redis_del",
+                serde_json::json!({
+                    "keys": [
+                        vector, array, source, destination, cross_destination,
+                        mset_one, mset_two, cross_mset, stream
+                    ]
+                }),
+            )
+            .await
+            .expect("clean modern Cluster keys");
+    }
+}
+
 impl TestCluster {
     async fn start() -> Option<Self> {
         if let Ok(seed_urls) = std::env::var("REDIS_CLUSTER_URLS") {

@@ -4,6 +4,7 @@ mod data_structures;
 mod diagnostics;
 mod essentials;
 mod json_tools;
+mod modern_data;
 mod pubsub;
 mod pubsub_sessions;
 mod search;
@@ -336,6 +337,7 @@ pub(crate) fn add_read_only_tools(
     }
     if bundles.contains(&ToolBundle::DataStructures) {
         router = data_structures::add_read_tools(router, state.clone());
+        router = modern_data::add_read_tools(router, state.clone());
         router = specialized_data::add_read_tools(router, state.clone());
         router = streams::add_read_tools(router, state.clone());
     }
@@ -367,6 +369,7 @@ pub(crate) fn add_write_tools(
     }
     if bundles.contains(&ToolBundle::DataStructures) {
         router = data_structures::add_write_tools(router, state.clone());
+        router = modern_data::add_write_tools(router, state.clone());
         router = specialized_data::add_write_tools(router, state.clone());
         router = streams::add_write_tools(router, state.clone());
     }
@@ -390,6 +393,7 @@ pub(crate) fn add_destructive_tools(
     }
     if bundles.contains(&ToolBundle::DataStructures) {
         router = data_structures::add_destructive_tools(router, state.clone());
+        router = modern_data::add_destructive_tools(router, state.clone());
         router = specialized_data::add_destructive_tools(router, state.clone());
         router = streams::add_destructive_tools(router, state.clone());
     }

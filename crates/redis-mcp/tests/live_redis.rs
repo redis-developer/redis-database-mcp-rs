@@ -654,7 +654,7 @@ async fn redis_eight_modern_surface_is_version_gated_and_live_in_resp2_and_resp3
                 serde_json::json!({
                     "key": array,
                     "index": 0,
-                    "elements": [
+                    "values": [
                         {"value": "alpha"},
                         {"value": "beta"},
                         {"value": "alphabet"}
@@ -674,12 +674,12 @@ async fn redis_eight_modern_surface_is_version_gated_and_live_in_resp2_and_resp3
             .await;
             assert_eq!(
                 call_structured(&client, "redis_arcount", serde_json::json!({"key": array})).await
-                    ["length"],
+                    ["count"],
                 4,
                 "{protocol}"
             );
             assert_eq!(
-                call_structured(&client, "redis_arlen", serde_json::json!({"key": array})).await["count"],
+                call_structured(&client, "redis_arlen", serde_json::json!({"key": array})).await["length"],
                 6,
                 "{protocol}"
             );

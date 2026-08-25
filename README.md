@@ -8,7 +8,16 @@ identity, target selection, and product policy outside the Redis database
 boundary.
 
 The repository is named redis-database-mcp-rs to distinguish this surface from
-Redis Cloud and Redis Enterprise APIs. The Rust package is simply redis-mcp.
+Redis Cloud and Redis Enterprise APIs. It is a Cargo workspace with two focused
+packages:
+
+- `crates/redis-mcp`: the reusable, transport-independent Redis MCP library;
+- `crates/redis-mcp-server`: the thin standalone server and transport host.
+
+User-facing CLI and REPL behavior remains outside the initial release boundary.
+For now, `mcp-repl` dynamically derives both interactive and one-shot commands
+from the server's MCP surface, which lets the library contract drive agent and
+human workflows without duplicating command definitions.
 
 ## Curated default
 
@@ -93,7 +102,7 @@ REPL findings, and redisctl migration sequence.
 
 ## Run the standalone server
 
-    cargo run --bin redis-mcp-server -- \
+    cargo run -p redis-mcp-server -- \
       --url redis://127.0.0.1:6379 \
       --access read-write \
       --stdio
@@ -105,6 +114,11 @@ Use it with any stdio MCP client. With
       --url redis://127.0.0.1:6379 \
       --access read-write \
       --stdio
+
+The same generated command surface is available non-interactively through
+`mcp-repl --exec`, making it the interim one-shot CLI as well as the REPL. A
+future Redis-specific frontend can build on a reusable `mcp-repl` core after
+the generated experience has exposed which specialized layers are worthwhile.
 
 Inside the REPL:
 
@@ -216,7 +230,7 @@ crate-owned `RedisCommand`, `RedisValue`, and `RedisError` types. They do not
 need to share this crate's redis-rs dependency line. Commands include the
 originating tool, required access level, and any required Redis module for host
 telemetry, capability routing, and audit records. See
-[the custom executor example](examples/custom_executor.rs).
+[the custom executor example](crates/redis-mcp/examples/custom_executor.rs).
 
 Subscription sessions deliberately use a separate `PubSubSessionManager`
 boundary: every live session owns a dedicated Redis connection and outlives a
@@ -258,7 +272,7 @@ The invocation stays binary-safe and shares command classification, access,
 capability checks, timeout, redaction, error categories, and result budgets
 with `redis_command`. Tokenization, quoting, history, completion, rendering,
 and session-oriented commands remain frontend concerns. See the complete
-[pre-tokenized argv example](examples/native_argv.rs).
+[pre-tokenized argv example](crates/redis-mcp/examples/native_argv.rs).
 
 `RedisCapabilities` is crate-owned too. A host can supply an authoritative or
 partial snapshot containing Redis and module versions, deployment mode, and
@@ -297,7 +311,8 @@ the library surface roadmap.
 
 ## Compatibility and testing
 
-On Unix, `cargo test --all-features` starts isolated Redis processes through
+On Unix, `cargo test --workspace --all-features` starts isolated Redis processes
+through
 [`redis-server-wrapper`](https://github.com/joshrotenberg/redis-server-wrapper)
 when `REDIS_URL` is not set. `redis-server` and `redis-cli` must be on `PATH`;
 when either binary is unavailable, the live cases print an explicit skip reason.

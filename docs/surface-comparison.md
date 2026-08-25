@@ -252,7 +252,7 @@ When either surface changes:
 2. update the baseline tool list and capability mapping together;
 3. add a reason and issue for every planned capability;
 4. update contract scores only with source or test evidence;
-5. run `cargo test --test surface_comparison` and review the JSON diff.
+5. run `cargo test -p redis-mcp --test surface_comparison` and review the JSON diff.
 
 The comparison never fetches upstream state during CI. Reviews receive a
 deterministic diff rather than a result that changes when another repository

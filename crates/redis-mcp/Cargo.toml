@@ -1,0 +1,36 @@
+[package]
+name = "redis-mcp"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+readme.workspace = true
+documentation = "https://docs.rs/redis-mcp"
+description = "Composable MCP tools for Redis databases"
+keywords = ["redis", "mcp", "database", "ai", "tower"]
+categories = ["database", "development-tools"]
+
+[lib]
+name = "redis_mcp"
+path = "src/lib.rs"
+
+[dependencies]
+async-trait.workspace = true
+base64.workspace = true
+rand.workspace = true
+redis.workspace = true
+schemars.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+tokio.workspace = true
+tower-mcp.workspace = true
+
+[dev-dependencies]
+pretty_assertions.workspace = true
+
+[target.'cfg(unix)'.dev-dependencies]
+redis-server-wrapper.workspace = true
+tempfile.workspace = true

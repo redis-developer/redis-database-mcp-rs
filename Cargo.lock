@@ -866,13 +866,26 @@ version = "0.1.0"
 dependencies = [
  "async-trait",
  "base64",
- "clap",
  "pretty_assertions",
  "rand",
  "redis",
  "redis-server-wrapper",
  "schemars",
  "serde",
+ "serde_json",
+ "tempfile",
+ "tokio",
+ "tower-mcp",
+]
+
+[[package]]
+name = "redis-mcp-server"
+version = "0.1.0"
+dependencies = [
+ "clap",
+ "redis",
+ "redis-mcp",
+ "redis-server-wrapper",
  "serde_json",
  "tempfile",
  "tokio",

@@ -9,7 +9,7 @@ use redis_mcp::{
     RedisMcp, RedisModule, RedisVersion, ToolBundle,
 };
 use redis_server_wrapper::{Error as RedisServerError, RedisCluster, RedisClusterHandle};
-use tower_mcp::client::{ChannelTransport, McpClient, StdioClientTransport};
+use tower_mcp::client::{ChannelTransport, McpClient};
 
 static CLUSTER_TEST_LOCK: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
 
@@ -1595,90 +1595,4 @@ async fn cluster_routes_curated_and_raw_tools_across_three_masters() {
             .expect("structured same-slot DEL");
         assert_eq!(same_slot_deleted["deleted"], 9);
     }
-
-    let binary = env!("CARGO_BIN_EXE_redis-mcp-server");
-    let mut arguments = vec![
-        "--access".to_string(),
-        "read-write".to_string(),
-        "--stdio".to_string(),
-    ];
-    for seed_url in &cluster.seed_urls {
-        arguments.push("--cluster-url".to_string());
-        arguments.push(seed_url.clone());
-    }
-    let argument_refs = arguments.iter().map(String::as_str).collect::<Vec<_>>();
-    let transport = StdioClientTransport::spawn(binary, &argument_refs)
-        .await
-        .expect("spawn cluster-aware redis-mcp-server");
-    let client = McpClient::connect(transport)
-        .await
-        .expect("connect cluster stdio client");
-    client
-        .initialize("redis-mcp-cluster-stdio-test", "0")
-        .await
-        .expect("initialize cluster stdio client");
-    let pubsub_channel = format!("redis-mcp:cluster-stdio:{}:pubsub", std::process::id());
-    let pubsub_session = client
-        .call_tool(
-            "redis_subscribe",
-            serde_json::json!({"subscriptions": [{"value": pubsub_channel}]}),
-        )
-        .await
-        .expect("subscribe over Cluster stdio")
-        .structured_content
-        .expect("structured Cluster stdio subscription")["session_id"]
-        .as_str()
-        .expect("Cluster stdio session id")
-        .to_string();
-    client
-        .call_tool(
-            "redis_publish",
-            serde_json::json!({
-                "channel": {"value": pubsub_channel},
-                "message": {"value": "cluster-stdio"}
-            }),
-        )
-        .await
-        .expect("publish over Cluster stdio");
-    let pubsub_read = client
-        .call_tool(
-            "redis_pubsub_read",
-            serde_json::json!({"session_id": pubsub_session, "wait_ms": 1000}),
-        )
-        .await
-        .expect("read Pub/Sub over Cluster stdio")
-        .structured_content
-        .expect("structured Cluster stdio Pub/Sub read");
-    assert_eq!(
-        pubsub_read["messages"][0]["payload"]["value"],
-        "cluster-stdio"
-    );
-    client
-        .call_tool(
-            "redis_pubsub_close",
-            serde_json::json!({"session_id": pubsub_session}),
-        )
-        .await
-        .expect("close Cluster stdio Pub/Sub session");
-    let (_, remote_key) = keys_on_three_masters(&cluster.seed_urls[0], "stdio").await;
-    let set = client
-        .call_tool(
-            "redis_set",
-            serde_json::json!({
-                "key": remote_key,
-                "value": "over-cluster-stdio",
-                "expiration": {"type": "seconds", "value": 60}
-            }),
-        )
-        .await
-        .expect("set remote key over cluster stdio");
-    assert!(!set.is_error, "{set:?}");
-    let get = client
-        .call_tool("redis_get", serde_json::json!({"key": remote_key}))
-        .await
-        .expect("get remote key over cluster stdio");
-    assert_eq!(
-        get.structured_content.as_ref().unwrap()["value"],
-        "over-cluster-stdio"
-    );
 }

@@ -6,9 +6,9 @@ use redis_mcp::{
     NativeRedisInvocation, OutputBudget, PubSubReadRequest, PubSubSessionLimits,
     PubSubSessionManager, PubSubSessionOwner, PubSubSubscriptionKind, RawCommandPolicy,
     RedisDeployment, RedisInvocationEngine, RedisMcp, RedisModule, RedisValue, RedisVersion,
-    ToolBundle, UnavailableToolPolicy, tool_names,
+    ToolBundle, UnavailableToolPolicy,
 };
-use tower_mcp::client::{ChannelTransport, McpClient, StdioClientTransport};
+use tower_mcp::client::{ChannelTransport, McpClient};
 
 #[cfg(unix)]
 use redis_mcp::RedisErrorKind;
@@ -3443,138 +3443,6 @@ async fn live_binary_values_remain_explicit_in_resp2_and_resp3() {
             .await
             .expect("clean up binary keys");
     }
-}
-
-#[tokio::test]
-async fn live_redis_round_trip_through_stdio_server() {
-    let Some(redis) = TestRedis::start().await else {
-        return;
-    };
-    let url = redis.url;
-
-    let binary = env!("CARGO_BIN_EXE_redis-mcp-server");
-    let transport = StdioClientTransport::spawn(
-        binary,
-        &["--url", &url, "--access", "read-write", "--stdio"],
-    )
-    .await
-    .expect("spawn redis-mcp-server");
-    let client = McpClient::connect(transport)
-        .await
-        .expect("connect stdio MCP client");
-    client
-        .initialize("redis-mcp-stdio-test", "0")
-        .await
-        .expect("initialize stdio MCP client");
-
-    let listed = client.list_tools().await.expect("list stdio tools");
-    assert_eq!(
-        listed.tools.len(),
-        tool_names(AccessMode::ReadWrite, false).len() + 6
-    );
-    assert!(listed.tools.iter().any(|tool| tool.name == "redis_get"));
-    assert!(listed.tools.iter().any(|tool| tool.name == "redis_set"));
-    assert!(listed.tools.iter().any(|tool| tool.name == "redis_hget"));
-    assert!(listed.tools.iter().any(|tool| tool.name == "redis_hset"));
-    assert!(
-        listed
-            .tools
-            .iter()
-            .any(|tool| tool.name == "redis_subscribe")
-    );
-    assert!(!listed.tools.iter().any(|tool| tool.name == "redis_del"));
-
-    let channel = test_key("stdio-pubsub");
-    let session_id = client
-        .call_tool(
-            "redis_subscribe",
-            serde_json::json!({"subscriptions": [{"value": channel}]}),
-        )
-        .await
-        .expect("subscribe over stdio")
-        .structured_content
-        .expect("structured stdio subscription")["session_id"]
-        .as_str()
-        .expect("stdio session id")
-        .to_string();
-    client
-        .call_tool(
-            "redis_publish",
-            serde_json::json!({"channel": {"value": channel}, "message": {"value": "over-stdio"}}),
-        )
-        .await
-        .expect("publish over stdio");
-    let message = client
-        .call_tool(
-            "redis_pubsub_read",
-            serde_json::json!({"session_id": session_id, "wait_ms": 1000}),
-        )
-        .await
-        .expect("read Pub/Sub over stdio")
-        .structured_content
-        .expect("structured stdio Pub/Sub read");
-    assert_eq!(message["messages"][0]["payload"]["value"], "over-stdio");
-    client
-        .call_tool(
-            "redis_pubsub_close",
-            serde_json::json!({"session_id": session_id}),
-        )
-        .await
-        .expect("close Pub/Sub session over stdio");
-
-    let key = test_key("stdio");
-    client
-        .call_tool(
-            "redis_set",
-            serde_json::json!({
-                "key": key,
-                "value": "over-stdio",
-                "expiration": {"type": "seconds", "value": 60}
-            }),
-        )
-        .await
-        .expect("set key over stdio");
-    let get = client
-        .call_tool("redis_get", serde_json::json!({"key": key}))
-        .await
-        .expect("get key over stdio");
-    assert_eq!(
-        get.structured_content.as_ref().unwrap()["value"],
-        "over-stdio"
-    );
-
-    let hash_key = test_key("stdio-hash");
-    client
-        .call_tool(
-            "redis_hset",
-            serde_json::json!({"key": hash_key, "fields": {"name": "Ada"}}),
-        )
-        .await
-        .expect("set hash over stdio");
-    let hget = client
-        .call_tool(
-            "redis_hget",
-            serde_json::json!({"key": hash_key, "field": "name"}),
-        )
-        .await
-        .expect("get hash over stdio");
-    assert_eq!(hget.structured_content.as_ref().unwrap()["value"], "Ada");
-
-    let direct = DirectRedis::connect(&url)
-        .await
-        .expect("connect for cleanup");
-    let cleanup = RedisMcp::builder(direct).access(AccessMode::Full).build();
-    let cleanup_client = McpClient::connect(ChannelTransport::new(cleanup))
-        .await
-        .expect("connect cleanup client");
-    cleanup_client
-        .initialize("redis-mcp-cleanup", "0")
-        .await
-        .expect("initialize cleanup client");
-    cleanup_client
-        .call_tool("redis_del", serde_json::json!({"keys": [key, hash_key]}))
-        .await
-        .expect("delete stdio test key");
 }
 
 #[tokio::test]

@@ -30,8 +30,29 @@ jobs:
           components: rustfmt, clippy
       - uses: Swatinem/rust-cache@v2
       - run: cargo fmt --all -- --check
-      - run: cargo clippy --all-targets --all-features -- -D warnings
-      - run: cargo test --all-features
+      - run: cargo clippy --workspace --all-targets --all-features -- -D warnings
+      - run: cargo test --workspace --all-features --no-fail-fast
+
+  package:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@1.90.0
+      - uses: Swatinem/rust-cache@v2
+      - name: Verify library package
+        run: cargo package -p redis-mcp
+      - name: Assemble workspace packages
+        run: cargo package --workspace --no-verify
+      - name: Verify server package against packaged library
+        shell: bash
+        run: |
+          server_archive="$(find target/package -maxdepth 1 -name 'redis-mcp-server-*.crate' -print -quit)"
+          server_dir="${server_archive%.crate}"
+          tar -xzf "$server_archive" -C target/package
+          library_dir="$(find target/package -maxdepth 1 -type d -name 'redis-mcp-[0-9]*' -print -quit)"
+          cargo check \
+            --manifest-path "$server_dir/Cargo.toml" \
+            --config "patch.crates-io.redis-mcp.path=\"$library_dir\""
 
   redis-compatibility:
     name: Redis ${{ matrix.redis }}
@@ -58,7 +79,7 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           key: redis-${{ matrix.redis }}
-      - run: cargo test --all-features --test live_redis
+      - run: cargo test -p redis-mcp --all-features --test live_redis
 
   redis-stack:
     name: Redis Stack 7.4.0-v8
@@ -81,7 +102,7 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           key: redis-stack-7.4.0-v8
-      - run: cargo test --all-features --test live_redis_stack
+      - run: cargo test -p redis-mcp --all-features --test live_redis_stack
 
   redis-cluster:
     name: Redis Cluster ${{ matrix.redis }}
@@ -127,4 +148,5 @@ jobs:
             127.0.0.1:7002 \
             --cluster-yes
           docker exec redis-cluster redis-cli -p 7000 CLUSTER INFO
-      - run: cargo test --all-features --test live_redis_cluster
+      - run: cargo test -p redis-mcp --all-features --test live_redis_cluster
+      - run: cargo test -p redis-mcp-server --all-features --test live_stdio_cluster

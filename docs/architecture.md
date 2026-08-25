@@ -81,7 +81,7 @@ name, access classification, and version/module requirements without
 reimplementing library policy. The MCP `redis_command` handler delegates to
 this engine and then applies its complete-`CallToolResult` byte check, so native
 and MCP consumers share execution policy while retaining their appropriate
-result envelopes. See `examples/native_argv.rs`.
+result envelopes. See `crates/redis-mcp/examples/native_argv.rs`.
 
 ## Tower-MCP is an intentional public dependency
 
@@ -102,7 +102,8 @@ The default composition model binds one executor to one router. The standalone
 binary accepts either one standalone URL or one or more Redis Cluster seed URLs;
 both are server configuration and neither appears in tool schemas. A host can
 instead resolve a profile, cluster, or other connection policy before
-constructing its executor, as shown in `examples/custom_executor.rs`. The
+constructing its executor, as shown in
+`crates/redis-mcp/examples/custom_executor.rs`. The
 executor receives tool and access metadata for host-side telemetry and audit
 records.
 
@@ -373,8 +374,8 @@ contract layers; none is presented as a replacement for ACLs.
 
 ## Contract change discipline
 
-`tests/snapshots/curated_catalog.json` records each implemented tool's name,
-bundle, access tier, deployment requirement, Redis/module version and command
-requirements, raw opt-in, description, input schema, output schema,
+`crates/redis-mcp/tests/snapshots/curated_catalog.json` records each implemented
+tool's name, bundle, access tier, deployment requirement, Redis/module version
+and command requirements, raw opt-in, description, input schema, output schema,
 annotations, and representative structured result. Any deliberate public
 contract change updates that snapshot in the same review.

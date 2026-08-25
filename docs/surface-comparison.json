@@ -239,7 +239,7 @@
         "id": "schemas",
         "library_score": 3,
         "redis_mcp_score": 2,
-        "library_evidence": ["tests/snapshots/curated_catalog.json", "tests/router_contract.rs"],
+        "library_evidence": ["crates/redis-mcp/tests/snapshots/curated_catalog.json", "crates/redis-mcp/tests/router_contract.rs"],
         "redis_mcp_evidence": ["src/tools", "tests/test_integration.py"],
         "target": "Keep every input and output schema snapshotted as the catalog grows."
       },
@@ -247,7 +247,7 @@
         "id": "structured_results",
         "library_score": 3,
         "redis_mcp_score": 1,
-        "library_evidence": ["tests/router_contract.rs"],
+        "library_evidence": ["crates/redis-mcp/tests/router_contract.rs"],
         "redis_mcp_evidence": ["src/tools"],
         "target": "Keep successful and error results machine-readable without prose-dependent semantics."
       },
@@ -255,7 +255,7 @@
         "id": "error_semantics",
         "library_score": 3,
         "redis_mcp_score": 1,
-        "library_evidence": ["src/executor.rs", "src/invocation.rs", "tests/native_invocation.rs", "tests/live_redis.rs"],
+        "library_evidence": ["crates/redis-mcp/src/executor.rs", "crates/redis-mcp/src/invocation.rs", "crates/redis-mcp/tests/native_invocation.rs", "crates/redis-mcp/tests/live_redis.rs"],
         "redis_mcp_evidence": ["src/tools"],
         "target": "Preserve stable categories, Redis codes, redaction, and MCP error signaling."
       },
@@ -263,7 +263,7 @@
         "id": "annotations_and_access",
         "library_score": 3,
         "redis_mcp_score": 0,
-        "library_evidence": ["src/access.rs", "src/catalog.rs", "src/raw.rs", "tests/native_invocation.rs", "tests/router_contract.rs"],
+        "library_evidence": ["crates/redis-mcp/src/access.rs", "crates/redis-mcp/src/catalog.rs", "crates/redis-mcp/src/raw.rs", "crates/redis-mcp/tests/native_invocation.rs", "crates/redis-mcp/tests/router_contract.rs"],
         "redis_mcp_evidence": ["src/common/server.py"],
         "target": "Keep discovery, annotations, and handler enforcement derived from one access classification."
       },
@@ -271,7 +271,7 @@
         "id": "output_bounds",
         "library_score": 3,
         "redis_mcp_score": 1,
-        "library_evidence": ["src/output.rs", "src/invocation.rs", "src/tools.rs", "tests/native_invocation.rs", "tests/router_contract.rs", "tests/live_redis.rs"],
+        "library_evidence": ["crates/redis-mcp/src/output.rs", "crates/redis-mcp/src/invocation.rs", "crates/redis-mcp/src/tools.rs", "crates/redis-mcp/tests/native_invocation.rs", "crates/redis-mcp/tests/router_contract.rs", "crates/redis-mcp/tests/live_redis.rs"],
         "redis_mcp_evidence": ["src/tools/misc.py"],
         "target": "Preserve centralized encoded-byte limits, per-tool entry policies, typed continuations, and boundary coverage as the surface grows."
       },
@@ -279,7 +279,7 @@
         "id": "binary_safety",
         "library_score": 3,
         "redis_mcp_score": 0,
-        "library_evidence": ["src/executor.rs", "src/invocation.rs", "tests/native_invocation.rs", "tests/live_redis.rs"],
+        "library_evidence": ["crates/redis-mcp/src/executor.rs", "crates/redis-mcp/src/invocation.rs", "crates/redis-mcp/tests/native_invocation.rs", "crates/redis-mcp/tests/live_redis.rs"],
         "redis_mcp_evidence": ["src/common/connection.py", "src/tools/hash.py"],
         "target": "Preserve explicit UTF-8/base64 values across every new data type."
       },
@@ -287,7 +287,7 @@
         "id": "cluster_behavior",
         "library_score": 3,
         "redis_mcp_score": 1,
-        "library_evidence": ["tests/live_redis_cluster.rs", ".github/workflows/ci.yml"],
+        "library_evidence": ["crates/redis-mcp/tests/live_redis_cluster.rs", ".github/workflows/ci.yml"],
         "redis_mcp_evidence": ["src/common/connection.py"],
         "target": "Specify single-slot, fan-out, aggregation, and partial-failure behavior for every new multi-key tool."
       },
@@ -295,7 +295,7 @@
         "id": "capability_and_version_awareness",
         "library_score": 3,
         "redis_mcp_score": 1,
-        "library_evidence": ["src/capabilities.rs", "src/catalog.rs", "src/lib.rs", "tests/router_contract.rs", "tests/live_redis.rs", "tests/live_redis_stack.rs", "tests/live_redis_cluster.rs"],
+        "library_evidence": ["crates/redis-mcp/src/capabilities.rs", "crates/redis-mcp/src/catalog.rs", "crates/redis-mcp/src/lib.rs", "crates/redis-mcp/tests/router_contract.rs", "crates/redis-mcp/tests/live_redis.rs", "crates/redis-mcp/tests/live_redis_stack.rs", "crates/redis-mcp/tests/live_redis_cluster.rs"],
         "redis_mcp_evidence": ["src/common/config.py"],
         "target": "Preserve bounded discovery, conservative cluster reduction, custom partial snapshots, explicit catalog requirements, and hide/advertise policy as tools grow."
       },
@@ -303,7 +303,7 @@
         "id": "live_compatibility_testing",
         "library_score": 3,
         "redis_mcp_score": 1,
-        "library_evidence": ["tests/live_redis.rs", "tests/live_redis_stack.rs", "tests/live_redis_cluster.rs", ".github/workflows/ci.yml"],
+        "library_evidence": ["crates/redis-mcp/tests/live_redis.rs", "crates/redis-mcp/tests/live_redis_stack.rs", "crates/redis-mcp/tests/live_redis_cluster.rs", ".github/workflows/ci.yml"],
         "redis_mcp_evidence": ["tests/test_integration.py", ".github/workflows/ci.yml"],
         "target": "Keep real MCP calls in the supported Redis, Stack, and cluster matrix."
       },
@@ -311,7 +311,7 @@
         "id": "embedding_and_host_policy",
         "library_score": 3,
         "redis_mcp_score": 0,
-        "library_evidence": ["src/executor.rs", "src/invocation.rs", "examples/custom_executor.rs", "examples/native_argv.rs", "docs/architecture.md"],
+        "library_evidence": ["crates/redis-mcp/src/executor.rs", "crates/redis-mcp/src/invocation.rs", "crates/redis-mcp/examples/custom_executor.rs", "crates/redis-mcp/examples/native_argv.rs", "docs/architecture.md"],
         "redis_mcp_evidence": ["src/common/server.py", "src/common/connection.py"],
         "target": "Keep redisctl and future REPL policy outside the Redis tool definitions."
       }

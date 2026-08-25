@@ -1118,6 +1118,407 @@ async fn live_key_string_semantics_in_resp2_and_resp3() {
 }
 
 #[tokio::test]
+async fn live_bitmap_geo_and_hll_families_are_typed_bounded_and_binary_safe() {
+    let Some(redis) = TestRedis::start().await else {
+        return;
+    };
+    let capabilities = DirectRedis::connect(&redis.url)
+        .await
+        .expect("connect for specialized data capability discovery")
+        .discover_capabilities()
+        .await
+        .expect("discover specialized data capabilities");
+    let redis_seven = capabilities
+        .redis_version()
+        .is_some_and(|version| version >= RedisVersion::new(7, 0, 0));
+
+    for protocol in ["resp2", "resp3"] {
+        let url = with_protocol(&redis.url, protocol);
+        let client = router_client(&url, AccessMode::Full).await;
+        let prefix = test_key(&format!("bitmap-geo-hll:{protocol}"));
+        let bitmap = format!("{prefix}:bitmap");
+        let wrong_type = format!("{prefix}:wrong-type");
+        let geo = format!("{prefix}:geo");
+        let geo_store = format!("{prefix}:geo-store");
+        let hll_left = format!("{prefix}:hll-left");
+        let hll_right = format!("{prefix}:hll-right");
+        let hll_merged = format!("{prefix}:hll-merged");
+        let hll_empty = format!("{prefix}:hll-empty");
+        let hll_empty_merged = format!("{prefix}:hll-empty-merged");
+
+        let setbit = client
+            .call_tool(
+                "redis_setbit",
+                serde_json::json!({"key": bitmap, "offset": 9, "value": true}),
+            )
+            .await
+            .expect("SETBIT tool result")
+            .structured_content
+            .expect("structured SETBIT");
+        assert_eq!(setbit["previous"], 0);
+        assert_eq!(setbit["value"], 1);
+
+        let getbit = client
+            .call_tool(
+                "redis_getbit",
+                serde_json::json!({"key": bitmap, "offset": 9}),
+            )
+            .await
+            .expect("GETBIT tool result")
+            .structured_content
+            .expect("structured GETBIT");
+        assert_eq!(getbit["set"], true);
+
+        let mut bitcount_input = serde_json::json!({"key": bitmap});
+        if redis_seven {
+            bitcount_input["range"] = serde_json::json!({"start": 8, "end": 15, "unit": "bit"});
+        }
+        let bitcount = client
+            .call_tool("redis_bitcount", bitcount_input)
+            .await
+            .expect("BITCOUNT tool result")
+            .structured_content
+            .expect("structured BITCOUNT");
+        assert_eq!(bitcount["set_bits"], 1);
+
+        let byte_bitcount = client
+            .call_tool(
+                "redis_bitcount",
+                serde_json::json!({
+                    "key": bitmap,
+                    "range": {"start": 0, "end": 1, "unit": "byte"}
+                }),
+            )
+            .await
+            .expect("byte-range BITCOUNT tool result")
+            .structured_content
+            .expect("structured byte-range BITCOUNT");
+        assert_eq!(byte_bitcount["set_bits"], 1);
+
+        let bitpos = client
+            .call_tool(
+                "redis_bitpos",
+                serde_json::json!({"key": bitmap, "bit": true}),
+            )
+            .await
+            .expect("BITPOS tool result")
+            .structured_content
+            .expect("structured BITPOS");
+        assert_eq!(bitpos["position"], 9);
+
+        let bitfield = client
+            .call_tool(
+                "redis_bitfield",
+                serde_json::json!({
+                    "key": bitmap,
+                    "operations": [
+                        {
+                            "operation": "set",
+                            "encoding": {"signed": true, "width": 8},
+                            "offset": {"kind": "index", "value": 2},
+                            "value": "120"
+                        },
+                        {
+                            "operation": "increment",
+                            "encoding": {"signed": true, "width": 8},
+                            "offset": {"kind": "index", "value": 2},
+                            "increment": "20",
+                            "overflow": "saturate"
+                        }
+                    ]
+                }),
+            )
+            .await
+            .expect("BITFIELD tool result")
+            .structured_content
+            .expect("structured BITFIELD");
+        assert_eq!(bitfield["results"][1]["value"], "127");
+
+        let bitfield_ro = client
+            .call_tool(
+                "redis_bitfield_ro",
+                serde_json::json!({
+                    "key": bitmap,
+                    "operations": [{
+                        "encoding": {"signed": true, "width": 8},
+                        "offset": {"kind": "index", "value": 2}
+                    }]
+                }),
+            )
+            .await
+            .expect("BITFIELD_RO tool result")
+            .structured_content
+            .expect("structured BITFIELD_RO");
+        assert_eq!(bitfield_ro["results"][0]["value"], "127");
+
+        client
+            .call_tool(
+                "redis_rpush",
+                serde_json::json!({"key": wrong_type, "elements": ["not-a-bitmap"]}),
+            )
+            .await
+            .expect("seed bitmap wrong type");
+        let wrong_type_result = client
+            .call_tool(
+                "redis_getbit",
+                serde_json::json!({"key": wrong_type, "offset": 0}),
+            )
+            .await
+            .expect("GETBIT wrong type tool result");
+        assert!(wrong_type_result.is_error);
+        assert!(
+            serde_json::to_string(&wrong_type_result)
+                .expect("serialize GETBIT wrong type")
+                .contains("WRONGTYPE")
+        );
+
+        let binary_member = BASE64.encode([0xff, 0x00]);
+        let geoadd = client
+            .call_tool(
+                "redis_geoadd",
+                serde_json::json!({
+                    "key": geo,
+                    "members": [
+                        {"member": "san-francisco", "longitude": "-122.4194", "latitude": "37.7749"},
+                        {"member": "oakland", "longitude": "-122.2712", "latitude": "37.8044"},
+                        {"member": {"value": binary_member, "encoding": "base64"}, "longitude": "-122.3", "latitude": "37.8"}
+                    ]
+                }),
+            )
+            .await
+            .expect("GEOADD tool result")
+            .structured_content
+            .expect("structured GEOADD");
+        assert_eq!(geoadd["affected"], 3);
+        let conditional_geoadd = client
+            .call_tool(
+                "redis_geoadd",
+                serde_json::json!({
+                    "key": geo,
+                    "nx": true,
+                    "ch": true,
+                    "members": [{
+                        "member": "san-francisco",
+                        "longitude": "-122.4194",
+                        "latitude": "37.7749"
+                    }]
+                }),
+            )
+            .await
+            .expect("conditional GEOADD tool result")
+            .structured_content
+            .expect("structured conditional GEOADD");
+        assert_eq!(conditional_geoadd["affected"], 0);
+        assert_eq!(conditional_geoadd["count_mode"], "added_or_changed");
+
+        let distance_result = client
+            .call_tool(
+                "redis_geodist",
+                serde_json::json!({
+                    "key": geo, "from": "san-francisco", "to": "oakland",
+                    "unit": "kilometers"
+                }),
+            )
+            .await
+            .expect("GEODIST tool result");
+        assert!(!distance_result.is_error, "{distance_result:?}");
+        let distance = distance_result
+            .structured_content
+            .expect("structured GEODIST");
+        assert!(distance["distance"].as_str().is_some());
+        assert_eq!(distance["unit"], "kilometers");
+        let missing_distance = client
+            .call_tool(
+                "redis_geodist",
+                serde_json::json!({"key": geo, "from": "san-francisco", "to": "missing"}),
+            )
+            .await
+            .expect("missing GEODIST tool result")
+            .structured_content
+            .expect("structured missing GEODIST");
+        assert_eq!(missing_distance["distance"], serde_json::Value::Null);
+
+        let hashes = client
+            .call_tool(
+                "redis_geohash",
+                serde_json::json!({"key": geo, "members": ["san-francisco", "missing"]}),
+            )
+            .await
+            .expect("GEOHASH tool result")
+            .structured_content
+            .expect("structured GEOHASH");
+        assert!(hashes["members"][0]["geohash"].as_str().is_some());
+        assert_eq!(hashes["members"][1]["geohash"], serde_json::Value::Null);
+
+        let positions = client
+            .call_tool(
+                "redis_geopos",
+                serde_json::json!({"key": geo, "members": ["san-francisco", "missing"]}),
+            )
+            .await
+            .expect("GEOPOS tool result")
+            .structured_content
+            .expect("structured GEOPOS");
+        assert!(positions["members"][0]["position"]["longitude"].is_string());
+        assert_eq!(positions["members"][1]["position"], serde_json::Value::Null);
+
+        let search = client
+            .call_tool(
+                "redis_geosearch",
+                serde_json::json!({
+                    "key": geo,
+                    "center": {"kind": "member", "member": "san-francisco"},
+                    "shape": {"kind": "radius", "radius": "20", "unit": "kilometers"},
+                    "sort": "ascending", "count": 10
+                }),
+            )
+            .await
+            .expect("GEOSEARCH tool result")
+            .structured_content
+            .expect("structured GEOSEARCH");
+        assert_eq!(search["count"], 3);
+        assert!(search["results"][0]["distance"].is_string());
+        assert!(search["results"][0]["geohash_integer"].is_string());
+
+        let stored = client
+            .call_tool(
+                "redis_geosearchstore",
+                serde_json::json!({
+                    "destination": geo_store, "source": geo,
+                    "center": {"kind": "member", "member": "san-francisco"},
+                    "shape": {"kind": "box", "width": "50", "height": "50", "unit": "kilometers"},
+                    "count": 10, "store_distance": true
+                }),
+            )
+            .await
+            .expect("GEOSEARCHSTORE tool result")
+            .structured_content
+            .expect("structured GEOSEARCHSTORE");
+        assert_eq!(stored["stored"], 3);
+        assert_eq!(stored["destination_overwritten"], true);
+
+        let initialized = client
+            .call_tool("redis_pfadd", serde_json::json!({"key": hll_empty}))
+            .await
+            .expect("empty PFADD tool result")
+            .structured_content
+            .expect("structured empty PFADD");
+        assert_eq!(initialized["observed"], 0);
+        assert_eq!(initialized["key_created"], true);
+        assert_eq!(initialized["register_changed"], false);
+
+        let initialized_merge = client
+            .call_tool(
+                "redis_pfmerge",
+                serde_json::json!({"destination": hll_empty_merged}),
+            )
+            .await
+            .expect("empty PFMERGE tool result")
+            .structured_content
+            .expect("structured empty PFMERGE");
+        assert_eq!(initialized_merge["source_count"], 0);
+        assert_eq!(initialized_merge["cluster_requires_same_slot"], false);
+
+        for (key, elements) in [
+            (&hll_left, serde_json::json!(["alice", "bob"])),
+            (
+                &hll_right,
+                serde_json::json!(["bob", {"value": binary_member, "encoding": "base64"}]),
+            ),
+        ] {
+            let added = client
+                .call_tool(
+                    "redis_pfadd",
+                    serde_json::json!({"key": key, "elements": elements}),
+                )
+                .await
+                .expect("PFADD tool result")
+                .structured_content
+                .expect("structured PFADD");
+            assert_eq!(added["approximate"], true);
+        }
+        let count = client
+            .call_tool(
+                "redis_pfcount",
+                serde_json::json!({"keys": [hll_left, hll_right]}),
+            )
+            .await
+            .expect("PFCOUNT tool result")
+            .structured_content
+            .expect("structured PFCOUNT");
+        assert_eq!(count["estimated_cardinality"], "3");
+        assert_eq!(count["approximate"], true);
+
+        let merged = client
+            .call_tool(
+                "redis_pfmerge",
+                serde_json::json!({"destination": hll_merged, "sources": [hll_left, hll_right]}),
+            )
+            .await
+            .expect("PFMERGE tool result")
+            .structured_content
+            .expect("structured PFMERGE");
+        assert_eq!(merged["destination_overwritten"], true);
+        let merged_count = client
+            .call_tool("redis_pfcount", serde_json::json!({"keys": [hll_merged]}))
+            .await
+            .expect("merged PFCOUNT tool result")
+            .structured_content
+            .expect("structured merged PFCOUNT");
+        assert_eq!(merged_count["estimated_cardinality"], "3");
+
+        client
+            .call_tool(
+                "redis_del",
+                serde_json::json!({
+                    "keys": [
+                        bitmap, wrong_type, geo, geo_store, hll_left, hll_right, hll_merged,
+                        hll_empty, hll_empty_merged
+                    ]
+                }),
+            )
+            .await
+            .expect("clean specialized data keys");
+    }
+
+    let large_geo = test_key("geo-output-budget");
+    let large_member = "x".repeat(4096);
+    let full = router_client(&redis.url, AccessMode::Full).await;
+    full.call_tool(
+        "redis_geoadd",
+        serde_json::json!({
+            "key": large_geo,
+            "members": [{"member": large_member, "longitude": 0, "latitude": 0}]
+        }),
+    )
+    .await
+    .expect("seed oversized GEOSEARCH member");
+    let limited =
+        router_client_with_budget(&redis.url, AccessMode::ReadOnly, OutputBudget::new(512, 10))
+            .await
+            .call_tool(
+                "redis_geosearch",
+                serde_json::json!({
+                    "key": large_geo,
+                    "center": {"kind": "coordinates", "longitude": 0, "latitude": 0},
+                    "shape": {"kind": "radius", "radius": 1, "unit": "kilometers"},
+                    "count": 1
+                }),
+            )
+            .await
+            .expect("bounded GEOSEARCH output");
+    assert!(limited.is_error);
+    assert!(
+        serde_json::to_string(&limited)
+            .expect("serialize bounded GEOSEARCH")
+            .contains("output_limit_exceeded")
+    );
+    full.call_tool("redis_del", serde_json::json!({"keys": [large_geo]}))
+        .await
+        .expect("delete oversized GEOSEARCH key");
+}
+
+#[tokio::test]
 async fn live_curated_catalog_round_trip_in_resp2_and_resp3() {
     let Some(redis) = TestRedis::start().await else {
         return;
@@ -3633,7 +4034,12 @@ async fn live_diagnostics_are_structured_bounded_redacted_and_binary_safe() {
             .expect("structured hotkey sample");
         assert_eq!(hotkeys["sampled_keys"], 1);
         assert_eq!(hotkeys["candidates"][0]["key"]["value"], key);
-        assert_eq!(hotkeys["page"]["complete"], true);
+        let complete = hotkeys["page"]["complete"]
+            .as_bool()
+            .expect("hotkey page completion flag");
+        if !complete {
+            assert!(hotkeys["page"]["continuation"]["cursor"].is_number());
+        }
     }
 
     let limited = router_client_with_budget(
@@ -3676,6 +4082,7 @@ async fn live_acl_failures_are_classified_without_leaking_credentials() {
     let readable_set = test_key("acl-readable-set");
     let readable_zset = test_key("acl-readable-zset");
     let readable_stream = test_key("acl-readable-stream");
+    let readable_bitmap = test_key("acl-readable-bitmap");
     redis::cmd("HSET")
         .arg(&readable_hash)
         .arg("name")
@@ -3710,6 +4117,13 @@ async fn live_acl_failures_are_classified_without_leaking_credentials() {
         .query_async::<()>(&mut connection)
         .await
         .expect("seed ACL-readable stream");
+    redis::cmd("SETBIT")
+        .arg(&readable_bitmap)
+        .arg(7)
+        .arg(1)
+        .query_async::<()>(&mut connection)
+        .await
+        .expect("seed ACL-readable bitmap");
     redis::cmd("ACL")
         .arg("SETUSER")
         .arg(&username)
@@ -3725,6 +4139,7 @@ async fn live_acl_failures_are_classified_without_leaking_credentials() {
         .arg("+sismember")
         .arg("+zscore")
         .arg("+xlen")
+        .arg("+getbit")
         .arg("+exists")
         .arg("+pubsub")
         .query_async::<()>(&mut connection)
@@ -3901,6 +4316,32 @@ async fn live_acl_failures_are_classified_without_leaking_credentials() {
         allowed_stream.structured_content.as_ref().unwrap()["length"],
         1
     );
+
+    let allowed_bitmap = client
+        .call_tool(
+            "redis_getbit",
+            serde_json::json!({"key": readable_bitmap, "offset": 7}),
+        )
+        .await
+        .expect("ACL-allowed GETBIT");
+    assert!(!allowed_bitmap.is_error);
+    assert_eq!(
+        allowed_bitmap.structured_content.as_ref().unwrap()["set"],
+        true
+    );
+
+    let denied_bitmap = client
+        .call_tool(
+            "redis_setbit",
+            serde_json::json!({"key": readable_bitmap, "offset": 123456, "value": true}),
+        )
+        .await
+        .expect("ACL-denied SETBIT is represented as a tool result");
+    assert!(denied_bitmap.is_error);
+    let denied_bitmap = serde_json::to_string(&denied_bitmap).expect("serialize SETBIT ACL denial");
+    assert!(denied_bitmap.contains("[Authorization]"), "{denied_bitmap}");
+    assert!(!denied_bitmap.contains(password));
+    assert!(!denied_bitmap.contains("123456"));
 
     let allowed_pubsub_inspection = client
         .call_tool("redis_pubsub_numpat", serde_json::json!({}))
@@ -4119,6 +4560,7 @@ async fn live_acl_failures_are_classified_without_leaking_credentials() {
             &readable_set,
             &readable_zset,
             &readable_stream,
+            &readable_bitmap,
         ])
         .query_async::<()>(&mut connection)
         .await

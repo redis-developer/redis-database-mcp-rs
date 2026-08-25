@@ -253,6 +253,1000 @@
       "requires_raw_opt_in": false
     },
     {
+      "bundle": "data_structures",
+      "capability_requirements": {
+        "deployment": "any",
+        "minimum_module_version": null,
+        "minimum_redis_version": "2.6.0",
+        "required_commands": [
+          "BITCOUNT"
+        ],
+        "required_module": null
+      },
+      "name": "redis_bitcount",
+      "output_policy": "intrinsically_bounded",
+      "protocol": {
+        "annotations": {
+          "destructiveHint": false,
+          "idempotentHint": true,
+          "readOnlyHint": true
+        },
+        "description": "Count set bits in a complete Redis string or an explicit inclusive byte/bit range.",
+        "inputSchema": {
+          "$defs": {
+            "BitRange": {
+              "additionalProperties": false,
+              "properties": {
+                "end": {
+                  "description": "Inclusive end, interpreted in `unit`; negative values count from the end.",
+                  "format": "int64",
+                  "type": "integer"
+                },
+                "start": {
+                  "description": "Inclusive start, interpreted in `unit`; negative values count from the end.",
+                  "format": "int64",
+                  "type": "integer"
+                },
+                "unit": {
+                  "$ref": "#/$defs/BitRangeUnit",
+                  "default": "byte",
+                  "description": "Byte ranges work on Redis 2.6+; bit ranges require Redis 7+."
+                }
+              },
+              "required": [
+                "start",
+                "end"
+              ],
+              "type": "object"
+            },
+            "BitRangeUnit": {
+              "enum": [
+                "byte",
+                "bit"
+              ],
+              "type": "string"
+            },
+            "InputEncoding": {
+              "enum": [
+                "utf8",
+                "base64"
+              ],
+              "type": "string"
+            }
+          },
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "key": {
+              "description": "Redis string key containing the bitmap.",
+              "type": "string"
+            },
+            "key_encoding": {
+              "$ref": "#/$defs/InputEncoding",
+              "default": "utf8",
+              "description": "Encoding of `key`."
+            },
+            "range": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/BitRange"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "description": "Optional inclusive byte or bit range."
+            }
+          },
+          "required": [
+            "key"
+          ],
+          "title": "BitcountInput",
+          "type": "object"
+        },
+        "name": "redis_bitcount",
+        "outputSchema": {
+          "$defs": {
+            "BitRange": {
+              "additionalProperties": false,
+              "properties": {
+                "end": {
+                  "description": "Inclusive end, interpreted in `unit`; negative values count from the end.",
+                  "format": "int64",
+                  "type": "integer"
+                },
+                "start": {
+                  "description": "Inclusive start, interpreted in `unit`; negative values count from the end.",
+                  "format": "int64",
+                  "type": "integer"
+                },
+                "unit": {
+                  "$ref": "#/$defs/BitRangeUnit",
+                  "default": "byte",
+                  "description": "Byte ranges work on Redis 2.6+; bit ranges require Redis 7+."
+                }
+              },
+              "required": [
+                "start",
+                "end"
+              ],
+              "type": "object"
+            },
+            "BitRangeUnit": {
+              "enum": [
+                "byte",
+                "bit"
+              ],
+              "type": "string"
+            },
+            "InputEncoding": {
+              "enum": [
+                "utf8",
+                "base64"
+              ],
+              "type": "string"
+            }
+          },
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "key": {
+              "type": "string"
+            },
+            "key_encoding": {
+              "$ref": "#/$defs/InputEncoding"
+            },
+            "range": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/BitRange"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "set_bits": {
+              "format": "uint64",
+              "minimum": 0,
+              "type": "integer"
+            }
+          },
+          "required": [
+            "key",
+            "key_encoding",
+            "set_bits"
+          ],
+          "title": "BitcountOutput",
+          "type": "object"
+        },
+        "title": "Count Redis Bitmap Bits"
+      },
+      "required_access": "read_only",
+      "required_module": null,
+      "requires_raw_opt_in": false
+    },
+    {
+      "bundle": "data_structures",
+      "capability_requirements": {
+        "deployment": "any",
+        "minimum_module_version": null,
+        "minimum_redis_version": "3.2.0",
+        "required_commands": [
+          "BITFIELD"
+        ],
+        "required_module": null
+      },
+      "name": "redis_bitfield",
+      "output_policy": "intrinsically_bounded",
+      "protocol": {
+        "annotations": {
+          "destructiveHint": false
+        },
+        "description": "Run 1 to 1000 typed GET, SET, or INCREMENT operations. Writes cannot extend the string beyond 16 MiB, overflow is explicit, and exact results are decimal strings.",
+        "inputSchema": {
+          "$defs": {
+            "BitfieldEncoding": {
+              "additionalProperties": false,
+              "properties": {
+                "signed": {
+                  "description": "Signed (`i`) when true, unsigned (`u`) when false.",
+                  "type": "boolean"
+                },
+                "width": {
+                  "description": "Signed widths are 1..=64; unsigned widths are 1..=63.",
+                  "format": "uint8",
+                  "maximum": 64,
+                  "minimum": 1,
+                  "type": "integer"
+                }
+              },
+              "required": [
+                "signed",
+                "width"
+              ],
+              "type": "object"
+            },
+            "BitfieldOffset": {
+              "oneOf": [
+                {
+                  "additionalProperties": false,
+                  "description": "Absolute zero-based bit offset.",
+                  "properties": {
+                    "kind": {
+                      "const": "absolute",
+                      "type": "string"
+                    },
+                    "value": {
+                      "format": "uint64",
+                      "maximum": 4294967295,
+                      "minimum": 0,
+                      "type": "integer"
+                    }
+                  },
+                  "required": [
+                    "kind",
+                    "value"
+                  ],
+                  "type": "object"
+                },
+                {
+                  "additionalProperties": false,
+                  "description": "Offset equal to `index * encoding.width`, represented with Redis `#` syntax.",
+                  "properties": {
+                    "kind": {
+                      "const": "index",
+                      "type": "string"
+                    },
+                    "value": {
+                      "format": "uint64",
+                      "maximum": 4294967295,
+                      "minimum": 0,
+                      "type": "integer"
+                    }
+                  },
+                  "required": [
+                    "kind",
+                    "value"
+                  ],
+                  "type": "object"
+                }
+              ]
+            },
+            "BitfieldOperation": {
+              "oneOf": [
+                {
+                  "additionalProperties": false,
+                  "properties": {
+                    "encoding": {
+                      "$ref": "#/$defs/BitfieldEncoding"
+                    },
+                    "offset": {
+                      "$ref": "#/$defs/BitfieldOffset"
+                    },
+                    "operation": {
+                      "const": "get",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "operation",
+                    "encoding",
+                    "offset"
+                  ],
+                  "type": "object"
+                },
+                {
+                  "additionalProperties": false,
+                  "properties": {
+                    "encoding": {
+                      "$ref": "#/$defs/BitfieldEncoding"
+                    },
+                    "offset": {
+                      "$ref": "#/$defs/BitfieldOffset"
+                    },
+                    "operation": {
+                      "const": "set",
+                      "type": "string"
+                    },
+                    "value": {
+                      "$ref": "#/$defs/ExactIntegerInput"
+                    }
+                  },
+                  "required": [
+                    "operation",
+                    "encoding",
+                    "offset",
+                    "value"
+                  ],
+                  "type": "object"
+                },
+                {
+                  "additionalProperties": false,
+                  "properties": {
+                    "encoding": {
+                      "$ref": "#/$defs/BitfieldEncoding"
+                    },
+                    "increment": {
+                      "$ref": "#/$defs/ExactIntegerInput"
+                    },
+                    "offset": {
+                      "$ref": "#/$defs/BitfieldOffset"
+                    },
+                    "operation": {
+                      "const": "increment",
+                      "type": "string"
+                    },
+                    "overflow": {
+                      "$ref": "#/$defs/BitfieldOverflow",
+                      "description": "Overflow behavior is emitted explicitly before this increment."
+                    }
+                  },
+                  "required": [
+                    "operation",
+                    "encoding",
+                    "offset",
+                    "increment"
+                  ],
+                  "type": "object"
+                }
+              ]
+            },
+            "BitfieldOverflow": {
+              "enum": [
+                "wrap",
+                "saturate",
+                "fail"
+              ],
+              "type": "string"
+            },
+            "ExactIntegerInput": {
+              "anyOf": [
+                {
+                  "description": "JSON integer shorthand. Use a string outside a client's exact JSON integer range.",
+                  "format": "int64",
+                  "type": "integer"
+                },
+                {
+                  "description": "Exact signed 64-bit integer string.",
+                  "type": "string"
+                }
+              ]
+            },
+            "InputEncoding": {
+              "enum": [
+                "utf8",
+                "base64"
+              ],
+              "type": "string"
+            }
+          },
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "key": {
+              "type": "string"
+            },
+            "key_encoding": {
+              "$ref": "#/$defs/InputEncoding",
+              "default": "utf8"
+            },
+            "operations": {
+              "description": "Between 1 and 1000 typed GET, SET, or INCREMENT operations in wire order.",
+              "items": {
+                "$ref": "#/$defs/BitfieldOperation"
+              },
+              "maxItems": 1000,
+              "minItems": 1,
+              "type": "array"
+            }
+          },
+          "required": [
+            "key",
+            "operations"
+          ],
+          "title": "BitfieldInput",
+          "type": "object"
+        },
+        "name": "redis_bitfield",
+        "outputSchema": {
+          "$defs": {
+            "BitfieldResult": {
+              "additionalProperties": false,
+              "properties": {
+                "index": {
+                  "format": "uint",
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                "value": {
+                  "description": "Exact signed/unsigned result, or null when overflow mode `fail` rejected a write.",
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                }
+              },
+              "required": [
+                "index"
+              ],
+              "type": "object"
+            },
+            "InputEncoding": {
+              "enum": [
+                "utf8",
+                "base64"
+              ],
+              "type": "string"
+            }
+          },
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "count": {
+              "format": "uint",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "key": {
+              "type": "string"
+            },
+            "key_encoding": {
+              "$ref": "#/$defs/InputEncoding"
+            },
+            "results": {
+              "items": {
+                "$ref": "#/$defs/BitfieldResult"
+              },
+              "type": "array"
+            }
+          },
+          "required": [
+            "key",
+            "key_encoding",
+            "count",
+            "results"
+          ],
+          "title": "BitfieldOutput",
+          "type": "object"
+        },
+        "title": "Operate on Redis Bit Fields"
+      },
+      "required_access": "read_write",
+      "required_module": null,
+      "requires_raw_opt_in": false
+    },
+    {
+      "bundle": "data_structures",
+      "capability_requirements": {
+        "deployment": "any",
+        "minimum_module_version": null,
+        "minimum_redis_version": "6.0.0",
+        "required_commands": [
+          "BITFIELD_RO"
+        ],
+        "required_module": null
+      },
+      "name": "redis_bitfield_ro",
+      "output_policy": "intrinsically_bounded",
+      "protocol": {
+        "annotations": {
+          "destructiveHint": false,
+          "idempotentHint": true,
+          "readOnlyHint": true
+        },
+        "description": "Read 1 to 1000 explicitly typed signed or unsigned integer fields. Exact results are decimal strings. Requires Redis 6.0 or newer.",
+        "inputSchema": {
+          "$defs": {
+            "BitfieldEncoding": {
+              "additionalProperties": false,
+              "properties": {
+                "signed": {
+                  "description": "Signed (`i`) when true, unsigned (`u`) when false.",
+                  "type": "boolean"
+                },
+                "width": {
+                  "description": "Signed widths are 1..=64; unsigned widths are 1..=63.",
+                  "format": "uint8",
+                  "maximum": 64,
+                  "minimum": 1,
+                  "type": "integer"
+                }
+              },
+              "required": [
+                "signed",
+                "width"
+              ],
+              "type": "object"
+            },
+            "BitfieldGetOperation": {
+              "additionalProperties": false,
+              "properties": {
+                "encoding": {
+                  "$ref": "#/$defs/BitfieldEncoding"
+                },
+                "offset": {
+                  "$ref": "#/$defs/BitfieldOffset"
+                }
+              },
+              "required": [
+                "encoding",
+                "offset"
+              ],
+              "type": "object"
+            },
+            "BitfieldOffset": {
+              "oneOf": [
+                {
+                  "additionalProperties": false,
+                  "description": "Absolute zero-based bit offset.",
+                  "properties": {
+                    "kind": {
+                      "const": "absolute",
+                      "type": "string"
+                    },
+                    "value": {
+                      "format": "uint64",
+                      "maximum": 4294967295,
+                      "minimum": 0,
+                      "type": "integer"
+                    }
+                  },
+                  "required": [
+                    "kind",
+                    "value"
+                  ],
+                  "type": "object"
+                },
+                {
+                  "additionalProperties": false,
+                  "description": "Offset equal to `index * encoding.width`, represented with Redis `#` syntax.",
+                  "properties": {
+                    "kind": {
+                      "const": "index",
+                      "type": "string"
+                    },
+                    "value": {
+                      "format": "uint64",
+                      "maximum": 4294967295,
+                      "minimum": 0,
+                      "type": "integer"
+                    }
+                  },
+                  "required": [
+                    "kind",
+                    "value"
+                  ],
+                  "type": "object"
+                }
+              ]
+            },
+            "InputEncoding": {
+              "enum": [
+                "utf8",
+                "base64"
+              ],
+              "type": "string"
+            }
+          },
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "key": {
+              "type": "string"
+            },
+            "key_encoding": {
+              "$ref": "#/$defs/InputEncoding",
+              "default": "utf8"
+            },
+            "operations": {
+              "description": "Between 1 and 1000 typed GET operations.",
+              "items": {
+                "$ref": "#/$defs/BitfieldGetOperation"
+              },
+              "maxItems": 1000,
+              "minItems": 1,
+              "type": "array"
+            }
+          },
+          "required": [
+            "key",
+            "operations"
+          ],
+          "title": "BitfieldReadInput",
+          "type": "object"
+        },
+        "name": "redis_bitfield_ro",
+        "outputSchema": {
+          "$defs": {
+            "BitfieldResult": {
+              "additionalProperties": false,
+              "properties": {
+                "index": {
+                  "format": "uint",
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                "value": {
+                  "description": "Exact signed/unsigned result, or null when overflow mode `fail` rejected a write.",
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                }
+              },
+              "required": [
+                "index"
+              ],
+              "type": "object"
+            },
+            "InputEncoding": {
+              "enum": [
+                "utf8",
+                "base64"
+              ],
+              "type": "string"
+            }
+          },
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "count": {
+              "format": "uint",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "key": {
+              "type": "string"
+            },
+            "key_encoding": {
+              "$ref": "#/$defs/InputEncoding"
+            },
+            "results": {
+              "items": {
+                "$ref": "#/$defs/BitfieldResult"
+              },
+              "type": "array"
+            }
+          },
+          "required": [
+            "key",
+            "key_encoding",
+            "count",
+            "results"
+          ],
+          "title": "BitfieldOutput",
+          "type": "object"
+        },
+        "title": "Read Redis Bit Fields"
+      },
+      "required_access": "read_only",
+      "required_module": null,
+      "requires_raw_opt_in": false
+    },
+    {
+      "bundle": "data_structures",
+      "capability_requirements": {
+        "deployment": "any",
+        "minimum_module_version": null,
+        "minimum_redis_version": "2.6.0",
+        "required_commands": [
+          "BITOP"
+        ],
+        "required_module": null
+      },
+      "name": "redis_bitop",
+      "output_policy": "intrinsically_bounded",
+      "protocol": {
+        "annotations": {},
+        "description": "Permanently overwrite a destination with AND, OR, XOR, or NOT across binary-safe source keys. Every key must share a Redis Cluster slot. The reply is result size, not an effect bound. Requires full access.",
+        "inputSchema": {
+          "$defs": {
+            "BinaryInput": {
+              "anyOf": [
+                {
+                  "description": "UTF-8 shorthand.",
+                  "type": "string"
+                },
+                {
+                  "$ref": "#/$defs/EncodedInput",
+                  "description": "Explicitly encoded value."
+                }
+              ]
+            },
+            "BitOperation": {
+              "enum": [
+                "and",
+                "or",
+                "xor",
+                "not"
+              ],
+              "type": "string"
+            },
+            "EncodedInput": {
+              "additionalProperties": false,
+              "properties": {
+                "encoding": {
+                  "$ref": "#/$defs/InputEncoding",
+                  "default": "utf8",
+                  "description": "Encoding of `value`."
+                },
+                "value": {
+                  "description": "Binary-safe value.",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "value"
+              ],
+              "type": "object"
+            },
+            "InputEncoding": {
+              "enum": [
+                "utf8",
+                "base64"
+              ],
+              "type": "string"
+            }
+          },
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "destination": {
+              "$ref": "#/$defs/BinaryInput",
+              "description": "Destination key overwritten by the result."
+            },
+            "operation": {
+              "$ref": "#/$defs/BitOperation"
+            },
+            "sources": {
+              "description": "Source keys. NOT requires exactly one; other operations accept 1 to 1000.",
+              "items": {
+                "$ref": "#/$defs/BinaryInput"
+              },
+              "maxItems": 1000,
+              "minItems": 1,
+              "type": "array"
+            }
+          },
+          "required": [
+            "destination",
+            "operation",
+            "sources"
+          ],
+          "title": "BitopInput",
+          "type": "object"
+        },
+        "name": "redis_bitop",
+        "outputSchema": {
+          "$defs": {
+            "BitOperation": {
+              "enum": [
+                "and",
+                "or",
+                "xor",
+                "not"
+              ],
+              "type": "string"
+            },
+            "EncodedOutput": {
+              "additionalProperties": false,
+              "properties": {
+                "encoding": {
+                  "$ref": "#/$defs/ValueEncoding"
+                },
+                "value": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "value",
+                "encoding"
+              ],
+              "type": "object"
+            },
+            "ValueEncoding": {
+              "enum": [
+                "utf8",
+                "base64"
+              ],
+              "type": "string"
+            }
+          },
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "cluster_requires_same_slot": {
+              "type": "boolean"
+            },
+            "destination": {
+              "$ref": "#/$defs/EncodedOutput"
+            },
+            "destination_overwritten": {
+              "type": "boolean"
+            },
+            "operation": {
+              "$ref": "#/$defs/BitOperation"
+            },
+            "result_length_bytes": {
+              "format": "uint64",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "source_count": {
+              "format": "uint",
+              "minimum": 0,
+              "type": "integer"
+            }
+          },
+          "required": [
+            "destination",
+            "operation",
+            "source_count",
+            "result_length_bytes",
+            "destination_overwritten",
+            "cluster_requires_same_slot"
+          ],
+          "title": "BitopOutput",
+          "type": "object"
+        },
+        "title": "Store Redis Bitmap Operation"
+      },
+      "required_access": "full",
+      "required_module": null,
+      "requires_raw_opt_in": false
+    },
+    {
+      "bundle": "data_structures",
+      "capability_requirements": {
+        "deployment": "any",
+        "minimum_module_version": null,
+        "minimum_redis_version": "2.8.7",
+        "required_commands": [
+          "BITPOS"
+        ],
+        "required_module": null
+      },
+      "name": "redis_bitpos",
+      "output_policy": "intrinsically_bounded",
+      "protocol": {
+        "annotations": {
+          "destructiveHint": false,
+          "idempotentHint": true,
+          "readOnlyHint": true
+        },
+        "description": "Find the first set or clear bit, optionally within an explicit inclusive byte/bit range.",
+        "inputSchema": {
+          "$defs": {
+            "BitRangeUnit": {
+              "enum": [
+                "byte",
+                "bit"
+              ],
+              "type": "string"
+            },
+            "BitposRange": {
+              "additionalProperties": false,
+              "properties": {
+                "end": {
+                  "default": null,
+                  "description": "Optional inclusive end. Required when `unit` is `bit`.",
+                  "format": "int64",
+                  "type": [
+                    "integer",
+                    "null"
+                  ]
+                },
+                "start": {
+                  "description": "Inclusive start, interpreted in `unit`; negative values count from the end.",
+                  "format": "int64",
+                  "type": "integer"
+                },
+                "unit": {
+                  "$ref": "#/$defs/BitRangeUnit",
+                  "default": "byte",
+                  "description": "Byte ranges work on Redis 2.8.7+; bit ranges require Redis 7+."
+                }
+              },
+              "required": [
+                "start"
+              ],
+              "type": "object"
+            },
+            "InputEncoding": {
+              "enum": [
+                "utf8",
+                "base64"
+              ],
+              "type": "string"
+            }
+          },
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "bit": {
+              "description": "Bit value to locate.",
+              "type": "boolean"
+            },
+            "key": {
+              "description": "Redis string key containing the bitmap.",
+              "type": "string"
+            },
+            "key_encoding": {
+              "$ref": "#/$defs/InputEncoding",
+              "default": "utf8",
+              "description": "Encoding of `key`."
+            },
+            "range": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/BitposRange"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Optional bounded search range."
+            }
+          },
+          "required": [
+            "key",
+            "bit"
+          ],
+          "title": "BitposInput",
+          "type": "object"
+        },
+        "name": "redis_bitpos",
+        "outputSchema": {
+          "$defs": {
+            "InputEncoding": {
+              "enum": [
+                "utf8",
+                "base64"
+              ],
+              "type": "string"
+            }
+          },
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "bit": {
+              "format": "uint8",
+              "maximum": 255,
+              "minimum": 0,
+              "type": "integer"
+            },
+            "key": {
+              "type": "string"
+            },
+            "key_encoding": {
+              "$ref": "#/$defs/InputEncoding"
+            },
+            "position": {
+              "format": "uint64",
+              "minimum": 0,
+              "type": [
+                "integer",
+                "null"
+              ]
+            }
+          },
+          "required": [
+            "key",
+            "key_encoding",
+            "bit"
+          ],
+          "title": "BitposOutput",
+          "type": "object"
+        },
+        "title": "Locate Redis Bitmap Bit"
+      },
+      "required_access": "read_only",
+      "required_module": null,
+      "requires_raw_opt_in": false
+    },
+    {
       "bundle": "diagnostics",
       "capability_requirements": {
         "deployment": "any",
@@ -5921,6 +6915,1405 @@
       "requires_raw_opt_in": false
     },
     {
+      "bundle": "data_structures",
+      "capability_requirements": {
+        "deployment": "any",
+        "minimum_module_version": null,
+        "minimum_redis_version": "3.2.0",
+        "required_commands": [
+          "GEOADD"
+        ],
+        "required_module": null
+      },
+      "name": "redis_geoadd",
+      "output_policy": "intrinsically_bounded",
+      "protocol": {
+        "annotations": {
+          "destructiveHint": false,
+          "idempotentHint": true
+        },
+        "description": "Add or update 1 to 1000 binary-safe geospatial members using exact finite coordinate tokens. NX and XX are mutually exclusive; NX, XX, and CH require Redis 6.2 or newer.",
+        "inputSchema": {
+          "$defs": {
+            "BinaryInput": {
+              "anyOf": [
+                {
+                  "description": "UTF-8 shorthand.",
+                  "type": "string"
+                },
+                {
+                  "$ref": "#/$defs/EncodedInput",
+                  "description": "Explicitly encoded value."
+                }
+              ]
+            },
+            "EncodedInput": {
+              "additionalProperties": false,
+              "properties": {
+                "encoding": {
+                  "$ref": "#/$defs/InputEncoding",
+                  "default": "utf8",
+                  "description": "Encoding of `value`."
+                },
+                "value": {
+                  "description": "Binary-safe value.",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "value"
+              ],
+              "type": "object"
+            },
+            "ExactDecimalInput": {
+              "anyOf": [
+                {
+                  "description": "JSON number shorthand. Use a string when every decimal digit must be preserved.",
+                  "format": "double",
+                  "type": "number"
+                },
+                {
+                  "description": "Exact finite Redis decimal string.",
+                  "type": "string"
+                }
+              ]
+            },
+            "GeoMemberInput": {
+              "additionalProperties": false,
+              "properties": {
+                "latitude": {
+                  "$ref": "#/$defs/ExactDecimalInput"
+                },
+                "longitude": {
+                  "$ref": "#/$defs/ExactDecimalInput"
+                },
+                "member": {
+                  "$ref": "#/$defs/BinaryInput"
+                }
+              },
+              "required": [
+                "member",
+                "longitude",
+                "latitude"
+              ],
+              "type": "object"
+            },
+            "InputEncoding": {
+              "enum": [
+                "utf8",
+                "base64"
+              ],
+              "type": "string"
+            }
+          },
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "ch": {
+              "default": false,
+              "description": "Report both additions and coordinate changes instead of additions only.",
+              "type": "boolean"
+            },
+            "key": {
+              "type": "string"
+            },
+            "key_encoding": {
+              "$ref": "#/$defs/InputEncoding",
+              "default": "utf8"
+            },
+            "members": {
+              "description": "Between 1 and 1000 binary-safe members with exact decimal coordinates.",
+              "items": {
+                "$ref": "#/$defs/GeoMemberInput"
+              },
+              "maxItems": 1000,
+              "minItems": 1,
+              "type": "array"
+            },
+            "nx": {
+              "default": false,
+              "description": "Only add new members.",
+              "type": "boolean"
+            },
+            "xx": {
+              "default": false,
+              "description": "Only update existing members.",
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "key",
+            "members"
+          ],
+          "title": "GeoaddInput",
+          "type": "object"
+        },
+        "name": "redis_geoadd",
+        "outputSchema": {
+          "$defs": {
+            "GeoaddCountMode": {
+              "enum": [
+                "added",
+                "added_or_changed"
+              ],
+              "type": "string"
+            },
+            "InputEncoding": {
+              "enum": [
+                "utf8",
+                "base64"
+              ],
+              "type": "string"
+            }
+          },
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "affected": {
+              "format": "uint64",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "count_mode": {
+              "$ref": "#/$defs/GeoaddCountMode"
+            },
+            "key": {
+              "type": "string"
+            },
+            "key_encoding": {
+              "$ref": "#/$defs/InputEncoding"
+            },
+            "requested": {
+              "format": "uint",
+              "minimum": 0,
+              "type": "integer"
+            }
+          },
+          "required": [
+            "key",
+            "key_encoding",
+            "requested",
+            "affected",
+            "count_mode"
+          ],
+          "title": "GeoaddOutput",
+          "type": "object"
+        },
+        "title": "Add Redis Geospatial Members"
+      },
+      "required_access": "read_write",
+      "required_module": null,
+      "requires_raw_opt_in": false
+    },
+    {
+      "bundle": "data_structures",
+      "capability_requirements": {
+        "deployment": "any",
+        "minimum_module_version": null,
+        "minimum_redis_version": "3.2.0",
+        "required_commands": [
+          "GEODIST"
+        ],
+        "required_module": null
+      },
+      "name": "redis_geodist",
+      "output_policy": "intrinsically_bounded",
+      "protocol": {
+        "annotations": {
+          "destructiveHint": false,
+          "idempotentHint": true,
+          "readOnlyHint": true
+        },
+        "description": "Measure the distance between two binary-safe geospatial members in an explicit typed unit.",
+        "inputSchema": {
+          "$defs": {
+            "BinaryInput": {
+              "anyOf": [
+                {
+                  "description": "UTF-8 shorthand.",
+                  "type": "string"
+                },
+                {
+                  "$ref": "#/$defs/EncodedInput",
+                  "description": "Explicitly encoded value."
+                }
+              ]
+            },
+            "EncodedInput": {
+              "additionalProperties": false,
+              "properties": {
+                "encoding": {
+                  "$ref": "#/$defs/InputEncoding",
+                  "default": "utf8",
+                  "description": "Encoding of `value`."
+                },
+                "value": {
+                  "description": "Binary-safe value.",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "value"
+              ],
+              "type": "object"
+            },
+            "GeoUnit": {
+              "enum": [
+                "meters",
+                "kilometers",
+                "feet",
+                "miles"
+              ],
+              "type": "string"
+            },
+            "InputEncoding": {
+              "enum": [
+                "utf8",
+                "base64"
+              ],
+              "type": "string"
+            }
+          },
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "from": {
+              "$ref": "#/$defs/BinaryInput"
+            },
+            "key": {
+              "type": "string"
+            },
+            "key_encoding": {
+              "$ref": "#/$defs/InputEncoding",
+              "default": "utf8"
+            },
+            "to": {
+              "$ref": "#/$defs/BinaryInput"
+            },
+            "unit": {
+              "$ref": "#/$defs/GeoUnit",
+              "default": "meters"
+            }
+          },
+          "required": [
+            "key",
+            "from",
+            "to"
+          ],
+          "title": "GeodistInput",
+          "type": "object"
+        },
+        "name": "redis_geodist",
+        "outputSchema": {
+          "$defs": {
+            "EncodedOutput": {
+              "additionalProperties": false,
+              "properties": {
+                "encoding": {
+                  "$ref": "#/$defs/ValueEncoding"
+                },
+                "value": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "value",
+                "encoding"
+              ],
+              "type": "object"
+            },
+            "GeoUnit": {
+              "enum": [
+                "meters",
+                "kilometers",
+                "feet",
+                "miles"
+              ],
+              "type": "string"
+            },
+            "InputEncoding": {
+              "enum": [
+                "utf8",
+                "base64"
+              ],
+              "type": "string"
+            },
+            "ValueEncoding": {
+              "enum": [
+                "utf8",
+                "base64"
+              ],
+              "type": "string"
+            }
+          },
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "distance": {
+              "description": "Exact Redis decimal distance; null when either member is missing.",
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "from": {
+              "$ref": "#/$defs/EncodedOutput"
+            },
+            "key": {
+              "type": "string"
+            },
+            "key_encoding": {
+              "$ref": "#/$defs/InputEncoding"
+            },
+            "to": {
+              "$ref": "#/$defs/EncodedOutput"
+            },
+            "unit": {
+              "$ref": "#/$defs/GeoUnit"
+            }
+          },
+          "required": [
+            "key",
+            "key_encoding",
+            "from",
+            "to",
+            "unit"
+          ],
+          "title": "GeodistOutput",
+          "type": "object"
+        },
+        "title": "Measure Redis Geospatial Distance"
+      },
+      "required_access": "read_only",
+      "required_module": null,
+      "requires_raw_opt_in": false
+    },
+    {
+      "bundle": "data_structures",
+      "capability_requirements": {
+        "deployment": "any",
+        "minimum_module_version": null,
+        "minimum_redis_version": "3.2.0",
+        "required_commands": [
+          "GEOHASH"
+        ],
+        "required_module": null
+      },
+      "name": "redis_geohash",
+      "output_policy": "budget_guarded",
+      "protocol": {
+        "annotations": {
+          "destructiveHint": false,
+          "idempotentHint": true,
+          "readOnlyHint": true
+        },
+        "description": "Read request-aligned geohash strings for 1 to 1000 binary-safe members; missing members are null.",
+        "inputSchema": {
+          "$defs": {
+            "BinaryInput": {
+              "anyOf": [
+                {
+                  "description": "UTF-8 shorthand.",
+                  "type": "string"
+                },
+                {
+                  "$ref": "#/$defs/EncodedInput",
+                  "description": "Explicitly encoded value."
+                }
+              ]
+            },
+            "EncodedInput": {
+              "additionalProperties": false,
+              "properties": {
+                "encoding": {
+                  "$ref": "#/$defs/InputEncoding",
+                  "default": "utf8",
+                  "description": "Encoding of `value`."
+                },
+                "value": {
+                  "description": "Binary-safe value.",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "value"
+              ],
+              "type": "object"
+            },
+            "InputEncoding": {
+              "enum": [
+                "utf8",
+                "base64"
+              ],
+              "type": "string"
+            }
+          },
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "key": {
+              "type": "string"
+            },
+            "key_encoding": {
+              "$ref": "#/$defs/InputEncoding",
+              "default": "utf8"
+            },
+            "members": {
+              "description": "Between 1 and 1000 binary-safe members; replies remain request-aligned.",
+              "items": {
+                "$ref": "#/$defs/BinaryInput"
+              },
+              "maxItems": 1000,
+              "minItems": 1,
+              "type": "array"
+            }
+          },
+          "required": [
+            "key",
+            "members"
+          ],
+          "title": "GeoMembersInput",
+          "type": "object"
+        },
+        "name": "redis_geohash",
+        "outputSchema": {
+          "$defs": {
+            "EncodedOutput": {
+              "additionalProperties": false,
+              "properties": {
+                "encoding": {
+                  "$ref": "#/$defs/ValueEncoding"
+                },
+                "value": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "value",
+                "encoding"
+              ],
+              "type": "object"
+            },
+            "GeohashEntry": {
+              "additionalProperties": false,
+              "properties": {
+                "geohash": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "member": {
+                  "$ref": "#/$defs/EncodedOutput"
+                }
+              },
+              "required": [
+                "member"
+              ],
+              "type": "object"
+            },
+            "InputEncoding": {
+              "enum": [
+                "utf8",
+                "base64"
+              ],
+              "type": "string"
+            },
+            "ValueEncoding": {
+              "enum": [
+                "utf8",
+                "base64"
+              ],
+              "type": "string"
+            }
+          },
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "count": {
+              "format": "uint",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "key": {
+              "type": "string"
+            },
+            "key_encoding": {
+              "$ref": "#/$defs/InputEncoding"
+            },
+            "members": {
+              "items": {
+                "$ref": "#/$defs/GeohashEntry"
+              },
+              "type": "array"
+            }
+          },
+          "required": [
+            "key",
+            "key_encoding",
+            "count",
+            "members"
+          ],
+          "title": "GeohashOutput",
+          "type": "object"
+        },
+        "title": "Read Redis Geospatial Hashes"
+      },
+      "required_access": "read_only",
+      "required_module": null,
+      "requires_raw_opt_in": false
+    },
+    {
+      "bundle": "data_structures",
+      "capability_requirements": {
+        "deployment": "any",
+        "minimum_module_version": null,
+        "minimum_redis_version": "3.2.0",
+        "required_commands": [
+          "GEOPOS"
+        ],
+        "required_module": null
+      },
+      "name": "redis_geopos",
+      "output_policy": "budget_guarded",
+      "protocol": {
+        "annotations": {
+          "destructiveHint": false,
+          "idempotentHint": true,
+          "readOnlyHint": true
+        },
+        "description": "Read request-aligned exact longitude/latitude strings for 1 to 1000 binary-safe members; missing members are null.",
+        "inputSchema": {
+          "$defs": {
+            "BinaryInput": {
+              "anyOf": [
+                {
+                  "description": "UTF-8 shorthand.",
+                  "type": "string"
+                },
+                {
+                  "$ref": "#/$defs/EncodedInput",
+                  "description": "Explicitly encoded value."
+                }
+              ]
+            },
+            "EncodedInput": {
+              "additionalProperties": false,
+              "properties": {
+                "encoding": {
+                  "$ref": "#/$defs/InputEncoding",
+                  "default": "utf8",
+                  "description": "Encoding of `value`."
+                },
+                "value": {
+                  "description": "Binary-safe value.",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "value"
+              ],
+              "type": "object"
+            },
+            "InputEncoding": {
+              "enum": [
+                "utf8",
+                "base64"
+              ],
+              "type": "string"
+            }
+          },
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "key": {
+              "type": "string"
+            },
+            "key_encoding": {
+              "$ref": "#/$defs/InputEncoding",
+              "default": "utf8"
+            },
+            "members": {
+              "description": "Between 1 and 1000 binary-safe members; replies remain request-aligned.",
+              "items": {
+                "$ref": "#/$defs/BinaryInput"
+              },
+              "maxItems": 1000,
+              "minItems": 1,
+              "type": "array"
+            }
+          },
+          "required": [
+            "key",
+            "members"
+          ],
+          "title": "GeoMembersInput",
+          "type": "object"
+        },
+        "name": "redis_geopos",
+        "outputSchema": {
+          "$defs": {
+            "EncodedOutput": {
+              "additionalProperties": false,
+              "properties": {
+                "encoding": {
+                  "$ref": "#/$defs/ValueEncoding"
+                },
+                "value": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "value",
+                "encoding"
+              ],
+              "type": "object"
+            },
+            "GeoPosition": {
+              "additionalProperties": false,
+              "properties": {
+                "latitude": {
+                  "type": "string"
+                },
+                "longitude": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "longitude",
+                "latitude"
+              ],
+              "type": "object"
+            },
+            "GeoposEntry": {
+              "additionalProperties": false,
+              "properties": {
+                "member": {
+                  "$ref": "#/$defs/EncodedOutput"
+                },
+                "position": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/$defs/GeoPosition"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                }
+              },
+              "required": [
+                "member"
+              ],
+              "type": "object"
+            },
+            "InputEncoding": {
+              "enum": [
+                "utf8",
+                "base64"
+              ],
+              "type": "string"
+            },
+            "ValueEncoding": {
+              "enum": [
+                "utf8",
+                "base64"
+              ],
+              "type": "string"
+            }
+          },
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "count": {
+              "format": "uint",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "key": {
+              "type": "string"
+            },
+            "key_encoding": {
+              "$ref": "#/$defs/InputEncoding"
+            },
+            "members": {
+              "items": {
+                "$ref": "#/$defs/GeoposEntry"
+              },
+              "type": "array"
+            }
+          },
+          "required": [
+            "key",
+            "key_encoding",
+            "count",
+            "members"
+          ],
+          "title": "GeoposOutput",
+          "type": "object"
+        },
+        "title": "Read Redis Geospatial Positions"
+      },
+      "required_access": "read_only",
+      "required_module": null,
+      "requires_raw_opt_in": false
+    },
+    {
+      "bundle": "data_structures",
+      "capability_requirements": {
+        "deployment": "any",
+        "minimum_module_version": null,
+        "minimum_redis_version": "6.2.0",
+        "required_commands": [
+          "GEOSEARCH"
+        ],
+        "required_module": null
+      },
+      "name": "redis_geosearch",
+      "output_policy": "budget_guarded",
+      "protocol": {
+        "annotations": {
+          "destructiveHint": false,
+          "idempotentHint": true,
+          "readOnlyHint": true
+        },
+        "description": "Search a circle or box around a member or exact coordinate. COUNT is mandatory and bounded; every result includes exact distance, integer geohash, and coordinates. Requires Redis 6.2 or newer.",
+        "inputSchema": {
+          "$defs": {
+            "BinaryInput": {
+              "anyOf": [
+                {
+                  "description": "UTF-8 shorthand.",
+                  "type": "string"
+                },
+                {
+                  "$ref": "#/$defs/EncodedInput",
+                  "description": "Explicitly encoded value."
+                }
+              ]
+            },
+            "EncodedInput": {
+              "additionalProperties": false,
+              "properties": {
+                "encoding": {
+                  "$ref": "#/$defs/InputEncoding",
+                  "default": "utf8",
+                  "description": "Encoding of `value`."
+                },
+                "value": {
+                  "description": "Binary-safe value.",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "value"
+              ],
+              "type": "object"
+            },
+            "ExactDecimalInput": {
+              "anyOf": [
+                {
+                  "description": "JSON number shorthand. Use a string when every decimal digit must be preserved.",
+                  "format": "double",
+                  "type": "number"
+                },
+                {
+                  "description": "Exact finite Redis decimal string.",
+                  "type": "string"
+                }
+              ]
+            },
+            "GeoSearchCenter": {
+              "oneOf": [
+                {
+                  "additionalProperties": false,
+                  "properties": {
+                    "kind": {
+                      "const": "member",
+                      "type": "string"
+                    },
+                    "member": {
+                      "$ref": "#/$defs/BinaryInput"
+                    }
+                  },
+                  "required": [
+                    "kind",
+                    "member"
+                  ],
+                  "type": "object"
+                },
+                {
+                  "additionalProperties": false,
+                  "properties": {
+                    "kind": {
+                      "const": "coordinates",
+                      "type": "string"
+                    },
+                    "latitude": {
+                      "$ref": "#/$defs/ExactDecimalInput"
+                    },
+                    "longitude": {
+                      "$ref": "#/$defs/ExactDecimalInput"
+                    }
+                  },
+                  "required": [
+                    "kind",
+                    "longitude",
+                    "latitude"
+                  ],
+                  "type": "object"
+                }
+              ]
+            },
+            "GeoSearchShape": {
+              "oneOf": [
+                {
+                  "additionalProperties": false,
+                  "properties": {
+                    "kind": {
+                      "const": "radius",
+                      "type": "string"
+                    },
+                    "radius": {
+                      "$ref": "#/$defs/ExactDecimalInput"
+                    },
+                    "unit": {
+                      "$ref": "#/$defs/GeoUnit"
+                    }
+                  },
+                  "required": [
+                    "kind",
+                    "radius",
+                    "unit"
+                  ],
+                  "type": "object"
+                },
+                {
+                  "additionalProperties": false,
+                  "properties": {
+                    "height": {
+                      "$ref": "#/$defs/ExactDecimalInput"
+                    },
+                    "kind": {
+                      "const": "box",
+                      "type": "string"
+                    },
+                    "unit": {
+                      "$ref": "#/$defs/GeoUnit"
+                    },
+                    "width": {
+                      "$ref": "#/$defs/ExactDecimalInput"
+                    }
+                  },
+                  "required": [
+                    "kind",
+                    "width",
+                    "height",
+                    "unit"
+                  ],
+                  "type": "object"
+                }
+              ]
+            },
+            "GeoSort": {
+              "enum": [
+                "ascending",
+                "descending"
+              ],
+              "type": "string"
+            },
+            "GeoUnit": {
+              "enum": [
+                "meters",
+                "kilometers",
+                "feet",
+                "miles"
+              ],
+              "type": "string"
+            },
+            "InputEncoding": {
+              "enum": [
+                "utf8",
+                "base64"
+              ],
+              "type": "string"
+            }
+          },
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "any": {
+              "default": false,
+              "description": "Permit Redis to stop as soon as enough matches are found. Cannot be sorted.",
+              "type": "boolean"
+            },
+            "center": {
+              "$ref": "#/$defs/GeoSearchCenter"
+            },
+            "count": {
+              "default": 100,
+              "description": "Hard maximum number of returned members.",
+              "format": "uint",
+              "maximum": 1000,
+              "minimum": 1,
+              "type": "integer"
+            },
+            "key": {
+              "type": "string"
+            },
+            "key_encoding": {
+              "$ref": "#/$defs/InputEncoding",
+              "default": "utf8"
+            },
+            "shape": {
+              "$ref": "#/$defs/GeoSearchShape"
+            },
+            "sort": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/GeoSort"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null
+            }
+          },
+          "required": [
+            "key",
+            "center",
+            "shape"
+          ],
+          "title": "GeosearchInput",
+          "type": "object"
+        },
+        "name": "redis_geosearch",
+        "outputSchema": {
+          "$defs": {
+            "EncodedOutput": {
+              "additionalProperties": false,
+              "properties": {
+                "encoding": {
+                  "$ref": "#/$defs/ValueEncoding"
+                },
+                "value": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "value",
+                "encoding"
+              ],
+              "type": "object"
+            },
+            "GeoPosition": {
+              "additionalProperties": false,
+              "properties": {
+                "latitude": {
+                  "type": "string"
+                },
+                "longitude": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "longitude",
+                "latitude"
+              ],
+              "type": "object"
+            },
+            "GeosearchEntry": {
+              "additionalProperties": false,
+              "properties": {
+                "distance": {
+                  "type": "string"
+                },
+                "geohash_integer": {
+                  "type": "string"
+                },
+                "member": {
+                  "$ref": "#/$defs/EncodedOutput"
+                },
+                "position": {
+                  "$ref": "#/$defs/GeoPosition"
+                }
+              },
+              "required": [
+                "member",
+                "distance",
+                "geohash_integer",
+                "position"
+              ],
+              "type": "object"
+            },
+            "InputEncoding": {
+              "enum": [
+                "utf8",
+                "base64"
+              ],
+              "type": "string"
+            },
+            "ValueEncoding": {
+              "enum": [
+                "utf8",
+                "base64"
+              ],
+              "type": "string"
+            }
+          },
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "count": {
+              "format": "uint",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "key": {
+              "type": "string"
+            },
+            "key_encoding": {
+              "$ref": "#/$defs/InputEncoding"
+            },
+            "limit_reached": {
+              "description": "True when Redis returned the requested limit; additional matches may exist.",
+              "type": "boolean"
+            },
+            "requested": {
+              "format": "uint",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "results": {
+              "items": {
+                "$ref": "#/$defs/GeosearchEntry"
+              },
+              "type": "array"
+            }
+          },
+          "required": [
+            "key",
+            "key_encoding",
+            "requested",
+            "count",
+            "limit_reached",
+            "results"
+          ],
+          "title": "GeosearchOutput",
+          "type": "object"
+        },
+        "title": "Search Redis Geospatial Index"
+      },
+      "required_access": "read_only",
+      "required_module": null,
+      "requires_raw_opt_in": false
+    },
+    {
+      "bundle": "data_structures",
+      "capability_requirements": {
+        "deployment": "any",
+        "minimum_module_version": null,
+        "minimum_redis_version": "6.2.0",
+        "required_commands": [
+          "GEOSEARCHSTORE"
+        ],
+        "required_module": null
+      },
+      "name": "redis_geosearchstore",
+      "output_policy": "intrinsically_bounded",
+      "protocol": {
+        "annotations": {},
+        "description": "Permanently overwrite a destination with at most 1000 geospatial search results. Source and destination must share a Redis Cluster slot. Requires Redis 6.2+ and full access.",
+        "inputSchema": {
+          "$defs": {
+            "BinaryInput": {
+              "anyOf": [
+                {
+                  "description": "UTF-8 shorthand.",
+                  "type": "string"
+                },
+                {
+                  "$ref": "#/$defs/EncodedInput",
+                  "description": "Explicitly encoded value."
+                }
+              ]
+            },
+            "EncodedInput": {
+              "additionalProperties": false,
+              "properties": {
+                "encoding": {
+                  "$ref": "#/$defs/InputEncoding",
+                  "default": "utf8",
+                  "description": "Encoding of `value`."
+                },
+                "value": {
+                  "description": "Binary-safe value.",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "value"
+              ],
+              "type": "object"
+            },
+            "ExactDecimalInput": {
+              "anyOf": [
+                {
+                  "description": "JSON number shorthand. Use a string when every decimal digit must be preserved.",
+                  "format": "double",
+                  "type": "number"
+                },
+                {
+                  "description": "Exact finite Redis decimal string.",
+                  "type": "string"
+                }
+              ]
+            },
+            "GeoSearchCenter": {
+              "oneOf": [
+                {
+                  "additionalProperties": false,
+                  "properties": {
+                    "kind": {
+                      "const": "member",
+                      "type": "string"
+                    },
+                    "member": {
+                      "$ref": "#/$defs/BinaryInput"
+                    }
+                  },
+                  "required": [
+                    "kind",
+                    "member"
+                  ],
+                  "type": "object"
+                },
+                {
+                  "additionalProperties": false,
+                  "properties": {
+                    "kind": {
+                      "const": "coordinates",
+                      "type": "string"
+                    },
+                    "latitude": {
+                      "$ref": "#/$defs/ExactDecimalInput"
+                    },
+                    "longitude": {
+                      "$ref": "#/$defs/ExactDecimalInput"
+                    }
+                  },
+                  "required": [
+                    "kind",
+                    "longitude",
+                    "latitude"
+                  ],
+                  "type": "object"
+                }
+              ]
+            },
+            "GeoSearchShape": {
+              "oneOf": [
+                {
+                  "additionalProperties": false,
+                  "properties": {
+                    "kind": {
+                      "const": "radius",
+                      "type": "string"
+                    },
+                    "radius": {
+                      "$ref": "#/$defs/ExactDecimalInput"
+                    },
+                    "unit": {
+                      "$ref": "#/$defs/GeoUnit"
+                    }
+                  },
+                  "required": [
+                    "kind",
+                    "radius",
+                    "unit"
+                  ],
+                  "type": "object"
+                },
+                {
+                  "additionalProperties": false,
+                  "properties": {
+                    "height": {
+                      "$ref": "#/$defs/ExactDecimalInput"
+                    },
+                    "kind": {
+                      "const": "box",
+                      "type": "string"
+                    },
+                    "unit": {
+                      "$ref": "#/$defs/GeoUnit"
+                    },
+                    "width": {
+                      "$ref": "#/$defs/ExactDecimalInput"
+                    }
+                  },
+                  "required": [
+                    "kind",
+                    "width",
+                    "height",
+                    "unit"
+                  ],
+                  "type": "object"
+                }
+              ]
+            },
+            "GeoSort": {
+              "enum": [
+                "ascending",
+                "descending"
+              ],
+              "type": "string"
+            },
+            "GeoUnit": {
+              "enum": [
+                "meters",
+                "kilometers",
+                "feet",
+                "miles"
+              ],
+              "type": "string"
+            },
+            "InputEncoding": {
+              "enum": [
+                "utf8",
+                "base64"
+              ],
+              "type": "string"
+            }
+          },
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "any": {
+              "default": false,
+              "type": "boolean"
+            },
+            "center": {
+              "$ref": "#/$defs/GeoSearchCenter"
+            },
+            "count": {
+              "default": 100,
+              "description": "Hard maximum number of stored members.",
+              "format": "uint",
+              "maximum": 1000,
+              "minimum": 1,
+              "type": "integer"
+            },
+            "destination": {
+              "$ref": "#/$defs/BinaryInput"
+            },
+            "shape": {
+              "$ref": "#/$defs/GeoSearchShape"
+            },
+            "sort": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/GeoSort"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null
+            },
+            "source": {
+              "$ref": "#/$defs/BinaryInput"
+            },
+            "store_distance": {
+              "default": false,
+              "description": "Store distance as the destination score instead of geohash.",
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "destination",
+            "source",
+            "center",
+            "shape"
+          ],
+          "title": "GeosearchstoreInput",
+          "type": "object"
+        },
+        "name": "redis_geosearchstore",
+        "outputSchema": {
+          "$defs": {
+            "EncodedOutput": {
+              "additionalProperties": false,
+              "properties": {
+                "encoding": {
+                  "$ref": "#/$defs/ValueEncoding"
+                },
+                "value": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "value",
+                "encoding"
+              ],
+              "type": "object"
+            },
+            "ValueEncoding": {
+              "enum": [
+                "utf8",
+                "base64"
+              ],
+              "type": "string"
+            }
+          },
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "cluster_requires_same_slot": {
+              "type": "boolean"
+            },
+            "destination": {
+              "$ref": "#/$defs/EncodedOutput"
+            },
+            "destination_overwritten": {
+              "type": "boolean"
+            },
+            "requested": {
+              "format": "uint",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "source": {
+              "$ref": "#/$defs/EncodedOutput"
+            },
+            "store_distance": {
+              "type": "boolean"
+            },
+            "stored": {
+              "format": "uint64",
+              "minimum": 0,
+              "type": "integer"
+            }
+          },
+          "required": [
+            "destination",
+            "source",
+            "requested",
+            "stored",
+            "store_distance",
+            "destination_overwritten",
+            "cluster_requires_same_slot"
+          ],
+          "title": "GeosearchstoreOutput",
+          "type": "object"
+        },
+        "title": "Store Redis Geospatial Search"
+      },
+      "required_access": "full",
+      "required_module": null,
+      "requires_raw_opt_in": false
+    },
+    {
       "bundle": "essentials",
       "capability_requirements": {
         "deployment": "any",
@@ -6025,6 +8418,114 @@
           "type": "object"
         },
         "title": "Get Redis String"
+      },
+      "required_access": "read_only",
+      "required_module": null,
+      "requires_raw_opt_in": false
+    },
+    {
+      "bundle": "data_structures",
+      "capability_requirements": {
+        "deployment": "any",
+        "minimum_module_version": null,
+        "minimum_redis_version": "2.2.0",
+        "required_commands": [
+          "GETBIT"
+        ],
+        "required_module": null
+      },
+      "name": "redis_getbit",
+      "output_policy": "intrinsically_bounded",
+      "protocol": {
+        "annotations": {
+          "destructiveHint": false,
+          "idempotentHint": true,
+          "readOnlyHint": true
+        },
+        "description": "Read one bit at an explicit zero-based offset. Missing strings read as zero.",
+        "inputSchema": {
+          "$defs": {
+            "InputEncoding": {
+              "enum": [
+                "utf8",
+                "base64"
+              ],
+              "type": "string"
+            }
+          },
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "key": {
+              "description": "Redis string key containing the bitmap.",
+              "type": "string"
+            },
+            "key_encoding": {
+              "$ref": "#/$defs/InputEncoding",
+              "default": "utf8",
+              "description": "Encoding of `key`."
+            },
+            "offset": {
+              "description": "Zero-based bit offset. Redis supports offsets through 2^32-1.",
+              "format": "uint64",
+              "maximum": 4294967295,
+              "minimum": 0,
+              "type": "integer"
+            }
+          },
+          "required": [
+            "key",
+            "offset"
+          ],
+          "title": "GetbitInput",
+          "type": "object"
+        },
+        "name": "redis_getbit",
+        "outputSchema": {
+          "$defs": {
+            "InputEncoding": {
+              "enum": [
+                "utf8",
+                "base64"
+              ],
+              "type": "string"
+            }
+          },
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "bit": {
+              "format": "uint8",
+              "maximum": 255,
+              "minimum": 0,
+              "type": "integer"
+            },
+            "key": {
+              "type": "string"
+            },
+            "key_encoding": {
+              "$ref": "#/$defs/InputEncoding"
+            },
+            "offset": {
+              "format": "uint64",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "set": {
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "key",
+            "key_encoding",
+            "offset",
+            "bit",
+            "set"
+          ],
+          "title": "GetbitOutput",
+          "type": "object"
+        },
+        "title": "Read Redis Bitmap Bit"
       },
       "required_access": "read_only",
       "required_module": null,
@@ -14749,6 +17250,406 @@
       "requires_raw_opt_in": false
     },
     {
+      "bundle": "data_structures",
+      "capability_requirements": {
+        "deployment": "any",
+        "minimum_module_version": null,
+        "minimum_redis_version": "2.8.9",
+        "required_commands": [
+          "PFADD"
+        ],
+        "required_module": null
+      },
+      "name": "redis_pfadd",
+      "output_policy": "intrinsically_bounded",
+      "protocol": {
+        "annotations": {
+          "destructiveHint": false,
+          "idempotentHint": true
+        },
+        "description": "Add up to 1000 binary-safe observations to a Redis HyperLogLog. An empty list initializes a missing key; otherwise the response reports whether a register changed, not how many elements were new.",
+        "inputSchema": {
+          "$defs": {
+            "BinaryInput": {
+              "anyOf": [
+                {
+                  "description": "UTF-8 shorthand.",
+                  "type": "string"
+                },
+                {
+                  "$ref": "#/$defs/EncodedInput",
+                  "description": "Explicitly encoded value."
+                }
+              ]
+            },
+            "EncodedInput": {
+              "additionalProperties": false,
+              "properties": {
+                "encoding": {
+                  "$ref": "#/$defs/InputEncoding",
+                  "default": "utf8",
+                  "description": "Encoding of `value`."
+                },
+                "value": {
+                  "description": "Binary-safe value.",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "value"
+              ],
+              "type": "object"
+            },
+            "InputEncoding": {
+              "enum": [
+                "utf8",
+                "base64"
+              ],
+              "type": "string"
+            }
+          },
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "elements": {
+              "description": "Up to 1000 binary-safe observations. An empty list initializes a missing HyperLogLog.",
+              "items": {
+                "$ref": "#/$defs/BinaryInput"
+              },
+              "maxItems": 1000,
+              "type": "array"
+            },
+            "key": {
+              "type": "string"
+            },
+            "key_encoding": {
+              "$ref": "#/$defs/InputEncoding",
+              "default": "utf8"
+            }
+          },
+          "required": [
+            "key"
+          ],
+          "title": "PfaddInput",
+          "type": "object"
+        },
+        "name": "redis_pfadd",
+        "outputSchema": {
+          "$defs": {
+            "InputEncoding": {
+              "enum": [
+                "utf8",
+                "base64"
+              ],
+              "type": "string"
+            }
+          },
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "approximate": {
+              "type": "boolean"
+            },
+            "key": {
+              "type": "string"
+            },
+            "key_created": {
+              "description": "True when a zero-element call created an empty HyperLogLog.",
+              "type": "boolean"
+            },
+            "key_encoding": {
+              "$ref": "#/$defs/InputEncoding"
+            },
+            "observed": {
+              "format": "uint",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "register_changed": {
+              "description": "True when observations changed the HyperLogLog registers.",
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "key",
+            "key_encoding",
+            "observed",
+            "key_created",
+            "register_changed",
+            "approximate"
+          ],
+          "title": "PfaddOutput",
+          "type": "object"
+        },
+        "title": "Add Redis HyperLogLog Observations"
+      },
+      "required_access": "read_write",
+      "required_module": null,
+      "requires_raw_opt_in": false
+    },
+    {
+      "bundle": "data_structures",
+      "capability_requirements": {
+        "deployment": "any",
+        "minimum_module_version": null,
+        "minimum_redis_version": "2.8.9",
+        "required_commands": [
+          "PFCOUNT"
+        ],
+        "required_module": null
+      },
+      "name": "redis_pfcount",
+      "output_policy": "intrinsically_bounded",
+      "protocol": {
+        "annotations": {
+          "destructiveHint": false,
+          "idempotentHint": true,
+          "readOnlyHint": true
+        },
+        "description": "Return Redis's approximate cardinality estimate for 1 to 1000 HyperLogLog keys. Multiple keys must share a Cluster slot; the estimate has about 0.81% standard error.",
+        "inputSchema": {
+          "$defs": {
+            "BinaryInput": {
+              "anyOf": [
+                {
+                  "description": "UTF-8 shorthand.",
+                  "type": "string"
+                },
+                {
+                  "$ref": "#/$defs/EncodedInput",
+                  "description": "Explicitly encoded value."
+                }
+              ]
+            },
+            "EncodedInput": {
+              "additionalProperties": false,
+              "properties": {
+                "encoding": {
+                  "$ref": "#/$defs/InputEncoding",
+                  "default": "utf8",
+                  "description": "Encoding of `value`."
+                },
+                "value": {
+                  "description": "Binary-safe value.",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "value"
+              ],
+              "type": "object"
+            },
+            "InputEncoding": {
+              "enum": [
+                "utf8",
+                "base64"
+              ],
+              "type": "string"
+            }
+          },
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "keys": {
+              "description": "Between 1 and 1000 HyperLogLog keys. Multiple keys must share a Redis Cluster slot.",
+              "items": {
+                "$ref": "#/$defs/BinaryInput"
+              },
+              "maxItems": 1000,
+              "minItems": 1,
+              "type": "array"
+            }
+          },
+          "required": [
+            "keys"
+          ],
+          "title": "PfcountInput",
+          "type": "object"
+        },
+        "name": "redis_pfcount",
+        "outputSchema": {
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "approximate": {
+              "type": "boolean"
+            },
+            "cluster_requires_same_slot": {
+              "type": "boolean"
+            },
+            "estimated_cardinality": {
+              "description": "Exact decimal representation of Redis's approximate cardinality estimate.",
+              "type": "string"
+            },
+            "key_count": {
+              "format": "uint",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "relative_standard_error": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "key_count",
+            "estimated_cardinality",
+            "approximate",
+            "relative_standard_error",
+            "cluster_requires_same_slot"
+          ],
+          "title": "PfcountOutput",
+          "type": "object"
+        },
+        "title": "Count Redis HyperLogLog Cardinality"
+      },
+      "required_access": "read_only",
+      "required_module": null,
+      "requires_raw_opt_in": false
+    },
+    {
+      "bundle": "data_structures",
+      "capability_requirements": {
+        "deployment": "any",
+        "minimum_module_version": null,
+        "minimum_redis_version": "2.8.9",
+        "required_commands": [
+          "PFMERGE"
+        ],
+        "required_module": null
+      },
+      "name": "redis_pfmerge",
+      "output_policy": "intrinsically_bounded",
+      "protocol": {
+        "annotations": {
+          "idempotentHint": true
+        },
+        "description": "Permanently overwrite a destination with the union of up to 1000 HyperLogLogs; an empty source list stores an empty HyperLogLog. Every source must share the destination's Redis Cluster slot. Requires full access.",
+        "inputSchema": {
+          "$defs": {
+            "BinaryInput": {
+              "anyOf": [
+                {
+                  "description": "UTF-8 shorthand.",
+                  "type": "string"
+                },
+                {
+                  "$ref": "#/$defs/EncodedInput",
+                  "description": "Explicitly encoded value."
+                }
+              ]
+            },
+            "EncodedInput": {
+              "additionalProperties": false,
+              "properties": {
+                "encoding": {
+                  "$ref": "#/$defs/InputEncoding",
+                  "default": "utf8",
+                  "description": "Encoding of `value`."
+                },
+                "value": {
+                  "description": "Binary-safe value.",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "value"
+              ],
+              "type": "object"
+            },
+            "InputEncoding": {
+              "enum": [
+                "utf8",
+                "base64"
+              ],
+              "type": "string"
+            }
+          },
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "destination": {
+              "$ref": "#/$defs/BinaryInput"
+            },
+            "sources": {
+              "description": "Up to 1000 source HyperLogLog keys. An empty list stores an empty HyperLogLog.",
+              "items": {
+                "$ref": "#/$defs/BinaryInput"
+              },
+              "maxItems": 1000,
+              "type": "array"
+            }
+          },
+          "required": [
+            "destination"
+          ],
+          "title": "PfmergeInput",
+          "type": "object"
+        },
+        "name": "redis_pfmerge",
+        "outputSchema": {
+          "$defs": {
+            "EncodedOutput": {
+              "additionalProperties": false,
+              "properties": {
+                "encoding": {
+                  "$ref": "#/$defs/ValueEncoding"
+                },
+                "value": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "value",
+                "encoding"
+              ],
+              "type": "object"
+            },
+            "ValueEncoding": {
+              "enum": [
+                "utf8",
+                "base64"
+              ],
+              "type": "string"
+            }
+          },
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "approximate": {
+              "type": "boolean"
+            },
+            "cluster_requires_same_slot": {
+              "type": "boolean"
+            },
+            "destination": {
+              "$ref": "#/$defs/EncodedOutput"
+            },
+            "destination_overwritten": {
+              "type": "boolean"
+            },
+            "source_count": {
+              "format": "uint",
+              "minimum": 0,
+              "type": "integer"
+            }
+          },
+          "required": [
+            "destination",
+            "source_count",
+            "destination_overwritten",
+            "approximate",
+            "cluster_requires_same_slot"
+          ],
+          "title": "PfmergeOutput",
+          "type": "object"
+        },
+        "title": "Merge Redis HyperLogLogs"
+      },
+      "required_access": "full",
+      "required_module": null,
+      "requires_raw_opt_in": false
+    },
+    {
       "bundle": "essentials",
       "capability_requirements": {
         "deployment": "any",
@@ -18343,6 +21244,131 @@
           "type": "object"
         },
         "title": "Set Redis String"
+      },
+      "required_access": "read_write",
+      "required_module": null,
+      "requires_raw_opt_in": false
+    },
+    {
+      "bundle": "data_structures",
+      "capability_requirements": {
+        "deployment": "any",
+        "minimum_module_version": null,
+        "minimum_redis_version": "2.2.0",
+        "required_commands": [
+          "SETBIT"
+        ],
+        "required_module": null
+      },
+      "name": "redis_setbit",
+      "output_policy": "intrinsically_bounded",
+      "protocol": {
+        "annotations": {
+          "destructiveHint": false,
+          "idempotentHint": true
+        },
+        "description": "Set one bit and return its previous value. The offset is capped so one call cannot extend a string beyond 16 MiB.",
+        "inputSchema": {
+          "$defs": {
+            "InputEncoding": {
+              "enum": [
+                "utf8",
+                "base64"
+              ],
+              "type": "string"
+            }
+          },
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "key": {
+              "description": "Redis string key containing the bitmap.",
+              "type": "string"
+            },
+            "key_encoding": {
+              "$ref": "#/$defs/InputEncoding",
+              "default": "utf8",
+              "description": "Encoding of `key`."
+            },
+            "offset": {
+              "description": "Zero-based bit offset. Writes are limited to a 16 MiB string extent per call.",
+              "format": "uint64",
+              "maximum": 134217727,
+              "minimum": 0,
+              "type": "integer"
+            },
+            "value": {
+              "description": "New bit value.",
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "key",
+            "offset",
+            "value"
+          ],
+          "title": "SetbitInput",
+          "type": "object"
+        },
+        "name": "redis_setbit",
+        "outputSchema": {
+          "$defs": {
+            "InputEncoding": {
+              "enum": [
+                "utf8",
+                "base64"
+              ],
+              "type": "string"
+            }
+          },
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "key": {
+              "type": "string"
+            },
+            "key_encoding": {
+              "$ref": "#/$defs/InputEncoding"
+            },
+            "maximum_string_extent_bytes": {
+              "format": "uint64",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "offset": {
+              "format": "uint64",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "previous": {
+              "format": "uint8",
+              "maximum": 255,
+              "minimum": 0,
+              "type": "integer"
+            },
+            "previous_set": {
+              "type": "boolean"
+            },
+            "value": {
+              "format": "uint8",
+              "maximum": 255,
+              "minimum": 0,
+              "type": "integer"
+            }
+          },
+          "required": [
+            "key",
+            "key_encoding",
+            "offset",
+            "value",
+            "previous",
+            "previous_set",
+            "maximum_string_extent_bytes"
+          ],
+          "title": "SetbitOutput",
+          "type": "object"
+        },
+        "title": "Set Redis Bitmap Bit"
       },
       "required_access": "read_write",
       "required_module": null,
@@ -28113,6 +31139,55 @@
       "key": "greeting",
       "length_bytes": 5
     },
+    "redis_bitcount": {
+      "key": "bitmap",
+      "key_encoding": "utf8",
+      "range": {
+        "end": 1,
+        "start": 0,
+        "unit": "byte"
+      },
+      "set_bits": 3
+    },
+    "redis_bitfield": {
+      "count": 1,
+      "key": "bitmap",
+      "key_encoding": "utf8",
+      "results": [
+        {
+          "index": 0,
+          "value": "7"
+        }
+      ]
+    },
+    "redis_bitfield_ro": {
+      "count": 1,
+      "key": "bitmap",
+      "key_encoding": "utf8",
+      "results": [
+        {
+          "index": 0,
+          "value": "7"
+        }
+      ]
+    },
+    "redis_bitop": {
+      "cluster_requires_same_slot": true,
+      "destination": {
+        "encoding": "utf8",
+        "value": "bitmap:result"
+      },
+      "destination_overwritten": true,
+      "operation": "and",
+      "result_length_bytes": 4,
+      "source_count": 2
+    },
+    "redis_bitpos": {
+      "bit": 1,
+      "key": "bitmap",
+      "key_encoding": "utf8",
+      "position": 2
+    },
     "redis_client_list": {
       "clients": [
         {
@@ -28598,12 +31673,107 @@
       "total": 1,
       "vector_field": "embedding"
     },
+    "redis_geoadd": {
+      "affected": 1,
+      "count_mode": "added",
+      "key": "places",
+      "key_encoding": "utf8",
+      "requested": 1
+    },
+    "redis_geodist": {
+      "distance": "111.2263",
+      "from": {
+        "encoding": "utf8",
+        "value": "san-francisco"
+      },
+      "key": "places",
+      "key_encoding": "utf8",
+      "to": {
+        "encoding": "utf8",
+        "value": "oakland"
+      },
+      "unit": "kilometers"
+    },
+    "redis_geohash": {
+      "count": 1,
+      "key": "places",
+      "key_encoding": "utf8",
+      "members": [
+        {
+          "geohash": "9q8yyk8ytpx",
+          "member": {
+            "encoding": "utf8",
+            "value": "san-francisco"
+          }
+        }
+      ]
+    },
+    "redis_geopos": {
+      "count": 1,
+      "key": "places",
+      "key_encoding": "utf8",
+      "members": [
+        {
+          "member": {
+            "encoding": "utf8",
+            "value": "san-francisco"
+          },
+          "position": {
+            "latitude": "37.77490001056517124",
+            "longitude": "-122.4193999171257019"
+          }
+        }
+      ]
+    },
+    "redis_geosearch": {
+      "count": 1,
+      "key": "places",
+      "key_encoding": "utf8",
+      "limit_reached": false,
+      "requested": 10,
+      "results": [
+        {
+          "distance": "0.0000",
+          "geohash_integer": "1366419482564889",
+          "member": {
+            "encoding": "utf8",
+            "value": "san-francisco"
+          },
+          "position": {
+            "latitude": "37.77490001056517124",
+            "longitude": "-122.4193999171257019"
+          }
+        }
+      ]
+    },
+    "redis_geosearchstore": {
+      "cluster_requires_same_slot": true,
+      "destination": {
+        "encoding": "utf8",
+        "value": "nearby"
+      },
+      "destination_overwritten": true,
+      "requested": 10,
+      "source": {
+        "encoding": "utf8",
+        "value": "places"
+      },
+      "store_distance": false,
+      "stored": 1
+    },
     "redis_get": {
       "encoding": "utf8",
       "exists": true,
       "key": "greeting",
       "key_encoding": "utf8",
       "value": "hello"
+    },
+    "redis_getbit": {
+      "bit": 1,
+      "key": "bitmap",
+      "key_encoding": "utf8",
+      "offset": 2,
+      "set": true
     },
     "redis_getdel": {
       "encoding": "utf8",
@@ -29433,6 +32603,31 @@
       "applied": true,
       "key": "greeting"
     },
+    "redis_pfadd": {
+      "approximate": true,
+      "key": "visitors",
+      "key_created": false,
+      "key_encoding": "utf8",
+      "observed": 1,
+      "register_changed": true
+    },
+    "redis_pfcount": {
+      "approximate": true,
+      "cluster_requires_same_slot": false,
+      "estimated_cardinality": "42",
+      "key_count": 1,
+      "relative_standard_error": "~0.81%"
+    },
+    "redis_pfmerge": {
+      "approximate": true,
+      "cluster_requires_same_slot": true,
+      "destination": {
+        "encoding": "utf8",
+        "value": "all-visitors"
+      },
+      "destination_overwritten": true,
+      "source_count": 1
+    },
     "redis_ping": {
       "latency_ms": 0.0,
       "response": "PONG"
@@ -29687,6 +32882,15 @@
       "previous_value_encoding": null,
       "previous_value_omitted": false,
       "previous_value_requested": false
+    },
+    "redis_setbit": {
+      "key": "bitmap",
+      "key_encoding": "utf8",
+      "maximum_string_extent_bytes": 16777216,
+      "offset": 2,
+      "previous": 1,
+      "previous_set": true,
+      "value": 1
     },
     "redis_setrange": {
       "key": "greeting",

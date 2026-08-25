@@ -18,6 +18,164 @@ struct TestCluster {
     _managed: Option<ManagedCluster>,
 }
 
+#[tokio::test]
+async fn bitmap_geo_and_hll_multi_key_tools_enforce_same_slot_cluster_contracts() {
+    let _cluster_guard = CLUSTER_TEST_LOCK.lock().await;
+    let Some(cluster) = TestCluster::start().await else {
+        return;
+    };
+    let executor = DirectRedisCluster::connect(&cluster.seed_urls)
+        .await
+        .expect("connect cluster-aware specialized data adapter");
+    let capabilities = executor
+        .discover_capabilities()
+        .await
+        .expect("discover specialized data Cluster capabilities");
+    assert_eq!(capabilities.deployment(), RedisDeployment::Cluster);
+    let client = router_client(executor).await;
+
+    let prefix = format!("redis-mcp:specialized:{{same-{}}}", std::process::id());
+    let other = format!("redis-mcp:specialized:{{other-{}}}", std::process::id());
+    let bitmap_left = format!("{prefix}:bitmap-left");
+    let bitmap_right = format!("{prefix}:bitmap-right");
+    let bitmap_result = format!("{prefix}:bitmap-result");
+    let geo = format!("{prefix}:geo");
+    let geo_store = format!("{prefix}:geo-store");
+    let hll_left = format!("{prefix}:hll-left");
+    let hll_right = format!("{prefix}:hll-right");
+    let hll_merged = format!("{prefix}:hll-merged");
+    let cross_bitmap = format!("{other}:bitmap-result");
+    let cross_geo = format!("{other}:geo-store");
+    let cross_hll = format!("{other}:hll");
+
+    for key in [&bitmap_left, &bitmap_right] {
+        client
+            .call_tool(
+                "redis_setbit",
+                serde_json::json!({"key": key, "offset": 1, "value": true}),
+            )
+            .await
+            .expect("same-slot SETBIT");
+    }
+    let bitop = client
+        .call_tool(
+            "redis_bitop",
+            serde_json::json!({
+                "destination": bitmap_result, "operation": "and",
+                "sources": [bitmap_left, bitmap_right]
+            }),
+        )
+        .await
+        .expect("same-slot BITOP")
+        .structured_content
+        .expect("structured same-slot BITOP");
+    assert_eq!(bitop["result_length_bytes"], 1);
+    let routed_bit = client
+        .call_tool(
+            "redis_getbit",
+            serde_json::json!({"key": bitmap_result, "offset": 1}),
+        )
+        .await
+        .expect("route GETBIT by destination")
+        .structured_content
+        .expect("structured routed GETBIT");
+    assert_eq!(routed_bit["set"], true);
+
+    client
+        .call_tool(
+            "redis_geoadd",
+            serde_json::json!({
+                "key": geo,
+                "members": [
+                    {"member": "one", "longitude": 0, "latitude": 0},
+                    {"member": "two", "longitude": 0.01, "latitude": 0.01}
+                ]
+            }),
+        )
+        .await
+        .expect("same-slot GEOADD");
+    let geo_stored = client
+        .call_tool(
+            "redis_geosearchstore",
+            serde_json::json!({
+                "destination": geo_store, "source": geo,
+                "center": {"kind": "member", "member": "one"},
+                "shape": {"kind": "radius", "radius": 10, "unit": "kilometers"},
+                "count": 10
+            }),
+        )
+        .await
+        .expect("same-slot GEOSEARCHSTORE")
+        .structured_content
+        .expect("structured same-slot GEOSEARCHSTORE");
+    assert_eq!(geo_stored["stored"], 2);
+
+    for (key, elements) in [
+        (&hll_left, serde_json::json!(["one", "two"])),
+        (&hll_right, serde_json::json!(["two", "three"])),
+    ] {
+        client
+            .call_tool(
+                "redis_pfadd",
+                serde_json::json!({"key": key, "elements": elements}),
+            )
+            .await
+            .expect("same-slot PFADD");
+    }
+    let estimate = client
+        .call_tool(
+            "redis_pfcount",
+            serde_json::json!({"keys": [hll_left, hll_right]}),
+        )
+        .await
+        .expect("same-slot PFCOUNT")
+        .structured_content
+        .expect("structured same-slot PFCOUNT");
+    assert_eq!(estimate["estimated_cardinality"], "3");
+    client
+        .call_tool(
+            "redis_pfmerge",
+            serde_json::json!({"destination": hll_merged, "sources": [hll_left, hll_right]}),
+        )
+        .await
+        .expect("same-slot PFMERGE");
+
+    for (tool, arguments) in [
+        (
+            "redis_bitop",
+            serde_json::json!({
+                "destination": cross_bitmap, "operation": "or", "sources": [bitmap_left]
+            }),
+        ),
+        (
+            "redis_geosearchstore",
+            serde_json::json!({
+                "destination": cross_geo, "source": geo,
+                "center": {"kind": "member", "member": "one"},
+                "shape": {"kind": "radius", "radius": 10, "unit": "kilometers"},
+                "count": 10
+            }),
+        ),
+        (
+            "redis_pfcount",
+            serde_json::json!({"keys": [hll_left, cross_hll]}),
+        ),
+        (
+            "redis_pfmerge",
+            serde_json::json!({"destination": cross_hll, "sources": [hll_left]}),
+        ),
+    ] {
+        let result = client
+            .call_tool(tool, arguments)
+            .await
+            .unwrap_or_else(|error| panic!("{tool} cross-slot result: {error}"));
+        assert!(result.is_error, "{tool}: {result:?}");
+        let result = serde_json::to_string(&result)
+            .unwrap_or_else(|error| panic!("serialize {tool} CROSSSLOT: {error}"));
+        assert!(result.contains("CROSSSLOT"), "{tool}: {result}");
+    }
+}
+
 impl TestCluster {
     async fn start() -> Option<Self> {
         if let Ok(seed_urls) = std::env::var("REDIS_CLUSTER_URLS") {

@@ -213,11 +213,11 @@ fn classified_access(command: &str, arguments: &[Vec<u8>]) -> Option<AccessMode>
         };
     }
     let access = match command {
-        "ACL" | "DEL" | "GETDEL" | "HDEL" | "JSON.ARRPOP" | "JSON.ARRTRIM" | "JSON.CLEAR"
-        | "JSON.DEL" | "LPOP" | "LMOVE" | "LMPOP" | "LREM" | "LSET" | "LTRIM" | "RENAME"
-        | "RENAMENX" | "RPOP" | "RPOPLPUSH" | "SMOVE" | "SPOP" | "SREM" | "UNLINK" | "XDEL"
-        | "XTRIM" | "ZMPOP" | "ZPOPMAX" | "ZPOPMIN" | "ZREM" | "ZREMRANGEBYLEX"
-        | "ZREMRANGEBYRANK" | "ZREMRANGEBYSCORE" => AccessMode::Full,
+        "ACL" | "BITOP" | "DEL" | "GEOSEARCHSTORE" | "GETDEL" | "HDEL" | "JSON.ARRPOP"
+        | "JSON.ARRTRIM" | "JSON.CLEAR" | "JSON.DEL" | "LPOP" | "LMOVE" | "LMPOP" | "LREM"
+        | "LSET" | "LTRIM" | "PFMERGE" | "RENAME" | "RENAMENX" | "RPOP" | "RPOPLPUSH" | "SMOVE"
+        | "SPOP" | "SREM" | "UNLINK" | "XDEL" | "XTRIM" | "ZMPOP" | "ZPOPMAX" | "ZPOPMIN"
+        | "ZREM" | "ZREMRANGEBYLEX" | "ZREMRANGEBYRANK" | "ZREMRANGEBYSCORE" => AccessMode::Full,
         "COPY" | "RESTORE"
             if arguments
                 .iter()
@@ -232,30 +232,44 @@ fn classified_access(command: &str, arguments: &[Vec<u8>]) -> Option<AccessMode>
         {
             AccessMode::Full
         }
-        "APPEND" | "COPY" | "DECR" | "DECRBY" | "EXPIRE" | "EXPIREAT" | "GETEX" | "GETSET"
-        | "HEXPIRE" | "HINCRBY" | "HINCRBYFLOAT" | "HMSET" | "HPERSIST" | "HSET" | "HSETNX"
-        | "INCR" | "INCRBY" | "INCRBYFLOAT" | "JSON.ARRAPPEND" | "JSON.ARRINSERT"
-        | "JSON.NUMINCRBY" | "JSON.SET" | "JSON.TOGGLE" | "LINSERT" | "LPUSH" | "LPUSHX"
-        | "MSET" | "MSETNX" | "PERSIST" | "PEXPIRE" | "PEXPIREAT" | "PSETEX" | "RESTORE"
-        | "RPUSH" | "RPUSHX" | "SADD" | "SET" | "SETEX" | "TOUCH" | "XACK" | "XADD"
-        | "XAUTOCLAIM" | "XCLAIM" | "XREADGROUP" | "ZADD" | "ZINCRBY" => AccessMode::ReadWrite,
+        "APPEND" | "BITFIELD" | "COPY" | "DECR" | "DECRBY" | "EXPIRE" | "EXPIREAT" | "GEOADD"
+        | "GETEX" | "GETSET" | "HEXPIRE" | "HINCRBY" | "HINCRBYFLOAT" | "HMSET" | "HPERSIST"
+        | "HSET" | "HSETNX" | "INCR" | "INCRBY" | "INCRBYFLOAT" | "JSON.ARRAPPEND"
+        | "JSON.ARRINSERT" | "JSON.NUMINCRBY" | "JSON.SET" | "JSON.TOGGLE" | "LINSERT"
+        | "LPUSH" | "LPUSHX" | "MSET" | "MSETNX" | "PERSIST" | "PEXPIRE" | "PEXPIREAT"
+        | "PFADD" | "PSETEX" | "RESTORE" | "RPUSH" | "RPUSHX" | "SADD" | "SET" | "SETBIT"
+        | "SETEX" | "TOUCH" | "XACK" | "XADD" | "XAUTOCLAIM" | "XCLAIM" | "XREADGROUP" | "ZADD"
+        | "ZINCRBY" => AccessMode::ReadWrite,
         "MODULE" => AccessMode::Full,
-        "COMMAND" | "DBSIZE" | "DUMP" | "ECHO" | "EXISTS" | "EXPIRETIME" | "GET" | "GETRANGE"
-        | "HEXISTS" | "HGET" | "HGETALL" | "HKEYS" | "HLEN" | "HMGET" | "HSCAN" | "HSTRLEN"
-        | "HTTL" | "HVALS" | "INFO" | "JSON.ARRLEN" | "JSON.GET" | "JSON.MGET" | "JSON.OBJKEYS"
-        | "JSON.OBJLEN" | "JSON.STRLEN" | "JSON.TYPE" | "LCS" | "LINDEX" | "LLEN" | "LPOS"
-        | "LRANGE" | "MEMORY" | "MGET" | "OBJECT" | "PEXPIRETIME" | "PING" | "PTTL"
-        | "RANDOMKEY" | "SCAN" | "SCARD" | "SDIFF" | "SINTER" | "SINTERCARD" | "SISMEMBER"
-        | "SMEMBERS" | "SMISMEMBER" | "SRANDMEMBER" | "SSCAN" | "STRLEN" | "SUNION" | "TTL"
-        | "TYPE" | "XINFO" | "XLEN" | "XPENDING" | "XRANGE" | "XREAD" | "XREVRANGE" | "ZCARD"
-        | "ZCOUNT" | "ZDIFF" | "ZINTER" | "ZLEXCOUNT" | "ZMSCORE" | "ZRANDMEMBER" | "ZRANGE"
-        | "ZRANK" | "ZREVRANK" | "ZSCAN" | "ZSCORE" | "ZUNION" => AccessMode::ReadOnly,
+        "BITCOUNT" | "BITFIELD_RO" | "BITPOS" | "COMMAND" | "DBSIZE" | "DUMP" | "ECHO"
+        | "EXISTS" | "EXPIRETIME" | "GEODIST" | "GEOHASH" | "GEOPOS" | "GEOSEARCH" | "GET"
+        | "GETBIT" | "GETRANGE" | "HEXISTS" | "HGET" | "HGETALL" | "HKEYS" | "HLEN" | "HMGET"
+        | "HSCAN" | "HSTRLEN" | "HTTL" | "HVALS" | "INFO" | "JSON.ARRLEN" | "JSON.GET"
+        | "JSON.MGET" | "JSON.OBJKEYS" | "JSON.OBJLEN" | "JSON.STRLEN" | "JSON.TYPE" | "LCS"
+        | "LINDEX" | "LLEN" | "LPOS" | "LRANGE" | "MEMORY" | "MGET" | "OBJECT" | "PEXPIRETIME"
+        | "PFCOUNT" | "PING" | "PTTL" | "RANDOMKEY" | "SCAN" | "SCARD" | "SDIFF" | "SINTER"
+        | "SINTERCARD" | "SISMEMBER" | "SMEMBERS" | "SMISMEMBER" | "SRANDMEMBER" | "SSCAN"
+        | "STRLEN" | "SUNION" | "TTL" | "TYPE" | "XINFO" | "XLEN" | "XPENDING" | "XRANGE"
+        | "XREAD" | "XREVRANGE" | "ZCARD" | "ZCOUNT" | "ZDIFF" | "ZINTER" | "ZLEXCOUNT"
+        | "ZMSCORE" | "ZRANDMEMBER" | "ZRANGE" | "ZRANK" | "ZREVRANK" | "ZSCAN" | "ZSCORE"
+        | "ZUNION" => AccessMode::ReadOnly,
         _ => return None,
     };
     Some(access)
 }
 
 fn minimum_redis_version(command: &str, arguments: &[Vec<u8>]) -> Option<RedisVersion> {
+    if (command == "BITCOUNT" && arguments.len() >= 4)
+        || (command == "BITPOS" && arguments.len() >= 5)
+    {
+        return Some(RedisVersion::new(7, 0, 0));
+    }
+    if command == "BITPOS" {
+        return Some(RedisVersion::new(2, 8, 7));
+    }
+    if matches!(command, "PFADD" | "PFCOUNT" | "PFMERGE") {
+        return Some(RedisVersion::new(2, 8, 9));
+    }
     if command == "XGROUP"
         && arguments
             .first()
@@ -281,7 +295,21 @@ fn minimum_redis_version(command: &str, arguments: &[Vec<u8>]) -> Option<RedisVe
     {
         return Some(RedisVersion::new(6, 2, 0));
     }
+    if command == "GEOADD"
+        && arguments.get(1).is_some_and(|argument| {
+            eq_ascii_case(argument, b"NX")
+                || eq_ascii_case(argument, b"XX")
+                || eq_ascii_case(argument, b"CH")
+        })
+    {
+        return Some(RedisVersion::new(6, 2, 0));
+    }
     let version = match command {
+        "GETBIT" | "SETBIT" => (2, 2),
+        "BITCOUNT" | "BITOP" => (2, 6),
+        "BITFIELD" | "GEOADD" | "GEODIST" | "GEOHASH" | "GEOPOS" => (3, 2),
+        "BITFIELD_RO" => (6, 0),
+        "GEOSEARCH" | "GEOSEARCHSTORE" => (6, 2),
         "SCAN" | "HSCAN" | "SSCAN" | "ZSCAN" => (2, 8),
         "HSTRLEN" | "TOUCH" => (3, 2),
         "MEMORY" | "UNLINK" => (4, 0),
@@ -434,6 +462,79 @@ mod tests {
                 .expect("DEL metadata")
                 .required_access(),
             AccessMode::Full
+        );
+        for command in [
+            "BITCOUNT",
+            "BITFIELD_RO",
+            "BITPOS",
+            "GEODIST",
+            "GEOHASH",
+            "GEOPOS",
+            "GEOSEARCH",
+            "GETBIT",
+            "PFCOUNT",
+        ] {
+            assert_eq!(
+                invocation(command, &["key"])
+                    .unwrap_or_else(|error| panic!("{command} metadata: {error}"))
+                    .required_access(),
+                AccessMode::ReadOnly,
+                "{command}"
+            );
+        }
+        for command in ["BITFIELD", "GEOADD", "PFADD", "SETBIT"] {
+            assert_eq!(
+                invocation(command, &["key"])
+                    .unwrap_or_else(|error| panic!("{command} metadata: {error}"))
+                    .required_access(),
+                AccessMode::ReadWrite,
+                "{command}"
+            );
+        }
+        for command in ["BITOP", "GEOSEARCHSTORE", "PFMERGE"] {
+            assert_eq!(
+                invocation(command, &["key"])
+                    .unwrap_or_else(|error| panic!("{command} metadata: {error}"))
+                    .required_access(),
+                AccessMode::Full,
+                "{command}"
+            );
+        }
+        assert_eq!(
+            invocation("BITPOS", &["key", "1"])
+                .expect("BITPOS metadata")
+                .minimum_redis_version(),
+            Some(RedisVersion::new(2, 8, 7))
+        );
+        assert_eq!(
+            invocation("BITCOUNT", &["key", "0", "7", "BIT"])
+                .expect("BITCOUNT BIT metadata")
+                .minimum_redis_version(),
+            Some(RedisVersion::new(7, 0, 0))
+        );
+        assert_eq!(
+            invocation("BITPOS", &["key", "1", "0", "7", "BYTE"])
+                .expect("BITPOS BYTE metadata")
+                .minimum_redis_version(),
+            Some(RedisVersion::new(7, 0, 0))
+        );
+        assert_eq!(
+            invocation("GEOADD", &["places", "NX", "1", "1", "member"])
+                .expect("GEOADD NX metadata")
+                .minimum_redis_version(),
+            Some(RedisVersion::new(6, 2, 0))
+        );
+        assert_eq!(
+            invocation("PFCOUNT", &["key"])
+                .expect("PFCOUNT metadata")
+                .minimum_redis_version(),
+            Some(RedisVersion::new(2, 8, 9))
+        );
+        assert_eq!(
+            invocation("GEOSEARCH", &["key"])
+                .expect("GEOSEARCH metadata")
+                .minimum_redis_version(),
+            Some(RedisVersion::new(6, 2, 0))
         );
         let json = invocation("JSON.GET", &["doc"]).expect("JSON.GET metadata");
         assert_eq!(json.required_module(), Some(RedisModule::Json));

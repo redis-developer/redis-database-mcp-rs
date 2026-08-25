@@ -136,13 +136,13 @@ which side effects that host permits. These decisions are orthogonal.
 
 The public taxonomy is `essentials`, `data_structures`, `json`, `search`,
 `diagnostics`, `sessions`, `admin`, `bulk`, and `raw`. The curated default enables
-`essentials`, `data_structures`, and `diagnostics`, totaling 129 tools. The
+`essentials`, `data_structures`, and `diagnostics`, totaling 145 tools. The
 module-backed `json` and `search` bundles are explicitly selected so a default
 router never advertises capabilities that its Redis target may not provide.
 The stateful `sessions` bundle is enabled only by supplying a lifecycle manager.
 Empty bundles are reserved for coherent catalog growth and do not expose
 placeholder tools. The bundled stdio executable installs the DirectRedis
-session manager itself and therefore exposes 135 tools before module or raw
+session manager itself and therefore exposes 151 tools before module or raw
 additions.
 
 Every catalog entry has `ToolCapabilityRequirements`: required commands,
@@ -345,6 +345,25 @@ count and aggregate member bytes.
 All curated sorted-set operations are single-key. Future union/intersection
 tools must define their same-slot or explicit fan-out behavior before entering
 the catalog; the current surface makes no cluster-wide aggregation promise.
+
+Bitmap and bitfield tools use explicit zero-based offsets, signed/unsigned
+widths, indexed or absolute addressing, and per-increment overflow modes.
+Read offsets retain Redis's full 32-bit range, while `SETBIT` and mutating
+`BITFIELD` operations cap one-call string growth at 16 MiB. Exact bitfield
+integers are returned as decimal strings. `BITOP` is full access because it
+overwrites a destination; its byte-count reply describes result size rather
+than bounding the mutation.
+
+Geospatial inputs accept JSON-number shorthand or exact finite decimal strings,
+with Redis longitude and latitude bounds checked before execution. `GEOSEARCH`
+always emits a caller-bounded `COUNT` and returns binary-safe members together
+with exact distance, integer geohash, and coordinate strings.
+`GEOSEARCHSTORE` is full access and explicitly overwrites at most the requested
+number of destination members. HyperLogLog tools likewise label counts as
+approximate, distinguish empty-key initialization and `PFADD` register changes
+from exact novelty, and treat `PFMERGE` as a destination overwrite. `BITOP`, `GEOSEARCHSTORE`,
+multi-key `PFCOUNT`, and `PFMERGE` preserve Redis Cluster's native same-slot
+contract and return stable `CROSSSLOT` errors otherwise.
 
 Streams use structured IDs rather than overloaded strings for entry creation,
 range bounds, group start positions, and read offsets. Fields, values, group

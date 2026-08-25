@@ -229,6 +229,14 @@ impl ToolMetadata {
             | "redis_pubsub_shardchannels"
             | "redis_pubsub_shardnumsub" => Some(RedisVersion::new(7, 0, 0)),
             "redis_dump" => Some(RedisVersion::new(2, 6, 0)),
+            "redis_getbit" | "redis_setbit" => Some(RedisVersion::new(2, 2, 0)),
+            "redis_bitcount" | "redis_bitop" => Some(RedisVersion::new(2, 6, 0)),
+            "redis_bitpos" => Some(RedisVersion::new(2, 8, 7)),
+            "redis_pfadd" | "redis_pfcount" | "redis_pfmerge" => Some(RedisVersion::new(2, 8, 9)),
+            "redis_bitfield" | "redis_geoadd" | "redis_geodist" | "redis_geohash"
+            | "redis_geopos" => Some(RedisVersion::new(3, 2, 0)),
+            "redis_bitfield_ro" => Some(RedisVersion::new(6, 0, 0)),
+            "redis_geosearch" | "redis_geosearchstore" => Some(RedisVersion::new(6, 2, 0)),
             "redis_touch" | "redis_hstrlen" => Some(RedisVersion::new(3, 2, 0)),
             "redis_memory_usage" | "redis_object_inspect" | "redis_unlink" => {
                 Some(RedisVersion::new(4, 0, 0))
@@ -362,6 +370,15 @@ impl ToolMetadata {
             "redis_zrevrank" => &["ZREVRANK", "EXISTS"],
             "redis_zscan" => &["ZSCAN", "EXISTS"],
             "redis_zscore" => &["ZSCORE", "EXISTS"],
+            "redis_getbit" => &["GETBIT"],
+            "redis_bitcount" => &["BITCOUNT"],
+            "redis_bitpos" => &["BITPOS"],
+            "redis_bitfield_ro" => &["BITFIELD_RO"],
+            "redis_geodist" => &["GEODIST"],
+            "redis_geohash" => &["GEOHASH"],
+            "redis_geopos" => &["GEOPOS"],
+            "redis_geosearch" => &["GEOSEARCH"],
+            "redis_pfcount" => &["PFCOUNT"],
             "redis_xlen" => &["XLEN", "EXISTS"],
             "redis_xrange" => &["XRANGE"],
             "redis_xrevrange" => &["XREVRANGE"],
@@ -412,6 +429,10 @@ impl ToolMetadata {
             "redis_sadd" => &["SADD"],
             "redis_zadd" => &["ZADD"],
             "redis_zincrby" => &["ZINCRBY"],
+            "redis_setbit" => &["SETBIT"],
+            "redis_bitfield" => &["BITFIELD"],
+            "redis_geoadd" => &["GEOADD"],
+            "redis_pfadd" => &["PFADD"],
             "redis_xadd" => &["XADD"],
             "redis_xgroup_create" | "redis_xgroup_setid" | "redis_xgroup_createconsumer" => {
                 &["XGROUP"]
@@ -444,6 +465,9 @@ impl ToolMetadata {
             "redis_zpopmin" => &["ZPOPMIN"],
             "redis_zrem" => &["ZREM"],
             "redis_zremrangebyscore" => &["ZREMRANGEBYSCORE"],
+            "redis_bitop" => &["BITOP"],
+            "redis_geosearchstore" => &["GEOSEARCHSTORE"],
+            "redis_pfmerge" => &["PFMERGE"],
             "redis_xdel" => &["XDEL"],
             "redis_xtrim" => &["XTRIM"],
             "redis_xgroup_destroy" | "redis_xgroup_delconsumer" => &["XGROUP"],
@@ -524,6 +548,9 @@ impl ToolMetadata {
             | "redis_smismember"
             | "redis_sunion"
             | "redis_zmscore"
+            | "redis_geohash"
+            | "redis_geopos"
+            | "redis_geosearch"
             | "redis_xinfo_stream"
             | "redis_xinfo_groups"
             | "redis_xinfo_consumers"
@@ -974,6 +1001,60 @@ pub(crate) const CATALOG: &[ToolMetadata] = &[
         requires_raw_opt_in: false,
     },
     ToolMetadata {
+        name: "redis_getbit",
+        bundle: ToolBundle::DataStructures,
+        required_access: AccessMode::ReadOnly,
+        requires_raw_opt_in: false,
+    },
+    ToolMetadata {
+        name: "redis_bitcount",
+        bundle: ToolBundle::DataStructures,
+        required_access: AccessMode::ReadOnly,
+        requires_raw_opt_in: false,
+    },
+    ToolMetadata {
+        name: "redis_bitpos",
+        bundle: ToolBundle::DataStructures,
+        required_access: AccessMode::ReadOnly,
+        requires_raw_opt_in: false,
+    },
+    ToolMetadata {
+        name: "redis_bitfield_ro",
+        bundle: ToolBundle::DataStructures,
+        required_access: AccessMode::ReadOnly,
+        requires_raw_opt_in: false,
+    },
+    ToolMetadata {
+        name: "redis_geodist",
+        bundle: ToolBundle::DataStructures,
+        required_access: AccessMode::ReadOnly,
+        requires_raw_opt_in: false,
+    },
+    ToolMetadata {
+        name: "redis_geohash",
+        bundle: ToolBundle::DataStructures,
+        required_access: AccessMode::ReadOnly,
+        requires_raw_opt_in: false,
+    },
+    ToolMetadata {
+        name: "redis_geopos",
+        bundle: ToolBundle::DataStructures,
+        required_access: AccessMode::ReadOnly,
+        requires_raw_opt_in: false,
+    },
+    ToolMetadata {
+        name: "redis_geosearch",
+        bundle: ToolBundle::DataStructures,
+        required_access: AccessMode::ReadOnly,
+        requires_raw_opt_in: false,
+    },
+    ToolMetadata {
+        name: "redis_pfcount",
+        bundle: ToolBundle::DataStructures,
+        required_access: AccessMode::ReadOnly,
+        requires_raw_opt_in: false,
+    },
+    ToolMetadata {
         name: "redis_xlen",
         bundle: ToolBundle::DataStructures,
         required_access: AccessMode::ReadOnly,
@@ -1304,6 +1385,30 @@ pub(crate) const CATALOG: &[ToolMetadata] = &[
         requires_raw_opt_in: false,
     },
     ToolMetadata {
+        name: "redis_setbit",
+        bundle: ToolBundle::DataStructures,
+        required_access: AccessMode::ReadWrite,
+        requires_raw_opt_in: false,
+    },
+    ToolMetadata {
+        name: "redis_bitfield",
+        bundle: ToolBundle::DataStructures,
+        required_access: AccessMode::ReadWrite,
+        requires_raw_opt_in: false,
+    },
+    ToolMetadata {
+        name: "redis_geoadd",
+        bundle: ToolBundle::DataStructures,
+        required_access: AccessMode::ReadWrite,
+        requires_raw_opt_in: false,
+    },
+    ToolMetadata {
+        name: "redis_pfadd",
+        bundle: ToolBundle::DataStructures,
+        required_access: AccessMode::ReadWrite,
+        requires_raw_opt_in: false,
+    },
+    ToolMetadata {
         name: "redis_xadd",
         bundle: ToolBundle::DataStructures,
         required_access: AccessMode::ReadWrite,
@@ -1503,6 +1608,24 @@ pub(crate) const CATALOG: &[ToolMetadata] = &[
     },
     ToolMetadata {
         name: "redis_zremrangebyscore",
+        bundle: ToolBundle::DataStructures,
+        required_access: AccessMode::Full,
+        requires_raw_opt_in: false,
+    },
+    ToolMetadata {
+        name: "redis_bitop",
+        bundle: ToolBundle::DataStructures,
+        required_access: AccessMode::Full,
+        requires_raw_opt_in: false,
+    },
+    ToolMetadata {
+        name: "redis_geosearchstore",
+        bundle: ToolBundle::DataStructures,
+        required_access: AccessMode::Full,
+        requires_raw_opt_in: false,
+    },
+    ToolMetadata {
+        name: "redis_pfmerge",
         bundle: ToolBundle::DataStructures,
         required_access: AccessMode::Full,
         requires_raw_opt_in: false,

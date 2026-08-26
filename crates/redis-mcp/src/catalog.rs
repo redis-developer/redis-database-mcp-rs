@@ -309,6 +309,7 @@ impl ToolMetadata {
             | "redis_ssubscribe"
             | "redis_pubsub_shardchannels"
             | "redis_pubsub_shardnumsub" => Some(RedisVersion::new(7, 0, 0)),
+            "redis_sort" => Some(RedisVersion::new(7, 0, 0)),
             "redis_dump" => Some(RedisVersion::new(2, 6, 0)),
             "redis_getbit" | "redis_setbit" => Some(RedisVersion::new(2, 2, 0)),
             "redis_bitcount" | "redis_bitop" => Some(RedisVersion::new(2, 6, 0)),
@@ -363,9 +364,13 @@ impl ToolMetadata {
             "redis_lpos" => Some(RedisVersion::new(6, 0, 0)),
             "redis_xgroup_createconsumer" | "redis_xautoclaim" => Some(RedisVersion::new(6, 2, 0)),
             "redis_copy" | "redis_copy_replace" | "redis_getdel" | "redis_getex"
-            | "redis_lmove" | "redis_lpop" | "redis_rpop" | "redis_smismember" | "redis_zadd"
-            | "redis_zmscore" | "redis_zrange" => Some(RedisVersion::new(6, 2, 0)),
-            "redis_hexpire" | "redis_hpersist" | "redis_httl" => Some(RedisVersion::new(7, 4, 0)),
+            | "redis_hrandfield" | "redis_lmove" | "redis_lpop" | "redis_rpop"
+            | "redis_smismember" | "redis_zadd" | "redis_zmscore" | "redis_zrange" => {
+                Some(RedisVersion::new(6, 2, 0))
+            }
+            "redis_hexpire" | "redis_hexpire_delete" | "redis_hpersist" | "redis_httl" => {
+                Some(RedisVersion::new(7, 4, 0))
+            }
             _ => None,
         };
         let minimum_module_version = match self.name {
@@ -427,6 +432,7 @@ impl ToolMetadata {
             "redis_getrange" => &["GETRANGE"],
             "redis_dump" => &["DUMP"],
             "redis_object_inspect" => &["OBJECT"],
+            "redis_sort" => &["SORT_RO", "EXISTS"],
             "redis_publish" => &["PUBLISH"],
             "redis_spublish" => &["SPUBLISH"],
             "redis_subscribe" => &["SUBSCRIBE"],
@@ -445,8 +451,9 @@ impl ToolMetadata {
             "redis_hmget" => &["HMGET", "EXISTS"],
             "redis_hscan" => &["HSCAN"],
             "redis_hstrlen" => &["HSTRLEN", "HEXISTS", "EXISTS"],
-            "redis_httl" => &["HTTL", "EXISTS"],
+            "redis_httl" => &["HTTL", "HPTTL", "HEXPIRETIME", "HPEXPIRETIME", "EXISTS"],
             "redis_hvals" => &["HVALS"],
+            "redis_hrandfield" => &["HRANDFIELD", "EXISTS"],
             "redis_lindex" => &["LINDEX", "EXISTS"],
             "redis_llen" => &["LLEN"],
             "redis_lpos" => &["LPOS", "EXISTS"],
@@ -545,8 +552,10 @@ impl ToolMetadata {
             "redis_copy" | "redis_copy_replace" => &["COPY"],
             "redis_touch" => &["TOUCH"],
             "redis_restore" | "redis_restore_replace" => &["RESTORE"],
+            "redis_sort_store" => &["SORT"],
             "redis_hset" => &["HSET"],
-            "redis_hexpire" => &["HEXPIRE"],
+            "redis_hexpire" => &["HEXPIRE", "HPEXPIRE", "HEXPIREAT", "HPEXPIREAT"],
+            "redis_hexpire_delete" => &["HEXPIRE", "HPEXPIRE", "HEXPIREAT", "HPEXPIREAT"],
             "redis_hincrby" => &["HINCRBY"],
             "redis_hincrbyfloat" => &["HINCRBYFLOAT"],
             "redis_hpersist" => &["HPERSIST"],
@@ -720,6 +729,8 @@ impl ToolMetadata {
             | "redis_pubsub_channels"
             | "redis_pubsub_shardchannels"
             | "redis_pubsub_read"
+            | "redis_hrandfield"
+            | "redis_sort"
             | "redis_command" => ToolOutputPolicy::BudgetGuarded,
             _ => ToolOutputPolicy::IntrinsicallyBounded,
         }
@@ -896,6 +907,12 @@ pub(crate) const CATALOG: &[ToolMetadata] = &[
         requires_raw_opt_in: false,
     },
     ToolMetadata {
+        name: "redis_sort",
+        bundle: ToolBundle::Essentials,
+        required_access: AccessMode::ReadOnly,
+        requires_raw_opt_in: false,
+    },
+    ToolMetadata {
         name: "redis_pubsub_channels",
         bundle: ToolBundle::Essentials,
         required_access: AccessMode::ReadOnly,
@@ -999,6 +1016,12 @@ pub(crate) const CATALOG: &[ToolMetadata] = &[
     },
     ToolMetadata {
         name: "redis_hscan",
+        bundle: ToolBundle::DataStructures,
+        required_access: AccessMode::ReadOnly,
+        requires_raw_opt_in: false,
+    },
+    ToolMetadata {
+        name: "redis_hrandfield",
         bundle: ToolBundle::DataStructures,
         required_access: AccessMode::ReadOnly,
         requires_raw_opt_in: false,
@@ -2074,6 +2097,18 @@ pub(crate) const CATALOG: &[ToolMetadata] = &[
     ToolMetadata {
         name: "redis_restore_replace",
         bundle: ToolBundle::Essentials,
+        required_access: AccessMode::Full,
+        requires_raw_opt_in: false,
+    },
+    ToolMetadata {
+        name: "redis_sort_store",
+        bundle: ToolBundle::Essentials,
+        required_access: AccessMode::Full,
+        requires_raw_opt_in: false,
+    },
+    ToolMetadata {
+        name: "redis_hexpire_delete",
+        bundle: ToolBundle::DataStructures,
         required_access: AccessMode::Full,
         requires_raw_opt_in: false,
     },

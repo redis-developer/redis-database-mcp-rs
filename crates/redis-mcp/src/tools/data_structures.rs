@@ -3,6 +3,7 @@
 use std::{
     collections::{BTreeMap, BTreeSet},
     sync::Arc,
+    time::{SystemTime, UNIX_EPOCH},
 };
 
 use schemars::JsonSchema;
@@ -628,12 +629,35 @@ enum HashTtlStatus {
     Expiring,
 }
 
+#[derive(Debug, Clone, Copy, Default, Deserialize, Serialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+enum HashTtlMode {
+    #[default]
+    RemainingSeconds,
+    RemainingMilliseconds,
+    UnixSeconds,
+    UnixMilliseconds,
+}
+
+impl HashTtlMode {
+    fn command(self) -> &'static str {
+        match self {
+            Self::RemainingSeconds => "HTTL",
+            Self::RemainingMilliseconds => "HPTTL",
+            Self::UnixSeconds => "HEXPIRETIME",
+            Self::UnixMilliseconds => "HPEXPIRETIME",
+        }
+    }
+}
+
 #[derive(Debug, Serialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 struct HttlEntry {
     field: String,
     field_encoding: InputEncoding,
     status: HashTtlStatus,
+    value: Option<u64>,
+    /// Compatibility field populated only for remaining-seconds mode.
     ttl_seconds: Option<u64>,
     redis_code: i64,
 }
@@ -644,6 +668,7 @@ struct HttlOutput {
     key: String,
     key_encoding: InputEncoding,
     hash_exists: bool,
+    mode: HashTtlMode,
     count: usize,
     fields: Vec<HttlEntry>,
 }
@@ -652,25 +677,28 @@ fn httl_tool(state: Arc<ToolState>) -> Tool {
     ToolBuilder::new("redis_httl")
         .title("Read Redis Hash Field TTLs")
         .description(
-            "Read remaining field TTLs in seconds on Redis 7.4 or newer. Results preserve request order and distinguish missing and persistent fields.",
+            "Read remaining or absolute hash-field expirations in seconds or milliseconds on Redis 7.4 or newer. Results preserve request order and distinguish missing and persistent fields.",
         )
         .output_schema(output_schema::<HttlOutput>())
         .annotations(read_annotations())
         .extractor_handler(
             state,
-            |State(state): State<Arc<ToolState>>, Json(input): Json<HashFieldsInput>| async move {
+            |State(state): State<Arc<ToolState>>, Json(input): Json<HttlInput>| async move {
                 state.validate_requested_entries(input.fields.len(), "fields")?;
                 let key = decode_input(&input.key, input.key_encoding, "key")?;
                 let fields = decode_hash_fields(input.fields, false)?;
-                let mut command = command("redis_httl", AccessMode::ReadOnly, "HTTL");
+                let command_name = input.mode.command();
+                let mut command = command("redis_httl", AccessMode::ReadOnly, command_name);
                 command.arg(key.clone()).arg("FIELDS").arg(fields.len().to_string());
                 for field in &fields {
                     command.arg(field.bytes.clone());
                 }
-                let ttls: Vec<i64> = state.query(command, "HTTL failed").await?;
+                let ttls: Vec<i64> = state
+                    .query(command, &format!("{command_name} failed"))
+                    .await?;
                 if ttls.len() != fields.len() {
                     return Err(tower_mcp::Error::tool(format!(
-                        "HTTL returned {} values for {} fields",
+                            "{command_name} returned {} values for {} fields",
                         ttls.len(),
                         fields.len()
                     )));
@@ -684,13 +712,13 @@ fn httl_tool(state: Arc<ToolState>) -> Tool {
                     .into_iter()
                     .zip(ttls)
                     .map(|(field, redis_code)| {
-                        let (status, ttl_seconds) = match redis_code {
+                        let (status, value) = match redis_code {
                             -2 => (HashTtlStatus::FieldMissing, None),
                             -1 => (HashTtlStatus::Persistent, None),
                             ttl if ttl >= 0 => (HashTtlStatus::Expiring, Some(ttl as u64)),
                             other => {
                                 return Err(tower_mcp::Error::tool(format!(
-                                    "HTTL returned unexpected field status {other}"
+                                    "{command_name} returned unexpected field status {other}"
                                 )));
                             }
                         };
@@ -698,7 +726,15 @@ fn httl_tool(state: Arc<ToolState>) -> Tool {
                             field: field.field,
                             field_encoding: field.field_encoding,
                             status,
-                            ttl_seconds,
+                            value,
+                            ttl_seconds: if matches!(
+                                input.mode,
+                                HashTtlMode::RemainingSeconds
+                            ) {
+                                value
+                            } else {
+                                None
+                            },
                             redis_code,
                         })
                     })
@@ -707,10 +743,176 @@ fn httl_tool(state: Arc<ToolState>) -> Tool {
                     key: input.key,
                     key_encoding: input.key_encoding,
                     hash_exists,
+                    mode: input.mode,
                     count: fields.len(),
                     fields,
                 };
-                state.output_collection(&output, output.count, "Retry HTTL with fewer fields.")
+                state.output_collection(
+                    &output,
+                    output.count,
+                    "Retry the hash expiration inspection with fewer fields.",
+                )
+            },
+        )
+        .build()
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+struct HttlInput {
+    /// Redis hash key.
+    key: String,
+    /// Encoding of `key`.
+    #[serde(default)]
+    key_encoding: InputEncoding,
+    /// Remaining or absolute time representation to return.
+    #[serde(default)]
+    mode: HashTtlMode,
+    /// One to 1000 unique fields. Strings are UTF-8 shorthand; objects can select base64.
+    #[schemars(length(min = 1, max = 1000))]
+    fields: Vec<HashFieldSelector>,
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+struct HrandfieldInput {
+    /// Redis hash key.
+    key: String,
+    /// Encoding of `key`.
+    #[serde(default)]
+    key_encoding: InputEncoding,
+    /// Omit for one unique field. Positive counts return unique fields; negative counts permit duplicates.
+    #[serde(default)]
+    #[schemars(range(min = -1000, max = 1000))]
+    count: Option<i64>,
+    /// Include the value paired with each returned field. Requires `count`.
+    #[serde(default)]
+    with_values: bool,
+}
+
+#[derive(Debug, Serialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+struct HrandfieldEntry {
+    field: String,
+    field_encoding: ValueEncoding,
+    value: Option<String>,
+    value_encoding: Option<ValueEncoding>,
+}
+
+#[derive(Debug, Serialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+struct HrandfieldOutput {
+    key: String,
+    key_encoding: InputEncoding,
+    hash_exists: bool,
+    requested_count: Option<i64>,
+    duplicates_allowed: bool,
+    with_values: bool,
+    returned: usize,
+    entries: Vec<HrandfieldEntry>,
+}
+
+fn hrandfield_tool(state: Arc<ToolState>) -> Tool {
+    ToolBuilder::new("redis_hrandfield")
+        .title("Sample Redis Hash Fields")
+        .description(
+            "Sample one or a bounded count of binary-safe hash fields. Positive counts are unique, negative counts permit duplicates, and WITHVALUES requires an explicit count.",
+        )
+        .output_schema(output_schema::<HrandfieldOutput>())
+        .annotations(read_annotations())
+        .extractor_handler(
+            state,
+            |State(state): State<Arc<ToolState>>, Json(input): Json<HrandfieldInput>| async move {
+                if input.with_values && input.count.is_none() {
+                    return Err(tower_mcp::Error::tool(
+                        "with_values requires an explicit count",
+                    ));
+                }
+                if let Some(count) = input.count {
+                    if count == 0 {
+                        return Err(tower_mcp::Error::tool("count must not be zero"));
+                    }
+                    let requested = usize::try_from(count.unsigned_abs()).map_err(|_| {
+                        tower_mcp::Error::tool("absolute count exceeds supported bounds")
+                    })?;
+                    state.validate_requested_entries(requested, "count")?;
+                }
+                let key = decode_input(&input.key, input.key_encoding, "key")?;
+                let mut command = command("redis_hrandfield", AccessMode::ReadOnly, "HRANDFIELD");
+                command.arg(key.clone());
+                let entries = match input.count {
+                    None => {
+                        let field: Option<Vec<u8>> =
+                            state.query(command, "HRANDFIELD failed").await?;
+                        field
+                            .into_iter()
+                            .map(|field| {
+                                let (field, field_encoding) = super::encode_bytes(field);
+                                HrandfieldEntry {
+                                    field,
+                                    field_encoding,
+                                    value: None,
+                                    value_encoding: None,
+                                }
+                            })
+                            .collect::<Vec<_>>()
+                    }
+                    Some(count) if input.with_values => {
+                        command.arg(count.to_string()).arg("WITHVALUES");
+                        let pairs: Vec<BinaryPair> =
+                            state.query(command, "HRANDFIELD WITHVALUES failed").await?;
+                        pairs
+                            .into_iter()
+                            .map(|(field, value)| {
+                                let (field, field_encoding) = super::encode_bytes(field);
+                                let (value, value_encoding) = super::encode_bytes(value);
+                                HrandfieldEntry {
+                                    field,
+                                    field_encoding,
+                                    value: Some(value),
+                                    value_encoding: Some(value_encoding),
+                                }
+                            })
+                            .collect::<Vec<_>>()
+                    }
+                    Some(count) => {
+                        command.arg(count.to_string());
+                        let fields: Vec<Vec<u8>> =
+                            state.query(command, "HRANDFIELD failed").await?;
+                        fields
+                            .into_iter()
+                            .map(|field| {
+                                let (field, field_encoding) = super::encode_bytes(field);
+                                HrandfieldEntry {
+                                    field,
+                                    field_encoding,
+                                    value: None,
+                                    value_encoding: None,
+                                }
+                            })
+                            .collect::<Vec<_>>()
+                    }
+                };
+                let hash_exists = if entries.is_empty() {
+                    key_exists(&state, "redis_hrandfield", AccessMode::ReadOnly, key).await?
+                } else {
+                    true
+                };
+                let output = HrandfieldOutput {
+                    key: input.key,
+                    key_encoding: input.key_encoding,
+                    hash_exists,
+                    requested_count: input.count,
+                    duplicates_allowed: input.count.is_some_and(|count| count < 0),
+                    with_values: input.with_values,
+                    returned: entries.len(),
+                    entries,
+                };
+                state.output_collection(
+                    &output,
+                    output.returned,
+                    "Retry HRANDFIELD with a smaller absolute count.",
+                )
             },
         )
         .build()
@@ -2584,15 +2786,93 @@ struct HexpireInput {
     /// Encoding of `key`.
     #[serde(default)]
     key_encoding: InputEncoding,
-    /// Positive relative expiration in seconds.
+    /// Positive expiration value interpreted according to `mode`.
+    #[serde(default)]
     #[schemars(range(min = 1))]
-    seconds: i64,
+    expiration: Option<i64>,
+    /// Compatibility shorthand for a relative expiration in seconds.
+    #[serde(default)]
+    #[schemars(range(min = 1))]
+    seconds: Option<i64>,
+    /// Relative/absolute and second/millisecond interpretation.
+    #[serde(default)]
+    mode: HashExpirationMode,
     /// Optional NX, XX, GT, or LT condition.
     #[serde(default)]
     condition: Option<HashExpireCondition>,
     /// One to 1000 unique fields. Strings are UTF-8 shorthand; objects can select base64.
     #[schemars(length(min = 1, max = 1000))]
     fields: Vec<HashFieldSelector>,
+}
+
+impl HexpireInput {
+    fn expiration(&self) -> tower_mcp::Result<i64> {
+        match (self.expiration, self.seconds) {
+            (Some(value), None) => Ok(value),
+            (None, Some(value)) if matches!(self.mode, HashExpirationMode::RelativeSeconds) => {
+                Ok(value)
+            }
+            (None, Some(_)) => Err(tower_mcp::Error::tool(
+                "seconds shorthand can only be used with relative_seconds mode",
+            )),
+            (Some(_), Some(_)) => Err(tower_mcp::Error::tool(
+                "provide expiration or the seconds compatibility shorthand, not both",
+            )),
+            (None, None) => Err(tower_mcp::Error::tool(
+                "provide expiration or the seconds compatibility shorthand",
+            )),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, Default, Deserialize, Serialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+enum HashExpirationMode {
+    #[default]
+    RelativeSeconds,
+    RelativeMilliseconds,
+    UnixSeconds,
+    UnixMilliseconds,
+}
+
+impl HashExpirationMode {
+    fn command(self) -> &'static str {
+        match self {
+            Self::RelativeSeconds => "HEXPIRE",
+            Self::RelativeMilliseconds => "HPEXPIRE",
+            Self::UnixSeconds => "HEXPIREAT",
+            Self::UnixMilliseconds => "HPEXPIREAT",
+        }
+    }
+
+    fn validate(self, value: i64) -> tower_mcp::Result<()> {
+        if value <= 0 {
+            return Err(tower_mcp::Error::tool(
+                "expiration must be greater than zero",
+            ));
+        }
+        let now = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .map_err(|_| tower_mcp::Error::tool("system clock is before the Unix epoch"))?;
+        let future = match self {
+            Self::RelativeSeconds | Self::RelativeMilliseconds => true,
+            Self::UnixSeconds => u64::try_from(value).is_ok_and(|value| value > now.as_secs()),
+            Self::UnixMilliseconds => {
+                u64::try_from(value).is_ok_and(|value| u128::from(value) > now.as_millis())
+            }
+        };
+        if future {
+            Ok(())
+        } else {
+            Err(tower_mcp::Error::tool(
+                "absolute expiration must be in the future; use redis_hdel for immediate deletion",
+            ))
+        }
+    }
+
+    fn immediate_deletion_value(self) -> i64 {
+        0
+    }
 }
 
 #[derive(Debug, Clone, Copy, Serialize, JsonSchema)]
@@ -2617,7 +2897,10 @@ struct HashExpireEntry {
 struct HexpireOutput {
     key: String,
     key_encoding: InputEncoding,
-    seconds: i64,
+    expiration: i64,
+    mode: HashExpirationMode,
+    /// Compatibility field populated only for relative-seconds mode.
+    seconds: Option<i64>,
     condition: Option<HashExpireCondition>,
     count: usize,
     expirations_set: usize,
@@ -2630,7 +2913,7 @@ fn hexpire_tool(state: Arc<ToolState>) -> Tool {
     ToolBuilder::new("redis_hexpire")
         .title("Expire Redis Hash Fields")
         .description(
-            "Set positive relative field expirations on Redis 7.4 or newer with a typed NX, XX, GT, or LT condition.",
+            "Set positive relative or future absolute hash-field expirations in seconds or milliseconds on Redis 7.4 or newer. Past absolute timestamps are rejected; use redis_hdel for immediate deletion.",
         )
         .output_schema(output_schema::<HexpireOutput>())
         .annotations(write_annotations(false))
@@ -2638,17 +2921,15 @@ fn hexpire_tool(state: Arc<ToolState>) -> Tool {
             state,
             |State(state): State<Arc<ToolState>>, Json(input): Json<HexpireInput>| async move {
                 state.require(AccessMode::ReadWrite, "redis_hexpire")?;
-                if input.seconds <= 0 {
-                    return Err(tower_mcp::Error::tool(
-                        "seconds must be greater than zero",
-                    ));
-                }
+                let expiration = input.expiration()?;
+                input.mode.validate(expiration)?;
                 state.validate_requested_entries(input.fields.len(), "fields")?;
                 let fields = decode_hash_fields(input.fields, true)?;
-                let mut command = command("redis_hexpire", AccessMode::ReadWrite, "HEXPIRE");
+                let command_name = input.mode.command();
+                let mut command = command("redis_hexpire", AccessMode::ReadWrite, command_name);
                 command
                     .arg(decode_input(&input.key, input.key_encoding, "key")?)
-                    .arg(input.seconds.to_string());
+                    .arg(expiration.to_string());
                 if let Some(condition) = input.condition {
                     command.arg(condition.redis_token());
                 }
@@ -2656,10 +2937,12 @@ fn hexpire_tool(state: Arc<ToolState>) -> Tool {
                 for field in &fields {
                     command.arg(field.bytes.clone());
                 }
-                let results: Vec<i64> = state.query(command, "HEXPIRE failed").await?;
+                let results: Vec<i64> = state
+                    .query(command, &format!("{command_name} failed"))
+                    .await?;
                 if results.len() != fields.len() {
                     return Err(tower_mcp::Error::tool(format!(
-                        "HEXPIRE returned {} values for {} fields",
+                        "{command_name} returned {} values for {} fields",
                         results.len(),
                         fields.len()
                     )));
@@ -2686,7 +2969,7 @@ fn hexpire_tool(state: Arc<ToolState>) -> Tool {
                             }
                             other => {
                                 return Err(tower_mcp::Error::tool(format!(
-                                    "HEXPIRE returned unexpected field status {other}"
+                                    "{command_name} returned unexpected field status {other}"
                                 )));
                             }
                         };
@@ -2701,7 +2984,10 @@ fn hexpire_tool(state: Arc<ToolState>) -> Tool {
                 let output = HexpireOutput {
                     key: input.key,
                     key_encoding: input.key_encoding,
-                    seconds: input.seconds,
+                    expiration,
+                    mode: input.mode,
+                    seconds: matches!(input.mode, HashExpirationMode::RelativeSeconds)
+                        .then_some(expiration),
                     condition: input.condition,
                     count: fields.len(),
                     expirations_set,
@@ -2709,7 +2995,153 @@ fn hexpire_tool(state: Arc<ToolState>) -> Tool {
                     fields_missing,
                     fields,
                 };
-                state.output_collection(&output, output.count, "Retry HEXPIRE with fewer fields.")
+                state.output_collection(
+                    &output,
+                    output.count,
+                    "Retry the hash expiration update with fewer fields.",
+                )
+            },
+        )
+        .build()
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+struct HexpireDeleteInput {
+    /// Redis hash key.
+    key: String,
+    /// Encoding of `key`.
+    #[serde(default)]
+    key_encoding: InputEncoding,
+    /// Expiration command family to use for the immediate deletion.
+    #[serde(default)]
+    mode: HashExpirationMode,
+    /// Optional NX, XX, GT, or LT condition applied by Redis before deletion.
+    #[serde(default)]
+    condition: Option<HashExpireCondition>,
+    /// One to 1000 unique fields. Strings are UTF-8 shorthand; objects can select base64.
+    #[schemars(length(min = 1, max = 1000))]
+    fields: Vec<HashFieldSelector>,
+}
+
+#[derive(Debug, Clone, Copy, Serialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+enum HashExpireDeleteStatus {
+    FieldMissing,
+    ConditionNotMet,
+    Deleted,
+}
+
+#[derive(Debug, Serialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+struct HashExpireDeleteEntry {
+    field: String,
+    field_encoding: InputEncoding,
+    status: HashExpireDeleteStatus,
+    redis_code: i64,
+}
+
+#[derive(Debug, Serialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+struct HexpireDeleteOutput {
+    key: String,
+    key_encoding: InputEncoding,
+    mode: HashExpirationMode,
+    condition: Option<HashExpireCondition>,
+    count: usize,
+    deleted: usize,
+    condition_not_met: usize,
+    fields_missing: usize,
+    fields: Vec<HashExpireDeleteEntry>,
+}
+
+fn hexpire_delete_tool(state: Arc<ToolState>) -> Tool {
+    ToolBuilder::new("redis_hexpire_delete")
+        .title("Delete Redis Hash Fields by Expiration")
+        .description(
+            "Immediately and conditionally delete hash fields through a selected Redis 7.4+ HEXPIRE/HPEXPIRE/HEXPIREAT/HPEXPIREAT form. This exposes the commands' destructive past-expiration semantics separately from ordinary expiration updates and requires full access.",
+        )
+        .output_schema(output_schema::<HexpireDeleteOutput>())
+        .annotations(destructive_annotations(true))
+        .extractor_handler(
+            state,
+            |State(state): State<Arc<ToolState>>,
+             Json(input): Json<HexpireDeleteInput>| async move {
+                state.require(AccessMode::Full, "redis_hexpire_delete")?;
+                state.validate_requested_entries(input.fields.len(), "fields")?;
+                let fields = decode_hash_fields(input.fields, true)?;
+                let command_name = input.mode.command();
+                let mut command = command("redis_hexpire_delete", AccessMode::Full, command_name);
+                command
+                    .arg(decode_input(&input.key, input.key_encoding, "key")?)
+                    .arg(input.mode.immediate_deletion_value().to_string());
+                if let Some(condition) = input.condition {
+                    command.arg(condition.redis_token());
+                }
+                command.arg("FIELDS").arg(fields.len().to_string());
+                for field in &fields {
+                    command.arg(field.bytes.clone());
+                }
+                let results: Vec<i64> = state
+                    .query(command, &format!("{command_name} immediate deletion failed"))
+                    .await?;
+                if results.len() != fields.len() {
+                    return Err(tower_mcp::Error::tool(format!(
+                        "{command_name} returned {} values for {} fields",
+                        results.len(),
+                        fields.len()
+                    )));
+                }
+                let mut deleted = 0;
+                let mut condition_not_met = 0;
+                let mut fields_missing = 0;
+                let fields = fields
+                    .into_iter()
+                    .zip(results)
+                    .map(|(field, redis_code)| {
+                        let status = match redis_code {
+                            -2 => {
+                                fields_missing += 1;
+                                HashExpireDeleteStatus::FieldMissing
+                            }
+                            0 => {
+                                condition_not_met += 1;
+                                HashExpireDeleteStatus::ConditionNotMet
+                            }
+                            2 => {
+                                deleted += 1;
+                                HashExpireDeleteStatus::Deleted
+                            }
+                            other => {
+                                return Err(tower_mcp::Error::tool(format!(
+                                    "{command_name} returned unexpected immediate-deletion status {other}"
+                                )));
+                            }
+                        };
+                        Ok(HashExpireDeleteEntry {
+                            field: field.field,
+                            field_encoding: field.field_encoding,
+                            status,
+                            redis_code,
+                        })
+                    })
+                    .collect::<tower_mcp::Result<Vec<_>>>()?;
+                let output = HexpireDeleteOutput {
+                    key: input.key,
+                    key_encoding: input.key_encoding,
+                    mode: input.mode,
+                    condition: input.condition,
+                    count: fields.len(),
+                    deleted,
+                    condition_not_met,
+                    fields_missing,
+                    fields,
+                };
+                state.output_collection(
+                    &output,
+                    output.count,
+                    "Retry the conditional hash-field deletion with fewer fields.",
+                )
             },
         )
         .build()
@@ -4083,6 +4515,7 @@ pub(super) fn add_hash_read_tools(mut router: McpRouter, state: Arc<ToolState>) 
     router = router.tool(hkeys_tool(state.clone()));
     router = router.tool(hlen_tool(state.clone()));
     router = router.tool(hmget_tool(state.clone()));
+    router = router.tool(hrandfield_tool(state.clone()));
     router = router.tool(hscan_tool(state.clone()));
     router = router.tool(hstrlen_tool(state.clone()));
     router = router.tool(httl_tool(state.clone()));
@@ -4163,7 +4596,9 @@ pub(super) fn add_sorted_set_write_tools(
 
 #[cfg(feature = "hashes")]
 pub(super) fn add_hash_destructive_tools(router: McpRouter, state: Arc<ToolState>) -> McpRouter {
-    router.tool(hdel_tool(state))
+    router
+        .tool(hexpire_delete_tool(state.clone()))
+        .tool(hdel_tool(state))
 }
 
 #[cfg(feature = "lists")]

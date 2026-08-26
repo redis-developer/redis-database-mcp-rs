@@ -3889,7 +3889,12 @@ async fn live_hash_field_expiration_is_version_gated_and_typed() {
         .iter()
         .map(|tool| tool.name.as_ref())
         .collect::<Vec<_>>();
-    let field_expiration_tools = ["redis_hexpire", "redis_hpersist", "redis_httl"];
+    let field_expiration_tools = [
+        "redis_hexpire",
+        "redis_hexpire_delete",
+        "redis_hpersist",
+        "redis_httl",
+    ];
     let version = capabilities
         .redis_version()
         .expect("live capability discovery reports Redis version");
@@ -3916,7 +3921,11 @@ async fn live_hash_field_expiration_is_version_gated_and_typed() {
             "redis_hset",
             serde_json::json!({
                 "key": hash,
-                "fields": {"expiring": "value", "persistent": "value"}
+                "fields": {
+                    "delete-me": "value",
+                    "expiring": "value",
+                    "persistent": "value"
+                }
             }),
         )
         .await
@@ -3976,6 +3985,119 @@ async fn live_hash_field_expiration_is_version_gated_and_typed() {
     assert_eq!(ttls["fields"][1]["status"], "persistent");
     assert_eq!(ttls["fields"][2]["status"], "field_missing");
 
+    let millisecond_expiration = client
+        .call_tool(
+            "redis_hexpire",
+            serde_json::json!({
+                "key": hash,
+                "expiration": 5000,
+                "mode": "relative_milliseconds",
+                "fields": ["expiring"]
+            }),
+        )
+        .await
+        .expect("HPEXPIRE")
+        .structured_content
+        .expect("structured HPEXPIRE");
+    assert_eq!(millisecond_expiration["mode"], "relative_milliseconds");
+    assert_eq!(millisecond_expiration["expirations_set"], 1);
+    let millisecond_ttl = client
+        .call_tool(
+            "redis_httl",
+            serde_json::json!({
+                "key": hash,
+                "mode": "remaining_milliseconds",
+                "fields": ["expiring"]
+            }),
+        )
+        .await
+        .expect("HPTTL")
+        .structured_content
+        .expect("structured HPTTL");
+    assert_eq!(millisecond_ttl["mode"], "remaining_milliseconds");
+    assert!(
+        millisecond_ttl["fields"][0]["value"]
+            .as_u64()
+            .is_some_and(|ttl| ttl > 0 && ttl <= 5000)
+    );
+
+    const FUTURE_UNIX_SECONDS: u64 = 4_102_444_800;
+    const FUTURE_UNIX_MILLISECONDS: u64 = 4_102_444_800_000;
+    client
+        .call_tool(
+            "redis_hexpire",
+            serde_json::json!({
+                "key": hash,
+                "expiration": FUTURE_UNIX_SECONDS,
+                "mode": "unix_seconds",
+                "fields": ["expiring"]
+            }),
+        )
+        .await
+        .expect("HEXPIREAT");
+    let expiration_time = client
+        .call_tool(
+            "redis_httl",
+            serde_json::json!({
+                "key": hash,
+                "mode": "unix_seconds",
+                "fields": ["expiring"]
+            }),
+        )
+        .await
+        .expect("HEXPIRETIME")
+        .structured_content
+        .expect("structured HEXPIRETIME");
+    assert_eq!(expiration_time["fields"][0]["value"], FUTURE_UNIX_SECONDS);
+
+    client
+        .call_tool(
+            "redis_hexpire",
+            serde_json::json!({
+                "key": hash,
+                "expiration": FUTURE_UNIX_MILLISECONDS,
+                "mode": "unix_milliseconds",
+                "fields": ["expiring"]
+            }),
+        )
+        .await
+        .expect("HPEXPIREAT");
+    let expiration_time = client
+        .call_tool(
+            "redis_httl",
+            serde_json::json!({
+                "key": hash,
+                "mode": "unix_milliseconds",
+                "fields": ["expiring"]
+            }),
+        )
+        .await
+        .expect("HPEXPIRETIME")
+        .structured_content
+        .expect("structured HPEXPIRETIME");
+    assert_eq!(
+        expiration_time["fields"][0]["value"],
+        FUTURE_UNIX_MILLISECONDS
+    );
+
+    let deleted = client
+        .call_tool(
+            "redis_hexpire_delete",
+            serde_json::json!({
+                "key": hash,
+                "mode": "relative_milliseconds",
+                "fields": ["delete-me", "missing"]
+            }),
+        )
+        .await
+        .expect("destructive HPEXPIRE")
+        .structured_content
+        .expect("structured destructive HPEXPIRE");
+    assert_eq!(deleted["deleted"], 1);
+    assert_eq!(deleted["fields_missing"], 1);
+    assert_eq!(deleted["fields"][0]["status"], "deleted");
+    assert_eq!(deleted["fields"][1]["status"], "field_missing");
+
     let persisted = client
         .call_tool(
             "redis_hpersist",
@@ -3993,6 +4115,218 @@ async fn live_hash_field_expiration_is_version_gated_and_typed() {
         .call_tool("redis_del", serde_json::json!({"keys": [hash]}))
         .await
         .expect("clean up field-expiration hash");
+}
+
+#[tokio::test]
+async fn live_hash_sampling_and_bounded_sort_preserve_semantics_in_resp2_and_resp3() {
+    let Some(redis) = TestRedis::start().await else {
+        return;
+    };
+    let discovery = DirectRedis::connect(&redis.url)
+        .await
+        .expect("connect for HRANDFIELD/SORT discovery");
+    let capabilities = discovery
+        .discover_capabilities()
+        .await
+        .expect("discover HRANDFIELD/SORT capabilities");
+    let version = capabilities
+        .redis_version()
+        .expect("live Redis reports its version");
+    if version < RedisVersion::new(6, 2, 0) {
+        return;
+    }
+
+    for protocol in ["resp2", "resp3"] {
+        let client = router_client(&with_protocol(&redis.url, protocol), AccessMode::Full).await;
+        let hash = test_key(&format!("issue-62:{protocol}:hash"));
+        let missing = test_key(&format!("issue-62:{protocol}:missing"));
+        let list = test_key(&format!("issue-62:{protocol}:list"));
+        let stored_list = test_key(&format!("issue-62:{protocol}:stored"));
+        let external_list = test_key(&format!("issue-62:{protocol}:external-list"));
+        let weight_prefix = test_key(&format!("issue-62:{protocol}:weight"));
+        let object_prefix = test_key(&format!("issue-62:{protocol}:object"));
+        let weight_a = format!("{weight_prefix}:a");
+        let weight_b = format!("{weight_prefix}:b");
+        let object_a = format!("{object_prefix}:a");
+        let object_b = format!("{object_prefix}:b");
+        let wrong_type = test_key(&format!("issue-62:{protocol}:wrong-type"));
+
+        client
+            .call_tool(
+                "redis_hset",
+                serde_json::json!({"key": hash, "fields": {"alpha": "one", "beta": "two"}}),
+            )
+            .await
+            .expect("seed HRANDFIELD hash");
+        client
+            .call_tool(
+                "redis_set",
+                serde_json::json!({"key": wrong_type, "value": "not-a-collection"}),
+            )
+            .await
+            .expect("seed #62 wrong-type key");
+
+        let sample = client
+            .call_tool(
+                "redis_hrandfield",
+                serde_json::json!({"key": hash, "count": -8, "with_values": true}),
+            )
+            .await
+            .expect("HRANDFIELD WITHVALUES")
+            .structured_content
+            .expect("structured HRANDFIELD WITHVALUES");
+        assert_eq!(sample["hash_exists"], true, "{protocol}");
+        assert_eq!(sample["duplicates_allowed"], true, "{protocol}");
+        assert_eq!(sample["returned"], 8, "{protocol}");
+        assert!(
+            sample["entries"]
+                .as_array()
+                .is_some_and(|entries| entries.iter().all(|entry| entry["value"].is_string())),
+            "{protocol}: {sample}"
+        );
+
+        let absent_sample = client
+            .call_tool(
+                "redis_hrandfield",
+                serde_json::json!({"key": missing, "count": 2}),
+            )
+            .await
+            .expect("missing HRANDFIELD")
+            .structured_content
+            .expect("structured missing HRANDFIELD");
+        assert_eq!(absent_sample["hash_exists"], false, "{protocol}");
+        assert_eq!(absent_sample["returned"], 0, "{protocol}");
+
+        let wrong_hash = client
+            .call_tool(
+                "redis_hrandfield",
+                serde_json::json!({"key": wrong_type, "count": 1}),
+            )
+            .await
+            .expect("wrong-type HRANDFIELD result");
+        assert!(wrong_hash.is_error, "{protocol}: {wrong_hash:?}");
+
+        if version >= RedisVersion::new(7, 0, 0) {
+            client
+                .call_tool(
+                    "redis_lpush",
+                    serde_json::json!({"key": list, "elements": ["10", "2", "1"]}),
+                )
+                .await
+                .expect("seed SORT list");
+            let sorted = client
+                .call_tool("redis_sort", serde_json::json!({"key": list, "count": 2}))
+                .await
+                .expect("bounded SORT_RO")
+                .structured_content
+                .expect("structured bounded SORT_RO");
+            assert_eq!(sorted["source_exists"], true, "{protocol}");
+            assert_eq!(sorted["returned"], 2, "{protocol}");
+            assert_eq!(sorted["values"][0]["value"], "1", "{protocol}");
+            assert_eq!(sorted["values"][1]["value"], "2", "{protocol}");
+
+            let stored = client
+                .call_tool(
+                    "redis_sort_store",
+                    serde_json::json!({
+                        "key": list,
+                        "destination": stored_list,
+                        "count": 2,
+                        "order": "descending"
+                    }),
+                )
+                .await
+                .expect("bounded SORT STORE")
+                .structured_content
+                .expect("structured bounded SORT STORE");
+            assert_eq!(stored["stored"], 2, "{protocol}");
+            let stored_values = client
+                .call_tool("redis_lrange", serde_json::json!({"key": stored_list}))
+                .await
+                .expect("read SORT STORE destination")
+                .structured_content
+                .expect("structured SORT STORE destination");
+            assert_eq!(stored_values["elements"][0]["value"], "10", "{protocol}");
+            assert_eq!(stored_values["elements"][1]["value"], "2", "{protocol}");
+
+            client
+                .call_tool(
+                    "redis_lpush",
+                    serde_json::json!({"key": external_list, "elements": ["b", "a"]}),
+                )
+                .await
+                .expect("seed external-pattern SORT list");
+            for (key, value) in [(&weight_a, "2"), (&weight_b, "1")] {
+                client
+                    .call_tool("redis_set", serde_json::json!({"key": key, "value": value}))
+                    .await
+                    .expect("seed SORT weight");
+            }
+            for (key, name) in [(&object_a, "Ada"), (&object_b, "Bob")] {
+                client
+                    .call_tool(
+                        "redis_hset",
+                        serde_json::json!({"key": key, "fields": {"name": name}}),
+                    )
+                    .await
+                    .expect("seed SORT object");
+            }
+            let external = client
+                .call_tool(
+                    "redis_sort",
+                    serde_json::json!({
+                        "key": external_list,
+                        "by": format!("{weight_prefix}:*"),
+                        "get": ["#", format!("{object_prefix}:*->name")],
+                        "count": 2
+                    }),
+                )
+                .await
+                .expect("standalone external-pattern SORT_RO")
+                .structured_content
+                .expect("structured standalone external-pattern SORT_RO");
+            assert_eq!(external["get_pattern_count"], 2, "{protocol}");
+            assert_eq!(external["returned"], 4, "{protocol}");
+            assert_eq!(external["values"][0]["value"], "b", "{protocol}");
+            assert_eq!(external["values"][1]["value"], "Bob", "{protocol}");
+            assert_eq!(external["values"][2]["value"], "a", "{protocol}");
+            assert_eq!(external["values"][3]["value"], "Ada", "{protocol}");
+
+            let absent_sort = client
+                .call_tool(
+                    "redis_sort",
+                    serde_json::json!({"key": missing, "count": 2}),
+                )
+                .await
+                .expect("missing SORT_RO")
+                .structured_content
+                .expect("structured missing SORT_RO");
+            assert_eq!(absent_sort["source_exists"], false, "{protocol}");
+            assert_eq!(absent_sort["returned"], 0, "{protocol}");
+
+            let wrong_sort = client
+                .call_tool(
+                    "redis_sort",
+                    serde_json::json!({"key": wrong_type, "count": 2}),
+                )
+                .await
+                .expect("wrong-type SORT_RO result");
+            assert!(wrong_sort.is_error, "{protocol}: {wrong_sort:?}");
+        }
+
+        client
+            .call_tool(
+                "redis_del",
+                serde_json::json!({
+                    "keys": [
+                        hash, list, stored_list, external_list, weight_a, weight_b,
+                        object_a, object_b, wrong_type
+                    ]
+                }),
+            )
+            .await
+            .expect("clean #62 standalone keys");
+    }
 }
 
 #[tokio::test]
@@ -4621,6 +4955,14 @@ async fn live_acl_failures_are_classified_without_leaking_credentials() {
     let Some(redis) = TestRedis::start().await else {
         return;
     };
+    let redis_version = DirectRedis::connect(&redis.url)
+        .await
+        .expect("connect for ACL capability discovery")
+        .discover_capabilities()
+        .await
+        .expect("discover ACL test capabilities")
+        .redis_version()
+        .expect("ACL test Redis reports its version");
     let password = "mcp-test-secret-42";
     let username = format!("mcp_reader_{}", std::process::id());
 
@@ -4820,6 +5162,59 @@ async fn live_acl_failures_are_classified_without_leaking_credentials() {
         "Ada"
     );
 
+    if redis_version >= RedisVersion::new(6, 2, 0) {
+        let denied_sample = client
+            .call_tool(
+                "redis_hrandfield",
+                serde_json::json!({"key": readable_hash, "count": 1}),
+            )
+            .await
+            .expect("ACL-denied HRANDFIELD is represented as a tool result");
+        assert!(denied_sample.is_error);
+        let denied_sample =
+            serde_json::to_string(&denied_sample).expect("serialize HRANDFIELD ACL denial");
+        assert!(denied_sample.contains("[Authorization]"), "{denied_sample}");
+        assert!(!denied_sample.contains(password));
+    }
+
+    if redis_version >= RedisVersion::new(7, 0, 0) {
+        let denied_sort = client
+            .call_tool(
+                "redis_sort",
+                serde_json::json!({"key": readable_list, "count": 1}),
+            )
+            .await
+            .expect("ACL-denied SORT_RO is represented as a tool result");
+        assert!(denied_sort.is_error);
+        let denied_sort =
+            serde_json::to_string(&denied_sort).expect("serialize SORT_RO ACL denial");
+        assert!(denied_sort.contains("[Authorization]"), "{denied_sort}");
+        assert!(!denied_sort.contains(password));
+    }
+
+    if redis_version >= RedisVersion::new(7, 4, 0) {
+        let denied_hash_expiration = client
+            .call_tool(
+                "redis_hexpire",
+                serde_json::json!({
+                    "key": readable_hash,
+                    "expiration": 1000,
+                    "mode": "relative_milliseconds",
+                    "fields": ["name"]
+                }),
+            )
+            .await
+            .expect("ACL-denied HPEXPIRE is represented as a tool result");
+        assert!(denied_hash_expiration.is_error);
+        let denied_hash_expiration =
+            serde_json::to_string(&denied_hash_expiration).expect("serialize HPEXPIRE ACL denial");
+        assert!(
+            denied_hash_expiration.contains("[Authorization]"),
+            "{denied_hash_expiration}"
+        );
+        assert!(!denied_hash_expiration.contains(password));
+    }
+
     let allowed_list = client
         .call_tool(
             "redis_lindex",
@@ -4922,6 +5317,23 @@ async fn live_acl_failures_are_classified_without_leaking_credentials() {
     assert!(!denied_publish.contains("blocked-pubsub-value"));
 
     let full_client = router_client(restricted_url.as_str(), AccessMode::Full).await;
+    if redis_version >= RedisVersion::new(7, 4, 0) {
+        let denied_expiration_delete = full_client
+            .call_tool(
+                "redis_hexpire_delete",
+                serde_json::json!({"key": readable_hash, "fields": ["name"]}),
+            )
+            .await
+            .expect("ACL-denied destructive HEXPIRE is represented as a tool result");
+        assert!(denied_expiration_delete.is_error);
+        let denied_expiration_delete = serde_json::to_string(&denied_expiration_delete)
+            .expect("serialize destructive HEXPIRE ACL denial");
+        assert!(
+            denied_expiration_delete.contains("[Authorization]"),
+            "{denied_expiration_delete}"
+        );
+        assert!(!denied_expiration_delete.contains(password));
+    }
     let denied_list = full_client
         .call_tool(
             "redis_lpop",

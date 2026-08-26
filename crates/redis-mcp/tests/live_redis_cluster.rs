@@ -408,6 +408,131 @@ async fn redis_eight_modern_tools_route_and_enforce_atomic_slots_in_cluster() {
     }
 }
 
+#[tokio::test]
+async fn bounded_sort_routes_and_enforces_cluster_key_contracts() {
+    let _cluster_guard = CLUSTER_TEST_LOCK.lock().await;
+    let Some(cluster) = TestCluster::start().await else {
+        return;
+    };
+    let discovery = DirectRedisCluster::connect(&cluster.seed_urls)
+        .await
+        .expect("connect Cluster SORT discovery adapter");
+    let capabilities = discovery
+        .discover_capabilities()
+        .await
+        .expect("discover Cluster SORT capabilities");
+    let version = capabilities
+        .redis_version()
+        .expect("Redis Cluster reports its version");
+    if version < RedisVersion::new(7, 0, 0) {
+        return;
+    }
+
+    for protocol in ["resp2", "resp3"] {
+        let urls = cluster
+            .seed_urls
+            .iter()
+            .map(|url| with_protocol(url, protocol))
+            .collect::<Vec<_>>();
+        let executor = DirectRedisCluster::connect(&urls)
+            .await
+            .expect("connect Cluster SORT protocol adapter");
+        let client = router_client(executor).await;
+        let source = format!(
+            "redis-mcp:sort:{{same-{}}}:{protocol}:source",
+            std::process::id()
+        );
+        let destination = format!(
+            "redis-mcp:sort:{{same-{}}}:{protocol}:destination",
+            std::process::id()
+        );
+        let cross_destination = format!(
+            "redis-mcp:sort:{{other-{}}}:{protocol}:destination",
+            std::process::id()
+        );
+
+        client
+            .call_tool(
+                "redis_lpush",
+                serde_json::json!({"key": source, "elements": ["3", "1", "2"]}),
+            )
+            .await
+            .expect("seed Cluster SORT source");
+        let sorted = client
+            .call_tool(
+                "redis_sort",
+                serde_json::json!({
+                    "key": source,
+                    "by": "nosort",
+                    "get": ["#"],
+                    "count": 3
+                }),
+            )
+            .await
+            .expect("same-slot local-pattern SORT_RO")
+            .structured_content
+            .expect("structured same-slot SORT_RO");
+        assert_eq!(sorted["returned"], 3, "{protocol}");
+
+        let stored = client
+            .call_tool(
+                "redis_sort_store",
+                serde_json::json!({
+                    "key": source,
+                    "destination": destination,
+                    "count": 3
+                }),
+            )
+            .await
+            .expect("same-slot SORT STORE")
+            .structured_content
+            .expect("structured same-slot SORT STORE");
+        assert_eq!(stored["stored"], 3, "{protocol}");
+
+        let cross_slot = client
+            .call_tool(
+                "redis_sort_store",
+                serde_json::json!({
+                    "key": source,
+                    "destination": cross_destination,
+                    "count": 3
+                }),
+            )
+            .await
+            .expect("cross-slot SORT STORE result");
+        assert!(cross_slot.is_error, "{protocol}: {cross_slot:?}");
+        assert!(
+            serde_json::to_string(&cross_slot)
+                .expect("serialize SORT STORE CROSSSLOT")
+                .contains("CROSSSLOT"),
+            "{protocol}: {cross_slot:?}"
+        );
+
+        let external = client
+            .call_tool(
+                "redis_sort",
+                serde_json::json!({"key": source, "get": ["object:*->name"], "count": 3}),
+            )
+            .await
+            .expect("Cluster external GET result");
+        assert!(external.is_error, "{protocol}: {external:?}");
+        assert!(
+            serde_json::to_string(&external)
+                .expect("serialize Cluster external GET rejection")
+                .contains("CLUSTER_SORT_EXTERNAL_KEYS_UNSUPPORTED"),
+            "{protocol}: {external:?}"
+        );
+
+        client
+            .call_tool(
+                "redis_del",
+                serde_json::json!({"keys": [source, destination]}),
+            )
+            .await
+            .expect("clean Cluster SORT keys");
+    }
+}
+
 impl TestCluster {
     async fn start() -> Option<Self> {
         if let Ok(seed_urls) = std::env::var("REDIS_CLUSTER_URLS") {

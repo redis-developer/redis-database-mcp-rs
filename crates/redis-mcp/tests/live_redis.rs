@@ -365,7 +365,10 @@ async fn redis_eight_modern_surface_is_version_gated_and_live_in_resp2_and_resp3
                 "redis_xnack",
             ][..],
         ),
-        (RedisVersion::new(8, 10, 0), &["redis_lmovem"][..]),
+        (
+            RedisVersion::new(8, 10, 0),
+            &["redis_lmovem", "redis_sdiffcard", "redis_sunioncard"][..],
+        ),
     ] {
         for tool in tools {
             assert_eq!(
@@ -2613,6 +2616,15 @@ async fn live_set_family_preserves_membership_binary_algebra_and_nil_semantics()
         return;
     };
     let url = redis.url;
+    let capabilities = DirectRedis::connect(&url)
+        .await
+        .expect("connect for set capability discovery")
+        .discover_capabilities()
+        .await
+        .expect("discover set test capabilities");
+    let supports_set_cardinality = capabilities
+        .redis_version()
+        .is_some_and(|version| version >= RedisVersion::new(8, 10, 0));
 
     for protocol in ["resp2", "resp3"] {
         let client = router_client(&with_protocol(&url, protocol), AccessMode::Full).await;
@@ -2620,6 +2632,10 @@ async fn live_set_family_preserves_membership_binary_algebra_and_nil_semantics()
         let left = format!("{prefix}:{{same}}:left");
         let right = format!("{prefix}:{{same}}:right");
         let missing = format!("{prefix}:{{same}}:missing");
+        let difference_store = format!("{prefix}:{{same}}:difference");
+        let empty_store = format!("{prefix}:{{same}}:empty");
+        let intersection_store = format!("{prefix}:{{same}}:intersection");
+        let union_store = format!("{prefix}:{{same}}:union");
         let wrong_type = format!("{prefix}:wrong-type");
 
         let added = client
@@ -2769,6 +2785,87 @@ async fn live_set_family_preserves_membership_binary_algebra_and_nil_semantics()
         assert_eq!(union["members"][2]["value"], "gamma");
         assert_eq!(union["members"][3]["encoding"], "base64");
 
+        if supports_set_cardinality {
+            let difference_cardinality = client
+                .call_tool(
+                    "redis_sdiffcard",
+                    serde_json::json!({"keys": [left, right], "limit": 1}),
+                )
+                .await
+                .expect("SDIFFCARD")
+                .structured_content
+                .expect("structured SDIFFCARD");
+            assert_eq!(difference_cardinality["cardinality"], 1);
+            assert_eq!(difference_cardinality["limit_reached"], true);
+            assert!(difference_cardinality.get("members").is_none());
+
+            let union_cardinality = client
+                .call_tool(
+                    "redis_sunioncard",
+                    serde_json::json!({
+                        "keys": [left, right],
+                        "approximate": true
+                    }),
+                )
+                .await
+                .expect("SUNIONCARD")
+                .structured_content
+                .expect("structured SUNIONCARD");
+            assert_eq!(union_cardinality["approximate"], true);
+            assert!(
+                union_cardinality["cardinality"]
+                    .as_u64()
+                    .is_some_and(|value| value > 0)
+            );
+            assert!(union_cardinality.get("members").is_none());
+        }
+
+        for (tool, destination, expected) in [
+            ("redis_sdiffstore", &difference_store, 2),
+            ("redis_sinterstore", &intersection_store, 1),
+            ("redis_sunionstore", &union_store, 4),
+        ] {
+            client
+                .call_tool(
+                    "redis_sadd",
+                    serde_json::json!({"key": destination, "members": ["stale"]}),
+                )
+                .await
+                .expect("seed set store destination");
+            let stored = client
+                .call_tool(
+                    tool,
+                    serde_json::json!({
+                        "destination": destination,
+                        "keys": [left, right]
+                    }),
+                )
+                .await
+                .unwrap_or_else(|error| panic!("{tool}: {error}"))
+                .structured_content
+                .unwrap_or_else(|| panic!("{tool}: structured result"));
+            assert_eq!(stored["destination_cardinality"], expected, "{tool}");
+            assert_eq!(stored["destination_overwritten"], true, "{tool}");
+            assert!(stored.get("members").is_none(), "{tool}");
+        }
+        let empty = client
+            .call_tool(
+                "redis_sdiffstore",
+                serde_json::json!({"destination": empty_store, "keys": [missing]}),
+            )
+            .await
+            .expect("empty SDIFFSTORE")
+            .structured_content
+            .expect("structured empty SDIFFSTORE");
+        assert_eq!(empty["destination_cardinality"], 0);
+        let empty_destination = client
+            .call_tool("redis_scard", serde_json::json!({"key": empty_store}))
+            .await
+            .expect("empty SDIFFSTORE destination")
+            .structured_content
+            .expect("structured empty SDIFFSTORE destination");
+        assert_eq!(empty_destination["exists"], false);
+
         let removed = client
             .call_tool(
                 "redis_srem",
@@ -2811,6 +2908,22 @@ async fn live_set_family_preserves_membership_binary_algebra_and_nil_semantics()
                 .expect("serialize wrong-type SCARD")
                 .contains("WRONGTYPE")
         );
+        let wrong_type_store = client
+            .call_tool(
+                "redis_sunionstore",
+                serde_json::json!({
+                    "destination": union_store,
+                    "keys": [left, wrong_type]
+                }),
+            )
+            .await
+            .expect("wrong-type SUNIONSTORE is a tool result");
+        assert!(wrong_type_store.is_error);
+        assert!(
+            serde_json::to_string(&wrong_type_store)
+                .expect("serialize wrong-type SUNIONSTORE")
+                .contains("WRONGTYPE")
+        );
 
         let missing_members = client
             .call_tool("redis_smembers", serde_json::json!({"key": missing}))
@@ -2832,7 +2945,18 @@ async fn live_set_family_preserves_membership_binary_algebra_and_nil_semantics()
         client
             .call_tool(
                 "redis_unlink",
-                serde_json::json!({"keys": [left, right, missing, wrong_type]}),
+                serde_json::json!({
+                    "keys": [
+                        left,
+                        right,
+                        missing,
+                        difference_store,
+                        empty_store,
+                        intersection_store,
+                        union_store,
+                        wrong_type
+                    ]
+                }),
             )
             .await
             .expect("clean up set family");
@@ -2853,11 +2977,28 @@ async fn live_sorted_set_family_preserves_exact_scores_ranges_binary_and_nil_sem
     let Some(redis) = TestRedis::start().await else {
         return;
     };
+    let capabilities = DirectRedis::connect(&redis.url)
+        .await
+        .expect("connect for sorted-set capability discovery")
+        .discover_capabilities()
+        .await
+        .expect("discover sorted-set test capabilities");
+    let supports_zintercard = capabilities
+        .redis_version()
+        .is_some_and(|version| version >= RedisVersion::new(7, 0, 0));
+    let supports_zset_count_aggregate = capabilities
+        .redis_version()
+        .is_some_and(|version| version >= RedisVersion::new(8, 8, 0));
 
     for protocol in ["resp2", "resp3"] {
         let client = router_client(&with_protocol(&redis.url, protocol), AccessMode::Full).await;
         let zset = test_key(&format!("sorted-set-family:{protocol}"));
+        let other = test_key(&format!("sorted-set-family:{protocol}:other"));
         let lex = test_key(&format!("sorted-set-family:{protocol}:lex"));
+        let difference_store = test_key(&format!("sorted-set-family:{protocol}:difference"));
+        let intersection_store = test_key(&format!("sorted-set-family:{protocol}:intersection"));
+        let range_store = test_key(&format!("sorted-set-family:{protocol}:range"));
+        let union_store = test_key(&format!("sorted-set-family:{protocol}:union"));
         let missing = test_key(&format!("sorted-set-family:{protocol}:missing"));
         let wrong_type = test_key(&format!("sorted-set-family:{protocol}:wrong-type"));
 
@@ -2880,6 +3021,20 @@ async fn live_sorted_set_family_preserves_exact_scores_ranges_binary_and_nil_sem
             .expect("structured ZADD");
         assert_eq!(added["requested"], 4);
         assert_eq!(added["affected"], 4);
+        client
+            .call_tool(
+                "redis_zadd",
+                serde_json::json!({
+                    "key": other,
+                    "members": [
+                        {"score": 10, "member": "alice"},
+                        {"score": 4, "member": "bob"},
+                        {"score": 5, "member": "dave"}
+                    ]
+                }),
+            )
+            .await
+            .expect("seed second sorted set");
 
         let card = client
             .call_tool("redis_zcard", serde_json::json!({"key": zset}))
@@ -3075,6 +3230,110 @@ async fn live_sorted_set_family_preserves_exact_scores_ranges_binary_and_nil_sem
             .expect("binary ZSCAN member");
         assert_redis_edge_score(&scanned_binary["score"]);
 
+        if supports_zintercard {
+            let intersection_cardinality = client
+                .call_tool(
+                    "redis_zintercard",
+                    serde_json::json!({"keys": [zset, other], "limit": 2}),
+                )
+                .await
+                .expect("ZINTERCARD")
+                .structured_content
+                .expect("structured ZINTERCARD");
+            assert_eq!(intersection_cardinality["cardinality"], 2);
+            assert_eq!(intersection_cardinality["limit_reached"], true);
+            assert!(intersection_cardinality.get("members").is_none());
+        }
+
+        let difference = client
+            .call_tool(
+                "redis_zdiffstore",
+                serde_json::json!({
+                    "destination": difference_store,
+                    "keys": [zset, other]
+                }),
+            )
+            .await
+            .expect("ZDIFFSTORE")
+            .structured_content
+            .expect("structured ZDIFFSTORE");
+        assert_eq!(difference["destination_cardinality"], 2);
+        assert!(difference.get("members").is_none());
+
+        let intersection = client
+            .call_tool(
+                "redis_zinterstore",
+                serde_json::json!({
+                    "destination": intersection_store,
+                    "sources": [
+                        {"key": zset, "weight": 2},
+                        {"key": other, "weight": 3}
+                    ],
+                    "aggregate": "max"
+                }),
+            )
+            .await
+            .expect("weighted ZINTERSTORE")
+            .structured_content
+            .expect("structured ZINTERSTORE");
+        assert_eq!(intersection["destination_cardinality"], 2);
+        assert_eq!(intersection["weighted"], true);
+        assert_eq!(intersection["aggregate"], "max");
+
+        let union = client
+            .call_tool(
+                "redis_zunionstore",
+                serde_json::json!({
+                    "destination": union_store,
+                    "sources": [zset, other],
+                    "aggregate": "sum"
+                }),
+            )
+            .await
+            .expect("ZUNIONSTORE")
+            .structured_content
+            .expect("structured ZUNIONSTORE");
+        assert_eq!(union["destination_cardinality"], 5);
+        assert_eq!(union["weighted"], false);
+        if supports_zset_count_aggregate {
+            let counted_union = client
+                .call_tool(
+                    "redis_zunionstore",
+                    serde_json::json!({
+                        "destination": union_store,
+                        "sources": [zset, other],
+                        "aggregate": "count"
+                    }),
+                )
+                .await
+                .expect("COUNT ZUNIONSTORE")
+                .structured_content
+                .expect("structured COUNT ZUNIONSTORE");
+            assert_eq!(counted_union["destination_cardinality"], 5);
+            assert_eq!(counted_union["aggregate"], "count");
+        }
+
+        let range_stored = client
+            .call_tool(
+                "redis_zrangestore",
+                serde_json::json!({
+                    "destination": range_store,
+                    "source": zset,
+                    "range": {
+                        "kind": "score",
+                        "min": {"kind": "inclusive", "value": "1"},
+                        "max": {"kind": "positive_infinity"},
+                        "limit": 2
+                    }
+                }),
+            )
+            .await
+            .expect("bounded ZRANGESTORE")
+            .structured_content
+            .expect("structured ZRANGESTORE");
+        assert_eq!(range_stored["requested_maximum"], 2);
+        assert_eq!(range_stored["destination_cardinality"], 2);
+
         let increment = client
             .call_tool(
                 "redis_zincrby",
@@ -3201,11 +3460,39 @@ async fn live_sorted_set_family_preserves_exact_scores_ranges_binary_and_nil_sem
                 .expect("serialize wrong-type ZCARD")
                 .contains("WRONGTYPE")
         );
+        let wrong_store = client
+            .call_tool(
+                "redis_zdiffstore",
+                serde_json::json!({
+                    "destination": difference_store,
+                    "keys": [zset, wrong_type]
+                }),
+            )
+            .await
+            .expect("wrong-type ZDIFFSTORE is a tool result");
+        assert!(wrong_store.is_error);
+        assert!(
+            serde_json::to_string(&wrong_store)
+                .expect("serialize wrong-type ZDIFFSTORE")
+                .contains("WRONGTYPE")
+        );
 
         client
             .call_tool(
                 "redis_unlink",
-                serde_json::json!({"keys": [zset, lex, missing, wrong_type]}),
+                serde_json::json!({
+                    "keys": [
+                        zset,
+                        other,
+                        lex,
+                        difference_store,
+                        intersection_store,
+                        range_store,
+                        union_store,
+                        missing,
+                        wrong_type
+                    ]
+                }),
             )
             .await
             .expect("clean up sorted-set family");
@@ -5378,6 +5665,43 @@ async fn live_acl_failures_are_classified_without_leaking_credentials() {
     );
     assert!(!denied_set_remove.contains(password));
 
+    let denied_set_store = full_client
+        .call_tool(
+            "redis_sdiffstore",
+            serde_json::json!({
+                "destination": test_key("acl-set-store"),
+                "keys": [readable_set]
+            }),
+        )
+        .await
+        .expect("ACL-denied SDIFFSTORE is represented as a tool result");
+    assert!(denied_set_store.is_error);
+    let denied_set_store =
+        serde_json::to_string(&denied_set_store).expect("serialize SDIFFSTORE ACL denial");
+    assert!(
+        denied_set_store.contains("[Authorization]"),
+        "{denied_set_store}"
+    );
+    assert!(!denied_set_store.contains(password));
+
+    if redis_version >= RedisVersion::new(8, 10, 0) {
+        let denied_cardinality = client
+            .call_tool(
+                "redis_sdiffcard",
+                serde_json::json!({"keys": [readable_set]}),
+            )
+            .await
+            .expect("ACL-denied SDIFFCARD is represented as a tool result");
+        assert!(denied_cardinality.is_error);
+        let denied_cardinality =
+            serde_json::to_string(&denied_cardinality).expect("serialize SDIFFCARD ACL denial");
+        assert!(
+            denied_cardinality.contains("[Authorization]"),
+            "{denied_cardinality}"
+        );
+        assert!(!denied_cardinality.contains(password));
+    }
+
     let denied_sorted_scores = client
         .call_tool(
             "redis_zmscore",
@@ -5409,6 +5733,25 @@ async fn live_acl_failures_are_classified_without_leaking_credentials() {
         "{denied_sorted_remove}"
     );
     assert!(!denied_sorted_remove.contains(password));
+
+    let denied_sorted_store = full_client
+        .call_tool(
+            "redis_zunionstore",
+            serde_json::json!({
+                "destination": test_key("acl-zset-store"),
+                "sources": [readable_zset]
+            }),
+        )
+        .await
+        .expect("ACL-denied ZUNIONSTORE is represented as a tool result");
+    assert!(denied_sorted_store.is_error);
+    let denied_sorted_store =
+        serde_json::to_string(&denied_sorted_store).expect("serialize ZUNIONSTORE ACL denial");
+    assert!(
+        denied_sorted_store.contains("[Authorization]"),
+        "{denied_sorted_store}"
+    );
+    assert!(!denied_sorted_store.contains(password));
 
     let denied_stream_range = client
         .call_tool(

@@ -64,7 +64,7 @@ intended redisctl-style adapter and router merge boundary.
 
 ## Curated default
 
-The standalone default exposes 191 broadly useful tools:
+The standalone default exposes 201 broadly useful tools:
 
 - read-only essentials: `redis_ping`, `redis_dbsize`, `redis_scan`,
   `redis_get`, `redis_type`, `redis_ttl`, `redis_exists`, `redis_mget`,
@@ -87,13 +87,17 @@ The standalone default exposes 191 broadly useful tools:
   `redis_hexpire_delete`, `redis_hdel`,
   `redis_lindex`, `redis_llen`, `redis_lpos`, `redis_lrange`, `redis_lpush`,
   `redis_rpush`, `redis_lpop`, `redis_rpop`, `redis_lmove`, `redis_lrem`,
-  `redis_lset`, `redis_ltrim`, `redis_scard`, `redis_sdiff`, `redis_sinter`,
-  `redis_sismember`, `redis_smembers`, `redis_smismember`, `redis_sscan`,
-  `redis_sunion`, `redis_sadd`, `redis_srem`, `redis_zcard`, `redis_zcount`,
-  `redis_zmscore`, `redis_zrange`, `redis_zrank`, `redis_zrevrank`,
-  `redis_zscan`, `redis_zscore`, `redis_zadd`, `redis_zincrby`,
-  `redis_zpopmin`, `redis_zpopmax`, `redis_zrem`,
-  `redis_zremrangebyscore`, `redis_getbit`, `redis_setbit`,
+  `redis_lset`, `redis_ltrim`, `redis_scard`, `redis_sdiff`,
+  `redis_sdiffcard`, `redis_sdiffstore`, `redis_sinter`,
+  `redis_sinterstore`, `redis_sismember`, `redis_smembers`,
+  `redis_smismember`, `redis_sscan`, `redis_sunion`, `redis_sunioncard`,
+  `redis_sunionstore`, `redis_sadd`, `redis_srem`, `redis_zcard`,
+  `redis_zcount`, `redis_zdiffstore`, `redis_zintercard`,
+  `redis_zinterstore`, `redis_zmscore`, `redis_zrange`,
+  `redis_zrangestore`, `redis_zrank`, `redis_zrevrank`, `redis_zscan`,
+  `redis_zscore`, `redis_zunionstore`, `redis_zadd`, `redis_zincrby`,
+  `redis_zpopmin`, `redis_zpopmax`, `redis_zrem`, `redis_zremrangebyscore`,
+  `redis_getbit`, `redis_setbit`,
   `redis_bitcount`, `redis_bitpos`, `redis_bitfield_ro`, `redis_bitfield`,
   `redis_bitop`, `redis_geoadd`, `redis_geodist`, `redis_geohash`,
   `redis_geopos`, `redis_geosearch`, `redis_geosearchstore`, `redis_pfadd`,
@@ -137,7 +141,7 @@ The standalone default exposes 191 broadly useful tools:
 The reusable router keeps the stateful `sessions` bundle opt-in because its
 lifecycle belongs to the embedding host. The included `redis-mcp-server`
 provides the built-in DirectRedis manager automatically, so its ordinary
-stdio surface contains the 191 curated defaults plus these six session tools.
+stdio surface contains the 201 curated defaults plus these six session tools.
 
 Every successful tool result includes MCP structuredContent and an output
 schema. Results are limited by default to 256 KiB for the complete encoded MCP
@@ -398,7 +402,7 @@ CI runs the complete suite on Redis 8.8 and the live router/stdio contract on
 every currently supported Redis Open Source series: 6.2, 7.2, 7.4, 8.0, 8.2,
 8.4, 8.6, 8.8, and 8.10.1. Standalone and Cluster jobs cover the latest pin,
 and a separate job regenerates the official command metadata from the pinned
-Redis image. Live tests exercise both RESP2 and RESP3, the 191-tool curated
+Redis image. Live tests exercise both RESP2 and RESP3, the 201-tool curated
 catalog, binary and nil responses, conditional and absolute expiration,
 bounded serialization/restore, complete bounded list semantics, typed
 hash-field expiration, binary-safe membership, budgeted set algebra, complete

@@ -17,7 +17,7 @@ use super::{
     InputEncoding, PageMetadata, ToolState, ValueEncoding, command, decode_input,
     destructive_annotations, output_schema, read_annotations, write_annotations,
 };
-use crate::{AccessMode, RedisValue};
+use crate::{AccessMode, RedisValue, RedisVersion};
 
 const MAX_ITEMS: usize = 1_000;
 const DEFAULT_RETURNED_COLLECTION_BYTES: usize = 64 * 1024;
@@ -1463,7 +1463,7 @@ fn validate_range(start: i64, stop: i64, limit: usize) -> tower_mcp::Result<usiz
         .ok_or_else(|| tower_mcp::Error::tool("requested range is too large"))?;
     if requested > limit {
         Err(tower_mcp::Error::tool(format!(
-            "requested range contains {requested} entries; configured output limit is {limit}"
+            "requested range contains {requested} entries; configured output limit of {limit} entries would be exceeded"
         )))
     } else {
         Ok(requested)
@@ -2005,6 +2005,529 @@ fn set_algebra_tool(state: Arc<ToolState>, operation: SetAlgebraOperation) -> To
         .build()
 }
 
+#[derive(Debug, Clone, Copy, Serialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+enum CardinalityOperation {
+    SetDifference,
+    SetUnion,
+    SortedSetIntersection,
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+struct CardinalityInput {
+    /// One to 1000 source keys. Strings are UTF-8 shorthand; objects can select base64.
+    #[schemars(length(min = 1, max = 1000))]
+    keys: Vec<SetKeySelector>,
+    /// Stop counting after reaching this cardinality. Zero means unlimited.
+    #[serde(default)]
+    limit: Option<u64>,
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+struct SunioncardInput {
+    /// One to 1000 set keys. Strings are UTF-8 shorthand; objects can select base64.
+    #[schemars(length(min = 1, max = 1000))]
+    keys: Vec<SetKeySelector>,
+    /// Use Redis's HyperLogLog-based approximate union cardinality.
+    #[serde(default)]
+    approximate: bool,
+    /// Stop counting after reaching this cardinality. Zero means unlimited.
+    #[serde(default)]
+    limit: Option<u64>,
+}
+
+#[derive(Debug, Serialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+struct CardinalityOutput {
+    operation: CardinalityOperation,
+    requested_keys: usize,
+    cardinality: u64,
+    approximate: bool,
+    limit: Option<u64>,
+    limit_reached: bool,
+    cluster_requires_same_slot: bool,
+}
+
+fn append_counted_keys(
+    command: &mut crate::RedisCommand,
+    keys: Vec<SetKeySelector>,
+) -> tower_mcp::Result<usize> {
+    validate_items(&keys, "keys")?;
+    let requested_keys = keys.len();
+    command.arg(requested_keys.to_string());
+    for (index, key) in keys.into_iter().enumerate() {
+        command.arg(key.decode(index)?);
+    }
+    Ok(requested_keys)
+}
+
+fn append_cardinality_limit(command: &mut crate::RedisCommand, limit: Option<u64>) {
+    if let Some(limit) = limit {
+        command.arg("LIMIT").arg(limit.to_string());
+    }
+}
+
+fn cardinality_output(
+    operation: CardinalityOperation,
+    requested_keys: usize,
+    cardinality: u64,
+    approximate: bool,
+    limit: Option<u64>,
+) -> CardinalityOutput {
+    CardinalityOutput {
+        operation,
+        requested_keys,
+        cardinality,
+        approximate,
+        limit,
+        limit_reached: limit.is_some_and(|limit| limit > 0 && cardinality >= limit),
+        cluster_requires_same_slot: requested_keys > 1,
+    }
+}
+
+fn sdiffcard_tool(state: Arc<ToolState>) -> Tool {
+    ToolBuilder::new("redis_sdiffcard")
+        .title("Count Redis Set Difference")
+        .description(
+            "Count a binary-safe set difference across 1 to 1000 same-slot keys without materializing member payloads. An optional limit stops work once reached. Requires Redis 8.10 or newer.",
+        )
+        .output_schema(output_schema::<CardinalityOutput>())
+        .annotations(read_annotations())
+        .extractor_handler(
+            state,
+            |State(state): State<Arc<ToolState>>, Json(input): Json<CardinalityInput>| async move {
+                let mut command =
+                    command("redis_sdiffcard", AccessMode::ReadOnly, "SDIFFCARD");
+                let requested_keys = append_counted_keys(&mut command, input.keys)?;
+                append_cardinality_limit(&mut command, input.limit);
+                let cardinality = state.query(command, "SDIFFCARD failed").await?;
+                state.output(&cardinality_output(
+                    CardinalityOperation::SetDifference,
+                    requested_keys,
+                    cardinality,
+                    false,
+                    input.limit,
+                ))
+            },
+        )
+        .build()
+}
+
+fn sunioncard_tool(state: Arc<ToolState>) -> Tool {
+    ToolBuilder::new("redis_sunioncard")
+        .title("Count Redis Set Union")
+        .description(
+            "Count a binary-safe set union across 1 to 1000 same-slot keys without returning member payloads. Exact and HyperLogLog-based approximate modes support an optional stopping limit. Requires Redis 8.10 or newer.",
+        )
+        .output_schema(output_schema::<CardinalityOutput>())
+        .annotations(read_annotations())
+        .extractor_handler(
+            state,
+            |State(state): State<Arc<ToolState>>, Json(input): Json<SunioncardInput>| async move {
+                let mut command =
+                    command("redis_sunioncard", AccessMode::ReadOnly, "SUNIONCARD");
+                let requested_keys = append_counted_keys(&mut command, input.keys)?;
+                if input.approximate {
+                    command.arg("APPROX");
+                }
+                append_cardinality_limit(&mut command, input.limit);
+                let cardinality = state.query(command, "SUNIONCARD failed").await?;
+                state.output(&cardinality_output(
+                    CardinalityOperation::SetUnion,
+                    requested_keys,
+                    cardinality,
+                    input.approximate,
+                    input.limit,
+                ))
+            },
+        )
+        .build()
+}
+
+fn zintercard_tool(state: Arc<ToolState>) -> Tool {
+    ToolBuilder::new("redis_zintercard")
+        .title("Count Redis Sorted Set Intersection")
+        .description(
+            "Count the intersection of 1 to 1000 binary-safe, same-slot sorted-set keys without materializing members or scores. An optional limit stops work once reached. Requires Redis 7 or newer.",
+        )
+        .output_schema(output_schema::<CardinalityOutput>())
+        .annotations(read_annotations())
+        .extractor_handler(
+            state,
+            |State(state): State<Arc<ToolState>>, Json(input): Json<CardinalityInput>| async move {
+                let mut command =
+                    command("redis_zintercard", AccessMode::ReadOnly, "ZINTERCARD");
+                let requested_keys = append_counted_keys(&mut command, input.keys)?;
+                append_cardinality_limit(&mut command, input.limit);
+                let cardinality = state.query(command, "ZINTERCARD failed").await?;
+                state.output(&cardinality_output(
+                    CardinalityOperation::SortedSetIntersection,
+                    requested_keys,
+                    cardinality,
+                    false,
+                    input.limit,
+                ))
+            },
+        )
+        .build()
+}
+
+#[derive(Debug, Clone, Copy, Serialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+enum SetStoreOperation {
+    Difference,
+    Intersection,
+    Union,
+}
+
+impl SetStoreOperation {
+    fn tool_name(self) -> &'static str {
+        match self {
+            Self::Difference => "redis_sdiffstore",
+            Self::Intersection => "redis_sinterstore",
+            Self::Union => "redis_sunionstore",
+        }
+    }
+
+    fn command_name(self) -> &'static str {
+        match self {
+            Self::Difference => "SDIFFSTORE",
+            Self::Intersection => "SINTERSTORE",
+            Self::Union => "SUNIONSTORE",
+        }
+    }
+
+    fn title(self) -> &'static str {
+        match self {
+            Self::Difference => "Store Redis Set Difference",
+            Self::Intersection => "Store Redis Set Intersection",
+            Self::Union => "Store Redis Set Union",
+        }
+    }
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+struct SetStoreInput {
+    /// Destination set key that Redis overwrites.
+    destination: String,
+    /// Encoding of `destination`.
+    #[serde(default)]
+    destination_encoding: InputEncoding,
+    /// One to 1000 source keys. Strings are UTF-8 shorthand; objects can select base64.
+    #[schemars(length(min = 1, max = 1000))]
+    keys: Vec<SetKeySelector>,
+}
+
+#[derive(Debug, Serialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+struct SetStoreOutput {
+    operation: SetStoreOperation,
+    destination: String,
+    destination_encoding: InputEncoding,
+    source_count: usize,
+    destination_cardinality: u64,
+    destination_overwritten: bool,
+    cluster_requires_same_slot: bool,
+}
+
+fn set_store_tool(state: Arc<ToolState>, operation: SetStoreOperation) -> Tool {
+    let tool_name = operation.tool_name();
+    let command_name = operation.command_name();
+    ToolBuilder::new(tool_name)
+        .title(operation.title())
+        .description(format!(
+            "Permanently overwrite a destination with the {} of 1 to 1000 binary-safe source sets. Returns only the resulting cardinality; every key must share a Redis Cluster slot. Requires full access.",
+            match operation {
+                SetStoreOperation::Difference => "difference",
+                SetStoreOperation::Intersection => "intersection",
+                SetStoreOperation::Union => "union",
+            }
+        ))
+        .output_schema(output_schema::<SetStoreOutput>())
+        .annotations(destructive_annotations(!matches!(
+            operation,
+            SetStoreOperation::Difference
+        )))
+        .extractor_handler(
+            state,
+            move |State(state): State<Arc<ToolState>>,
+                  Json(input): Json<SetStoreInput>| async move {
+                state.require(AccessMode::Full, tool_name)?;
+                validate_items(&input.keys, "keys")?;
+                let source_count = input.keys.len();
+                let mut command = command(tool_name, AccessMode::Full, command_name);
+                command.arg(decode_input(
+                    &input.destination,
+                    input.destination_encoding,
+                    "destination",
+                )?);
+                for (index, key) in input.keys.into_iter().enumerate() {
+                    command.arg(key.decode(index)?);
+                }
+                let destination_cardinality = state
+                    .query(command, &format!("{command_name} failed"))
+                    .await?;
+                state.output(&SetStoreOutput {
+                    operation,
+                    destination: input.destination,
+                    destination_encoding: input.destination_encoding,
+                    source_count,
+                    destination_cardinality,
+                    destination_overwritten: true,
+                    cluster_requires_same_slot: true,
+                })
+            },
+        )
+        .build()
+}
+
+#[derive(Debug, Clone, Copy, Default, Deserialize, Serialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+enum ZsetAggregate {
+    #[default]
+    Sum,
+    Min,
+    Max,
+    Count,
+}
+
+impl ZsetAggregate {
+    fn redis_token(self) -> &'static str {
+        match self {
+            Self::Sum => "SUM",
+            Self::Min => "MIN",
+            Self::Max => "MAX",
+            Self::Count => "COUNT",
+        }
+    }
+}
+
+#[derive(Debug, Clone, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+struct WeightedZsetKeyInput {
+    /// Redis sorted-set key.
+    key: String,
+    /// Encoding of `key`.
+    #[serde(default)]
+    key_encoding: InputEncoding,
+    /// Optional finite score multiplier. Omitted weights default to one.
+    #[serde(default)]
+    weight: Option<RedisDecimalInput>,
+}
+
+#[derive(Debug, Clone, Deserialize, JsonSchema)]
+#[serde(untagged)]
+enum WeightedZsetKeySelector {
+    /// UTF-8 sorted-set key shorthand with the default weight of one.
+    Utf8(String),
+    /// Binary-safe key with an optional exact weight.
+    Encoded(WeightedZsetKeyInput),
+}
+
+struct DecodedWeightedZsetKey {
+    key: Vec<u8>,
+    weight: Option<String>,
+}
+
+impl WeightedZsetKeySelector {
+    fn decode(self, index: usize) -> tower_mcp::Result<DecodedWeightedZsetKey> {
+        match self {
+            Self::Utf8(key) => Ok(DecodedWeightedZsetKey {
+                key: key.into_bytes(),
+                weight: None,
+            }),
+            Self::Encoded(source) => Ok(DecodedWeightedZsetKey {
+                key: decode_input(
+                    &source.key,
+                    source.key_encoding,
+                    &format!("sources[{index}].key"),
+                )?,
+                weight: source
+                    .weight
+                    .as_ref()
+                    .map(|weight| weight.finite_token(&format!("sources[{index}].weight")))
+                    .transpose()?,
+            }),
+        }
+    }
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+struct WeightedZsetStoreInput {
+    /// Destination sorted-set key that Redis overwrites.
+    destination: String,
+    /// Encoding of `destination`.
+    #[serde(default)]
+    destination_encoding: InputEncoding,
+    /// One to 1000 sorted-set sources, each with an optional finite score weight.
+    #[schemars(length(min = 1, max = 1000))]
+    sources: Vec<WeightedZsetKeySelector>,
+    /// How scores from matching members are combined. `count` requires Redis 8.8+.
+    #[serde(default)]
+    aggregate: ZsetAggregate,
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+struct ZdiffstoreInput {
+    /// Destination sorted-set key that Redis overwrites.
+    destination: String,
+    /// Encoding of `destination`.
+    #[serde(default)]
+    destination_encoding: InputEncoding,
+    /// One to 1000 source sorted-set keys. Strings are UTF-8 shorthand; objects can select base64.
+    #[schemars(length(min = 1, max = 1000))]
+    keys: Vec<SetKeySelector>,
+}
+
+#[derive(Debug, Clone, Copy, Serialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+enum ZsetStoreOperation {
+    Difference,
+    Intersection,
+    Union,
+}
+
+#[derive(Debug, Serialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+struct ZsetStoreOutput {
+    operation: ZsetStoreOperation,
+    destination: String,
+    destination_encoding: InputEncoding,
+    source_count: usize,
+    weighted: bool,
+    aggregate: Option<ZsetAggregate>,
+    destination_cardinality: u64,
+    destination_overwritten: bool,
+    cluster_requires_same_slot: bool,
+}
+
+fn zdiffstore_tool(state: Arc<ToolState>) -> Tool {
+    ToolBuilder::new("redis_zdiffstore")
+        .title("Store Redis Sorted Set Difference")
+        .description(
+            "Permanently overwrite a destination with the difference of 1 to 1000 binary-safe source sorted sets. Returns only the destination cardinality; every key must share a Redis Cluster slot. Requires Redis 6.2+ and full access.",
+        )
+        .output_schema(output_schema::<ZsetStoreOutput>())
+        .annotations(destructive_annotations(false))
+        .extractor_handler(
+            state,
+            |State(state): State<Arc<ToolState>>, Json(input): Json<ZdiffstoreInput>| async move {
+                state.require(AccessMode::Full, "redis_zdiffstore")?;
+                let mut command = command("redis_zdiffstore", AccessMode::Full, "ZDIFFSTORE");
+                command.arg(decode_input(
+                    &input.destination,
+                    input.destination_encoding,
+                    "destination",
+                )?);
+                let source_count = append_counted_keys(&mut command, input.keys)?;
+                let destination_cardinality = state.query(command, "ZDIFFSTORE failed").await?;
+                state.output(&ZsetStoreOutput {
+                    operation: ZsetStoreOperation::Difference,
+                    destination: input.destination,
+                    destination_encoding: input.destination_encoding,
+                    source_count,
+                    weighted: false,
+                    aggregate: None,
+                    destination_cardinality,
+                    destination_overwritten: true,
+                    cluster_requires_same_slot: true,
+                })
+            },
+        )
+        .build()
+}
+
+fn weighted_zset_store_tool(state: Arc<ToolState>, operation: ZsetStoreOperation) -> Tool {
+    let (tool_name, command_name, title) = match operation {
+        ZsetStoreOperation::Intersection => (
+            "redis_zinterstore",
+            "ZINTERSTORE",
+            "Store Redis Sorted Set Intersection",
+        ),
+        ZsetStoreOperation::Union => (
+            "redis_zunionstore",
+            "ZUNIONSTORE",
+            "Store Redis Sorted Set Union",
+        ),
+        ZsetStoreOperation::Difference => unreachable!("ZDIFFSTORE has no weights"),
+    };
+    ToolBuilder::new(tool_name)
+        .title(title)
+        .description(format!(
+            "Permanently overwrite a destination with the {} of 1 to 1000 binary-safe sorted sets. Sources support finite score weights and sum/min/max aggregation, plus count on Redis 8.8+. Returns only destination cardinality; every key must share a Redis Cluster slot. Requires full access.",
+            match operation {
+                ZsetStoreOperation::Intersection => "intersection",
+                ZsetStoreOperation::Union => "union",
+                ZsetStoreOperation::Difference => unreachable!(),
+            }
+        ))
+        .output_schema(output_schema::<ZsetStoreOutput>())
+        .annotations(destructive_annotations(false))
+        .extractor_handler(
+            state,
+            move |State(state): State<Arc<ToolState>>,
+                  Json(input): Json<WeightedZsetStoreInput>| async move {
+                state.require(AccessMode::Full, tool_name)?;
+                validate_items(&input.sources, "sources")?;
+                if matches!(input.aggregate, ZsetAggregate::Count)
+                    && state
+                        .redis_version()
+                        .is_some_and(|version| version < RedisVersion::new(8, 8, 0))
+                {
+                    return Err(tower_mcp::Error::tool(
+                        "sorted-set COUNT aggregation requires Redis 8.8 or newer",
+                    ));
+                }
+                let source_count = input.sources.len();
+                let sources = input
+                    .sources
+                    .into_iter()
+                    .enumerate()
+                    .map(|(index, source)| source.decode(index))
+                    .collect::<tower_mcp::Result<Vec<_>>>()?;
+                let weighted = sources.iter().any(|source| source.weight.is_some());
+                let mut command = command(tool_name, AccessMode::Full, command_name);
+                command
+                    .arg(decode_input(
+                        &input.destination,
+                        input.destination_encoding,
+                        "destination",
+                    )?)
+                    .arg(source_count.to_string());
+                for source in &sources {
+                    command.arg(source.key.clone());
+                }
+                if weighted {
+                    command.arg("WEIGHTS");
+                    for source in &sources {
+                        command.arg(source.weight.as_deref().unwrap_or("1"));
+                    }
+                }
+                command.arg("AGGREGATE").arg(input.aggregate.redis_token());
+                let destination_cardinality = state
+                    .query(command, &format!("{command_name} failed"))
+                    .await?;
+                state.output(&ZsetStoreOutput {
+                    operation,
+                    destination: input.destination,
+                    destination_encoding: input.destination_encoding,
+                    source_count,
+                    weighted,
+                    aggregate: Some(input.aggregate),
+                    destination_cardinality,
+                    destination_overwritten: true,
+                    cluster_requires_same_slot: true,
+                })
+            },
+        )
+        .build()
+}
+
 #[derive(Debug, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 struct ZrangeInput {
@@ -2187,6 +2710,139 @@ fn zrange_tool(state: Arc<ToolState>) -> Tool {
                     output.count,
                     "Retry ZRANGE with a smaller rank span or range.limit.",
                 )
+            },
+        )
+        .build()
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+struct ZrangestoreInput {
+    /// Destination sorted-set key that Redis overwrites.
+    destination: String,
+    /// Encoding of `destination`.
+    #[serde(default)]
+    destination_encoding: InputEncoding,
+    /// Source sorted-set key.
+    source: String,
+    /// Encoding of `source`.
+    #[serde(default)]
+    source_encoding: InputEncoding,
+    /// Explicit bounded rank, score, or lexicographic range. Defaults to ranks 0 through 99.
+    #[serde(default)]
+    range: ZrangeSpec,
+    /// Store highest scores or lexicographically greatest members first.
+    #[serde(default)]
+    rev: bool,
+}
+
+#[derive(Debug, Serialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+struct ZrangestoreOutput {
+    destination: String,
+    destination_encoding: InputEncoding,
+    source: String,
+    source_encoding: InputEncoding,
+    range: ZrangeSpec,
+    rev: bool,
+    requested_maximum: usize,
+    destination_cardinality: u64,
+    destination_overwritten: bool,
+    cluster_requires_same_slot: bool,
+}
+
+fn zrangestore_tool(state: Arc<ToolState>) -> Tool {
+    ToolBuilder::new("redis_zrangestore")
+        .title("Store Redis Sorted Set Range")
+        .description(
+            "Permanently overwrite a destination with an explicitly bounded rank, score, or binary lexicographic range from one sorted set. Source and destination must share a Redis Cluster slot. Requires Redis 6.2+ and full access.",
+        )
+        .output_schema(output_schema::<ZrangestoreOutput>())
+        .annotations(destructive_annotations(false))
+        .extractor_handler(
+            state,
+            |State(state): State<Arc<ToolState>>,
+             Json(input): Json<ZrangestoreInput>| async move {
+                state.require(AccessMode::Full, "redis_zrangestore")?;
+                let mut command = command("redis_zrangestore", AccessMode::Full, "ZRANGESTORE");
+                command
+                    .arg(decode_input(
+                        &input.destination,
+                        input.destination_encoding,
+                        "destination",
+                    )?)
+                    .arg(decode_input(
+                        &input.source,
+                        input.source_encoding,
+                        "source",
+                    )?);
+                let requested_maximum = match &input.range {
+                    ZrangeSpec::Rank { start, stop } => {
+                        let requested =
+                            validate_range(*start, *stop, state.max_collection_entries())?;
+                        command.arg(start.to_string()).arg(stop.to_string());
+                        requested
+                    }
+                    ZrangeSpec::Score {
+                        min,
+                        max,
+                        offset,
+                        limit,
+                    } => {
+                        state.validate_requested_entries(*limit, "range.limit")?;
+                        let min = min.redis_token("range.min.value")?;
+                        let max = max.redis_token("range.max.value")?;
+                        if input.rev {
+                            command.arg(max).arg(min);
+                        } else {
+                            command.arg(min).arg(max);
+                        }
+                        command
+                            .arg("BYSCORE")
+                            .arg("LIMIT")
+                            .arg(offset.to_string())
+                            .arg(limit.to_string());
+                        *limit
+                    }
+                    ZrangeSpec::Lex {
+                        min,
+                        max,
+                        offset,
+                        limit,
+                    } => {
+                        state.validate_requested_entries(*limit, "range.limit")?;
+                        let min = min.redis_token("range.min.value")?;
+                        let max = max.redis_token("range.max.value")?;
+                        if input.rev {
+                            command.arg(max).arg(min);
+                        } else {
+                            command.arg(min).arg(max);
+                        }
+                        command
+                            .arg("BYLEX")
+                            .arg("LIMIT")
+                            .arg(offset.to_string())
+                            .arg(limit.to_string());
+                        *limit
+                    }
+                };
+                if input.rev {
+                    command.arg("REV");
+                }
+                let destination_cardinality =
+                    state.query(command, "ZRANGESTORE failed").await?;
+                state.output(&ZrangestoreOutput {
+                    destination: input.destination,
+                    destination_encoding: input.destination_encoding,
+                    source: input.source,
+                    source_encoding: input.source_encoding,
+                    range: input.range,
+                    rev: input.rev,
+                    requested_maximum,
+                    destination_cardinality,
+                    destination_overwritten: true,
+                    cluster_requires_same_slot: true,
+                })
             },
         )
         .build()
@@ -4535,6 +5191,7 @@ pub(super) fn add_list_read_tools(mut router: McpRouter, state: Arc<ToolState>) 
 #[cfg(feature = "sets")]
 pub(super) fn add_set_read_tools(mut router: McpRouter, state: Arc<ToolState>) -> McpRouter {
     router = router.tool(scard_tool(state.clone()));
+    router = router.tool(sdiffcard_tool(state.clone()));
     router = router.tool(set_algebra_tool(
         state.clone(),
         SetAlgebraOperation::Difference,
@@ -4547,6 +5204,7 @@ pub(super) fn add_set_read_tools(mut router: McpRouter, state: Arc<ToolState>) -
     router = router.tool(smembers_tool(state.clone()));
     router = router.tool(smismember_tool(state.clone()));
     router = router.tool(sscan_tool(state.clone()));
+    router = router.tool(sunioncard_tool(state.clone()));
     router = router.tool(set_algebra_tool(state.clone(), SetAlgebraOperation::Union));
     router
 }
@@ -4555,6 +5213,7 @@ pub(super) fn add_set_read_tools(mut router: McpRouter, state: Arc<ToolState>) -
 pub(super) fn add_sorted_set_read_tools(mut router: McpRouter, state: Arc<ToolState>) -> McpRouter {
     router = router.tool(zcard_tool(state.clone()));
     router = router.tool(zcount_tool(state.clone()));
+    router = router.tool(zintercard_tool(state.clone()));
     router = router.tool(zmscore_tool(state.clone()));
     router = router.tool(zrange_tool(state.clone()));
     router = router.tool(zrank_tool(state.clone(), false));
@@ -4617,7 +5276,14 @@ pub(super) fn add_list_destructive_tools(
 
 #[cfg(feature = "sets")]
 pub(super) fn add_set_destructive_tools(router: McpRouter, state: Arc<ToolState>) -> McpRouter {
-    router.tool(srem_tool(state))
+    router
+        .tool(set_store_tool(state.clone(), SetStoreOperation::Difference))
+        .tool(set_store_tool(
+            state.clone(),
+            SetStoreOperation::Intersection,
+        ))
+        .tool(srem_tool(state.clone()))
+        .tool(set_store_tool(state, SetStoreOperation::Union))
 }
 
 #[cfg(feature = "sorted-sets")]
@@ -4625,10 +5291,17 @@ pub(super) fn add_sorted_set_destructive_tools(
     mut router: McpRouter,
     state: Arc<ToolState>,
 ) -> McpRouter {
+    router = router.tool(zdiffstore_tool(state.clone()));
+    router = router.tool(weighted_zset_store_tool(
+        state.clone(),
+        ZsetStoreOperation::Intersection,
+    ));
     router = router.tool(zpop_tool(state.clone(), ZpopDirection::Max));
     router = router.tool(zpop_tool(state.clone(), ZpopDirection::Min));
+    router = router.tool(zrangestore_tool(state.clone()));
     router = router.tool(zrem_tool(state.clone()));
-    router.tool(zremrangebyscore_tool(state))
+    router = router.tool(zremrangebyscore_tool(state.clone()));
+    router.tool(weighted_zset_store_tool(state, ZsetStoreOperation::Union))
 }
 
 #[cfg(test)]

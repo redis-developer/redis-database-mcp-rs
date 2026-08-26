@@ -603,10 +603,101 @@ impl DirectRedisCluster {
     }
 }
 
+fn counted_cluster_keys(
+    command: &RedisCommand,
+    count_index: usize,
+    first_key_index: usize,
+) -> Result<&[Vec<u8>], RedisError> {
+    let count = command
+        .arguments()
+        .get(count_index)
+        .and_then(|count| std::str::from_utf8(count).ok())
+        .and_then(|count| count.parse::<usize>().ok())
+        .filter(|count| *count > 0)
+        .ok_or_else(|| {
+            RedisError::new(
+                RedisErrorKind::InvalidRequest,
+                format!("{} contained an invalid key count", command.name()),
+            )
+        })?;
+    command
+        .arguments()
+        .get(first_key_index..first_key_index.saturating_add(count))
+        .ok_or_else(|| {
+            RedisError::new(
+                RedisErrorKind::InvalidRequest,
+                format!(
+                    "{} key count exceeded the supplied key arguments",
+                    command.name()
+                ),
+            )
+        })
+}
+
+fn validate_same_cluster_slot<'a>(
+    keys: impl IntoIterator<Item = &'a [u8]>,
+    context: &str,
+) -> Result<(), RedisError> {
+    let mut keys = keys.into_iter();
+    let Some(first) = keys.next() else {
+        return Ok(());
+    };
+    let first =
+        redis::cluster_routing::Route::with_key(first, redis::cluster_routing::SlotAddr::Master);
+    if keys.any(|key| {
+        redis::cluster_routing::Route::with_key(key, redis::cluster_routing::SlotAddr::Master)
+            != first
+    }) {
+        Err(
+            RedisError::new(RedisErrorKind::InvalidRequest, context.to_string())
+                .with_code("CROSSSLOT"),
+        )
+    } else {
+        Ok(())
+    }
+}
+
 fn validate_cluster_command_slots(command: &RedisCommand) -> Result<(), RedisError> {
     let route = |key: &[u8]| {
         redis::cluster_routing::Route::with_key(key, redis::cluster_routing::SlotAddr::Master)
     };
+    let command_name = command.name().to_ascii_uppercase();
+    match command_name.as_str() {
+        "SDIFF" | "SINTER" | "SUNION" => validate_same_cluster_slot(
+            command.arguments().iter().map(Vec::as_slice),
+            "source keys must hash to the same Redis Cluster slot",
+        )?,
+        "SDIFFCARD" | "SINTERCARD" | "SUNIONCARD" | "ZDIFF" | "ZINTER" | "ZINTERCARD"
+        | "ZUNION" => {
+            let keys = counted_cluster_keys(command, 0, 1)?;
+            validate_same_cluster_slot(
+                keys.iter().map(Vec::as_slice),
+                "source keys must hash to the same Redis Cluster slot",
+            )?;
+        }
+        "SDIFFSTORE" | "SINTERSTORE" | "SUNIONSTORE" => validate_same_cluster_slot(
+            command.arguments().iter().map(Vec::as_slice),
+            "destination and source keys must hash to the same Redis Cluster slot",
+        )?,
+        "ZDIFFSTORE" | "ZINTERSTORE" | "ZUNIONSTORE" => {
+            let sources = counted_cluster_keys(command, 1, 2)?;
+            let destination = command.arguments().first().ok_or_else(|| {
+                RedisError::new(
+                    RedisErrorKind::InvalidRequest,
+                    format!("{} is missing its destination key", command.name()),
+                )
+            })?;
+            validate_same_cluster_slot(
+                std::iter::once(destination.as_slice()).chain(sources.iter().map(Vec::as_slice)),
+                "destination and source keys must hash to the same Redis Cluster slot",
+            )?;
+        }
+        "ZRANGESTORE" if command.arguments().len() >= 2 => validate_same_cluster_slot(
+            command.arguments()[..2].iter().map(Vec::as_slice),
+            "destination and source in ZRANGESTORE must hash to the same Redis Cluster slot",
+        )?,
+        _ => {}
+    }
     if command.name().eq_ignore_ascii_case("JSON.MGET") && command.arguments().len() >= 3 {
         let keys = &command.arguments()[..command.arguments().len() - 1];
         let first = route(&keys[0]);
@@ -796,6 +887,27 @@ fn cluster_routing_key(command: &RedisCommand) -> Option<&[u8]> {
     }
     if command.name().eq_ignore_ascii_case("SORT") || command.name().eq_ignore_ascii_case("SORT_RO")
     {
+        return command.arguments().first().map(Vec::as_slice);
+    }
+    if matches!(
+        command.name().to_ascii_uppercase().as_str(),
+        "SDIFFCARD" | "SINTERCARD" | "SUNIONCARD" | "ZDIFF" | "ZINTER" | "ZINTERCARD" | "ZUNION"
+    ) {
+        return command.arguments().get(1).map(Vec::as_slice);
+    }
+    if matches!(
+        command.name().to_ascii_uppercase().as_str(),
+        "SDIFF"
+            | "SDIFFSTORE"
+            | "SINTER"
+            | "SINTERSTORE"
+            | "SUNION"
+            | "SUNIONSTORE"
+            | "ZDIFFSTORE"
+            | "ZINTERSTORE"
+            | "ZRANGESTORE"
+            | "ZUNIONSTORE"
+    ) {
         return command.arguments().first().map(Vec::as_slice);
     }
     if matches!(
@@ -1047,6 +1159,85 @@ mod tests {
         assert_eq!(
             validate_cluster_command_slots(&invalid).unwrap_err().kind(),
             RedisErrorKind::InvalidRequest
+        );
+    }
+
+    #[test]
+    fn set_and_sorted_set_algebra_validate_every_cluster_key() {
+        let mut cardinality =
+            RedisCommand::new("redis_sdiffcard", AccessMode::ReadOnly, "SDIFFCARD");
+        cardinality
+            .arg("2")
+            .arg("set:{tenant}:left")
+            .arg("set:{tenant}:right")
+            .arg("LIMIT")
+            .arg("10");
+        assert!(validate_cluster_command_slots(&cardinality).is_ok());
+        assert_eq!(
+            cluster_routing_key(&cardinality),
+            Some(b"set:{tenant}:left".as_slice())
+        );
+        cardinality.arguments[2] = b"set:{other}:right".to_vec();
+        assert_eq!(
+            validate_cluster_command_slots(&cardinality)
+                .unwrap_err()
+                .code(),
+            Some("CROSSSLOT")
+        );
+
+        let mut set_store = RedisCommand::new("redis_sunionstore", AccessMode::Full, "SUNIONSTORE");
+        set_store
+            .arg("set:{tenant}:destination")
+            .arg("set:{tenant}:left")
+            .arg("set:{tenant}:right");
+        assert!(validate_cluster_command_slots(&set_store).is_ok());
+        set_store.arguments[2] = b"set:{other}:right".to_vec();
+        assert_eq!(
+            validate_cluster_command_slots(&set_store)
+                .unwrap_err()
+                .code(),
+            Some("CROSSSLOT")
+        );
+
+        let mut weighted_store =
+            RedisCommand::new("redis_zinterstore", AccessMode::Full, "ZINTERSTORE");
+        weighted_store
+            .arg("zset:{tenant}:destination")
+            .arg("2")
+            .arg("zset:{tenant}:left")
+            .arg("zset:{tenant}:right")
+            .arg("WEIGHTS")
+            .arg("2")
+            .arg("3")
+            .arg("AGGREGATE")
+            .arg("MAX");
+        assert!(validate_cluster_command_slots(&weighted_store).is_ok());
+        assert_eq!(
+            cluster_routing_key(&weighted_store),
+            Some(b"zset:{tenant}:destination".as_slice())
+        );
+        weighted_store.arguments[3] = b"zset:{other}:right".to_vec();
+        assert_eq!(
+            validate_cluster_command_slots(&weighted_store)
+                .unwrap_err()
+                .code(),
+            Some("CROSSSLOT")
+        );
+
+        let mut range_store =
+            RedisCommand::new("redis_zrangestore", AccessMode::Full, "ZRANGESTORE");
+        range_store
+            .arg("zset:{tenant}:destination")
+            .arg("zset:{tenant}:source")
+            .arg("0")
+            .arg("9");
+        assert!(validate_cluster_command_slots(&range_store).is_ok());
+        range_store.arguments[1] = b"zset:{other}:source".to_vec();
+        assert_eq!(
+            validate_cluster_command_slots(&range_store)
+                .unwrap_err()
+                .code(),
+            Some("CROSSSLOT")
         );
     }
 

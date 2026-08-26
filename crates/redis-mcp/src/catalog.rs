@@ -309,7 +309,7 @@ impl ToolMetadata {
             | "redis_ssubscribe"
             | "redis_pubsub_shardchannels"
             | "redis_pubsub_shardnumsub" => Some(RedisVersion::new(7, 0, 0)),
-            "redis_sort" => Some(RedisVersion::new(7, 0, 0)),
+            "redis_sort" | "redis_zintercard" => Some(RedisVersion::new(7, 0, 0)),
             "redis_dump" => Some(RedisVersion::new(2, 6, 0)),
             "redis_getbit" | "redis_setbit" => Some(RedisVersion::new(2, 2, 0)),
             "redis_bitcount" | "redis_bitop" => Some(RedisVersion::new(2, 6, 0)),
@@ -334,7 +334,9 @@ impl ToolMetadata {
             | "redis_arlastitems" | "redis_arlen" | "redis_armget" | "redis_armset"
             | "redis_arnext" | "redis_arop" | "redis_arring" | "redis_arscan" | "redis_arseek"
             | "redis_arset" | "redis_increx" | "redis_xnack" => Some(RedisVersion::new(8, 8, 0)),
-            "redis_lmovem" => Some(RedisVersion::new(8, 10, 0)),
+            "redis_lmovem" | "redis_sdiffcard" | "redis_sunioncard" => {
+                Some(RedisVersion::new(8, 10, 0))
+            }
             "redis_touch" | "redis_hstrlen" => Some(RedisVersion::new(3, 2, 0)),
             "redis_memory_usage" | "redis_object_inspect" | "redis_unlink" => {
                 Some(RedisVersion::new(4, 0, 0))
@@ -365,9 +367,8 @@ impl ToolMetadata {
             "redis_xgroup_createconsumer" | "redis_xautoclaim" => Some(RedisVersion::new(6, 2, 0)),
             "redis_copy" | "redis_copy_replace" | "redis_getdel" | "redis_getex"
             | "redis_hrandfield" | "redis_lmove" | "redis_lpop" | "redis_rpop"
-            | "redis_smismember" | "redis_zadd" | "redis_zmscore" | "redis_zrange" => {
-                Some(RedisVersion::new(6, 2, 0))
-            }
+            | "redis_smismember" | "redis_zadd" | "redis_zdiffstore" | "redis_zmscore"
+            | "redis_zrange" | "redis_zrangestore" => Some(RedisVersion::new(6, 2, 0)),
             "redis_hexpire" | "redis_hexpire_delete" | "redis_hpersist" | "redis_httl" => {
                 Some(RedisVersion::new(7, 4, 0))
             }
@@ -460,20 +461,30 @@ impl ToolMetadata {
             "redis_lrange" => &["LRANGE", "EXISTS"],
             "redis_scard" => &["SCARD"],
             "redis_sdiff" => &["SDIFF"],
+            "redis_sdiffcard" => &["SDIFFCARD"],
+            "redis_sdiffstore" => &["SDIFFSTORE"],
             "redis_sinter" => &["SINTER"],
+            "redis_sinterstore" => &["SINTERSTORE"],
             "redis_sismember" => &["SISMEMBER", "EXISTS"],
             "redis_smembers" => &["SMEMBERS"],
             "redis_smismember" => &["SMISMEMBER", "EXISTS"],
             "redis_sscan" => &["SSCAN", "EXISTS"],
             "redis_sunion" => &["SUNION"],
+            "redis_sunioncard" => &["SUNIONCARD"],
+            "redis_sunionstore" => &["SUNIONSTORE"],
             "redis_zcard" => &["ZCARD"],
             "redis_zcount" => &["ZCOUNT", "EXISTS"],
+            "redis_zdiffstore" => &["ZDIFFSTORE"],
+            "redis_zintercard" => &["ZINTERCARD"],
+            "redis_zinterstore" => &["ZINTERSTORE"],
             "redis_zmscore" => &["ZMSCORE", "EXISTS"],
             "redis_zrange" => &["ZRANGE", "EXISTS"],
+            "redis_zrangestore" => &["ZRANGESTORE"],
             "redis_zrank" => &["ZRANK", "EXISTS"],
             "redis_zrevrank" => &["ZREVRANK", "EXISTS"],
             "redis_zscan" => &["ZSCAN", "EXISTS"],
             "redis_zscore" => &["ZSCORE", "EXISTS"],
+            "redis_zunionstore" => &["ZUNIONSTORE"],
             "redis_getbit" => &["GETBIT"],
             "redis_bitcount" => &["BITCOUNT"],
             "redis_bitpos" => &["BITPOS"],
@@ -1081,6 +1092,12 @@ pub(crate) const CATALOG: &[ToolMetadata] = &[
         requires_raw_opt_in: false,
     },
     ToolMetadata {
+        name: "redis_sdiffcard",
+        bundle: ToolBundle::DataStructures,
+        required_access: AccessMode::ReadOnly,
+        requires_raw_opt_in: false,
+    },
+    ToolMetadata {
         name: "redis_sinter",
         bundle: ToolBundle::DataStructures,
         required_access: AccessMode::ReadOnly,
@@ -1117,6 +1134,12 @@ pub(crate) const CATALOG: &[ToolMetadata] = &[
         requires_raw_opt_in: false,
     },
     ToolMetadata {
+        name: "redis_sunioncard",
+        bundle: ToolBundle::DataStructures,
+        required_access: AccessMode::ReadOnly,
+        requires_raw_opt_in: false,
+    },
+    ToolMetadata {
         name: "redis_zcard",
         bundle: ToolBundle::DataStructures,
         required_access: AccessMode::ReadOnly,
@@ -1124,6 +1147,12 @@ pub(crate) const CATALOG: &[ToolMetadata] = &[
     },
     ToolMetadata {
         name: "redis_zcount",
+        bundle: ToolBundle::DataStructures,
+        required_access: AccessMode::ReadOnly,
+        requires_raw_opt_in: false,
+    },
+    ToolMetadata {
+        name: "redis_zintercard",
         bundle: ToolBundle::DataStructures,
         required_access: AccessMode::ReadOnly,
         requires_raw_opt_in: false,
@@ -1945,7 +1974,37 @@ pub(crate) const CATALOG: &[ToolMetadata] = &[
         requires_raw_opt_in: false,
     },
     ToolMetadata {
+        name: "redis_sdiffstore",
+        bundle: ToolBundle::DataStructures,
+        required_access: AccessMode::Full,
+        requires_raw_opt_in: false,
+    },
+    ToolMetadata {
+        name: "redis_sinterstore",
+        bundle: ToolBundle::DataStructures,
+        required_access: AccessMode::Full,
+        requires_raw_opt_in: false,
+    },
+    ToolMetadata {
         name: "redis_srem",
+        bundle: ToolBundle::DataStructures,
+        required_access: AccessMode::Full,
+        requires_raw_opt_in: false,
+    },
+    ToolMetadata {
+        name: "redis_sunionstore",
+        bundle: ToolBundle::DataStructures,
+        required_access: AccessMode::Full,
+        requires_raw_opt_in: false,
+    },
+    ToolMetadata {
+        name: "redis_zdiffstore",
+        bundle: ToolBundle::DataStructures,
+        required_access: AccessMode::Full,
+        requires_raw_opt_in: false,
+    },
+    ToolMetadata {
+        name: "redis_zinterstore",
         bundle: ToolBundle::DataStructures,
         required_access: AccessMode::Full,
         requires_raw_opt_in: false,
@@ -1963,6 +2022,12 @@ pub(crate) const CATALOG: &[ToolMetadata] = &[
         requires_raw_opt_in: false,
     },
     ToolMetadata {
+        name: "redis_zrangestore",
+        bundle: ToolBundle::DataStructures,
+        required_access: AccessMode::Full,
+        requires_raw_opt_in: false,
+    },
+    ToolMetadata {
         name: "redis_zrem",
         bundle: ToolBundle::DataStructures,
         required_access: AccessMode::Full,
@@ -1970,6 +2035,12 @@ pub(crate) const CATALOG: &[ToolMetadata] = &[
     },
     ToolMetadata {
         name: "redis_zremrangebyscore",
+        bundle: ToolBundle::DataStructures,
+        required_access: AccessMode::Full,
+        requires_raw_opt_in: false,
+    },
+    ToolMetadata {
+        name: "redis_zunionstore",
         bundle: ToolBundle::DataStructures,
         required_access: AccessMode::Full,
         requires_raw_opt_in: false,

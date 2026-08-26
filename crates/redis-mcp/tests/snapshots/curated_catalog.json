@@ -25304,6 +25304,311 @@
       "requires_raw_opt_in": false
     },
     {
+      "bundle": "data_structures",
+      "capability_requirements": {
+        "deployment": "any",
+        "minimum_module_version": null,
+        "minimum_redis_version": "8.10.0",
+        "required_commands": [
+          "SDIFFCARD"
+        ],
+        "required_module": null
+      },
+      "family": "sets",
+      "name": "redis_sdiffcard",
+      "output_policy": "intrinsically_bounded",
+      "protocol": {
+        "annotations": {
+          "destructiveHint": false,
+          "idempotentHint": true,
+          "readOnlyHint": true
+        },
+        "description": "Count a binary-safe set difference across 1 to 1000 same-slot keys without materializing member payloads. An optional limit stops work once reached. Requires Redis 8.10 or newer.",
+        "inputSchema": {
+          "$defs": {
+            "EncodedSetKeyInput": {
+              "additionalProperties": false,
+              "properties": {
+                "key": {
+                  "description": "Redis set key.",
+                  "type": "string"
+                },
+                "key_encoding": {
+                  "$ref": "#/$defs/InputEncoding",
+                  "default": "utf8",
+                  "description": "Encoding of `key`."
+                }
+              },
+              "required": [
+                "key"
+              ],
+              "type": "object"
+            },
+            "InputEncoding": {
+              "enum": [
+                "utf8",
+                "base64"
+              ],
+              "type": "string"
+            },
+            "SetKeySelector": {
+              "anyOf": [
+                {
+                  "description": "UTF-8 Redis set key shorthand.",
+                  "type": "string"
+                },
+                {
+                  "$ref": "#/$defs/EncodedSetKeyInput",
+                  "description": "Explicitly encoded Redis set key."
+                }
+              ]
+            }
+          },
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "keys": {
+              "description": "One to 1000 source keys. Strings are UTF-8 shorthand; objects can select base64.",
+              "items": {
+                "$ref": "#/$defs/SetKeySelector"
+              },
+              "maxItems": 1000,
+              "minItems": 1,
+              "type": "array"
+            },
+            "limit": {
+              "default": null,
+              "description": "Stop counting after reaching this cardinality. Zero means unlimited.",
+              "format": "uint64",
+              "minimum": 0,
+              "type": [
+                "integer",
+                "null"
+              ]
+            }
+          },
+          "required": [
+            "keys"
+          ],
+          "title": "CardinalityInput",
+          "type": "object"
+        },
+        "name": "redis_sdiffcard",
+        "outputSchema": {
+          "$defs": {
+            "CardinalityOperation": {
+              "enum": [
+                "set_difference",
+                "set_union",
+                "sorted_set_intersection"
+              ],
+              "type": "string"
+            }
+          },
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "approximate": {
+              "type": "boolean"
+            },
+            "cardinality": {
+              "format": "uint64",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "cluster_requires_same_slot": {
+              "type": "boolean"
+            },
+            "limit": {
+              "format": "uint64",
+              "minimum": 0,
+              "type": [
+                "integer",
+                "null"
+              ]
+            },
+            "limit_reached": {
+              "type": "boolean"
+            },
+            "operation": {
+              "$ref": "#/$defs/CardinalityOperation"
+            },
+            "requested_keys": {
+              "format": "uint",
+              "minimum": 0,
+              "type": "integer"
+            }
+          },
+          "required": [
+            "operation",
+            "requested_keys",
+            "cardinality",
+            "approximate",
+            "limit_reached",
+            "cluster_requires_same_slot"
+          ],
+          "title": "CardinalityOutput",
+          "type": "object"
+        },
+        "title": "Count Redis Set Difference"
+      },
+      "required_access": "read_only",
+      "required_module": null,
+      "requires_raw_opt_in": false
+    },
+    {
+      "bundle": "data_structures",
+      "capability_requirements": {
+        "deployment": "any",
+        "minimum_module_version": null,
+        "minimum_redis_version": null,
+        "required_commands": [
+          "SDIFFSTORE"
+        ],
+        "required_module": null
+      },
+      "family": "sets",
+      "name": "redis_sdiffstore",
+      "output_policy": "intrinsically_bounded",
+      "protocol": {
+        "annotations": {},
+        "description": "Permanently overwrite a destination with the difference of 1 to 1000 binary-safe source sets. Returns only the resulting cardinality; every key must share a Redis Cluster slot. Requires full access.",
+        "inputSchema": {
+          "$defs": {
+            "EncodedSetKeyInput": {
+              "additionalProperties": false,
+              "properties": {
+                "key": {
+                  "description": "Redis set key.",
+                  "type": "string"
+                },
+                "key_encoding": {
+                  "$ref": "#/$defs/InputEncoding",
+                  "default": "utf8",
+                  "description": "Encoding of `key`."
+                }
+              },
+              "required": [
+                "key"
+              ],
+              "type": "object"
+            },
+            "InputEncoding": {
+              "enum": [
+                "utf8",
+                "base64"
+              ],
+              "type": "string"
+            },
+            "SetKeySelector": {
+              "anyOf": [
+                {
+                  "description": "UTF-8 Redis set key shorthand.",
+                  "type": "string"
+                },
+                {
+                  "$ref": "#/$defs/EncodedSetKeyInput",
+                  "description": "Explicitly encoded Redis set key."
+                }
+              ]
+            }
+          },
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "destination": {
+              "description": "Destination set key that Redis overwrites.",
+              "type": "string"
+            },
+            "destination_encoding": {
+              "$ref": "#/$defs/InputEncoding",
+              "default": "utf8",
+              "description": "Encoding of `destination`."
+            },
+            "keys": {
+              "description": "One to 1000 source keys. Strings are UTF-8 shorthand; objects can select base64.",
+              "items": {
+                "$ref": "#/$defs/SetKeySelector"
+              },
+              "maxItems": 1000,
+              "minItems": 1,
+              "type": "array"
+            }
+          },
+          "required": [
+            "destination",
+            "keys"
+          ],
+          "title": "SetStoreInput",
+          "type": "object"
+        },
+        "name": "redis_sdiffstore",
+        "outputSchema": {
+          "$defs": {
+            "InputEncoding": {
+              "enum": [
+                "utf8",
+                "base64"
+              ],
+              "type": "string"
+            },
+            "SetStoreOperation": {
+              "enum": [
+                "difference",
+                "intersection",
+                "union"
+              ],
+              "type": "string"
+            }
+          },
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "cluster_requires_same_slot": {
+              "type": "boolean"
+            },
+            "destination": {
+              "type": "string"
+            },
+            "destination_cardinality": {
+              "format": "uint64",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "destination_encoding": {
+              "$ref": "#/$defs/InputEncoding"
+            },
+            "destination_overwritten": {
+              "type": "boolean"
+            },
+            "operation": {
+              "$ref": "#/$defs/SetStoreOperation"
+            },
+            "source_count": {
+              "format": "uint",
+              "minimum": 0,
+              "type": "integer"
+            }
+          },
+          "required": [
+            "operation",
+            "destination",
+            "destination_encoding",
+            "source_count",
+            "destination_cardinality",
+            "destination_overwritten",
+            "cluster_requires_same_slot"
+          ],
+          "title": "SetStoreOutput",
+          "type": "object"
+        },
+        "title": "Store Redis Set Difference"
+      },
+      "required_access": "full",
+      "required_module": null,
+      "requires_raw_opt_in": false
+    },
+    {
       "bundle": "essentials",
       "capability_requirements": {
         "deployment": "any",
@@ -26105,6 +26410,160 @@
         "title": "Read Redis Set Intersection"
       },
       "required_access": "read_only",
+      "required_module": null,
+      "requires_raw_opt_in": false
+    },
+    {
+      "bundle": "data_structures",
+      "capability_requirements": {
+        "deployment": "any",
+        "minimum_module_version": null,
+        "minimum_redis_version": null,
+        "required_commands": [
+          "SINTERSTORE"
+        ],
+        "required_module": null
+      },
+      "family": "sets",
+      "name": "redis_sinterstore",
+      "output_policy": "intrinsically_bounded",
+      "protocol": {
+        "annotations": {
+          "idempotentHint": true
+        },
+        "description": "Permanently overwrite a destination with the intersection of 1 to 1000 binary-safe source sets. Returns only the resulting cardinality; every key must share a Redis Cluster slot. Requires full access.",
+        "inputSchema": {
+          "$defs": {
+            "EncodedSetKeyInput": {
+              "additionalProperties": false,
+              "properties": {
+                "key": {
+                  "description": "Redis set key.",
+                  "type": "string"
+                },
+                "key_encoding": {
+                  "$ref": "#/$defs/InputEncoding",
+                  "default": "utf8",
+                  "description": "Encoding of `key`."
+                }
+              },
+              "required": [
+                "key"
+              ],
+              "type": "object"
+            },
+            "InputEncoding": {
+              "enum": [
+                "utf8",
+                "base64"
+              ],
+              "type": "string"
+            },
+            "SetKeySelector": {
+              "anyOf": [
+                {
+                  "description": "UTF-8 Redis set key shorthand.",
+                  "type": "string"
+                },
+                {
+                  "$ref": "#/$defs/EncodedSetKeyInput",
+                  "description": "Explicitly encoded Redis set key."
+                }
+              ]
+            }
+          },
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "destination": {
+              "description": "Destination set key that Redis overwrites.",
+              "type": "string"
+            },
+            "destination_encoding": {
+              "$ref": "#/$defs/InputEncoding",
+              "default": "utf8",
+              "description": "Encoding of `destination`."
+            },
+            "keys": {
+              "description": "One to 1000 source keys. Strings are UTF-8 shorthand; objects can select base64.",
+              "items": {
+                "$ref": "#/$defs/SetKeySelector"
+              },
+              "maxItems": 1000,
+              "minItems": 1,
+              "type": "array"
+            }
+          },
+          "required": [
+            "destination",
+            "keys"
+          ],
+          "title": "SetStoreInput",
+          "type": "object"
+        },
+        "name": "redis_sinterstore",
+        "outputSchema": {
+          "$defs": {
+            "InputEncoding": {
+              "enum": [
+                "utf8",
+                "base64"
+              ],
+              "type": "string"
+            },
+            "SetStoreOperation": {
+              "enum": [
+                "difference",
+                "intersection",
+                "union"
+              ],
+              "type": "string"
+            }
+          },
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "cluster_requires_same_slot": {
+              "type": "boolean"
+            },
+            "destination": {
+              "type": "string"
+            },
+            "destination_cardinality": {
+              "format": "uint64",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "destination_encoding": {
+              "$ref": "#/$defs/InputEncoding"
+            },
+            "destination_overwritten": {
+              "type": "boolean"
+            },
+            "operation": {
+              "$ref": "#/$defs/SetStoreOperation"
+            },
+            "source_count": {
+              "format": "uint",
+              "minimum": 0,
+              "type": "integer"
+            }
+          },
+          "required": [
+            "operation",
+            "destination",
+            "destination_encoding",
+            "source_count",
+            "destination_cardinality",
+            "destination_overwritten",
+            "cluster_requires_same_slot"
+          ],
+          "title": "SetStoreOutput",
+          "type": "object"
+        },
+        "title": "Store Redis Set Intersection"
+      },
+      "required_access": "full",
       "required_module": null,
       "requires_raw_opt_in": false
     },
@@ -28266,6 +28725,318 @@
         "title": "Read Redis Set Union"
       },
       "required_access": "read_only",
+      "required_module": null,
+      "requires_raw_opt_in": false
+    },
+    {
+      "bundle": "data_structures",
+      "capability_requirements": {
+        "deployment": "any",
+        "minimum_module_version": null,
+        "minimum_redis_version": "8.10.0",
+        "required_commands": [
+          "SUNIONCARD"
+        ],
+        "required_module": null
+      },
+      "family": "sets",
+      "name": "redis_sunioncard",
+      "output_policy": "intrinsically_bounded",
+      "protocol": {
+        "annotations": {
+          "destructiveHint": false,
+          "idempotentHint": true,
+          "readOnlyHint": true
+        },
+        "description": "Count a binary-safe set union across 1 to 1000 same-slot keys without returning member payloads. Exact and HyperLogLog-based approximate modes support an optional stopping limit. Requires Redis 8.10 or newer.",
+        "inputSchema": {
+          "$defs": {
+            "EncodedSetKeyInput": {
+              "additionalProperties": false,
+              "properties": {
+                "key": {
+                  "description": "Redis set key.",
+                  "type": "string"
+                },
+                "key_encoding": {
+                  "$ref": "#/$defs/InputEncoding",
+                  "default": "utf8",
+                  "description": "Encoding of `key`."
+                }
+              },
+              "required": [
+                "key"
+              ],
+              "type": "object"
+            },
+            "InputEncoding": {
+              "enum": [
+                "utf8",
+                "base64"
+              ],
+              "type": "string"
+            },
+            "SetKeySelector": {
+              "anyOf": [
+                {
+                  "description": "UTF-8 Redis set key shorthand.",
+                  "type": "string"
+                },
+                {
+                  "$ref": "#/$defs/EncodedSetKeyInput",
+                  "description": "Explicitly encoded Redis set key."
+                }
+              ]
+            }
+          },
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "approximate": {
+              "default": false,
+              "description": "Use Redis's HyperLogLog-based approximate union cardinality.",
+              "type": "boolean"
+            },
+            "keys": {
+              "description": "One to 1000 set keys. Strings are UTF-8 shorthand; objects can select base64.",
+              "items": {
+                "$ref": "#/$defs/SetKeySelector"
+              },
+              "maxItems": 1000,
+              "minItems": 1,
+              "type": "array"
+            },
+            "limit": {
+              "default": null,
+              "description": "Stop counting after reaching this cardinality. Zero means unlimited.",
+              "format": "uint64",
+              "minimum": 0,
+              "type": [
+                "integer",
+                "null"
+              ]
+            }
+          },
+          "required": [
+            "keys"
+          ],
+          "title": "SunioncardInput",
+          "type": "object"
+        },
+        "name": "redis_sunioncard",
+        "outputSchema": {
+          "$defs": {
+            "CardinalityOperation": {
+              "enum": [
+                "set_difference",
+                "set_union",
+                "sorted_set_intersection"
+              ],
+              "type": "string"
+            }
+          },
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "approximate": {
+              "type": "boolean"
+            },
+            "cardinality": {
+              "format": "uint64",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "cluster_requires_same_slot": {
+              "type": "boolean"
+            },
+            "limit": {
+              "format": "uint64",
+              "minimum": 0,
+              "type": [
+                "integer",
+                "null"
+              ]
+            },
+            "limit_reached": {
+              "type": "boolean"
+            },
+            "operation": {
+              "$ref": "#/$defs/CardinalityOperation"
+            },
+            "requested_keys": {
+              "format": "uint",
+              "minimum": 0,
+              "type": "integer"
+            }
+          },
+          "required": [
+            "operation",
+            "requested_keys",
+            "cardinality",
+            "approximate",
+            "limit_reached",
+            "cluster_requires_same_slot"
+          ],
+          "title": "CardinalityOutput",
+          "type": "object"
+        },
+        "title": "Count Redis Set Union"
+      },
+      "required_access": "read_only",
+      "required_module": null,
+      "requires_raw_opt_in": false
+    },
+    {
+      "bundle": "data_structures",
+      "capability_requirements": {
+        "deployment": "any",
+        "minimum_module_version": null,
+        "minimum_redis_version": null,
+        "required_commands": [
+          "SUNIONSTORE"
+        ],
+        "required_module": null
+      },
+      "family": "sets",
+      "name": "redis_sunionstore",
+      "output_policy": "intrinsically_bounded",
+      "protocol": {
+        "annotations": {
+          "idempotentHint": true
+        },
+        "description": "Permanently overwrite a destination with the union of 1 to 1000 binary-safe source sets. Returns only the resulting cardinality; every key must share a Redis Cluster slot. Requires full access.",
+        "inputSchema": {
+          "$defs": {
+            "EncodedSetKeyInput": {
+              "additionalProperties": false,
+              "properties": {
+                "key": {
+                  "description": "Redis set key.",
+                  "type": "string"
+                },
+                "key_encoding": {
+                  "$ref": "#/$defs/InputEncoding",
+                  "default": "utf8",
+                  "description": "Encoding of `key`."
+                }
+              },
+              "required": [
+                "key"
+              ],
+              "type": "object"
+            },
+            "InputEncoding": {
+              "enum": [
+                "utf8",
+                "base64"
+              ],
+              "type": "string"
+            },
+            "SetKeySelector": {
+              "anyOf": [
+                {
+                  "description": "UTF-8 Redis set key shorthand.",
+                  "type": "string"
+                },
+                {
+                  "$ref": "#/$defs/EncodedSetKeyInput",
+                  "description": "Explicitly encoded Redis set key."
+                }
+              ]
+            }
+          },
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "destination": {
+              "description": "Destination set key that Redis overwrites.",
+              "type": "string"
+            },
+            "destination_encoding": {
+              "$ref": "#/$defs/InputEncoding",
+              "default": "utf8",
+              "description": "Encoding of `destination`."
+            },
+            "keys": {
+              "description": "One to 1000 source keys. Strings are UTF-8 shorthand; objects can select base64.",
+              "items": {
+                "$ref": "#/$defs/SetKeySelector"
+              },
+              "maxItems": 1000,
+              "minItems": 1,
+              "type": "array"
+            }
+          },
+          "required": [
+            "destination",
+            "keys"
+          ],
+          "title": "SetStoreInput",
+          "type": "object"
+        },
+        "name": "redis_sunionstore",
+        "outputSchema": {
+          "$defs": {
+            "InputEncoding": {
+              "enum": [
+                "utf8",
+                "base64"
+              ],
+              "type": "string"
+            },
+            "SetStoreOperation": {
+              "enum": [
+                "difference",
+                "intersection",
+                "union"
+              ],
+              "type": "string"
+            }
+          },
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "cluster_requires_same_slot": {
+              "type": "boolean"
+            },
+            "destination": {
+              "type": "string"
+            },
+            "destination_cardinality": {
+              "format": "uint64",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "destination_encoding": {
+              "$ref": "#/$defs/InputEncoding"
+            },
+            "destination_overwritten": {
+              "type": "boolean"
+            },
+            "operation": {
+              "$ref": "#/$defs/SetStoreOperation"
+            },
+            "source_count": {
+              "format": "uint",
+              "minimum": 0,
+              "type": "integer"
+            }
+          },
+          "required": [
+            "operation",
+            "destination",
+            "destination_encoding",
+            "source_count",
+            "destination_cardinality",
+            "destination_overwritten",
+            "cluster_requires_same_slot"
+          ],
+          "title": "SetStoreOutput",
+          "type": "object"
+        },
+        "title": "Store Redis Set Union"
+      },
+      "required_access": "full",
       "required_module": null,
       "requires_raw_opt_in": false
     },
@@ -35679,6 +36450,181 @@
       "capability_requirements": {
         "deployment": "any",
         "minimum_module_version": null,
+        "minimum_redis_version": "6.2.0",
+        "required_commands": [
+          "ZDIFFSTORE"
+        ],
+        "required_module": null
+      },
+      "family": "sorted-sets",
+      "name": "redis_zdiffstore",
+      "output_policy": "intrinsically_bounded",
+      "protocol": {
+        "annotations": {},
+        "description": "Permanently overwrite a destination with the difference of 1 to 1000 binary-safe source sorted sets. Returns only the destination cardinality; every key must share a Redis Cluster slot. Requires Redis 6.2+ and full access.",
+        "inputSchema": {
+          "$defs": {
+            "EncodedSetKeyInput": {
+              "additionalProperties": false,
+              "properties": {
+                "key": {
+                  "description": "Redis set key.",
+                  "type": "string"
+                },
+                "key_encoding": {
+                  "$ref": "#/$defs/InputEncoding",
+                  "default": "utf8",
+                  "description": "Encoding of `key`."
+                }
+              },
+              "required": [
+                "key"
+              ],
+              "type": "object"
+            },
+            "InputEncoding": {
+              "enum": [
+                "utf8",
+                "base64"
+              ],
+              "type": "string"
+            },
+            "SetKeySelector": {
+              "anyOf": [
+                {
+                  "description": "UTF-8 Redis set key shorthand.",
+                  "type": "string"
+                },
+                {
+                  "$ref": "#/$defs/EncodedSetKeyInput",
+                  "description": "Explicitly encoded Redis set key."
+                }
+              ]
+            }
+          },
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "destination": {
+              "description": "Destination sorted-set key that Redis overwrites.",
+              "type": "string"
+            },
+            "destination_encoding": {
+              "$ref": "#/$defs/InputEncoding",
+              "default": "utf8",
+              "description": "Encoding of `destination`."
+            },
+            "keys": {
+              "description": "One to 1000 source sorted-set keys. Strings are UTF-8 shorthand; objects can select base64.",
+              "items": {
+                "$ref": "#/$defs/SetKeySelector"
+              },
+              "maxItems": 1000,
+              "minItems": 1,
+              "type": "array"
+            }
+          },
+          "required": [
+            "destination",
+            "keys"
+          ],
+          "title": "ZdiffstoreInput",
+          "type": "object"
+        },
+        "name": "redis_zdiffstore",
+        "outputSchema": {
+          "$defs": {
+            "InputEncoding": {
+              "enum": [
+                "utf8",
+                "base64"
+              ],
+              "type": "string"
+            },
+            "ZsetAggregate": {
+              "enum": [
+                "sum",
+                "min",
+                "max",
+                "count"
+              ],
+              "type": "string"
+            },
+            "ZsetStoreOperation": {
+              "enum": [
+                "difference",
+                "intersection",
+                "union"
+              ],
+              "type": "string"
+            }
+          },
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "aggregate": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/ZsetAggregate"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "cluster_requires_same_slot": {
+              "type": "boolean"
+            },
+            "destination": {
+              "type": "string"
+            },
+            "destination_cardinality": {
+              "format": "uint64",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "destination_encoding": {
+              "$ref": "#/$defs/InputEncoding"
+            },
+            "destination_overwritten": {
+              "type": "boolean"
+            },
+            "operation": {
+              "$ref": "#/$defs/ZsetStoreOperation"
+            },
+            "source_count": {
+              "format": "uint",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "weighted": {
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "operation",
+            "destination",
+            "destination_encoding",
+            "source_count",
+            "weighted",
+            "destination_cardinality",
+            "destination_overwritten",
+            "cluster_requires_same_slot"
+          ],
+          "title": "ZsetStoreOutput",
+          "type": "object"
+        },
+        "title": "Store Redis Sorted Set Difference"
+      },
+      "required_access": "full",
+      "required_module": null,
+      "requires_raw_opt_in": false
+    },
+    {
+      "bundle": "data_structures",
+      "capability_requirements": {
+        "deployment": "any",
+        "minimum_module_version": null,
         "minimum_redis_version": null,
         "required_commands": [
           "ZINCRBY"
@@ -35793,6 +36739,373 @@
         "title": "Increment Redis Sorted Set Score"
       },
       "required_access": "read_write",
+      "required_module": null,
+      "requires_raw_opt_in": false
+    },
+    {
+      "bundle": "data_structures",
+      "capability_requirements": {
+        "deployment": "any",
+        "minimum_module_version": null,
+        "minimum_redis_version": "7.0.0",
+        "required_commands": [
+          "ZINTERCARD"
+        ],
+        "required_module": null
+      },
+      "family": "sorted-sets",
+      "name": "redis_zintercard",
+      "output_policy": "intrinsically_bounded",
+      "protocol": {
+        "annotations": {
+          "destructiveHint": false,
+          "idempotentHint": true,
+          "readOnlyHint": true
+        },
+        "description": "Count the intersection of 1 to 1000 binary-safe, same-slot sorted-set keys without materializing members or scores. An optional limit stops work once reached. Requires Redis 7 or newer.",
+        "inputSchema": {
+          "$defs": {
+            "EncodedSetKeyInput": {
+              "additionalProperties": false,
+              "properties": {
+                "key": {
+                  "description": "Redis set key.",
+                  "type": "string"
+                },
+                "key_encoding": {
+                  "$ref": "#/$defs/InputEncoding",
+                  "default": "utf8",
+                  "description": "Encoding of `key`."
+                }
+              },
+              "required": [
+                "key"
+              ],
+              "type": "object"
+            },
+            "InputEncoding": {
+              "enum": [
+                "utf8",
+                "base64"
+              ],
+              "type": "string"
+            },
+            "SetKeySelector": {
+              "anyOf": [
+                {
+                  "description": "UTF-8 Redis set key shorthand.",
+                  "type": "string"
+                },
+                {
+                  "$ref": "#/$defs/EncodedSetKeyInput",
+                  "description": "Explicitly encoded Redis set key."
+                }
+              ]
+            }
+          },
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "keys": {
+              "description": "One to 1000 source keys. Strings are UTF-8 shorthand; objects can select base64.",
+              "items": {
+                "$ref": "#/$defs/SetKeySelector"
+              },
+              "maxItems": 1000,
+              "minItems": 1,
+              "type": "array"
+            },
+            "limit": {
+              "default": null,
+              "description": "Stop counting after reaching this cardinality. Zero means unlimited.",
+              "format": "uint64",
+              "minimum": 0,
+              "type": [
+                "integer",
+                "null"
+              ]
+            }
+          },
+          "required": [
+            "keys"
+          ],
+          "title": "CardinalityInput",
+          "type": "object"
+        },
+        "name": "redis_zintercard",
+        "outputSchema": {
+          "$defs": {
+            "CardinalityOperation": {
+              "enum": [
+                "set_difference",
+                "set_union",
+                "sorted_set_intersection"
+              ],
+              "type": "string"
+            }
+          },
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "approximate": {
+              "type": "boolean"
+            },
+            "cardinality": {
+              "format": "uint64",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "cluster_requires_same_slot": {
+              "type": "boolean"
+            },
+            "limit": {
+              "format": "uint64",
+              "minimum": 0,
+              "type": [
+                "integer",
+                "null"
+              ]
+            },
+            "limit_reached": {
+              "type": "boolean"
+            },
+            "operation": {
+              "$ref": "#/$defs/CardinalityOperation"
+            },
+            "requested_keys": {
+              "format": "uint",
+              "minimum": 0,
+              "type": "integer"
+            }
+          },
+          "required": [
+            "operation",
+            "requested_keys",
+            "cardinality",
+            "approximate",
+            "limit_reached",
+            "cluster_requires_same_slot"
+          ],
+          "title": "CardinalityOutput",
+          "type": "object"
+        },
+        "title": "Count Redis Sorted Set Intersection"
+      },
+      "required_access": "read_only",
+      "required_module": null,
+      "requires_raw_opt_in": false
+    },
+    {
+      "bundle": "data_structures",
+      "capability_requirements": {
+        "deployment": "any",
+        "minimum_module_version": null,
+        "minimum_redis_version": null,
+        "required_commands": [
+          "ZINTERSTORE"
+        ],
+        "required_module": null
+      },
+      "family": "sorted-sets",
+      "name": "redis_zinterstore",
+      "output_policy": "intrinsically_bounded",
+      "protocol": {
+        "annotations": {},
+        "description": "Permanently overwrite a destination with the intersection of 1 to 1000 binary-safe sorted sets. Sources support finite score weights and sum/min/max aggregation, plus count on Redis 8.8+. Returns only destination cardinality; every key must share a Redis Cluster slot. Requires full access.",
+        "inputSchema": {
+          "$defs": {
+            "InputEncoding": {
+              "enum": [
+                "utf8",
+                "base64"
+              ],
+              "type": "string"
+            },
+            "RedisDecimalInput": {
+              "anyOf": [
+                {
+                  "description": "JSON number shorthand. Use a string when every decimal digit must be preserved.",
+                  "format": "double",
+                  "type": "number"
+                },
+                {
+                  "description": "Exact finite Redis decimal string.",
+                  "type": "string"
+                }
+              ]
+            },
+            "WeightedZsetKeyInput": {
+              "additionalProperties": false,
+              "properties": {
+                "key": {
+                  "description": "Redis sorted-set key.",
+                  "type": "string"
+                },
+                "key_encoding": {
+                  "$ref": "#/$defs/InputEncoding",
+                  "default": "utf8",
+                  "description": "Encoding of `key`."
+                },
+                "weight": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/$defs/RedisDecimalInput"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ],
+                  "default": null,
+                  "description": "Optional finite score multiplier. Omitted weights default to one."
+                }
+              },
+              "required": [
+                "key"
+              ],
+              "type": "object"
+            },
+            "WeightedZsetKeySelector": {
+              "anyOf": [
+                {
+                  "description": "UTF-8 sorted-set key shorthand with the default weight of one.",
+                  "type": "string"
+                },
+                {
+                  "$ref": "#/$defs/WeightedZsetKeyInput",
+                  "description": "Binary-safe key with an optional exact weight."
+                }
+              ]
+            },
+            "ZsetAggregate": {
+              "enum": [
+                "sum",
+                "min",
+                "max",
+                "count"
+              ],
+              "type": "string"
+            }
+          },
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "aggregate": {
+              "$ref": "#/$defs/ZsetAggregate",
+              "default": "sum",
+              "description": "How scores from matching members are combined. `count` requires Redis 8.8+."
+            },
+            "destination": {
+              "description": "Destination sorted-set key that Redis overwrites.",
+              "type": "string"
+            },
+            "destination_encoding": {
+              "$ref": "#/$defs/InputEncoding",
+              "default": "utf8",
+              "description": "Encoding of `destination`."
+            },
+            "sources": {
+              "description": "One to 1000 sorted-set sources, each with an optional finite score weight.",
+              "items": {
+                "$ref": "#/$defs/WeightedZsetKeySelector"
+              },
+              "maxItems": 1000,
+              "minItems": 1,
+              "type": "array"
+            }
+          },
+          "required": [
+            "destination",
+            "sources"
+          ],
+          "title": "WeightedZsetStoreInput",
+          "type": "object"
+        },
+        "name": "redis_zinterstore",
+        "outputSchema": {
+          "$defs": {
+            "InputEncoding": {
+              "enum": [
+                "utf8",
+                "base64"
+              ],
+              "type": "string"
+            },
+            "ZsetAggregate": {
+              "enum": [
+                "sum",
+                "min",
+                "max",
+                "count"
+              ],
+              "type": "string"
+            },
+            "ZsetStoreOperation": {
+              "enum": [
+                "difference",
+                "intersection",
+                "union"
+              ],
+              "type": "string"
+            }
+          },
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "aggregate": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/ZsetAggregate"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "cluster_requires_same_slot": {
+              "type": "boolean"
+            },
+            "destination": {
+              "type": "string"
+            },
+            "destination_cardinality": {
+              "format": "uint64",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "destination_encoding": {
+              "$ref": "#/$defs/InputEncoding"
+            },
+            "destination_overwritten": {
+              "type": "boolean"
+            },
+            "operation": {
+              "$ref": "#/$defs/ZsetStoreOperation"
+            },
+            "source_count": {
+              "format": "uint",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "weighted": {
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "operation",
+            "destination",
+            "destination_encoding",
+            "source_count",
+            "weighted",
+            "destination_cardinality",
+            "destination_overwritten",
+            "cluster_requires_same_slot"
+          ],
+          "title": "ZsetStoreOutput",
+          "type": "object"
+        },
+        "title": "Store Redis Sorted Set Intersection"
+      },
+      "required_access": "full",
       "required_module": null,
       "requires_raw_opt_in": false
     },
@@ -37022,6 +38335,664 @@
       "capability_requirements": {
         "deployment": "any",
         "minimum_module_version": null,
+        "minimum_redis_version": "6.2.0",
+        "required_commands": [
+          "ZRANGESTORE"
+        ],
+        "required_module": null
+      },
+      "family": "sorted-sets",
+      "name": "redis_zrangestore",
+      "output_policy": "intrinsically_bounded",
+      "protocol": {
+        "annotations": {},
+        "description": "Permanently overwrite a destination with an explicitly bounded rank, score, or binary lexicographic range from one sorted set. Source and destination must share a Redis Cluster slot. Requires Redis 6.2+ and full access.",
+        "inputSchema": {
+          "$defs": {
+            "InputEncoding": {
+              "enum": [
+                "utf8",
+                "base64"
+              ],
+              "type": "string"
+            },
+            "RedisDecimalInput": {
+              "anyOf": [
+                {
+                  "description": "JSON number shorthand. Use a string when every decimal digit must be preserved.",
+                  "format": "double",
+                  "type": "number"
+                },
+                {
+                  "description": "Exact finite Redis decimal string.",
+                  "type": "string"
+                }
+              ]
+            },
+            "ZlexBound": {
+              "oneOf": [
+                {
+                  "additionalProperties": false,
+                  "description": "Negative infinity (`-`).",
+                  "properties": {
+                    "kind": {
+                      "const": "negative_infinity",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "kind"
+                  ],
+                  "type": "object"
+                },
+                {
+                  "additionalProperties": false,
+                  "description": "Positive infinity (`+`).",
+                  "properties": {
+                    "kind": {
+                      "const": "positive_infinity",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "kind"
+                  ],
+                  "type": "object"
+                },
+                {
+                  "additionalProperties": false,
+                  "description": "Include this binary-safe member value.",
+                  "properties": {
+                    "encoding": {
+                      "$ref": "#/$defs/InputEncoding",
+                      "default": "utf8"
+                    },
+                    "kind": {
+                      "const": "inclusive",
+                      "type": "string"
+                    },
+                    "value": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "kind",
+                    "value"
+                  ],
+                  "type": "object"
+                },
+                {
+                  "additionalProperties": false,
+                  "description": "Exclude this binary-safe member value.",
+                  "properties": {
+                    "encoding": {
+                      "$ref": "#/$defs/InputEncoding",
+                      "default": "utf8"
+                    },
+                    "kind": {
+                      "const": "exclusive",
+                      "type": "string"
+                    },
+                    "value": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "kind",
+                    "value"
+                  ],
+                  "type": "object"
+                }
+              ]
+            },
+            "ZrangeSpec": {
+              "oneOf": [
+                {
+                  "additionalProperties": false,
+                  "description": "Inclusive zero-based ranks. Negative ranks count from the end.",
+                  "properties": {
+                    "kind": {
+                      "const": "rank",
+                      "type": "string"
+                    },
+                    "start": {
+                      "default": 0,
+                      "format": "int64",
+                      "type": "integer"
+                    },
+                    "stop": {
+                      "default": 99,
+                      "format": "int64",
+                      "type": "integer"
+                    }
+                  },
+                  "required": [
+                    "kind"
+                  ],
+                  "type": "object"
+                },
+                {
+                  "additionalProperties": false,
+                  "description": "Score bounds. Inputs remain in natural minimum/maximum order when `rev` is true.",
+                  "properties": {
+                    "kind": {
+                      "const": "score",
+                      "type": "string"
+                    },
+                    "limit": {
+                      "default": 100,
+                      "description": "Maximum members to return.",
+                      "format": "uint",
+                      "maximum": 1000,
+                      "minimum": 1,
+                      "type": "integer"
+                    },
+                    "max": {
+                      "$ref": "#/$defs/ZscoreBound"
+                    },
+                    "min": {
+                      "$ref": "#/$defs/ZscoreBound"
+                    },
+                    "offset": {
+                      "default": 0,
+                      "description": "Number of matching members to skip. Follow `page.continuation.offset`.",
+                      "format": "uint64",
+                      "minimum": 0,
+                      "type": "integer"
+                    }
+                  },
+                  "required": [
+                    "kind",
+                    "min",
+                    "max"
+                  ],
+                  "type": "object"
+                },
+                {
+                  "additionalProperties": false,
+                  "description": "Binary lexicographic bounds. This is meaningful when members share the same score.",
+                  "properties": {
+                    "kind": {
+                      "const": "lex",
+                      "type": "string"
+                    },
+                    "limit": {
+                      "default": 100,
+                      "description": "Maximum members to return.",
+                      "format": "uint",
+                      "maximum": 1000,
+                      "minimum": 1,
+                      "type": "integer"
+                    },
+                    "max": {
+                      "$ref": "#/$defs/ZlexBound"
+                    },
+                    "min": {
+                      "$ref": "#/$defs/ZlexBound"
+                    },
+                    "offset": {
+                      "default": 0,
+                      "description": "Number of matching members to skip. Follow `page.continuation.offset`.",
+                      "format": "uint64",
+                      "minimum": 0,
+                      "type": "integer"
+                    }
+                  },
+                  "required": [
+                    "kind",
+                    "min",
+                    "max"
+                  ],
+                  "type": "object"
+                }
+              ]
+            },
+            "ZscoreBound": {
+              "oneOf": [
+                {
+                  "additionalProperties": false,
+                  "description": "Negative infinity (`-inf`).",
+                  "properties": {
+                    "kind": {
+                      "const": "negative_infinity",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "kind"
+                  ],
+                  "type": "object"
+                },
+                {
+                  "additionalProperties": false,
+                  "description": "Positive infinity (`+inf`).",
+                  "properties": {
+                    "kind": {
+                      "const": "positive_infinity",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "kind"
+                  ],
+                  "type": "object"
+                },
+                {
+                  "additionalProperties": false,
+                  "description": "Include this finite score.",
+                  "properties": {
+                    "kind": {
+                      "const": "inclusive",
+                      "type": "string"
+                    },
+                    "value": {
+                      "$ref": "#/$defs/RedisDecimalInput"
+                    }
+                  },
+                  "required": [
+                    "kind",
+                    "value"
+                  ],
+                  "type": "object"
+                },
+                {
+                  "additionalProperties": false,
+                  "description": "Exclude this finite score.",
+                  "properties": {
+                    "kind": {
+                      "const": "exclusive",
+                      "type": "string"
+                    },
+                    "value": {
+                      "$ref": "#/$defs/RedisDecimalInput"
+                    }
+                  },
+                  "required": [
+                    "kind",
+                    "value"
+                  ],
+                  "type": "object"
+                }
+              ]
+            }
+          },
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "destination": {
+              "description": "Destination sorted-set key that Redis overwrites.",
+              "type": "string"
+            },
+            "destination_encoding": {
+              "$ref": "#/$defs/InputEncoding",
+              "default": "utf8",
+              "description": "Encoding of `destination`."
+            },
+            "range": {
+              "$ref": "#/$defs/ZrangeSpec",
+              "default": {
+                "kind": "rank",
+                "start": 0,
+                "stop": 99
+              },
+              "description": "Explicit bounded rank, score, or lexicographic range. Defaults to ranks 0 through 99."
+            },
+            "rev": {
+              "default": false,
+              "description": "Store highest scores or lexicographically greatest members first.",
+              "type": "boolean"
+            },
+            "source": {
+              "description": "Source sorted-set key.",
+              "type": "string"
+            },
+            "source_encoding": {
+              "$ref": "#/$defs/InputEncoding",
+              "default": "utf8",
+              "description": "Encoding of `source`."
+            }
+          },
+          "required": [
+            "destination",
+            "source"
+          ],
+          "title": "ZrangestoreInput",
+          "type": "object"
+        },
+        "name": "redis_zrangestore",
+        "outputSchema": {
+          "$defs": {
+            "InputEncoding": {
+              "enum": [
+                "utf8",
+                "base64"
+              ],
+              "type": "string"
+            },
+            "RedisDecimalInput": {
+              "anyOf": [
+                {
+                  "description": "JSON number shorthand. Use a string when every decimal digit must be preserved.",
+                  "format": "double",
+                  "type": "number"
+                },
+                {
+                  "description": "Exact finite Redis decimal string.",
+                  "type": "string"
+                }
+              ]
+            },
+            "ZlexBound": {
+              "oneOf": [
+                {
+                  "additionalProperties": false,
+                  "description": "Negative infinity (`-`).",
+                  "properties": {
+                    "kind": {
+                      "const": "negative_infinity",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "kind"
+                  ],
+                  "type": "object"
+                },
+                {
+                  "additionalProperties": false,
+                  "description": "Positive infinity (`+`).",
+                  "properties": {
+                    "kind": {
+                      "const": "positive_infinity",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "kind"
+                  ],
+                  "type": "object"
+                },
+                {
+                  "additionalProperties": false,
+                  "description": "Include this binary-safe member value.",
+                  "properties": {
+                    "encoding": {
+                      "$ref": "#/$defs/InputEncoding",
+                      "default": "utf8"
+                    },
+                    "kind": {
+                      "const": "inclusive",
+                      "type": "string"
+                    },
+                    "value": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "kind",
+                    "value"
+                  ],
+                  "type": "object"
+                },
+                {
+                  "additionalProperties": false,
+                  "description": "Exclude this binary-safe member value.",
+                  "properties": {
+                    "encoding": {
+                      "$ref": "#/$defs/InputEncoding",
+                      "default": "utf8"
+                    },
+                    "kind": {
+                      "const": "exclusive",
+                      "type": "string"
+                    },
+                    "value": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "kind",
+                    "value"
+                  ],
+                  "type": "object"
+                }
+              ]
+            },
+            "ZrangeSpec": {
+              "oneOf": [
+                {
+                  "additionalProperties": false,
+                  "description": "Inclusive zero-based ranks. Negative ranks count from the end.",
+                  "properties": {
+                    "kind": {
+                      "const": "rank",
+                      "type": "string"
+                    },
+                    "start": {
+                      "default": 0,
+                      "format": "int64",
+                      "type": "integer"
+                    },
+                    "stop": {
+                      "default": 99,
+                      "format": "int64",
+                      "type": "integer"
+                    }
+                  },
+                  "required": [
+                    "kind"
+                  ],
+                  "type": "object"
+                },
+                {
+                  "additionalProperties": false,
+                  "description": "Score bounds. Inputs remain in natural minimum/maximum order when `rev` is true.",
+                  "properties": {
+                    "kind": {
+                      "const": "score",
+                      "type": "string"
+                    },
+                    "limit": {
+                      "default": 100,
+                      "description": "Maximum members to return.",
+                      "format": "uint",
+                      "maximum": 1000,
+                      "minimum": 1,
+                      "type": "integer"
+                    },
+                    "max": {
+                      "$ref": "#/$defs/ZscoreBound"
+                    },
+                    "min": {
+                      "$ref": "#/$defs/ZscoreBound"
+                    },
+                    "offset": {
+                      "default": 0,
+                      "description": "Number of matching members to skip. Follow `page.continuation.offset`.",
+                      "format": "uint64",
+                      "minimum": 0,
+                      "type": "integer"
+                    }
+                  },
+                  "required": [
+                    "kind",
+                    "min",
+                    "max"
+                  ],
+                  "type": "object"
+                },
+                {
+                  "additionalProperties": false,
+                  "description": "Binary lexicographic bounds. This is meaningful when members share the same score.",
+                  "properties": {
+                    "kind": {
+                      "const": "lex",
+                      "type": "string"
+                    },
+                    "limit": {
+                      "default": 100,
+                      "description": "Maximum members to return.",
+                      "format": "uint",
+                      "maximum": 1000,
+                      "minimum": 1,
+                      "type": "integer"
+                    },
+                    "max": {
+                      "$ref": "#/$defs/ZlexBound"
+                    },
+                    "min": {
+                      "$ref": "#/$defs/ZlexBound"
+                    },
+                    "offset": {
+                      "default": 0,
+                      "description": "Number of matching members to skip. Follow `page.continuation.offset`.",
+                      "format": "uint64",
+                      "minimum": 0,
+                      "type": "integer"
+                    }
+                  },
+                  "required": [
+                    "kind",
+                    "min",
+                    "max"
+                  ],
+                  "type": "object"
+                }
+              ]
+            },
+            "ZscoreBound": {
+              "oneOf": [
+                {
+                  "additionalProperties": false,
+                  "description": "Negative infinity (`-inf`).",
+                  "properties": {
+                    "kind": {
+                      "const": "negative_infinity",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "kind"
+                  ],
+                  "type": "object"
+                },
+                {
+                  "additionalProperties": false,
+                  "description": "Positive infinity (`+inf`).",
+                  "properties": {
+                    "kind": {
+                      "const": "positive_infinity",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "kind"
+                  ],
+                  "type": "object"
+                },
+                {
+                  "additionalProperties": false,
+                  "description": "Include this finite score.",
+                  "properties": {
+                    "kind": {
+                      "const": "inclusive",
+                      "type": "string"
+                    },
+                    "value": {
+                      "$ref": "#/$defs/RedisDecimalInput"
+                    }
+                  },
+                  "required": [
+                    "kind",
+                    "value"
+                  ],
+                  "type": "object"
+                },
+                {
+                  "additionalProperties": false,
+                  "description": "Exclude this finite score.",
+                  "properties": {
+                    "kind": {
+                      "const": "exclusive",
+                      "type": "string"
+                    },
+                    "value": {
+                      "$ref": "#/$defs/RedisDecimalInput"
+                    }
+                  },
+                  "required": [
+                    "kind",
+                    "value"
+                  ],
+                  "type": "object"
+                }
+              ]
+            }
+          },
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "cluster_requires_same_slot": {
+              "type": "boolean"
+            },
+            "destination": {
+              "type": "string"
+            },
+            "destination_cardinality": {
+              "format": "uint64",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "destination_encoding": {
+              "$ref": "#/$defs/InputEncoding"
+            },
+            "destination_overwritten": {
+              "type": "boolean"
+            },
+            "range": {
+              "$ref": "#/$defs/ZrangeSpec"
+            },
+            "requested_maximum": {
+              "format": "uint",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "rev": {
+              "type": "boolean"
+            },
+            "source": {
+              "type": "string"
+            },
+            "source_encoding": {
+              "$ref": "#/$defs/InputEncoding"
+            }
+          },
+          "required": [
+            "destination",
+            "destination_encoding",
+            "source",
+            "source_encoding",
+            "range",
+            "rev",
+            "requested_maximum",
+            "destination_cardinality",
+            "destination_overwritten",
+            "cluster_requires_same_slot"
+          ],
+          "title": "ZrangestoreOutput",
+          "type": "object"
+        },
+        "title": "Store Redis Sorted Set Range"
+      },
+      "required_access": "full",
+      "required_module": null,
+      "requires_raw_opt_in": false
+    },
+    {
+      "bundle": "data_structures",
+      "capability_requirements": {
+        "deployment": "any",
+        "minimum_module_version": null,
         "minimum_redis_version": null,
         "required_commands": [
           "ZRANK",
@@ -38001,6 +39972,220 @@
         "title": "Read Redis Sorted Set Score"
       },
       "required_access": "read_only",
+      "required_module": null,
+      "requires_raw_opt_in": false
+    },
+    {
+      "bundle": "data_structures",
+      "capability_requirements": {
+        "deployment": "any",
+        "minimum_module_version": null,
+        "minimum_redis_version": null,
+        "required_commands": [
+          "ZUNIONSTORE"
+        ],
+        "required_module": null
+      },
+      "family": "sorted-sets",
+      "name": "redis_zunionstore",
+      "output_policy": "intrinsically_bounded",
+      "protocol": {
+        "annotations": {},
+        "description": "Permanently overwrite a destination with the union of 1 to 1000 binary-safe sorted sets. Sources support finite score weights and sum/min/max aggregation, plus count on Redis 8.8+. Returns only destination cardinality; every key must share a Redis Cluster slot. Requires full access.",
+        "inputSchema": {
+          "$defs": {
+            "InputEncoding": {
+              "enum": [
+                "utf8",
+                "base64"
+              ],
+              "type": "string"
+            },
+            "RedisDecimalInput": {
+              "anyOf": [
+                {
+                  "description": "JSON number shorthand. Use a string when every decimal digit must be preserved.",
+                  "format": "double",
+                  "type": "number"
+                },
+                {
+                  "description": "Exact finite Redis decimal string.",
+                  "type": "string"
+                }
+              ]
+            },
+            "WeightedZsetKeyInput": {
+              "additionalProperties": false,
+              "properties": {
+                "key": {
+                  "description": "Redis sorted-set key.",
+                  "type": "string"
+                },
+                "key_encoding": {
+                  "$ref": "#/$defs/InputEncoding",
+                  "default": "utf8",
+                  "description": "Encoding of `key`."
+                },
+                "weight": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/$defs/RedisDecimalInput"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ],
+                  "default": null,
+                  "description": "Optional finite score multiplier. Omitted weights default to one."
+                }
+              },
+              "required": [
+                "key"
+              ],
+              "type": "object"
+            },
+            "WeightedZsetKeySelector": {
+              "anyOf": [
+                {
+                  "description": "UTF-8 sorted-set key shorthand with the default weight of one.",
+                  "type": "string"
+                },
+                {
+                  "$ref": "#/$defs/WeightedZsetKeyInput",
+                  "description": "Binary-safe key with an optional exact weight."
+                }
+              ]
+            },
+            "ZsetAggregate": {
+              "enum": [
+                "sum",
+                "min",
+                "max",
+                "count"
+              ],
+              "type": "string"
+            }
+          },
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "aggregate": {
+              "$ref": "#/$defs/ZsetAggregate",
+              "default": "sum",
+              "description": "How scores from matching members are combined. `count` requires Redis 8.8+."
+            },
+            "destination": {
+              "description": "Destination sorted-set key that Redis overwrites.",
+              "type": "string"
+            },
+            "destination_encoding": {
+              "$ref": "#/$defs/InputEncoding",
+              "default": "utf8",
+              "description": "Encoding of `destination`."
+            },
+            "sources": {
+              "description": "One to 1000 sorted-set sources, each with an optional finite score weight.",
+              "items": {
+                "$ref": "#/$defs/WeightedZsetKeySelector"
+              },
+              "maxItems": 1000,
+              "minItems": 1,
+              "type": "array"
+            }
+          },
+          "required": [
+            "destination",
+            "sources"
+          ],
+          "title": "WeightedZsetStoreInput",
+          "type": "object"
+        },
+        "name": "redis_zunionstore",
+        "outputSchema": {
+          "$defs": {
+            "InputEncoding": {
+              "enum": [
+                "utf8",
+                "base64"
+              ],
+              "type": "string"
+            },
+            "ZsetAggregate": {
+              "enum": [
+                "sum",
+                "min",
+                "max",
+                "count"
+              ],
+              "type": "string"
+            },
+            "ZsetStoreOperation": {
+              "enum": [
+                "difference",
+                "intersection",
+                "union"
+              ],
+              "type": "string"
+            }
+          },
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "aggregate": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/ZsetAggregate"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "cluster_requires_same_slot": {
+              "type": "boolean"
+            },
+            "destination": {
+              "type": "string"
+            },
+            "destination_cardinality": {
+              "format": "uint64",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "destination_encoding": {
+              "$ref": "#/$defs/InputEncoding"
+            },
+            "destination_overwritten": {
+              "type": "boolean"
+            },
+            "operation": {
+              "$ref": "#/$defs/ZsetStoreOperation"
+            },
+            "source_count": {
+              "format": "uint",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "weighted": {
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "operation",
+            "destination",
+            "destination_encoding",
+            "source_count",
+            "weighted",
+            "destination_cardinality",
+            "destination_overwritten",
+            "cluster_requires_same_slot"
+          ],
+          "title": "ZsetStoreOutput",
+          "type": "object"
+        },
+        "title": "Store Redis Sorted Set Union"
+      },
+      "required_access": "full",
       "required_module": null,
       "requires_raw_opt_in": false
     }
@@ -39800,6 +41985,24 @@
       "ordering": "byte_sorted",
       "requested_keys": 2
     },
+    "redis_sdiffcard": {
+      "approximate": false,
+      "cardinality": 2,
+      "cluster_requires_same_slot": true,
+      "limit": 10,
+      "limit_reached": false,
+      "operation": "set_difference",
+      "requested_keys": 2
+    },
+    "redis_sdiffstore": {
+      "cluster_requires_same_slot": true,
+      "destination": "out:{set}",
+      "destination_cardinality": 2,
+      "destination_encoding": "utf8",
+      "destination_overwritten": true,
+      "operation": "difference",
+      "source_count": 2
+    },
     "redis_set": {
       "applied": true,
       "condition": null,
@@ -39840,6 +42043,15 @@
       "operation": "intersection",
       "ordering": "byte_sorted",
       "requested_keys": 2
+    },
+    "redis_sinterstore": {
+      "cluster_requires_same_slot": true,
+      "destination": "out:{set}",
+      "destination_cardinality": 2,
+      "destination_encoding": "utf8",
+      "destination_overwritten": true,
+      "operation": "intersection",
+      "source_count": 2
     },
     "redis_sismember": {
       "is_member": true,
@@ -40025,6 +42237,24 @@
       "operation": "union",
       "ordering": "byte_sorted",
       "requested_keys": 2
+    },
+    "redis_sunioncard": {
+      "approximate": true,
+      "cardinality": 2,
+      "cluster_requires_same_slot": true,
+      "limit": null,
+      "limit_reached": false,
+      "operation": "set_union",
+      "requested_keys": 2
+    },
+    "redis_sunionstore": {
+      "cluster_requires_same_slot": true,
+      "destination": "out:{set}",
+      "destination_cardinality": 2,
+      "destination_encoding": "utf8",
+      "destination_overwritten": true,
+      "operation": "union",
+      "source_count": 2
     },
     "redis_touch": {
       "requested": 1,
@@ -40446,12 +42676,43 @@
         "kind": "negative_infinity"
       }
     },
+    "redis_zdiffstore": {
+      "aggregate": null,
+      "cluster_requires_same_slot": true,
+      "destination": "out:{zset}",
+      "destination_cardinality": 2,
+      "destination_encoding": "utf8",
+      "destination_overwritten": true,
+      "operation": "difference",
+      "source_count": 2,
+      "weighted": false
+    },
     "redis_zincrby": {
       "key": "leaders",
       "key_encoding": "utf8",
       "member": "alice",
       "member_encoding": "utf8",
       "score": "2.5"
+    },
+    "redis_zintercard": {
+      "approximate": false,
+      "cardinality": 2,
+      "cluster_requires_same_slot": true,
+      "limit": 10,
+      "limit_reached": false,
+      "operation": "sorted_set_intersection",
+      "requested_keys": 2
+    },
+    "redis_zinterstore": {
+      "aggregate": "max",
+      "cluster_requires_same_slot": true,
+      "destination": "out:{zset}",
+      "destination_cardinality": 2,
+      "destination_encoding": "utf8",
+      "destination_overwritten": true,
+      "operation": "intersection",
+      "source_count": 2,
+      "weighted": true
     },
     "redis_zmscore": {
       "count": 2,
@@ -40529,6 +42790,22 @@
       "rev": false,
       "withscores": true
     },
+    "redis_zrangestore": {
+      "cluster_requires_same_slot": true,
+      "destination": "out:{zset}",
+      "destination_cardinality": 2,
+      "destination_encoding": "utf8",
+      "destination_overwritten": true,
+      "range": {
+        "kind": "rank",
+        "start": 0,
+        "stop": 9
+      },
+      "requested_maximum": 10,
+      "rev": false,
+      "source": "leaders:{zset}",
+      "source_encoding": "utf8"
+    },
     "redis_zrank": {
       "key": "leaders",
       "key_encoding": "utf8",
@@ -40599,6 +42876,17 @@
       "member_exists": true,
       "score": "1.5",
       "zset_exists": true
+    },
+    "redis_zunionstore": {
+      "aggregate": "sum",
+      "cluster_requires_same_slot": true,
+      "destination": "out:{zset}",
+      "destination_cardinality": 2,
+      "destination_encoding": "utf8",
+      "destination_overwritten": true,
+      "operation": "union",
+      "source_count": 2,
+      "weighted": false
     }
   }
 }

@@ -28,10 +28,10 @@ Vector Set commands remain part of the core inventory.
 
 | Disposition | Commands | Meaning |
 | --- | ---: | --- |
-| `typed` | 182 | Covered by cataloged structured MCP tools. |
+| `typed` | 201 | Covered by cataloged structured MCP tools. |
 | `native` | 32 | Available through fail-closed classified native invocation. |
 | `session` | 40 | Implemented or planned through a bounded dedicated connection/workflow. |
-| `planned` | 86 | Assigned to a concrete command-completeness backlog issue. |
+| `planned` | 67 | Assigned to a concrete command-completeness backlog issue. |
 | `excluded` | 62 | Outside the product or safety boundary with an explicit rationale. |
 | `deprecated` | 21 | Redis marks the command deprecated; richer replacements are preferred. |
 | `internal` | 8 | Redis marks the command as a system command. |
@@ -41,8 +41,8 @@ The counts describe official Redis command definitions, not MCP tool count.
 One structured tool can compose multiple commands, and one Redis command can
 support multiple tools.
 
-Planned and session work is tied to issues #32, #58, #61, #62, #63,
-and #66. The six already-implemented Pub/Sub connection commands retain their
+Planned and session work is tied to issues #32, #58, #61, and #66. The six
+already-implemented Pub/Sub connection commands retain their
 closed implementation reference, #30.
 
 Bitmap/bitfield, geospatial, and HyperLogLog coverage is fully typed. Its

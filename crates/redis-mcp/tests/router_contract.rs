@@ -352,6 +352,9 @@ impl RedisExecutor for StubRedis {
                 RedisValue::BulkString(b"beta".to_vec()),
                 RedisValue::BulkString(b"alpha".to_vec()),
             ]),
+            "SDIFFCARD" | "SUNIONCARD" | "ZINTERCARD" => RedisValue::Integer(2),
+            "SDIFFSTORE" | "SINTERSTORE" | "SUNIONSTORE" | "ZDIFFSTORE"
+            | "ZINTERSTORE" | "ZRANGESTORE" | "ZUNIONSTORE" => RedisValue::Integer(2),
             "ZCARD" => RedisValue::Integer(2),
             "ZCOUNT" => RedisValue::Integer(1),
             "ZSCORE" => RedisValue::BulkString(b"1.5".to_vec()),
@@ -2521,6 +2524,11 @@ fn structured_cases() -> Vec<(&'static str, serde_json::Value, &'static str)> {
             "members",
         ),
         (
+            "redis_sdiffcard",
+            serde_json::json!({"keys": ["tags", "other"], "limit": 10}),
+            "cardinality",
+        ),
+        (
             "redis_sinter",
             serde_json::json!({"keys": ["tags", "other"]}),
             "members",
@@ -2551,6 +2559,11 @@ fn structured_cases() -> Vec<(&'static str, serde_json::Value, &'static str)> {
             "members",
         ),
         (
+            "redis_sunioncard",
+            serde_json::json!({"keys": ["tags", "other"], "approximate": true}),
+            "cardinality",
+        ),
+        (
             "redis_zcard",
             serde_json::json!({"key": "leaders"}),
             "cardinality",
@@ -2563,6 +2576,11 @@ fn structured_cases() -> Vec<(&'static str, serde_json::Value, &'static str)> {
                 "max": {"kind": "inclusive", "value": "2.0"}
             }),
             "count",
+        ),
+        (
+            "redis_zintercard",
+            serde_json::json!({"keys": ["leaders", "other"], "limit": 10}),
+            "cardinality",
         ),
         (
             "redis_zmscore",
@@ -3268,6 +3286,35 @@ fn structured_cases() -> Vec<(&'static str, serde_json::Value, &'static str)> {
             "removed",
         ),
         (
+            "redis_sdiffstore",
+            serde_json::json!({"destination": "out:{set}", "keys": ["left:{set}", "right:{set}"]}),
+            "destination_cardinality",
+        ),
+        (
+            "redis_sinterstore",
+            serde_json::json!({"destination": "out:{set}", "keys": ["left:{set}", "right:{set}"]}),
+            "destination_cardinality",
+        ),
+        (
+            "redis_sunionstore",
+            serde_json::json!({"destination": "out:{set}", "keys": ["left:{set}", "right:{set}"]}),
+            "destination_cardinality",
+        ),
+        (
+            "redis_zdiffstore",
+            serde_json::json!({"destination": "out:{zset}", "keys": ["left:{zset}", "right:{zset}"]}),
+            "destination_cardinality",
+        ),
+        (
+            "redis_zinterstore",
+            serde_json::json!({
+                "destination": "out:{zset}",
+                "sources": [{"key": "left:{zset}", "weight": 2}, "right:{zset}"],
+                "aggregate": "max"
+            }),
+            "destination_cardinality",
+        ),
+        (
             "redis_zpopmax",
             serde_json::json!({"key": "leaders", "count": 1}),
             "members",
@@ -3290,6 +3337,23 @@ fn structured_cases() -> Vec<(&'static str, serde_json::Value, &'static str)> {
                 "max": {"kind": "positive_infinity"}
             }),
             "removed",
+        ),
+        (
+            "redis_zrangestore",
+            serde_json::json!({
+                "destination": "out:{zset}", "source": "leaders:{zset}",
+                "range": {"kind": "rank", "start": 0, "stop": 9}
+            }),
+            "destination_cardinality",
+        ),
+        (
+            "redis_zunionstore",
+            serde_json::json!({
+                "destination": "out:{zset}",
+                "sources": ["left:{zset}", "right:{zset}"],
+                "aggregate": "sum"
+            }),
+            "destination_cardinality",
         ),
         (
             "redis_bitop",
@@ -3420,8 +3484,8 @@ fn structured_cases() -> Vec<(&'static str, serde_json::Value, &'static str)> {
 
 #[tokio::test]
 async fn access_modes_expose_exactly_the_expected_tools() {
-    assert_eq!(tool_names(AccessMode::Full, false).len(), 191);
-    assert_eq!(tool_names(AccessMode::Full, true).len(), 192);
+    assert_eq!(tool_names(AccessMode::Full, false).len(), 201);
+    assert_eq!(tool_names(AccessMode::Full, true).len(), 202);
     for (access, raw) in [
         (AccessMode::ReadOnly, false),
         (AccessMode::ReadWrite, false),
@@ -3897,7 +3961,18 @@ async fn redis_eight_tools_are_version_gated_and_effect_annotated() {
         )
     };
 
+    let redis_six = names_at(6, 0);
+    for name in ["redis_zdiffstore", "redis_zrangestore"] {
+        assert!(!redis_six.contains(&name), "{name}");
+    }
+    let redis_six_two = names_at(6, 2);
+    for name in ["redis_zdiffstore", "redis_zrangestore"] {
+        assert!(redis_six_two.contains(&name), "{name}");
+    }
+    assert!(!redis_six_two.contains(&"redis_zintercard"));
+
     let redis_seven = names_at(7, 4);
+    assert!(redis_seven.contains(&"redis_zintercard"));
     for name in [
         "redis_vadd",
         "redis_hgetex",
@@ -3946,8 +4021,10 @@ async fn redis_eight_tools_are_version_gated_and_effect_annotated() {
     ] {
         assert!(redis_eight_eight.contains(&name), "{name}");
     }
-    assert!(!redis_eight_eight.contains(&"redis_lmovem"));
-    assert!(names_at(8, 10).contains(&"redis_lmovem"));
+    for name in ["redis_lmovem", "redis_sdiffcard", "redis_sunioncard"] {
+        assert!(!redis_eight_eight.contains(&name), "{name}");
+        assert!(names_at(8, 10).contains(&name), "{name}");
+    }
 
     let tools = full_catalog_client()
         .await
@@ -3998,6 +4075,62 @@ async fn redis_eight_tools_are_version_gated_and_effect_annotated() {
 }
 
 #[tokio::test]
+async fn sorted_set_count_aggregation_is_gated_at_redis_eight_eight() {
+    let executor = FixedRedis::new(RedisValue::Integer(1));
+    let commands = executor.commands.clone();
+    let client = fixed_client(
+        executor,
+        RedisCapabilities::unknown().with_redis_version(RedisVersion::new(8, 6, 0)),
+    )
+    .await;
+    for tool in ["redis_zinterstore", "redis_zunionstore"] {
+        let result = client
+            .call_tool(
+                tool,
+                serde_json::json!({
+                    "destination": "out:{tenant}",
+                    "sources": ["left:{tenant}", "right:{tenant}"],
+                    "aggregate": "count"
+                }),
+            )
+            .await
+            .unwrap_or_else(|error| panic!("{tool} COUNT version gate: {error}"));
+        assert!(result.is_error, "{tool}: {result:?}");
+        assert!(
+            serde_json::to_string(&result)
+                .expect("serialize COUNT version gate")
+                .contains("Redis 8.8"),
+            "{tool}: {result:?}"
+        );
+    }
+    assert!(
+        commands
+            .lock()
+            .expect("pre-8.8 sorted-set store commands")
+            .is_empty(),
+        "COUNT must fail before Redis execution"
+    );
+
+    let client = fixed_client(
+        FixedRedis::new(RedisValue::Integer(1)),
+        RedisCapabilities::unknown().with_redis_version(RedisVersion::new(8, 8, 0)),
+    )
+    .await;
+    let supported = client
+        .call_tool(
+            "redis_zunionstore",
+            serde_json::json!({
+                "destination": "out:{tenant}",
+                "sources": ["left:{tenant}", "right:{tenant}"],
+                "aggregate": "count"
+            }),
+        )
+        .await
+        .expect("Redis 8.8 COUNT aggregation");
+    assert!(!supported.is_error, "{supported:?}");
+}
+
+#[tokio::test]
 async fn set_annotations_match_read_write_and_destructive_semantics() {
     let tools = full_catalog_client()
         .await
@@ -4018,12 +4151,14 @@ async fn set_annotations_match_read_write_and_destructive_semantics() {
     for name in [
         "redis_scard",
         "redis_sdiff",
+        "redis_sdiffcard",
         "redis_sinter",
         "redis_sismember",
         "redis_smembers",
         "redis_smismember",
         "redis_sscan",
         "redis_sunion",
+        "redis_sunioncard",
     ] {
         let annotation = annotations(name);
         assert!(annotation.read_only_hint, "{name}");
@@ -4040,6 +4175,17 @@ async fn set_annotations_match_read_write_and_destructive_semantics() {
     assert!(!remove.read_only_hint);
     assert!(remove.destructive_hint);
     assert!(remove.idempotent_hint);
+
+    for (name, idempotent) in [
+        ("redis_sdiffstore", false),
+        ("redis_sinterstore", true),
+        ("redis_sunionstore", true),
+    ] {
+        let annotation = annotations(name);
+        assert!(!annotation.read_only_hint, "{name}");
+        assert!(annotation.destructive_hint, "{name}");
+        assert_eq!(annotation.idempotent_hint, idempotent, "{name}");
+    }
 }
 
 #[tokio::test]
@@ -4063,6 +4209,7 @@ async fn sorted_set_annotations_match_read_write_and_destructive_semantics() {
     for name in [
         "redis_zcard",
         "redis_zcount",
+        "redis_zintercard",
         "redis_zmscore",
         "redis_zrange",
         "redis_zrank",
@@ -4100,6 +4247,17 @@ async fn sorted_set_annotations_match_read_write_and_destructive_semantics() {
     assert!(!annotations("redis_zpopmin").idempotent_hint);
     assert!(annotations("redis_zrem").idempotent_hint);
     assert!(annotations("redis_zremrangebyscore").idempotent_hint);
+    for name in [
+        "redis_zdiffstore",
+        "redis_zinterstore",
+        "redis_zrangestore",
+        "redis_zunionstore",
+    ] {
+        let annotation = annotations(name);
+        assert!(!annotation.read_only_hint, "{name}");
+        assert!(annotation.destructive_hint, "{name}");
+        assert!(!annotation.idempotent_hint, "{name}");
+    }
 }
 
 #[tokio::test]
@@ -4659,7 +4817,7 @@ async fn collection_budget_accepts_exact_limit_and_returns_retry_guidance() {
 }
 
 #[tokio::test]
-async fn sorted_set_collection_inputs_are_bounded_before_reads_or_destructive_pops() {
+async fn sorted_set_collection_inputs_are_bounded_before_reads_or_destructive_effects() {
     let client = client_with_budget(AccessMode::Full, false, OutputBudget::new(1_000_000, 1)).await;
     for (tool, arguments) in [
         (
@@ -4681,6 +4839,14 @@ async fn sorted_set_collection_inputs_are_bounded_before_reads_or_destructive_po
         (
             "redis_zpopmin",
             serde_json::json!({"key": "leaders", "count": 2}),
+        ),
+        (
+            "redis_zrangestore",
+            serde_json::json!({
+                "destination": "out:{tenant}",
+                "source": "leaders:{tenant}",
+                "range": {"kind": "rank", "start": 0, "stop": 1}
+            }),
         ),
     ] {
         let result = client
@@ -5043,6 +5209,33 @@ async fn malformed_and_unbounded_inputs_fail_as_tool_results() {
             "redis_zpopmin",
             serde_json::json!({"key": "leaders", "max_returned_bytes": 0}),
         ),
+        ("redis_zintercard", serde_json::json!({"keys": []})),
+        (
+            "redis_zinterstore",
+            serde_json::json!({"destination": "out", "sources": []}),
+        ),
+        (
+            "redis_zinterstore",
+            serde_json::json!({
+                "destination": "out",
+                "sources": [{"key": "leaders", "weight": "NaN"}]
+            }),
+        ),
+        (
+            "redis_zunionstore",
+            serde_json::json!({
+                "destination": "out",
+                "sources": [{"key": "leaders", "weight": "+inf"}]
+            }),
+        ),
+        (
+            "redis_zrangestore",
+            serde_json::json!({
+                "destination": "out",
+                "source": "leaders",
+                "range": {"kind": "rank", "start": 0, "stop": -1}
+            }),
+        ),
         (
             "redis_hset",
             serde_json::json!({
@@ -5085,6 +5278,11 @@ async fn malformed_and_unbounded_inputs_fail_as_tool_results() {
             serde_json::json!({"key": "tags", "members": []}),
         ),
         ("redis_sdiff", serde_json::json!({"keys": []})),
+        ("redis_sdiffcard", serde_json::json!({"keys": []})),
+        (
+            "redis_sdiffstore",
+            serde_json::json!({"destination": "out", "keys": []}),
+        ),
         (
             "redis_srem",
             serde_json::json!({"key": "tags", "members": []}),
@@ -5794,6 +5992,8 @@ impl RedisExecutor for SetContractRedis {
                 RedisValue::BulkString(vec![0xff]),
                 RedisValue::BulkString(b"alpha".to_vec()),
             ]),
+            "SDIFFCARD" | "SUNIONCARD" => RedisValue::Integer(2),
+            "SDIFFSTORE" | "SINTERSTORE" | "SUNIONSTORE" => RedisValue::Integer(2),
             "SADD" | "SREM" => RedisValue::Integer(1),
             "EXISTS" if key == Some(b"missing".as_slice()) => RedisValue::Integer(0),
             "EXISTS" => RedisValue::Integer(1),
@@ -5811,7 +6011,7 @@ async fn set_contract_client(executor: SetContractRedis) -> McpClient {
     let router = RedisMcp::builder(executor)
         .access(AccessMode::Full)
         .bundles([ToolBundle::DataStructures])
-        .capabilities(RedisCapabilities::unknown().with_redis_version(RedisVersion::new(8, 2, 0)))
+        .capabilities(RedisCapabilities::unknown().with_redis_version(RedisVersion::new(8, 10, 0)))
         .build();
     let client = McpClient::connect(ChannelTransport::new(router))
         .await
@@ -5968,6 +6168,101 @@ async fn set_commands_preserve_binary_argv_and_ordered_membership_contracts() {
 }
 
 #[tokio::test]
+async fn set_cardinality_and_store_tools_preserve_bounded_binary_contracts() {
+    let executor = SetContractRedis::default();
+    let commands = executor.commands.clone();
+    let client = set_contract_client(executor).await;
+    let keys = serde_json::json!([
+        {"key": "/wA=", "key_encoding": "base64"},
+        {"key": "/Q==", "key_encoding": "base64"}
+    ]);
+
+    let difference = client
+        .call_tool(
+            "redis_sdiffcard",
+            serde_json::json!({"keys": keys.clone(), "limit": 2}),
+        )
+        .await
+        .expect("binary SDIFFCARD")
+        .structured_content
+        .expect("structured SDIFFCARD");
+    assert_eq!(difference["operation"], "set_difference");
+    assert_eq!(difference["cardinality"], 2);
+    assert_eq!(difference["limit_reached"], true);
+    assert!(difference.get("members").is_none());
+
+    let union = client
+        .call_tool(
+            "redis_sunioncard",
+            serde_json::json!({"keys": keys.clone(), "approximate": true, "limit": 3}),
+        )
+        .await
+        .expect("binary SUNIONCARD")
+        .structured_content
+        .expect("structured SUNIONCARD");
+    assert_eq!(union["operation"], "set_union");
+    assert_eq!(union["approximate"], true);
+    assert_eq!(union["limit_reached"], false);
+
+    for tool in ["redis_sdiffstore", "redis_sinterstore", "redis_sunionstore"] {
+        let stored = client
+            .call_tool(
+                tool,
+                serde_json::json!({
+                    "destination": "/g==",
+                    "destination_encoding": "base64",
+                    "keys": keys.clone()
+                }),
+            )
+            .await
+            .unwrap_or_else(|error| panic!("{tool}: {error}"))
+            .structured_content
+            .unwrap_or_else(|| panic!("{tool}: structured result"));
+        assert_eq!(stored["destination"], "/g==", "{tool}");
+        assert_eq!(stored["destination_cardinality"], 2, "{tool}");
+        assert_eq!(stored["destination_overwritten"], true, "{tool}");
+        assert!(stored.get("members").is_none(), "{tool}");
+    }
+
+    let commands = commands.lock().expect("recorded set cardinality commands");
+    let arguments = |tool: &str| {
+        commands
+            .iter()
+            .find(|command| command.tool_name() == tool)
+            .unwrap_or_else(|| panic!("missing {tool}"))
+            .arguments()
+    };
+    assert_eq!(
+        arguments("redis_sdiffcard"),
+        &[
+            b"2".to_vec(),
+            vec![0xff, 0x00],
+            vec![0xfd],
+            b"LIMIT".to_vec(),
+            b"2".to_vec()
+        ]
+    );
+    assert_eq!(
+        arguments("redis_sunioncard"),
+        &[
+            b"2".to_vec(),
+            vec![0xff, 0x00],
+            vec![0xfd],
+            b"APPROX".to_vec(),
+            b"LIMIT".to_vec(),
+            b"3".to_vec()
+        ]
+    );
+    for tool in ["redis_sdiffstore", "redis_sinterstore", "redis_sunionstore"] {
+        assert_eq!(
+            arguments(tool),
+            &[vec![0xfe], vec![0xff, 0x00], vec![0xfd]],
+            "{tool}"
+        );
+    }
+}
+
+#[tokio::test]
 async fn set_reads_distinguish_missing_sets_and_empty_algebra_results() {
     let client = set_contract_client(SetContractRedis::default()).await;
 
@@ -6049,6 +6344,7 @@ impl RedisExecutor for SortedSetContractRedis {
             "ZCARD" => RedisValue::Integer(3),
             "ZCOUNT" if missing_key => RedisValue::Integer(0),
             "ZCOUNT" => RedisValue::Integer(2),
+            "ZINTERCARD" => RedisValue::Integer(2),
             "ZSCORE"
                 if missing_key
                     || command.arguments().get(1).map(Vec::as_slice)
@@ -6108,6 +6404,7 @@ impl RedisExecutor for SortedSetContractRedis {
                 ]),
             ]),
             "ZADD" | "ZREM" | "ZREMRANGEBYSCORE" => RedisValue::Integer(1),
+            "ZDIFFSTORE" | "ZINTERSTORE" | "ZRANGESTORE" | "ZUNIONSTORE" => RedisValue::Integer(2),
             "ZINCRBY" => RedisValue::BulkString(b"0.30000000000000002".to_vec()),
             "ZPOPMIN" | "ZPOPMAX" => RedisValue::Array(vec![
                 RedisValue::BulkString(vec![0xfe]),
@@ -6129,7 +6426,7 @@ async fn sorted_set_contract_client(executor: SortedSetContractRedis) -> McpClie
     let router = RedisMcp::builder(executor)
         .access(AccessMode::Full)
         .bundles([ToolBundle::DataStructures])
-        .capabilities(RedisCapabilities::unknown().with_redis_version(RedisVersion::new(8, 2, 0)))
+        .capabilities(RedisCapabilities::unknown().with_redis_version(RedisVersion::new(8, 8, 0)))
         .build();
     let client = McpClient::connect(ChannelTransport::new(router))
         .await
@@ -6418,6 +6715,166 @@ async fn sorted_set_commands_preserve_binary_argv_exact_scores_and_range_modes()
     assert_eq!(
         arguments("redis_zremrangebyscore", 0),
         &[vec![0xff, 0x00], b"(-2".to_vec(), b"3".to_vec()]
+    );
+}
+
+#[tokio::test]
+async fn sorted_set_cardinality_and_store_tools_preserve_typed_argv() {
+    let executor = SortedSetContractRedis::default();
+    let commands = executor.commands.clone();
+    let client = sorted_set_contract_client(executor).await;
+    let binary_keys = serde_json::json!([
+        {"key": "/wA=", "key_encoding": "base64"},
+        {"key": "/Q==", "key_encoding": "base64"}
+    ]);
+
+    let cardinality = client
+        .call_tool(
+            "redis_zintercard",
+            serde_json::json!({"keys": binary_keys.clone(), "limit": 2}),
+        )
+        .await
+        .expect("binary ZINTERCARD")
+        .structured_content
+        .expect("structured ZINTERCARD");
+    assert_eq!(cardinality["operation"], "sorted_set_intersection");
+    assert_eq!(cardinality["cardinality"], 2);
+    assert!(cardinality.get("members").is_none());
+
+    let difference = client
+        .call_tool(
+            "redis_zdiffstore",
+            serde_json::json!({
+                "destination": "/g==",
+                "destination_encoding": "base64",
+                "keys": binary_keys.clone()
+            }),
+        )
+        .await
+        .expect("binary ZDIFFSTORE")
+        .structured_content
+        .expect("structured ZDIFFSTORE");
+    assert_eq!(difference["operation"], "difference");
+    assert_eq!(difference["destination_cardinality"], 2);
+
+    let intersection = client
+        .call_tool(
+            "redis_zinterstore",
+            serde_json::json!({
+                "destination": "/g==",
+                "destination_encoding": "base64",
+                "sources": [
+                    {"key": "/wA=", "key_encoding": "base64", "weight": "0.10000000000000001"},
+                    {"key": "/Q==", "key_encoding": "base64"}
+                ],
+                "aggregate": "max"
+            }),
+        )
+        .await
+        .expect("binary weighted ZINTERSTORE")
+        .structured_content
+        .expect("structured ZINTERSTORE");
+    assert_eq!(intersection["weighted"], true);
+    assert_eq!(intersection["aggregate"], "max");
+    assert!(intersection.get("members").is_none());
+
+    client
+        .call_tool(
+            "redis_zunionstore",
+            serde_json::json!({
+                "destination": "out:{tenant}",
+                "sources": ["left:{tenant}", "right:{tenant}"],
+                "aggregate": "count"
+            }),
+        )
+        .await
+        .expect("COUNT ZUNIONSTORE");
+
+    let range = client
+        .call_tool(
+            "redis_zrangestore",
+            serde_json::json!({
+                "destination": "/g==",
+                "destination_encoding": "base64",
+                "source": "/wA=",
+                "source_encoding": "base64",
+                "rev": true,
+                "range": {
+                    "kind": "score",
+                    "min": {"kind": "negative_infinity"},
+                    "max": {"kind": "exclusive", "value": "1.5"},
+                    "offset": 2,
+                    "limit": 2
+                }
+            }),
+        )
+        .await
+        .expect("bounded ZRANGESTORE")
+        .structured_content
+        .expect("structured ZRANGESTORE");
+    assert_eq!(range["requested_maximum"], 2);
+    assert_eq!(range["destination_cardinality"], 2);
+
+    let commands = commands.lock().expect("recorded sorted-set store commands");
+    let arguments = |tool: &str| {
+        commands
+            .iter()
+            .find(|command| command.tool_name() == tool)
+            .unwrap_or_else(|| panic!("missing {tool}"))
+            .arguments()
+    };
+    assert_eq!(
+        arguments("redis_zintercard"),
+        &[
+            b"2".to_vec(),
+            vec![0xff, 0x00],
+            vec![0xfd],
+            b"LIMIT".to_vec(),
+            b"2".to_vec()
+        ]
+    );
+    assert_eq!(
+        arguments("redis_zdiffstore"),
+        &[vec![0xfe], b"2".to_vec(), vec![0xff, 0x00], vec![0xfd]]
+    );
+    assert_eq!(
+        arguments("redis_zinterstore"),
+        &[
+            vec![0xfe],
+            b"2".to_vec(),
+            vec![0xff, 0x00],
+            vec![0xfd],
+            b"WEIGHTS".to_vec(),
+            b"0.10000000000000001".to_vec(),
+            b"1".to_vec(),
+            b"AGGREGATE".to_vec(),
+            b"MAX".to_vec()
+        ]
+    );
+    assert_eq!(
+        arguments("redis_zunionstore"),
+        &[
+            b"out:{tenant}".to_vec(),
+            b"2".to_vec(),
+            b"left:{tenant}".to_vec(),
+            b"right:{tenant}".to_vec(),
+            b"AGGREGATE".to_vec(),
+            b"COUNT".to_vec()
+        ]
+    );
+    assert_eq!(
+        arguments("redis_zrangestore"),
+        &[
+            vec![0xfe],
+            vec![0xff, 0x00],
+            b"(1.5".to_vec(),
+            b"-inf".to_vec(),
+            b"BYSCORE".to_vec(),
+            b"LIMIT".to_vec(),
+            b"2".to_vec(),
+            b"2".to_vec(),
+            b"REV".to_vec()
+        ]
     );
 }
 

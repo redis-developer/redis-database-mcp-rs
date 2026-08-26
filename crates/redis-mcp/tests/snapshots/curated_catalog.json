@@ -5432,6 +5432,762 @@
       "requires_raw_opt_in": false
     },
     {
+      "bundle": "scripting",
+      "capability_requirements": {
+        "deployment": "any",
+        "minimum_module_version": null,
+        "minimum_redis_version": "2.6.0",
+        "required_commands": [
+          "EVAL"
+        ],
+        "required_module": null
+      },
+      "family": "scripting",
+      "name": "redis_eval",
+      "output_policy": "budget_guarded",
+      "protocol": {
+        "annotations": {},
+        "description": "Run a bounded binary-safe Lua script through EVAL with every key declared explicitly. The script can perform arbitrary writes or deletions, so full access is required. Results obey global entry/byte budgets. The request timeout only bounds client waiting and does not guarantee server-side cancellation.",
+        "inputSchema": {
+          "$defs": {
+            "EncodedInput": {
+              "additionalProperties": false,
+              "properties": {
+                "encoding": {
+                  "$ref": "#/$defs/InputEncoding",
+                  "default": "utf8",
+                  "description": "Encoding of `value`."
+                },
+                "value": {
+                  "description": "UTF-8 text or standard base64, according to `encoding`.",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "value"
+              ],
+              "type": "object"
+            },
+            "InputEncoding": {
+              "enum": [
+                "utf8",
+                "base64"
+              ],
+              "type": "string"
+            }
+          },
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "arguments": {
+              "description": "Binary-safe ARGV values supplied after the declared keys.",
+              "items": {
+                "$ref": "#/$defs/EncodedInput"
+              },
+              "type": "array"
+            },
+            "keys": {
+              "description": "Every Redis key the script may access. Cluster keys must share one slot.",
+              "items": {
+                "$ref": "#/$defs/EncodedInput"
+              },
+              "type": "array"
+            },
+            "script": {
+              "$ref": "#/$defs/EncodedInput",
+              "description": "Binary-safe Lua source, limited to 1 MiB."
+            }
+          },
+          "required": [
+            "script"
+          ],
+          "title": "EvalInput",
+          "type": "object"
+        },
+        "name": "redis_eval",
+        "outputSchema": {
+          "$defs": {
+            "ClusterExecution": {
+              "additionalProperties": false,
+              "properties": {
+                "complete": {
+                  "type": "boolean"
+                },
+                "node_limit": {
+                  "format": "uint",
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                "nodes_queried": {
+                  "format": "uint",
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                "nodes_succeeded": {
+                  "format": "uint",
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                "replies": {
+                  "items": {
+                    "$ref": "#/$defs/ClusterNodeReply"
+                  },
+                  "type": "array"
+                },
+                "target": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "target",
+                "node_limit",
+                "nodes_queried",
+                "nodes_succeeded",
+                "complete",
+                "replies"
+              ],
+              "type": "object"
+            },
+            "ClusterNodeReply": {
+              "additionalProperties": false,
+              "properties": {
+                "error_code": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "node": {
+                  "type": "string"
+                },
+                "succeeded": {
+                  "type": "boolean"
+                },
+                "value": true
+              },
+              "required": [
+                "node",
+                "succeeded"
+              ],
+              "type": "object"
+            }
+          },
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "argument_count": {
+              "format": "uint",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "cluster": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/ClusterExecution"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "command": {
+              "type": "string"
+            },
+            "key_count": {
+              "format": "uint",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "result": true,
+            "scope": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "command",
+            "scope",
+            "key_count",
+            "argument_count"
+          ],
+          "title": "OperationOutput",
+          "type": "object"
+        },
+        "title": "Run Redis Lua"
+      },
+      "required_access": "full",
+      "required_module": null,
+      "requires_raw_opt_in": false
+    },
+    {
+      "bundle": "scripting",
+      "capability_requirements": {
+        "deployment": "any",
+        "minimum_module_version": null,
+        "minimum_redis_version": "7.0.0",
+        "required_commands": [
+          "EVAL_RO"
+        ],
+        "required_module": null
+      },
+      "family": "scripting",
+      "name": "redis_eval_ro",
+      "output_policy": "budget_guarded",
+      "protocol": {
+        "annotations": {
+          "destructiveHint": false,
+          "idempotentHint": true,
+          "readOnlyHint": true
+        },
+        "description": "Run a bounded binary-safe Lua script through EVAL_RO with every key declared explicitly. Results obey global entry/byte budgets. The request timeout only bounds client waiting and does not guarantee server-side cancellation. Requires Redis 7+.",
+        "inputSchema": {
+          "$defs": {
+            "EncodedInput": {
+              "additionalProperties": false,
+              "properties": {
+                "encoding": {
+                  "$ref": "#/$defs/InputEncoding",
+                  "default": "utf8",
+                  "description": "Encoding of `value`."
+                },
+                "value": {
+                  "description": "UTF-8 text or standard base64, according to `encoding`.",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "value"
+              ],
+              "type": "object"
+            },
+            "InputEncoding": {
+              "enum": [
+                "utf8",
+                "base64"
+              ],
+              "type": "string"
+            }
+          },
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "arguments": {
+              "description": "Binary-safe ARGV values supplied after the declared keys.",
+              "items": {
+                "$ref": "#/$defs/EncodedInput"
+              },
+              "type": "array"
+            },
+            "keys": {
+              "description": "Every Redis key the script may access. Cluster keys must share one slot.",
+              "items": {
+                "$ref": "#/$defs/EncodedInput"
+              },
+              "type": "array"
+            },
+            "script": {
+              "$ref": "#/$defs/EncodedInput",
+              "description": "Binary-safe Lua source, limited to 1 MiB."
+            }
+          },
+          "required": [
+            "script"
+          ],
+          "title": "EvalInput",
+          "type": "object"
+        },
+        "name": "redis_eval_ro",
+        "outputSchema": {
+          "$defs": {
+            "ClusterExecution": {
+              "additionalProperties": false,
+              "properties": {
+                "complete": {
+                  "type": "boolean"
+                },
+                "node_limit": {
+                  "format": "uint",
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                "nodes_queried": {
+                  "format": "uint",
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                "nodes_succeeded": {
+                  "format": "uint",
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                "replies": {
+                  "items": {
+                    "$ref": "#/$defs/ClusterNodeReply"
+                  },
+                  "type": "array"
+                },
+                "target": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "target",
+                "node_limit",
+                "nodes_queried",
+                "nodes_succeeded",
+                "complete",
+                "replies"
+              ],
+              "type": "object"
+            },
+            "ClusterNodeReply": {
+              "additionalProperties": false,
+              "properties": {
+                "error_code": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "node": {
+                  "type": "string"
+                },
+                "succeeded": {
+                  "type": "boolean"
+                },
+                "value": true
+              },
+              "required": [
+                "node",
+                "succeeded"
+              ],
+              "type": "object"
+            }
+          },
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "argument_count": {
+              "format": "uint",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "cluster": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/ClusterExecution"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "command": {
+              "type": "string"
+            },
+            "key_count": {
+              "format": "uint",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "result": true,
+            "scope": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "command",
+            "scope",
+            "key_count",
+            "argument_count"
+          ],
+          "title": "OperationOutput",
+          "type": "object"
+        },
+        "title": "Run Read-Only Redis Lua"
+      },
+      "required_access": "read_only",
+      "required_module": null,
+      "requires_raw_opt_in": false
+    },
+    {
+      "bundle": "scripting",
+      "capability_requirements": {
+        "deployment": "any",
+        "minimum_module_version": null,
+        "minimum_redis_version": "2.6.0",
+        "required_commands": [
+          "EVALSHA"
+        ],
+        "required_module": null
+      },
+      "family": "scripting",
+      "name": "redis_evalsha",
+      "output_policy": "budget_guarded",
+      "protocol": {
+        "annotations": {},
+        "description": "Run a cached Lua script by SHA1 with explicit binary-safe keys and arguments. The script can perform arbitrary writes or deletions, so full access is required. NOSCRIPT is returned as a stable tool failure.",
+        "inputSchema": {
+          "$defs": {
+            "EncodedInput": {
+              "additionalProperties": false,
+              "properties": {
+                "encoding": {
+                  "$ref": "#/$defs/InputEncoding",
+                  "default": "utf8",
+                  "description": "Encoding of `value`."
+                },
+                "value": {
+                  "description": "UTF-8 text or standard base64, according to `encoding`.",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "value"
+              ],
+              "type": "object"
+            },
+            "InputEncoding": {
+              "enum": [
+                "utf8",
+                "base64"
+              ],
+              "type": "string"
+            }
+          },
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "arguments": {
+              "description": "Binary-safe ARGV values supplied after the declared keys.",
+              "items": {
+                "$ref": "#/$defs/EncodedInput"
+              },
+              "type": "array"
+            },
+            "keys": {
+              "description": "Every Redis key the cached script may access. Cluster keys must share one slot.",
+              "items": {
+                "$ref": "#/$defs/EncodedInput"
+              },
+              "type": "array"
+            },
+            "sha1": {
+              "description": "SHA1 digest returned by SCRIPT LOAD.",
+              "type": "string"
+            }
+          },
+          "required": [
+            "sha1"
+          ],
+          "title": "EvalshaInput",
+          "type": "object"
+        },
+        "name": "redis_evalsha",
+        "outputSchema": {
+          "$defs": {
+            "ClusterExecution": {
+              "additionalProperties": false,
+              "properties": {
+                "complete": {
+                  "type": "boolean"
+                },
+                "node_limit": {
+                  "format": "uint",
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                "nodes_queried": {
+                  "format": "uint",
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                "nodes_succeeded": {
+                  "format": "uint",
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                "replies": {
+                  "items": {
+                    "$ref": "#/$defs/ClusterNodeReply"
+                  },
+                  "type": "array"
+                },
+                "target": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "target",
+                "node_limit",
+                "nodes_queried",
+                "nodes_succeeded",
+                "complete",
+                "replies"
+              ],
+              "type": "object"
+            },
+            "ClusterNodeReply": {
+              "additionalProperties": false,
+              "properties": {
+                "error_code": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "node": {
+                  "type": "string"
+                },
+                "succeeded": {
+                  "type": "boolean"
+                },
+                "value": true
+              },
+              "required": [
+                "node",
+                "succeeded"
+              ],
+              "type": "object"
+            }
+          },
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "argument_count": {
+              "format": "uint",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "cluster": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/ClusterExecution"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "command": {
+              "type": "string"
+            },
+            "key_count": {
+              "format": "uint",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "result": true,
+            "scope": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "command",
+            "scope",
+            "key_count",
+            "argument_count"
+          ],
+          "title": "OperationOutput",
+          "type": "object"
+        },
+        "title": "Run Cached Redis Lua"
+      },
+      "required_access": "full",
+      "required_module": null,
+      "requires_raw_opt_in": false
+    },
+    {
+      "bundle": "scripting",
+      "capability_requirements": {
+        "deployment": "any",
+        "minimum_module_version": null,
+        "minimum_redis_version": "7.0.0",
+        "required_commands": [
+          "EVALSHA_RO"
+        ],
+        "required_module": null
+      },
+      "family": "scripting",
+      "name": "redis_evalsha_ro",
+      "output_policy": "budget_guarded",
+      "protocol": {
+        "annotations": {
+          "destructiveHint": false,
+          "idempotentHint": true,
+          "readOnlyHint": true
+        },
+        "description": "Run a cached read-only Lua script by SHA1 with explicit binary-safe keys and arguments. NOSCRIPT is returned as a stable tool failure; callers may load the source explicitly. Requires Redis 7+.",
+        "inputSchema": {
+          "$defs": {
+            "EncodedInput": {
+              "additionalProperties": false,
+              "properties": {
+                "encoding": {
+                  "$ref": "#/$defs/InputEncoding",
+                  "default": "utf8",
+                  "description": "Encoding of `value`."
+                },
+                "value": {
+                  "description": "UTF-8 text or standard base64, according to `encoding`.",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "value"
+              ],
+              "type": "object"
+            },
+            "InputEncoding": {
+              "enum": [
+                "utf8",
+                "base64"
+              ],
+              "type": "string"
+            }
+          },
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "arguments": {
+              "description": "Binary-safe ARGV values supplied after the declared keys.",
+              "items": {
+                "$ref": "#/$defs/EncodedInput"
+              },
+              "type": "array"
+            },
+            "keys": {
+              "description": "Every Redis key the cached script may access. Cluster keys must share one slot.",
+              "items": {
+                "$ref": "#/$defs/EncodedInput"
+              },
+              "type": "array"
+            },
+            "sha1": {
+              "description": "SHA1 digest returned by SCRIPT LOAD.",
+              "type": "string"
+            }
+          },
+          "required": [
+            "sha1"
+          ],
+          "title": "EvalshaInput",
+          "type": "object"
+        },
+        "name": "redis_evalsha_ro",
+        "outputSchema": {
+          "$defs": {
+            "ClusterExecution": {
+              "additionalProperties": false,
+              "properties": {
+                "complete": {
+                  "type": "boolean"
+                },
+                "node_limit": {
+                  "format": "uint",
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                "nodes_queried": {
+                  "format": "uint",
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                "nodes_succeeded": {
+                  "format": "uint",
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                "replies": {
+                  "items": {
+                    "$ref": "#/$defs/ClusterNodeReply"
+                  },
+                  "type": "array"
+                },
+                "target": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "target",
+                "node_limit",
+                "nodes_queried",
+                "nodes_succeeded",
+                "complete",
+                "replies"
+              ],
+              "type": "object"
+            },
+            "ClusterNodeReply": {
+              "additionalProperties": false,
+              "properties": {
+                "error_code": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "node": {
+                  "type": "string"
+                },
+                "succeeded": {
+                  "type": "boolean"
+                },
+                "value": true
+              },
+              "required": [
+                "node",
+                "succeeded"
+              ],
+              "type": "object"
+            }
+          },
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "argument_count": {
+              "format": "uint",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "cluster": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/ClusterExecution"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "command": {
+              "type": "string"
+            },
+            "key_count": {
+              "format": "uint",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "result": true,
+            "scope": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "command",
+            "scope",
+            "key_count",
+            "argument_count"
+          ],
+          "title": "OperationOutput",
+          "type": "object"
+        },
+        "title": "Run Read-Only Cached Redis Lua"
+      },
+      "required_access": "read_only",
+      "required_module": null,
+      "requires_raw_opt_in": false
+    },
+    {
       "bundle": "essentials",
       "capability_requirements": {
         "deployment": "any",
@@ -5574,6 +6330,384 @@
         "title": "Expire Redis Key"
       },
       "required_access": "read_write",
+      "required_module": null,
+      "requires_raw_opt_in": false
+    },
+    {
+      "bundle": "scripting",
+      "capability_requirements": {
+        "deployment": "any",
+        "minimum_module_version": null,
+        "minimum_redis_version": "7.0.0",
+        "required_commands": [
+          "FCALL"
+        ],
+        "required_module": null
+      },
+      "family": "scripting",
+      "name": "redis_fcall",
+      "output_policy": "budget_guarded",
+      "protocol": {
+        "annotations": {},
+        "description": "Run a registered Redis 7+ function with every binary-safe key declared explicitly. The function can perform arbitrary writes or deletions, so full access is required. Results obey global output budgets; request timeout does not guarantee server-side cancellation.",
+        "inputSchema": {
+          "$defs": {
+            "EncodedInput": {
+              "additionalProperties": false,
+              "properties": {
+                "encoding": {
+                  "$ref": "#/$defs/InputEncoding",
+                  "default": "utf8",
+                  "description": "Encoding of `value`."
+                },
+                "value": {
+                  "description": "UTF-8 text or standard base64, according to `encoding`.",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "value"
+              ],
+              "type": "object"
+            },
+            "InputEncoding": {
+              "enum": [
+                "utf8",
+                "base64"
+              ],
+              "type": "string"
+            }
+          },
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "arguments": {
+              "description": "Binary-safe arguments supplied after the declared keys.",
+              "items": {
+                "$ref": "#/$defs/EncodedInput"
+              },
+              "type": "array"
+            },
+            "function": {
+              "description": "Registered Redis function name.",
+              "type": "string"
+            },
+            "keys": {
+              "description": "Every Redis key the function may access. Cluster keys must share one slot.",
+              "items": {
+                "$ref": "#/$defs/EncodedInput"
+              },
+              "type": "array"
+            }
+          },
+          "required": [
+            "function"
+          ],
+          "title": "FcallInput",
+          "type": "object"
+        },
+        "name": "redis_fcall",
+        "outputSchema": {
+          "$defs": {
+            "ClusterExecution": {
+              "additionalProperties": false,
+              "properties": {
+                "complete": {
+                  "type": "boolean"
+                },
+                "node_limit": {
+                  "format": "uint",
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                "nodes_queried": {
+                  "format": "uint",
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                "nodes_succeeded": {
+                  "format": "uint",
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                "replies": {
+                  "items": {
+                    "$ref": "#/$defs/ClusterNodeReply"
+                  },
+                  "type": "array"
+                },
+                "target": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "target",
+                "node_limit",
+                "nodes_queried",
+                "nodes_succeeded",
+                "complete",
+                "replies"
+              ],
+              "type": "object"
+            },
+            "ClusterNodeReply": {
+              "additionalProperties": false,
+              "properties": {
+                "error_code": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "node": {
+                  "type": "string"
+                },
+                "succeeded": {
+                  "type": "boolean"
+                },
+                "value": true
+              },
+              "required": [
+                "node",
+                "succeeded"
+              ],
+              "type": "object"
+            }
+          },
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "argument_count": {
+              "format": "uint",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "cluster": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/ClusterExecution"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "command": {
+              "type": "string"
+            },
+            "key_count": {
+              "format": "uint",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "result": true,
+            "scope": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "command",
+            "scope",
+            "key_count",
+            "argument_count"
+          ],
+          "title": "OperationOutput",
+          "type": "object"
+        },
+        "title": "Run Redis Function"
+      },
+      "required_access": "full",
+      "required_module": null,
+      "requires_raw_opt_in": false
+    },
+    {
+      "bundle": "scripting",
+      "capability_requirements": {
+        "deployment": "any",
+        "minimum_module_version": null,
+        "minimum_redis_version": "7.0.0",
+        "required_commands": [
+          "FCALL_RO"
+        ],
+        "required_module": null
+      },
+      "family": "scripting",
+      "name": "redis_fcall_ro",
+      "output_policy": "budget_guarded",
+      "protocol": {
+        "annotations": {
+          "destructiveHint": false,
+          "idempotentHint": true,
+          "readOnlyHint": true
+        },
+        "description": "Run a registered Redis 7+ read-only function with every binary-safe key declared explicitly. Results obey global output budgets; request timeout does not guarantee server-side cancellation.",
+        "inputSchema": {
+          "$defs": {
+            "EncodedInput": {
+              "additionalProperties": false,
+              "properties": {
+                "encoding": {
+                  "$ref": "#/$defs/InputEncoding",
+                  "default": "utf8",
+                  "description": "Encoding of `value`."
+                },
+                "value": {
+                  "description": "UTF-8 text or standard base64, according to `encoding`.",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "value"
+              ],
+              "type": "object"
+            },
+            "InputEncoding": {
+              "enum": [
+                "utf8",
+                "base64"
+              ],
+              "type": "string"
+            }
+          },
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "arguments": {
+              "description": "Binary-safe arguments supplied after the declared keys.",
+              "items": {
+                "$ref": "#/$defs/EncodedInput"
+              },
+              "type": "array"
+            },
+            "function": {
+              "description": "Registered Redis function name.",
+              "type": "string"
+            },
+            "keys": {
+              "description": "Every Redis key the function may access. Cluster keys must share one slot.",
+              "items": {
+                "$ref": "#/$defs/EncodedInput"
+              },
+              "type": "array"
+            }
+          },
+          "required": [
+            "function"
+          ],
+          "title": "FcallInput",
+          "type": "object"
+        },
+        "name": "redis_fcall_ro",
+        "outputSchema": {
+          "$defs": {
+            "ClusterExecution": {
+              "additionalProperties": false,
+              "properties": {
+                "complete": {
+                  "type": "boolean"
+                },
+                "node_limit": {
+                  "format": "uint",
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                "nodes_queried": {
+                  "format": "uint",
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                "nodes_succeeded": {
+                  "format": "uint",
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                "replies": {
+                  "items": {
+                    "$ref": "#/$defs/ClusterNodeReply"
+                  },
+                  "type": "array"
+                },
+                "target": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "target",
+                "node_limit",
+                "nodes_queried",
+                "nodes_succeeded",
+                "complete",
+                "replies"
+              ],
+              "type": "object"
+            },
+            "ClusterNodeReply": {
+              "additionalProperties": false,
+              "properties": {
+                "error_code": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "node": {
+                  "type": "string"
+                },
+                "succeeded": {
+                  "type": "boolean"
+                },
+                "value": true
+              },
+              "required": [
+                "node",
+                "succeeded"
+              ],
+              "type": "object"
+            }
+          },
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "argument_count": {
+              "format": "uint",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "cluster": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/ClusterExecution"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "command": {
+              "type": "string"
+            },
+            "key_count": {
+              "format": "uint",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "result": true,
+            "scope": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "command",
+            "scope",
+            "key_count",
+            "argument_count"
+          ],
+          "title": "OperationOutput",
+          "type": "object"
+        },
+        "title": "Run Read-Only Redis Function"
+      },
+      "required_access": "read_only",
       "required_module": null,
       "requires_raw_opt_in": false
     },
@@ -9458,6 +10592,1308 @@
       },
       "required_access": "read_only",
       "required_module": "search",
+      "requires_raw_opt_in": false
+    },
+    {
+      "bundle": "scripting",
+      "capability_requirements": {
+        "deployment": "any",
+        "minimum_module_version": null,
+        "minimum_redis_version": "7.0.0",
+        "required_commands": [
+          "FUNCTION"
+        ],
+        "required_module": null
+      },
+      "family": "scripting",
+      "name": "redis_function_delete",
+      "output_policy": "intrinsically_bounded",
+      "protocol": {
+        "annotations": {
+          "idempotentHint": true
+        },
+        "description": "Permanently delete one named Redis 7+ function library from every Cluster primary with partial outcomes explicit. Requires full access.",
+        "inputSchema": {
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "library_name": {
+              "description": "Exact function-library name to delete.",
+              "type": "string"
+            },
+            "max_cluster_nodes": {
+              "default": 32,
+              "description": "Maximum primary shards that may participate in Cluster fan-out.",
+              "format": "uint",
+              "maximum": 256,
+              "minimum": 1,
+              "type": "integer"
+            }
+          },
+          "required": [
+            "library_name"
+          ],
+          "title": "FunctionDeleteInput",
+          "type": "object"
+        },
+        "name": "redis_function_delete",
+        "outputSchema": {
+          "$defs": {
+            "ClusterExecution": {
+              "additionalProperties": false,
+              "properties": {
+                "complete": {
+                  "type": "boolean"
+                },
+                "node_limit": {
+                  "format": "uint",
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                "nodes_queried": {
+                  "format": "uint",
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                "nodes_succeeded": {
+                  "format": "uint",
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                "replies": {
+                  "items": {
+                    "$ref": "#/$defs/ClusterNodeReply"
+                  },
+                  "type": "array"
+                },
+                "target": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "target",
+                "node_limit",
+                "nodes_queried",
+                "nodes_succeeded",
+                "complete",
+                "replies"
+              ],
+              "type": "object"
+            },
+            "ClusterNodeReply": {
+              "additionalProperties": false,
+              "properties": {
+                "error_code": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "node": {
+                  "type": "string"
+                },
+                "succeeded": {
+                  "type": "boolean"
+                },
+                "value": true
+              },
+              "required": [
+                "node",
+                "succeeded"
+              ],
+              "type": "object"
+            }
+          },
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "argument_count": {
+              "format": "uint",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "cluster": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/ClusterExecution"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "command": {
+              "type": "string"
+            },
+            "key_count": {
+              "format": "uint",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "result": true,
+            "scope": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "command",
+            "scope",
+            "key_count",
+            "argument_count"
+          ],
+          "title": "OperationOutput",
+          "type": "object"
+        },
+        "title": "Delete Redis Function Library"
+      },
+      "required_access": "full",
+      "required_module": null,
+      "requires_raw_opt_in": false
+    },
+    {
+      "bundle": "scripting",
+      "capability_requirements": {
+        "deployment": "any",
+        "minimum_module_version": null,
+        "minimum_redis_version": "7.0.0",
+        "required_commands": [
+          "FUNCTION"
+        ],
+        "required_module": null
+      },
+      "family": "scripting",
+      "name": "redis_function_dump",
+      "output_policy": "budget_guarded",
+      "protocol": {
+        "annotations": {
+          "destructiveHint": false,
+          "idempotentHint": true,
+          "readOnlyHint": true
+        },
+        "description": "Read a binary-safe Redis 7+ function-library dump from one configured node. The caller supplies a raw payload ceiling and the encoded response also obeys the global output budget. Requires full access.",
+        "inputSchema": {
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "max_bytes": {
+              "default": 65536,
+              "description": "Maximum raw dump payload bytes accepted before returning an output-limit result.",
+              "format": "uint",
+              "maximum": 4194304,
+              "minimum": 1,
+              "type": "integer"
+            }
+          },
+          "title": "FunctionDumpInput",
+          "type": "object"
+        },
+        "name": "redis_function_dump",
+        "outputSchema": {
+          "$defs": {
+            "ClusterExecution": {
+              "additionalProperties": false,
+              "properties": {
+                "complete": {
+                  "type": "boolean"
+                },
+                "node_limit": {
+                  "format": "uint",
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                "nodes_queried": {
+                  "format": "uint",
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                "nodes_succeeded": {
+                  "format": "uint",
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                "replies": {
+                  "items": {
+                    "$ref": "#/$defs/ClusterNodeReply"
+                  },
+                  "type": "array"
+                },
+                "target": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "target",
+                "node_limit",
+                "nodes_queried",
+                "nodes_succeeded",
+                "complete",
+                "replies"
+              ],
+              "type": "object"
+            },
+            "ClusterNodeReply": {
+              "additionalProperties": false,
+              "properties": {
+                "error_code": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "node": {
+                  "type": "string"
+                },
+                "succeeded": {
+                  "type": "boolean"
+                },
+                "value": true
+              },
+              "required": [
+                "node",
+                "succeeded"
+              ],
+              "type": "object"
+            }
+          },
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "argument_count": {
+              "format": "uint",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "cluster": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/ClusterExecution"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "command": {
+              "type": "string"
+            },
+            "key_count": {
+              "format": "uint",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "result": true,
+            "scope": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "command",
+            "scope",
+            "key_count",
+            "argument_count"
+          ],
+          "title": "OperationOutput",
+          "type": "object"
+        },
+        "title": "Dump Redis Function Libraries"
+      },
+      "required_access": "full",
+      "required_module": null,
+      "requires_raw_opt_in": false
+    },
+    {
+      "bundle": "scripting",
+      "capability_requirements": {
+        "deployment": "any",
+        "minimum_module_version": null,
+        "minimum_redis_version": "7.0.0",
+        "required_commands": [
+          "FUNCTION"
+        ],
+        "required_module": null
+      },
+      "family": "scripting",
+      "name": "redis_function_flush",
+      "output_policy": "intrinsically_bounded",
+      "protocol": {
+        "annotations": {
+          "idempotentHint": true
+        },
+        "description": "Permanently flush every Redis 7+ function library from every Cluster primary with an explicit SYNC or ASYNC mode. Partial outcomes remain visible. Requires full access.",
+        "inputSchema": {
+          "$defs": {
+            "FlushMode": {
+              "enum": [
+                "sync",
+                "async"
+              ],
+              "type": "string"
+            }
+          },
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "max_cluster_nodes": {
+              "default": 32,
+              "description": "Maximum nodes that may participate in Cluster fan-out.",
+              "format": "uint",
+              "maximum": 256,
+              "minimum": 1,
+              "type": "integer"
+            },
+            "mode": {
+              "$ref": "#/$defs/FlushMode",
+              "description": "Whether Redis performs the flush synchronously or asynchronously."
+            }
+          },
+          "title": "ClusterFlushInput",
+          "type": "object"
+        },
+        "name": "redis_function_flush",
+        "outputSchema": {
+          "$defs": {
+            "ClusterExecution": {
+              "additionalProperties": false,
+              "properties": {
+                "complete": {
+                  "type": "boolean"
+                },
+                "node_limit": {
+                  "format": "uint",
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                "nodes_queried": {
+                  "format": "uint",
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                "nodes_succeeded": {
+                  "format": "uint",
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                "replies": {
+                  "items": {
+                    "$ref": "#/$defs/ClusterNodeReply"
+                  },
+                  "type": "array"
+                },
+                "target": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "target",
+                "node_limit",
+                "nodes_queried",
+                "nodes_succeeded",
+                "complete",
+                "replies"
+              ],
+              "type": "object"
+            },
+            "ClusterNodeReply": {
+              "additionalProperties": false,
+              "properties": {
+                "error_code": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "node": {
+                  "type": "string"
+                },
+                "succeeded": {
+                  "type": "boolean"
+                },
+                "value": true
+              },
+              "required": [
+                "node",
+                "succeeded"
+              ],
+              "type": "object"
+            }
+          },
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "argument_count": {
+              "format": "uint",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "cluster": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/ClusterExecution"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "command": {
+              "type": "string"
+            },
+            "key_count": {
+              "format": "uint",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "result": true,
+            "scope": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "command",
+            "scope",
+            "key_count",
+            "argument_count"
+          ],
+          "title": "OperationOutput",
+          "type": "object"
+        },
+        "title": "Flush Redis Function Libraries"
+      },
+      "required_access": "full",
+      "required_module": null,
+      "requires_raw_opt_in": false
+    },
+    {
+      "bundle": "scripting",
+      "capability_requirements": {
+        "deployment": "any",
+        "minimum_module_version": null,
+        "minimum_redis_version": "7.0.0",
+        "required_commands": [
+          "FUNCTION"
+        ],
+        "required_module": null
+      },
+      "family": "scripting",
+      "name": "redis_function_kill",
+      "output_policy": "intrinsically_bounded",
+      "protocol": {
+        "annotations": {},
+        "description": "Attempt FUNCTION KILL on every Redis Cluster primary. Redis only kills functions that have not performed writes; per-primary outcomes are explicit. Requires full access.",
+        "inputSchema": {
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "max_cluster_nodes": {
+              "default": 32,
+              "description": "Maximum primary shards that may participate in Cluster fan-out.",
+              "format": "uint",
+              "maximum": 256,
+              "minimum": 1,
+              "type": "integer"
+            }
+          },
+          "title": "ClusterOnlyInput",
+          "type": "object"
+        },
+        "name": "redis_function_kill",
+        "outputSchema": {
+          "$defs": {
+            "ClusterExecution": {
+              "additionalProperties": false,
+              "properties": {
+                "complete": {
+                  "type": "boolean"
+                },
+                "node_limit": {
+                  "format": "uint",
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                "nodes_queried": {
+                  "format": "uint",
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                "nodes_succeeded": {
+                  "format": "uint",
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                "replies": {
+                  "items": {
+                    "$ref": "#/$defs/ClusterNodeReply"
+                  },
+                  "type": "array"
+                },
+                "target": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "target",
+                "node_limit",
+                "nodes_queried",
+                "nodes_succeeded",
+                "complete",
+                "replies"
+              ],
+              "type": "object"
+            },
+            "ClusterNodeReply": {
+              "additionalProperties": false,
+              "properties": {
+                "error_code": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "node": {
+                  "type": "string"
+                },
+                "succeeded": {
+                  "type": "boolean"
+                },
+                "value": true
+              },
+              "required": [
+                "node",
+                "succeeded"
+              ],
+              "type": "object"
+            }
+          },
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "argument_count": {
+              "format": "uint",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "cluster": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/ClusterExecution"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "command": {
+              "type": "string"
+            },
+            "key_count": {
+              "format": "uint",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "result": true,
+            "scope": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "command",
+            "scope",
+            "key_count",
+            "argument_count"
+          ],
+          "title": "OperationOutput",
+          "type": "object"
+        },
+        "title": "Kill Running Redis Functions"
+      },
+      "required_access": "full",
+      "required_module": null,
+      "requires_raw_opt_in": false
+    },
+    {
+      "bundle": "scripting",
+      "capability_requirements": {
+        "deployment": "any",
+        "minimum_module_version": null,
+        "minimum_redis_version": "7.0.0",
+        "required_commands": [
+          "FUNCTION"
+        ],
+        "required_module": null
+      },
+      "family": "scripting",
+      "name": "redis_function_list",
+      "output_policy": "budget_guarded",
+      "protocol": {
+        "annotations": {
+          "destructiveHint": false,
+          "idempotentHint": true,
+          "readOnlyHint": true
+        },
+        "description": "Inspect Redis 7+ function libraries on one configured node with an optional library-name pattern and explicit source-code inclusion. Output is globally budgeted. Full access is required because source code may contain sensitive logic.",
+        "inputSchema": {
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "include_code": {
+              "default": false,
+              "description": "Include library source code. This can substantially increase output.",
+              "type": "boolean"
+            },
+            "library_name": {
+              "default": null,
+              "description": "Optional Redis glob pattern for library names.",
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          "title": "FunctionListInput",
+          "type": "object"
+        },
+        "name": "redis_function_list",
+        "outputSchema": {
+          "$defs": {
+            "ClusterExecution": {
+              "additionalProperties": false,
+              "properties": {
+                "complete": {
+                  "type": "boolean"
+                },
+                "node_limit": {
+                  "format": "uint",
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                "nodes_queried": {
+                  "format": "uint",
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                "nodes_succeeded": {
+                  "format": "uint",
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                "replies": {
+                  "items": {
+                    "$ref": "#/$defs/ClusterNodeReply"
+                  },
+                  "type": "array"
+                },
+                "target": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "target",
+                "node_limit",
+                "nodes_queried",
+                "nodes_succeeded",
+                "complete",
+                "replies"
+              ],
+              "type": "object"
+            },
+            "ClusterNodeReply": {
+              "additionalProperties": false,
+              "properties": {
+                "error_code": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "node": {
+                  "type": "string"
+                },
+                "succeeded": {
+                  "type": "boolean"
+                },
+                "value": true
+              },
+              "required": [
+                "node",
+                "succeeded"
+              ],
+              "type": "object"
+            }
+          },
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "argument_count": {
+              "format": "uint",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "cluster": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/ClusterExecution"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "command": {
+              "type": "string"
+            },
+            "key_count": {
+              "format": "uint",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "result": true,
+            "scope": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "command",
+            "scope",
+            "key_count",
+            "argument_count"
+          ],
+          "title": "OperationOutput",
+          "type": "object"
+        },
+        "title": "List Redis Function Libraries"
+      },
+      "required_access": "full",
+      "required_module": null,
+      "requires_raw_opt_in": false
+    },
+    {
+      "bundle": "scripting",
+      "capability_requirements": {
+        "deployment": "any",
+        "minimum_module_version": null,
+        "minimum_redis_version": "7.0.0",
+        "required_commands": [
+          "FUNCTION"
+        ],
+        "required_module": null
+      },
+      "family": "scripting",
+      "name": "redis_function_load",
+      "output_policy": "intrinsically_bounded",
+      "protocol": {
+        "annotations": {},
+        "description": "Load bounded binary-safe Redis 7+ function-library source on every Cluster primary. Replacement is explicit, partial outcomes remain visible, and full access is required.",
+        "inputSchema": {
+          "$defs": {
+            "EncodedInput": {
+              "additionalProperties": false,
+              "properties": {
+                "encoding": {
+                  "$ref": "#/$defs/InputEncoding",
+                  "default": "utf8",
+                  "description": "Encoding of `value`."
+                },
+                "value": {
+                  "description": "UTF-8 text or standard base64, according to `encoding`.",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "value"
+              ],
+              "type": "object"
+            },
+            "InputEncoding": {
+              "enum": [
+                "utf8",
+                "base64"
+              ],
+              "type": "string"
+            }
+          },
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "library_code": {
+              "$ref": "#/$defs/EncodedInput",
+              "description": "Binary-safe library source including its Redis shebang metadata."
+            },
+            "max_cluster_nodes": {
+              "default": 32,
+              "description": "Maximum primary shards that may participate in Cluster fan-out.",
+              "format": "uint",
+              "maximum": 256,
+              "minimum": 1,
+              "type": "integer"
+            },
+            "replace": {
+              "default": false,
+              "description": "Replace an existing library with the same name.",
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "library_code"
+          ],
+          "title": "FunctionLoadInput",
+          "type": "object"
+        },
+        "name": "redis_function_load",
+        "outputSchema": {
+          "$defs": {
+            "ClusterExecution": {
+              "additionalProperties": false,
+              "properties": {
+                "complete": {
+                  "type": "boolean"
+                },
+                "node_limit": {
+                  "format": "uint",
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                "nodes_queried": {
+                  "format": "uint",
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                "nodes_succeeded": {
+                  "format": "uint",
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                "replies": {
+                  "items": {
+                    "$ref": "#/$defs/ClusterNodeReply"
+                  },
+                  "type": "array"
+                },
+                "target": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "target",
+                "node_limit",
+                "nodes_queried",
+                "nodes_succeeded",
+                "complete",
+                "replies"
+              ],
+              "type": "object"
+            },
+            "ClusterNodeReply": {
+              "additionalProperties": false,
+              "properties": {
+                "error_code": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "node": {
+                  "type": "string"
+                },
+                "succeeded": {
+                  "type": "boolean"
+                },
+                "value": true
+              },
+              "required": [
+                "node",
+                "succeeded"
+              ],
+              "type": "object"
+            }
+          },
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "argument_count": {
+              "format": "uint",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "cluster": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/ClusterExecution"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "command": {
+              "type": "string"
+            },
+            "key_count": {
+              "format": "uint",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "result": true,
+            "scope": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "command",
+            "scope",
+            "key_count",
+            "argument_count"
+          ],
+          "title": "OperationOutput",
+          "type": "object"
+        },
+        "title": "Load Redis Function Library"
+      },
+      "required_access": "full",
+      "required_module": null,
+      "requires_raw_opt_in": false
+    },
+    {
+      "bundle": "scripting",
+      "capability_requirements": {
+        "deployment": "any",
+        "minimum_module_version": null,
+        "minimum_redis_version": "7.0.0",
+        "required_commands": [
+          "FUNCTION"
+        ],
+        "required_module": null
+      },
+      "family": "scripting",
+      "name": "redis_function_restore",
+      "output_policy": "intrinsically_bounded",
+      "protocol": {
+        "annotations": {},
+        "description": "Restore a bounded binary-safe Redis 7+ FUNCTION DUMP payload on every Cluster primary with an explicit flush/append/replace policy. Partial outcomes remain visible. Requires full access.",
+        "inputSchema": {
+          "$defs": {
+            "EncodedInput": {
+              "additionalProperties": false,
+              "properties": {
+                "encoding": {
+                  "$ref": "#/$defs/InputEncoding",
+                  "default": "utf8",
+                  "description": "Encoding of `value`."
+                },
+                "value": {
+                  "description": "UTF-8 text or standard base64, according to `encoding`.",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "value"
+              ],
+              "type": "object"
+            },
+            "InputEncoding": {
+              "enum": [
+                "utf8",
+                "base64"
+              ],
+              "type": "string"
+            },
+            "RestorePolicy": {
+              "enum": [
+                "flush",
+                "append",
+                "replace"
+              ],
+              "type": "string"
+            }
+          },
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "max_cluster_nodes": {
+              "default": 32,
+              "description": "Maximum primary shards that may participate in Cluster fan-out.",
+              "format": "uint",
+              "maximum": 256,
+              "minimum": 1,
+              "type": "integer"
+            },
+            "payload": {
+              "$ref": "#/$defs/EncodedInput",
+              "description": "Binary-safe payload returned by FUNCTION DUMP."
+            },
+            "policy": {
+              "$ref": "#/$defs/RestorePolicy",
+              "description": "Restore collision policy. `flush` removes all existing libraries first."
+            }
+          },
+          "required": [
+            "payload"
+          ],
+          "title": "FunctionRestoreInput",
+          "type": "object"
+        },
+        "name": "redis_function_restore",
+        "outputSchema": {
+          "$defs": {
+            "ClusterExecution": {
+              "additionalProperties": false,
+              "properties": {
+                "complete": {
+                  "type": "boolean"
+                },
+                "node_limit": {
+                  "format": "uint",
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                "nodes_queried": {
+                  "format": "uint",
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                "nodes_succeeded": {
+                  "format": "uint",
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                "replies": {
+                  "items": {
+                    "$ref": "#/$defs/ClusterNodeReply"
+                  },
+                  "type": "array"
+                },
+                "target": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "target",
+                "node_limit",
+                "nodes_queried",
+                "nodes_succeeded",
+                "complete",
+                "replies"
+              ],
+              "type": "object"
+            },
+            "ClusterNodeReply": {
+              "additionalProperties": false,
+              "properties": {
+                "error_code": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "node": {
+                  "type": "string"
+                },
+                "succeeded": {
+                  "type": "boolean"
+                },
+                "value": true
+              },
+              "required": [
+                "node",
+                "succeeded"
+              ],
+              "type": "object"
+            }
+          },
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "argument_count": {
+              "format": "uint",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "cluster": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/ClusterExecution"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "command": {
+              "type": "string"
+            },
+            "key_count": {
+              "format": "uint",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "result": true,
+            "scope": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "command",
+            "scope",
+            "key_count",
+            "argument_count"
+          ],
+          "title": "OperationOutput",
+          "type": "object"
+        },
+        "title": "Restore Redis Function Libraries"
+      },
+      "required_access": "full",
+      "required_module": null,
+      "requires_raw_opt_in": false
+    },
+    {
+      "bundle": "scripting",
+      "capability_requirements": {
+        "deployment": "any",
+        "minimum_module_version": null,
+        "minimum_redis_version": "7.0.0",
+        "required_commands": [
+          "FUNCTION"
+        ],
+        "required_module": null
+      },
+      "family": "scripting",
+      "name": "redis_function_stats",
+      "output_policy": "budget_guarded",
+      "protocol": {
+        "annotations": {
+          "destructiveHint": false,
+          "idempotentHint": true,
+          "readOnlyHint": true
+        },
+        "description": "Read bounded Redis 7+ function runtime statistics from every Cluster primary with partial outcomes explicit. Full access is required because running-function metadata can expose operational details.",
+        "inputSchema": {
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "max_cluster_nodes": {
+              "default": 32,
+              "description": "Maximum primary shards that may participate in Cluster fan-out.",
+              "format": "uint",
+              "maximum": 256,
+              "minimum": 1,
+              "type": "integer"
+            }
+          },
+          "title": "ClusterOnlyInput",
+          "type": "object"
+        },
+        "name": "redis_function_stats",
+        "outputSchema": {
+          "$defs": {
+            "ClusterExecution": {
+              "additionalProperties": false,
+              "properties": {
+                "complete": {
+                  "type": "boolean"
+                },
+                "node_limit": {
+                  "format": "uint",
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                "nodes_queried": {
+                  "format": "uint",
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                "nodes_succeeded": {
+                  "format": "uint",
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                "replies": {
+                  "items": {
+                    "$ref": "#/$defs/ClusterNodeReply"
+                  },
+                  "type": "array"
+                },
+                "target": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "target",
+                "node_limit",
+                "nodes_queried",
+                "nodes_succeeded",
+                "complete",
+                "replies"
+              ],
+              "type": "object"
+            },
+            "ClusterNodeReply": {
+              "additionalProperties": false,
+              "properties": {
+                "error_code": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "node": {
+                  "type": "string"
+                },
+                "succeeded": {
+                  "type": "boolean"
+                },
+                "value": true
+              },
+              "required": [
+                "node",
+                "succeeded"
+              ],
+              "type": "object"
+            }
+          },
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "argument_count": {
+              "format": "uint",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "cluster": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/ClusterExecution"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "command": {
+              "type": "string"
+            },
+            "key_count": {
+              "format": "uint",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "result": true,
+            "scope": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "command",
+            "scope",
+            "key_count",
+            "argument_count"
+          ],
+          "title": "OperationOutput",
+          "type": "object"
+        },
+        "title": "Inspect Redis Function Runtime"
+      },
+      "required_access": "full",
+      "required_module": null,
       "requires_raw_opt_in": false
     },
     {
@@ -25136,6 +27572,662 @@
         "title": "Read Redis Set Cardinality"
       },
       "required_access": "read_only",
+      "required_module": null,
+      "requires_raw_opt_in": false
+    },
+    {
+      "bundle": "scripting",
+      "capability_requirements": {
+        "deployment": "any",
+        "minimum_module_version": null,
+        "minimum_redis_version": "2.6.0",
+        "required_commands": [
+          "SCRIPT"
+        ],
+        "required_module": null
+      },
+      "family": "scripting",
+      "name": "redis_script_exists",
+      "output_policy": "intrinsically_bounded",
+      "protocol": {
+        "annotations": {
+          "destructiveHint": false,
+          "idempotentHint": true,
+          "readOnlyHint": true
+        },
+        "description": "Check a bounded SHA1 list in every Redis Cluster primary script cache. Standalone returns one result; Cluster keeps per-primary replies and partial failures explicit.",
+        "inputSchema": {
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "max_cluster_nodes": {
+              "default": 32,
+              "description": "Maximum primary shards that may participate in Cluster fan-out.",
+              "format": "uint",
+              "maximum": 256,
+              "minimum": 1,
+              "type": "integer"
+            },
+            "sha1": {
+              "description": "One to 1000 SHA1 digests to inspect.",
+              "items": {
+                "type": "string"
+              },
+              "maxItems": 1000,
+              "minItems": 1,
+              "type": "array"
+            }
+          },
+          "required": [
+            "sha1"
+          ],
+          "title": "ScriptExistsInput",
+          "type": "object"
+        },
+        "name": "redis_script_exists",
+        "outputSchema": {
+          "$defs": {
+            "ClusterExecution": {
+              "additionalProperties": false,
+              "properties": {
+                "complete": {
+                  "type": "boolean"
+                },
+                "node_limit": {
+                  "format": "uint",
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                "nodes_queried": {
+                  "format": "uint",
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                "nodes_succeeded": {
+                  "format": "uint",
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                "replies": {
+                  "items": {
+                    "$ref": "#/$defs/ClusterNodeReply"
+                  },
+                  "type": "array"
+                },
+                "target": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "target",
+                "node_limit",
+                "nodes_queried",
+                "nodes_succeeded",
+                "complete",
+                "replies"
+              ],
+              "type": "object"
+            },
+            "ClusterNodeReply": {
+              "additionalProperties": false,
+              "properties": {
+                "error_code": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "node": {
+                  "type": "string"
+                },
+                "succeeded": {
+                  "type": "boolean"
+                },
+                "value": true
+              },
+              "required": [
+                "node",
+                "succeeded"
+              ],
+              "type": "object"
+            }
+          },
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "argument_count": {
+              "format": "uint",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "cluster": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/ClusterExecution"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "command": {
+              "type": "string"
+            },
+            "key_count": {
+              "format": "uint",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "result": true,
+            "scope": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "command",
+            "scope",
+            "key_count",
+            "argument_count"
+          ],
+          "title": "OperationOutput",
+          "type": "object"
+        },
+        "title": "Inspect Redis Script Cache"
+      },
+      "required_access": "read_only",
+      "required_module": null,
+      "requires_raw_opt_in": false
+    },
+    {
+      "bundle": "scripting",
+      "capability_requirements": {
+        "deployment": "any",
+        "minimum_module_version": null,
+        "minimum_redis_version": "2.6.0",
+        "required_commands": [
+          "SCRIPT"
+        ],
+        "required_module": null
+      },
+      "family": "scripting",
+      "name": "redis_script_flush",
+      "output_policy": "intrinsically_bounded",
+      "protocol": {
+        "annotations": {
+          "idempotentHint": true
+        },
+        "description": "Permanently flush every Redis Cluster node script cache with an explicit SYNC or ASYNC mode. Partial node failures remain visible. Requires full access.",
+        "inputSchema": {
+          "$defs": {
+            "FlushMode": {
+              "enum": [
+                "sync",
+                "async"
+              ],
+              "type": "string"
+            }
+          },
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "max_cluster_nodes": {
+              "default": 32,
+              "description": "Maximum nodes that may participate in Cluster fan-out.",
+              "format": "uint",
+              "maximum": 256,
+              "minimum": 1,
+              "type": "integer"
+            },
+            "mode": {
+              "$ref": "#/$defs/FlushMode",
+              "description": "Whether Redis performs the flush synchronously or asynchronously."
+            }
+          },
+          "title": "ClusterFlushInput",
+          "type": "object"
+        },
+        "name": "redis_script_flush",
+        "outputSchema": {
+          "$defs": {
+            "ClusterExecution": {
+              "additionalProperties": false,
+              "properties": {
+                "complete": {
+                  "type": "boolean"
+                },
+                "node_limit": {
+                  "format": "uint",
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                "nodes_queried": {
+                  "format": "uint",
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                "nodes_succeeded": {
+                  "format": "uint",
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                "replies": {
+                  "items": {
+                    "$ref": "#/$defs/ClusterNodeReply"
+                  },
+                  "type": "array"
+                },
+                "target": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "target",
+                "node_limit",
+                "nodes_queried",
+                "nodes_succeeded",
+                "complete",
+                "replies"
+              ],
+              "type": "object"
+            },
+            "ClusterNodeReply": {
+              "additionalProperties": false,
+              "properties": {
+                "error_code": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "node": {
+                  "type": "string"
+                },
+                "succeeded": {
+                  "type": "boolean"
+                },
+                "value": true
+              },
+              "required": [
+                "node",
+                "succeeded"
+              ],
+              "type": "object"
+            }
+          },
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "argument_count": {
+              "format": "uint",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "cluster": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/ClusterExecution"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "command": {
+              "type": "string"
+            },
+            "key_count": {
+              "format": "uint",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "result": true,
+            "scope": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "command",
+            "scope",
+            "key_count",
+            "argument_count"
+          ],
+          "title": "OperationOutput",
+          "type": "object"
+        },
+        "title": "Flush Redis Script Cache"
+      },
+      "required_access": "full",
+      "required_module": null,
+      "requires_raw_opt_in": false
+    },
+    {
+      "bundle": "scripting",
+      "capability_requirements": {
+        "deployment": "any",
+        "minimum_module_version": null,
+        "minimum_redis_version": "2.6.0",
+        "required_commands": [
+          "SCRIPT"
+        ],
+        "required_module": null
+      },
+      "family": "scripting",
+      "name": "redis_script_kill",
+      "output_policy": "intrinsically_bounded",
+      "protocol": {
+        "annotations": {},
+        "description": "Attempt SCRIPT KILL on every Redis Cluster primary. Redis only kills scripts that have not performed writes; per-primary outcomes are explicit. Requires full access.",
+        "inputSchema": {
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "max_cluster_nodes": {
+              "default": 32,
+              "description": "Maximum primary shards that may participate in Cluster fan-out.",
+              "format": "uint",
+              "maximum": 256,
+              "minimum": 1,
+              "type": "integer"
+            }
+          },
+          "title": "ClusterOnlyInput",
+          "type": "object"
+        },
+        "name": "redis_script_kill",
+        "outputSchema": {
+          "$defs": {
+            "ClusterExecution": {
+              "additionalProperties": false,
+              "properties": {
+                "complete": {
+                  "type": "boolean"
+                },
+                "node_limit": {
+                  "format": "uint",
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                "nodes_queried": {
+                  "format": "uint",
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                "nodes_succeeded": {
+                  "format": "uint",
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                "replies": {
+                  "items": {
+                    "$ref": "#/$defs/ClusterNodeReply"
+                  },
+                  "type": "array"
+                },
+                "target": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "target",
+                "node_limit",
+                "nodes_queried",
+                "nodes_succeeded",
+                "complete",
+                "replies"
+              ],
+              "type": "object"
+            },
+            "ClusterNodeReply": {
+              "additionalProperties": false,
+              "properties": {
+                "error_code": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "node": {
+                  "type": "string"
+                },
+                "succeeded": {
+                  "type": "boolean"
+                },
+                "value": true
+              },
+              "required": [
+                "node",
+                "succeeded"
+              ],
+              "type": "object"
+            }
+          },
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "argument_count": {
+              "format": "uint",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "cluster": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/ClusterExecution"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "command": {
+              "type": "string"
+            },
+            "key_count": {
+              "format": "uint",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "result": true,
+            "scope": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "command",
+            "scope",
+            "key_count",
+            "argument_count"
+          ],
+          "title": "OperationOutput",
+          "type": "object"
+        },
+        "title": "Kill Running Redis Scripts"
+      },
+      "required_access": "full",
+      "required_module": null,
+      "requires_raw_opt_in": false
+    },
+    {
+      "bundle": "scripting",
+      "capability_requirements": {
+        "deployment": "any",
+        "minimum_module_version": null,
+        "minimum_redis_version": "2.6.0",
+        "required_commands": [
+          "SCRIPT"
+        ],
+        "required_module": null
+      },
+      "family": "scripting",
+      "name": "redis_script_load",
+      "output_policy": "intrinsically_bounded",
+      "protocol": {
+        "annotations": {
+          "destructiveHint": false,
+          "idempotentHint": true
+        },
+        "description": "Load bounded binary-safe Lua source into every Redis Cluster node script cache, retaining per-node SHA1 replies and partial failures. Requires full access.",
+        "inputSchema": {
+          "$defs": {
+            "EncodedInput": {
+              "additionalProperties": false,
+              "properties": {
+                "encoding": {
+                  "$ref": "#/$defs/InputEncoding",
+                  "default": "utf8",
+                  "description": "Encoding of `value`."
+                },
+                "value": {
+                  "description": "UTF-8 text or standard base64, according to `encoding`.",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "value"
+              ],
+              "type": "object"
+            },
+            "InputEncoding": {
+              "enum": [
+                "utf8",
+                "base64"
+              ],
+              "type": "string"
+            }
+          },
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "max_cluster_nodes": {
+              "default": 32,
+              "description": "Maximum nodes that may participate in Cluster fan-out.",
+              "format": "uint",
+              "maximum": 256,
+              "minimum": 1,
+              "type": "integer"
+            },
+            "script": {
+              "$ref": "#/$defs/EncodedInput",
+              "description": "Binary-safe Lua source, limited to 1 MiB."
+            }
+          },
+          "required": [
+            "script"
+          ],
+          "title": "ScriptLoadInput",
+          "type": "object"
+        },
+        "name": "redis_script_load",
+        "outputSchema": {
+          "$defs": {
+            "ClusterExecution": {
+              "additionalProperties": false,
+              "properties": {
+                "complete": {
+                  "type": "boolean"
+                },
+                "node_limit": {
+                  "format": "uint",
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                "nodes_queried": {
+                  "format": "uint",
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                "nodes_succeeded": {
+                  "format": "uint",
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                "replies": {
+                  "items": {
+                    "$ref": "#/$defs/ClusterNodeReply"
+                  },
+                  "type": "array"
+                },
+                "target": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "target",
+                "node_limit",
+                "nodes_queried",
+                "nodes_succeeded",
+                "complete",
+                "replies"
+              ],
+              "type": "object"
+            },
+            "ClusterNodeReply": {
+              "additionalProperties": false,
+              "properties": {
+                "error_code": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "node": {
+                  "type": "string"
+                },
+                "succeeded": {
+                  "type": "boolean"
+                },
+                "value": true
+              },
+              "required": [
+                "node",
+                "succeeded"
+              ],
+              "type": "object"
+            }
+          },
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "argument_count": {
+              "format": "uint",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "cluster": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/ClusterExecution"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "command": {
+              "type": "string"
+            },
+            "key_count": {
+              "format": "uint",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "result": true,
+            "scope": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "command",
+            "scope",
+            "key_count",
+            "argument_count"
+          ],
+          "title": "OperationOutput",
+          "type": "object"
+        },
+        "title": "Load Redis Script Cache"
+      },
+      "required_access": "full",
       "required_module": null,
       "requires_raw_opt_in": false
     },

@@ -28,9 +28,9 @@ Vector Set commands remain part of the core inventory.
 
 | Disposition | Commands | Meaning |
 | --- | ---: | --- |
-| `typed` | 201 | Covered by cataloged structured MCP tools. |
+| `typed` | 219 | Covered by cataloged structured MCP tools. |
 | `native` | 32 | Available through fail-closed classified native invocation. |
-| `session` | 40 | Implemented or planned through a bounded dedicated connection/workflow. |
+| `session` | 22 | Implemented or planned through a bounded dedicated connection/workflow. |
 | `planned` | 67 | Assigned to a concrete command-completeness backlog issue. |
 | `excluded` | 62 | Outside the product or safety boundary with an explicit rationale. |
 | `deprecated` | 21 | Redis marks the command deprecated; richer replacements are preferred. |
@@ -41,9 +41,18 @@ The counts describe official Redis command definitions, not MCP tool count.
 One structured tool can compose multiple commands, and one Redis command can
 support multiple tools.
 
-Planned and session work is tied to issues #32, #58, #61, and #66. The six
+Planned and session work is tied to issues #32, #61, and #66. The six
 already-implemented Pub/Sub connection commands retain their
 closed implementation reference, #30.
+
+Lua scripting and Redis Functions coverage is fully typed through the opt-in
+`scripting` family. EVAL, EVALSHA, FCALL, and their Redis 7+ read-only forms
+declare every binary-safe key and argument, enforce same-slot Cluster routing,
+and apply request timeouts plus encoded output budgets. Script-cache and
+function-library lifecycle operations distinguish all-node, all-primary, and
+node-local behavior, require explicit fan-out and payload ceilings, expose
+partial node failures without server error text, and keep `SCRIPT DEBUG`
+outside the supported boundary.
 
 Bitmap/bitfield, geospatial, and HyperLogLog coverage is fully typed. Its
 contracts cap item counts and bitmap write extent, preserve exact integer and

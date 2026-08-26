@@ -33,6 +33,7 @@ impl From<CliAccessMode> for AccessMode {
 enum CliOptionalBundle {
     Json,
     Search,
+    Scripting,
 }
 
 impl From<CliOptionalBundle> for ToolBundle {
@@ -40,6 +41,7 @@ impl From<CliOptionalBundle> for ToolBundle {
         match value {
             CliOptionalBundle::Json => Self::Json,
             CliOptionalBundle::Search => Self::Search,
+            CliOptionalBundle::Scripting => Self::Scripting,
         }
     }
 }
@@ -72,7 +74,7 @@ struct Args {
     #[arg(long, conflicts_with = "raw")]
     raw_unrestricted: bool,
 
-    /// Add an optional module-backed tool bundle to the curated defaults.
+    /// Add an optional tool bundle to the curated defaults.
     #[arg(long = "enable-bundle", value_enum)]
     optional_bundles: Vec<CliOptionalBundle>,
 

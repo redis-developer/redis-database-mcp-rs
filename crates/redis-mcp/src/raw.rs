@@ -85,6 +85,14 @@ pub(crate) fn classify_command(
         );
     }
 
+    if matches!(command.as_str(), "SCRIPT" | "FUNCTION") {
+        return unsupported(
+            &command,
+            "requires the dedicated bounded scripting family",
+            "SCRIPT_COMMAND_UNSUPPORTED",
+        );
+    }
+
     if command == "MODULE"
         && arguments.first().is_some_and(|argument| {
             eq_ascii_case(argument, b"LOAD")
@@ -447,6 +455,8 @@ mod tests {
             ("MONITOR", "STREAMING_COMMAND_UNSUPPORTED"),
             ("BLPOP", "BLOCKING_COMMAND_UNSUPPORTED"),
             ("EVAL", "SCRIPT_COMMAND_UNSUPPORTED"),
+            ("SCRIPT", "SCRIPT_COMMAND_UNSUPPORTED"),
+            ("FUNCTION", "SCRIPT_COMMAND_UNSUPPORTED"),
             ("BGSAVE", "SERVER_LIFECYCLE_COMMAND_UNSUPPORTED"),
             ("TRIMSLOTS", "SERVER_LIFECYCLE_COMMAND_UNSUPPORTED"),
             ("XCFGSET", "INTERNAL_COMMAND_UNSUPPORTED"),

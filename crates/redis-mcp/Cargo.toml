@@ -34,6 +34,7 @@ all-families = [
     "geospatial",
     "vector-sets",
     "pubsub",
+    "scripting",
     "json",
     "search",
 ]
@@ -50,6 +51,7 @@ hyperloglog = []
 geospatial = []
 vector-sets = []
 pubsub = []
+scripting = []
 json = []
 search = []
 diagnostics = []

@@ -1059,6 +1059,33 @@
       "reason": "The library covers the complete Redis 8 Array and vector-set command families plus finite string, hash, list, and Stream deltas through Redis 8.10. Contracts preserve unsigned Array indices and binary values, cap every variable request and result, expose ARGREP/ARSCAN/VRANGE continuation, enforce minimum versions and command inventory, distinguish read/write/destructive access, and live-test RESP2, RESP3, and same-slot/CROSSSLOT Cluster behavior. Connection-local migration, destructive node lifecycle, and internal protocol commands remain explicitly outside the agent-safe surface."
     },
     {
+      "id": "scripting.lua_functions",
+      "redis_mcp_tools": [],
+      "redisctl_tools": [],
+      "library_tools": [
+        "redis_eval",
+        "redis_eval_ro",
+        "redis_evalsha",
+        "redis_evalsha_ro",
+        "redis_fcall",
+        "redis_fcall_ro",
+        "redis_function_delete",
+        "redis_function_dump",
+        "redis_function_flush",
+        "redis_function_kill",
+        "redis_function_list",
+        "redis_function_load",
+        "redis_function_restore",
+        "redis_function_stats",
+        "redis_script_exists",
+        "redis_script_flush",
+        "redis_script_kill",
+        "redis_script_load"
+      ],
+      "disposition": "implemented",
+      "reason": "The opt-in scripting family covers bounded binary-safe Lua and Redis Functions execution plus guarded cache/library lifecycle. Keys are declared and same-slot validated, dynamic results share global budgets, Redis 7+ read-only forms have distinct access annotations, all-node versus primary fan-out is explicit, partial node failures redact server messages, and timeout behavior does not claim server-side cancellation."
+    },
+    {
       "id": "admin.guarded",
       "redis_mcp_tools": [],
       "redisctl_tools": ["redis_acl_list", "redis_config_get", "redis_config_set", "redis_flushdb"],

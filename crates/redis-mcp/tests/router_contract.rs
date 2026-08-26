@@ -321,6 +321,12 @@ impl RedisExecutor for StubRedis {
             ]),
             "HSTRLEN" => RedisValue::Integer(3),
             "HTTL" => RedisValue::Array(vec![RedisValue::Integer(-1)]),
+            "HRANDFIELD" => RedisValue::Array(vec![
+                RedisValue::BulkString(b"name".to_vec()),
+                RedisValue::BulkString(b"Ada".to_vec()),
+                RedisValue::BulkString(b"name".to_vec()),
+                RedisValue::BulkString(b"Ada".to_vec()),
+            ]),
             "HVALS" => RedisValue::Array(vec![RedisValue::BulkString(b"Ada".to_vec())]),
             "LRANGE" => RedisValue::Array(vec![
                 RedisValue::BulkString(b"second".to_vec()),
@@ -660,12 +666,24 @@ impl RedisExecutor for StubRedis {
             "EXPIRE" | "PERSIST" | "COPY" | "TOUCH" | "RENAMENX" => RedisValue::Integer(1),
             "INCR" | "DECR" | "DECRBY" | "INCRBY" => RedisValue::Integer(2),
             "INCRBYFLOAT" => RedisValue::BulkString(b"2.5".to_vec()),
+            "SORT_RO" => RedisValue::Array(vec![
+                RedisValue::BulkString(b"first".to_vec()),
+                RedisValue::BulkString(b"second".to_vec()),
+            ]),
+            "SORT" => RedisValue::Integer(2),
             "SETRANGE" => RedisValue::Integer(5),
             "APPEND" => RedisValue::Integer(5),
             "HSET" | "SADD" | "SREM" | "ZADD" | "ZREM" | "ZREMRANGEBYSCORE" | "HINCRBY"
             | "HDEL" => RedisValue::Integer(1),
             "HINCRBYFLOAT" => RedisValue::BulkString(b"2.5".to_vec()),
-            "HEXPIRE" | "HPERSIST" => RedisValue::Array(vec![RedisValue::Integer(1)]),
+            "HEXPIRE" | "HPEXPIRE" | "HEXPIREAT" | "HPEXPIREAT"
+                if command.tool_name() == "redis_hexpire_delete" =>
+            {
+                RedisValue::Array(vec![RedisValue::Integer(2)])
+            }
+            "HEXPIRE" | "HPEXPIRE" | "HEXPIREAT" | "HPEXPIREAT" | "HPERSIST" => {
+                RedisValue::Array(vec![RedisValue::Integer(1)])
+            }
             "LPUSH" | "RPUSH" => RedisValue::Integer(2),
             "LPOP" | "RPOP" => RedisValue::Array(vec![RedisValue::BulkString(b"first".to_vec())]),
             "LMOVE" => RedisValue::BulkString(b"first".to_vec()),
@@ -1798,7 +1816,23 @@ impl RedisExecutor for RecordingRedis {
             "HSET" => RedisValue::Integer(1),
             "HMGET" => RedisValue::Array(vec![RedisValue::BulkString(vec![0xfd]), RedisValue::Nil]),
             "HDEL" => RedisValue::Integer(1),
-            "HEXPIRE" => RedisValue::Array(vec![RedisValue::Integer(1)]),
+            "HEXPIRE" | "HPEXPIRE" if command.tool_name() == "redis_hexpire_delete" => {
+                RedisValue::Array(vec![RedisValue::Integer(2)])
+            }
+            "HEXPIRE" | "HPEXPIRE" => RedisValue::Array(vec![RedisValue::Integer(1)]),
+            "HPEXPIRETIME" => RedisValue::Array(vec![RedisValue::Integer(4_102_444_800_000)]),
+            "HRANDFIELD" => RedisValue::Array(vec![
+                RedisValue::BulkString(vec![0xfe]),
+                RedisValue::BulkString(vec![0xfd]),
+                RedisValue::BulkString(vec![0xfe]),
+                RedisValue::BulkString(vec![0xfc]),
+            ]),
+            "SORT_RO" => RedisValue::Array(vec![
+                RedisValue::BulkString(b"alpha".to_vec()),
+                RedisValue::Nil,
+            ]),
+            "SORT" => RedisValue::Integer(2),
+            "EXISTS" => RedisValue::Integer(1),
             "FT.SEARCH" => RedisValue::Array(vec![
                 RedisValue::Integer(1),
                 RedisValue::BulkString(b"doc:1".to_vec()),
@@ -2005,6 +2039,300 @@ async fn hash_multi_field_commands_preserve_binary_argv_and_request_order() {
     assert_eq!(hdel.arguments(), &[vec![0xff, 0x00], vec![0xfe]]);
 }
 
+#[tokio::test]
+async fn hash_expiry_sampling_and_sort_contracts_emit_explicit_bounded_argv() {
+    let executor = RecordingRedis::default();
+    let commands = executor.commands.clone();
+    let router = RedisMcp::builder(executor)
+        .access(AccessMode::Full)
+        .bundles([ToolBundle::Essentials, ToolBundle::DataStructures])
+        .capabilities(RedisCapabilities::unknown().with_redis_version(RedisVersion::new(8, 2, 0)))
+        .build();
+    let client = McpClient::connect(ChannelTransport::new(router))
+        .await
+        .expect("connect #62 recording client");
+    client
+        .initialize("redis-mcp-issue-62-recording-test", "0")
+        .await
+        .expect("initialize #62 recording client");
+
+    let expiration = client
+        .call_tool(
+            "redis_hexpire",
+            serde_json::json!({
+                "key": "/wA=",
+                "key_encoding": "base64",
+                "expiration": 1500,
+                "mode": "relative_milliseconds",
+                "condition": "gt",
+                "fields": [{"field": "/g==", "field_encoding": "base64"}]
+            }),
+        )
+        .await
+        .expect("HPEXPIRE contract")
+        .structured_content
+        .expect("structured HPEXPIRE");
+    assert_eq!(expiration["mode"], "relative_milliseconds");
+    assert_eq!(expiration["expiration"], 1500);
+    assert_eq!(expiration["expirations_set"], 1);
+
+    let inspected = client
+        .call_tool(
+            "redis_httl",
+            serde_json::json!({
+                "key": "/wA=",
+                "key_encoding": "base64",
+                "mode": "unix_milliseconds",
+                "fields": [{"field": "/g==", "field_encoding": "base64"}]
+            }),
+        )
+        .await
+        .expect("HPEXPIRETIME contract")
+        .structured_content
+        .expect("structured HPEXPIRETIME");
+    assert_eq!(inspected["mode"], "unix_milliseconds");
+    assert_eq!(inspected["fields"][0]["value"], 4_102_444_800_000_u64);
+    assert_eq!(
+        inspected["fields"][0]["ttl_seconds"],
+        serde_json::Value::Null
+    );
+
+    let deleted = client
+        .call_tool(
+            "redis_hexpire_delete",
+            serde_json::json!({
+                "key": "/wA=",
+                "key_encoding": "base64",
+                "mode": "relative_milliseconds",
+                "condition": "lt",
+                "fields": [{"field": "/g==", "field_encoding": "base64"}]
+            }),
+        )
+        .await
+        .expect("destructive HPEXPIRE contract")
+        .structured_content
+        .expect("structured destructive HPEXPIRE");
+    assert_eq!(deleted["mode"], "relative_milliseconds");
+    assert_eq!(deleted["deleted"], 1);
+    assert_eq!(deleted["fields"][0]["status"], "deleted");
+
+    let sampled = client
+        .call_tool(
+            "redis_hrandfield",
+            serde_json::json!({
+                "key": "/wA=",
+                "key_encoding": "base64",
+                "count": -2,
+                "with_values": true
+            }),
+        )
+        .await
+        .expect("HRANDFIELD contract")
+        .structured_content
+        .expect("structured HRANDFIELD");
+    assert_eq!(sampled["duplicates_allowed"], true);
+    assert_eq!(sampled["returned"], 2);
+    assert_eq!(sampled["entries"][0]["field"], "/g==");
+    assert_eq!(sampled["entries"][0]["value"], "/Q==");
+
+    let sorted = client
+        .call_tool(
+            "redis_sort",
+            serde_json::json!({
+                "key": "source",
+                "by": "weight:*",
+                "get": ["#"],
+                "offset": 1,
+                "count": 2,
+                "order": "descending",
+                "alpha": true
+            }),
+        )
+        .await
+        .expect("SORT_RO contract")
+        .structured_content
+        .expect("structured SORT_RO");
+    assert_eq!(sorted["source_exists"], true);
+    assert_eq!(sorted["returned"], 2);
+    assert_eq!(sorted["values"][0]["value"], "alpha");
+    assert_eq!(sorted["values"][1]["value"], serde_json::Value::Null);
+
+    let stored = client
+        .call_tool(
+            "redis_sort_store",
+            serde_json::json!({
+                "key": "source:{tenant}",
+                "destination": "sorted:{tenant}",
+                "count": 3
+            }),
+        )
+        .await
+        .expect("SORT STORE contract")
+        .structured_content
+        .expect("structured SORT STORE");
+    assert_eq!(stored["stored"], 2);
+    assert_eq!(stored["destination_overwritten"], true);
+    assert_eq!(stored["cluster_requires_same_slot"], true);
+
+    let commands = commands.lock().expect("recorded #62 commands");
+    let command = |tool_name: &str| {
+        commands
+            .iter()
+            .find(|command| command.tool_name() == tool_name)
+            .unwrap_or_else(|| panic!("recorded {tool_name}"))
+    };
+    assert_eq!(command("redis_hexpire").name(), "HPEXPIRE");
+    assert_eq!(
+        command("redis_hexpire").arguments(),
+        &[
+            vec![0xff, 0x00],
+            b"1500".to_vec(),
+            b"GT".to_vec(),
+            b"FIELDS".to_vec(),
+            b"1".to_vec(),
+            vec![0xfe]
+        ]
+    );
+    assert_eq!(command("redis_httl").name(), "HPEXPIRETIME");
+    assert_eq!(command("redis_hexpire_delete").name(), "HPEXPIRE");
+    assert_eq!(
+        command("redis_hexpire_delete").arguments(),
+        &[
+            vec![0xff, 0x00],
+            b"0".to_vec(),
+            b"LT".to_vec(),
+            b"FIELDS".to_vec(),
+            b"1".to_vec(),
+            vec![0xfe]
+        ]
+    );
+    assert_eq!(
+        command("redis_hrandfield").arguments(),
+        &[vec![0xff, 0x00], b"-2".to_vec(), b"WITHVALUES".to_vec()]
+    );
+    assert_eq!(
+        command("redis_sort").arguments(),
+        &[
+            b"source".to_vec(),
+            b"BY".to_vec(),
+            b"weight:*".to_vec(),
+            b"LIMIT".to_vec(),
+            b"1".to_vec(),
+            b"2".to_vec(),
+            b"GET".to_vec(),
+            b"#".to_vec(),
+            b"DESC".to_vec(),
+            b"ALPHA".to_vec()
+        ]
+    );
+    assert_eq!(
+        command("redis_sort_store").arguments(),
+        &[
+            b"source:{tenant}".to_vec(),
+            b"LIMIT".to_vec(),
+            b"0".to_vec(),
+            b"3".to_vec(),
+            b"ASC".to_vec(),
+            b"STORE".to_vec(),
+            b"sorted:{tenant}".to_vec()
+        ]
+    );
+}
+
+#[tokio::test]
+async fn hash_sampling_sort_and_absolute_expiry_reject_unsafe_or_unbounded_forms() {
+    let executor = RecordingRedis::default();
+    let commands = executor.commands.clone();
+    let client = fixed_client(
+        FixedRedis {
+            response: RedisValue::Array(Vec::new()),
+            commands: commands.clone(),
+        },
+        RedisCapabilities::unknown().with_redis_version(RedisVersion::new(8, 2, 0)),
+    )
+    .await;
+
+    for (tool, input) in [
+        (
+            "redis_hrandfield",
+            serde_json::json!({"key": "hash", "with_values": true}),
+        ),
+        (
+            "redis_hexpire",
+            serde_json::json!({
+                "key": "hash",
+                "expiration": 1,
+                "mode": "unix_seconds",
+                "fields": ["field"]
+            }),
+        ),
+        (
+            "redis_sort",
+            serde_json::json!({
+                "key": "source",
+                "count": 1000,
+                "get": ["#", "#"]
+            }),
+        ),
+    ] {
+        let result = client
+            .call_tool(tool, input)
+            .await
+            .unwrap_or_else(|error| panic!("{tool}: {error}"));
+        assert!(result.is_error, "{tool}: {result:?}");
+    }
+    assert!(
+        commands.lock().expect("invalid input commands").is_empty(),
+        "invalid inputs must fail before Redis execution"
+    );
+
+    let cluster_executor = RecordingRedis::default();
+    let cluster_commands = cluster_executor.commands.clone();
+    let router = RedisMcp::builder(cluster_executor)
+        .access(AccessMode::Full)
+        .bundles([ToolBundle::Essentials])
+        .capabilities(
+            RedisCapabilities::unknown()
+                .with_redis_version(RedisVersion::new(8, 2, 0))
+                .with_deployment(RedisDeployment::Cluster),
+        )
+        .build();
+    let cluster_client = McpClient::connect(ChannelTransport::new(router))
+        .await
+        .expect("connect Cluster SORT contract client");
+    cluster_client
+        .initialize("redis-mcp-sort-cluster-contract-test", "0")
+        .await
+        .expect("initialize Cluster SORT contract client");
+
+    let local = cluster_client
+        .call_tool(
+            "redis_sort",
+            serde_json::json!({"key": "source:{tenant}", "by": "nosort", "get": ["#"]}),
+        )
+        .await
+        .expect("local-only Cluster SORT patterns");
+    assert!(!local.is_error, "{local:?}");
+    let external = cluster_client
+        .call_tool(
+            "redis_sort",
+            serde_json::json!({"key": "source:{tenant}", "get": ["object:*->name"]}),
+        )
+        .await
+        .expect("external Cluster SORT pattern result");
+    assert!(external.is_error, "{external:?}");
+    assert_eq!(
+        cluster_commands
+            .lock()
+            .expect("Cluster SORT commands")
+            .iter()
+            .filter(|command| command.name() == "SORT_RO")
+            .count(),
+        1,
+        "external Cluster pattern must fail before Redis execution"
+    );
+}
+
 async fn full_catalog_client() -> McpClient {
     client_for_bundles(
         AccessMode::Full,
@@ -2107,6 +2435,11 @@ fn structured_cases() -> Vec<(&'static str, serde_json::Value, &'static str)> {
         ),
         ("redis_randomkey", serde_json::json!({}), "key"),
         (
+            "redis_sort",
+            serde_json::json!({"key": "queue", "count": 2}),
+            "values",
+        ),
+        (
             "redis_hget",
             serde_json::json!({"key": "user:1", "field": "name"}),
             "value",
@@ -2141,6 +2474,15 @@ fn structured_cases() -> Vec<(&'static str, serde_json::Value, &'static str)> {
             "redis_hstrlen",
             serde_json::json!({"key": "user:1", "field": "name"}),
             "length_bytes",
+        ),
+        (
+            "redis_hrandfield",
+            serde_json::json!({
+                "key": "user:1",
+                "count": -2,
+                "with_values": true
+            }),
+            "entries",
         ),
         (
             "redis_httl",
@@ -2636,6 +2978,15 @@ fn structured_cases() -> Vec<(&'static str, serde_json::Value, &'static str)> {
             "restored",
         ),
         (
+            "redis_sort_store",
+            serde_json::json!({
+                "key": "queue:{tenant}",
+                "destination": "sorted:{tenant}",
+                "count": 2
+            }),
+            "stored",
+        ),
+        (
             "redis_hset",
             serde_json::json!({"key": "user:1", "fields": {"name": "Ada"}}),
             "fields_added",
@@ -2644,6 +2995,11 @@ fn structured_cases() -> Vec<(&'static str, serde_json::Value, &'static str)> {
             "redis_hexpire",
             serde_json::json!({"key": "user:1", "seconds": 60, "fields": ["name"]}),
             "expirations_set",
+        ),
+        (
+            "redis_hexpire_delete",
+            serde_json::json!({"key": "user:1", "fields": ["name"]}),
+            "deleted",
         ),
         (
             "redis_hincrby",
@@ -3064,8 +3420,8 @@ fn structured_cases() -> Vec<(&'static str, serde_json::Value, &'static str)> {
 
 #[tokio::test]
 async fn access_modes_expose_exactly_the_expected_tools() {
-    assert_eq!(tool_names(AccessMode::Full, false).len(), 187);
-    assert_eq!(tool_names(AccessMode::Full, true).len(), 188);
+    assert_eq!(tool_names(AccessMode::Full, false).len(), 191);
+    assert_eq!(tool_names(AccessMode::Full, true).len(), 192);
     for (access, raw) in [
         (AccessMode::ReadOnly, false),
         (AccessMode::ReadWrite, false),
@@ -3825,6 +4181,11 @@ async fn key_string_annotations_match_access_and_overwrite_semantics() {
     assert!(!inspect.destructive_hint);
     assert!(inspect.idempotent_hint);
 
+    let sort = annotations("redis_sort");
+    assert!(sort.read_only_hint);
+    assert!(!sort.destructive_hint);
+    assert!(sort.idempotent_hint);
+
     let copy = annotations("redis_copy");
     assert!(!copy.read_only_hint);
     assert!(!copy.destructive_hint);
@@ -3843,6 +4204,7 @@ async fn key_string_annotations_match_access_and_overwrite_semantics() {
         "redis_rename",
         "redis_renamenx",
         "redis_restore_replace",
+        "redis_sort_store",
     ] {
         let annotation = annotations(name);
         assert!(!annotation.read_only_hint, "{name}");
@@ -3930,6 +4292,7 @@ async fn hash_annotations_match_read_write_and_destructive_semantics() {
         "redis_hkeys",
         "redis_hlen",
         "redis_hmget",
+        "redis_hrandfield",
         "redis_hstrlen",
         "redis_httl",
         "redis_hvals",
@@ -3956,6 +4319,11 @@ async fn hash_annotations_match_read_write_and_destructive_semantics() {
     assert!(!delete.read_only_hint);
     assert!(delete.destructive_hint);
     assert!(delete.idempotent_hint);
+
+    let expire_delete = annotations("redis_hexpire_delete");
+    assert!(!expire_delete.read_only_hint);
+    assert!(expire_delete.destructive_hint);
+    assert!(expire_delete.idempotent_hint);
 }
 
 #[tokio::test]
@@ -6588,7 +6956,12 @@ async fn known_old_redis_can_hide_only_version_incompatible_tools() {
         &pre_field_expiration,
         UnavailableToolPolicy::Hide,
     );
-    for name in ["redis_hexpire", "redis_hpersist", "redis_httl"] {
+    for name in [
+        "redis_hexpire",
+        "redis_hexpire_delete",
+        "redis_hpersist",
+        "redis_httl",
+    ] {
         assert!(!pre_field_expiration_names.contains(&name), "{name}");
     }
     assert!(pre_field_expiration_names.contains(&"redis_hstrlen"));
@@ -6602,7 +6975,12 @@ async fn known_old_redis_can_hide_only_version_incompatible_tools() {
         &field_expiration,
         UnavailableToolPolicy::Hide,
     );
-    for name in ["redis_hexpire", "redis_hpersist", "redis_httl"] {
+    for name in [
+        "redis_hexpire",
+        "redis_hexpire_delete",
+        "redis_hpersist",
+        "redis_httl",
+    ] {
         assert!(field_expiration_names.contains(&name), "{name}");
     }
 }
@@ -7321,6 +7699,7 @@ async fn curated_catalog_matches_checked_in_contract_snapshot() {
             let requirements = metadata.capability_requirements();
             serde_json::json!({
                 "name": metadata.name,
+                "family": metadata.family().map(|family| family.feature_name()),
                 "bundle": metadata.bundle.as_str(),
                 "required_access": metadata.required_access.as_str(),
                 "required_module": metadata.required_module().map(|module| module.as_str()),

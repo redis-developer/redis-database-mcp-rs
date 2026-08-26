@@ -32,6 +32,14 @@ jobs:
       - run: cargo fmt --all -- --check
       - run: cargo clippy --workspace --all-targets --all-features -- -D warnings
       - run: cargo test --workspace --all-features --no-fail-fast
+      - name: Test minimal family composition
+        run: >-
+          cargo test -p redis-mcp --no-default-features --features strings
+          --test family_composition
+      - name: Check empty feature set
+        run: cargo check -p redis-mcp --no-default-features
+      - name: Test default feature composition
+        run: cargo test -p redis-mcp --test family_composition
 
   package:
     runs-on: ubuntu-latest

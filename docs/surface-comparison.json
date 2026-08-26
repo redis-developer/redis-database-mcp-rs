@@ -488,6 +488,14 @@
       "reason": "Asynchronous bounded deletion is a separately named destructive tool."
     },
     {
+      "id": "key.sort",
+      "redis_mcp_tools": [],
+      "redisctl_tools": [],
+      "library_tools": ["redis_sort", "redis_sort_store"],
+      "disposition": "implemented",
+      "reason": "SORT_RO reads and SORT STORE writes use separate access tiers, always include an explicit LIMIT, bound materialized GET results, preserve nil and binary values, expose destination replacement, and enforce supported standalone and Cluster key contracts."
+    },
+    {
       "id": "command.raw",
       "redis_mcp_tools": [],
       "redisctl_tools": ["redis_command"],
@@ -719,18 +727,20 @@
         "redis_hdel",
         "redis_hexists",
         "redis_hexpire",
+        "redis_hexpire_delete",
         "redis_hincrby",
         "redis_hincrbyfloat",
         "redis_hkeys",
         "redis_hlen",
         "redis_hmget",
         "redis_hpersist",
+        "redis_hrandfield",
         "redis_hstrlen",
         "redis_httl",
         "redis_hvals"
       ],
       "disposition": "implemented",
-      "reason": "The hash family now has bounded binary-safe reads and writes, typed nil/empty/missing semantics, full-access deletion, live Cluster and ACL coverage, and Redis 7.4-gated field expiration."
+      "reason": "The hash family now has bounded binary-safe reads, writes, and random sampling; explicit duplicate/value sampling semantics; typed nil/empty/missing results; full-access deletion; live Cluster and ACL coverage; and Redis 7.4-gated relative/absolute field expiration at second and millisecond precision."
     },
     {
       "id": "list.expansion",

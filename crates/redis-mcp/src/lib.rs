@@ -6,11 +6,13 @@
 //! user interface.
 
 #![forbid(unsafe_code)]
+#![cfg_attr(not(feature = "full"), allow(dead_code, unused_mut, unused_variables))]
 
 mod access;
 mod capabilities;
 mod catalog;
 mod executor;
+pub mod families;
 mod invocation;
 mod output;
 mod pubsub_sessions;
@@ -32,6 +34,7 @@ pub use executor::{
     DirectRedis, DirectRedisCluster, RedisCommand, RedisError, RedisErrorKind, RedisExecutor,
     RedisValue,
 };
+pub use families::{ToolFamily, compiled_tool_families};
 pub use invocation::{
     NativeCommandMetadata, NativeRedisInvocation, NativeRedisResponse, RedisInvocationEngine,
     RedisInvocationEngineBuildError, RedisInvocationEngineBuilder, RedisOutputLimit,
@@ -80,6 +83,7 @@ impl RedisMcp {
             executor: Arc::new(executor),
             access: AccessMode::ReadOnly,
             bundles: ToolBundle::DEFAULTS.iter().copied().collect(),
+            families: None,
             raw_command_policy: RawCommandPolicy::Disabled,
             command_timeout: DEFAULT_COMMAND_TIMEOUT,
             output_budget: OutputBudget::default(),
@@ -97,6 +101,7 @@ pub struct RedisMcpBuilder {
     executor: Arc<dyn RedisExecutor>,
     access: AccessMode,
     bundles: BTreeSet<ToolBundle>,
+    families: Option<BTreeSet<ToolFamily>>,
     raw_command_policy: RawCommandPolicy,
     command_timeout: Duration,
     output_budget: OutputBudget,
@@ -120,12 +125,42 @@ impl RedisMcpBuilder {
     /// though its catalog metadata belongs to [`ToolBundle::Raw`].
     pub fn bundles(mut self, bundles: impl IntoIterator<Item = ToolBundle>) -> Self {
         self.bundles = bundles.into_iter().collect();
+        self.families = None;
         self
     }
 
     /// Add one non-raw tool bundle to the current selection.
     pub fn bundle(mut self, bundle: ToolBundle) -> Self {
         self.bundles.insert(bundle);
+        self
+    }
+
+    /// Replace the enabled Redis command families.
+    ///
+    /// This switches from the compatibility bundle assembly path to precise
+    /// family selection and clears all bundles. Cross-cutting surfaces such as
+    /// diagnostics and sessions can then be added explicitly with
+    /// [`RedisMcpBuilder::bundle`]. Every selected family must also be enabled
+    /// by its additive Cargo feature.
+    pub fn families(mut self, families: impl IntoIterator<Item = ToolFamily>) -> Self {
+        self.families = Some(families.into_iter().collect());
+        self.bundles.clear();
+        self
+    }
+
+    /// Add one Redis command family to a precise family selection.
+    ///
+    /// The first call switches away from the compatibility bundle defaults
+    /// and starts an otherwise empty selection.
+    pub fn family(mut self, family: ToolFamily) -> Self {
+        if self.families.is_none() {
+            self.families = Some(BTreeSet::new());
+            self.bundles.clear();
+        }
+        self.families
+            .as_mut()
+            .expect("family selection was initialized")
+            .insert(family);
         self
     }
 
@@ -235,8 +270,17 @@ impl RedisMcpBuilder {
         if self.raw_command_policy.is_enabled() && self.access != AccessMode::Full {
             return Err(RedisMcpBuildError::RawCommandsRequireFullAccess);
         }
-        if self.bundles.contains(&ToolBundle::Sessions) && self.pubsub_sessions.is_none() {
+        let sessions_enabled =
+            cfg!(feature = "sessions") && self.bundles.contains(&ToolBundle::Sessions);
+        if sessions_enabled && self.pubsub_sessions.is_none() {
             return Err(RedisMcpBuildError::SessionsRequireManager);
+        }
+        if let Some(family) = self
+            .families
+            .as_ref()
+            .and_then(|families| families.iter().find(|family| !family.is_compiled()))
+        {
+            return Err(RedisMcpBuildError::FamilyNotCompiled(*family));
         }
         let capabilities = Arc::new(self.capabilities);
         let invocation_engine = RedisInvocationEngine::from_shared(
@@ -247,9 +291,8 @@ impl RedisMcpBuilder {
             self.output_budget,
             capabilities.clone(),
         );
-        let pubsub_owner = (self.bundles.contains(&ToolBundle::Sessions)
-            && self.pubsub_sessions.is_some())
-        .then(PubSubSessionOwner::random);
+        let pubsub_owner =
+            (sessions_enabled && self.pubsub_sessions.is_some()).then(PubSubSessionOwner::random);
         let state = Arc::new(tools::ToolState::new(
             self.access,
             self.output_budget,
@@ -265,12 +308,27 @@ impl RedisMcpBuilder {
                     owner,
                 }));
         }
-        router = tools::add_read_only_tools(router, state.clone(), &self.bundles);
+        router = tools::add_read_only_tools(
+            router,
+            state.clone(),
+            &self.bundles,
+            self.families.as_ref(),
+        );
         if self.access.permits(AccessMode::ReadWrite) {
-            router = tools::add_write_tools(router, state.clone(), &self.bundles);
+            router = tools::add_write_tools(
+                router,
+                state.clone(),
+                &self.bundles,
+                self.families.as_ref(),
+            );
         }
         if self.access.permits(AccessMode::Full) {
-            router = tools::add_destructive_tools(router, state.clone(), &self.bundles);
+            router = tools::add_destructive_tools(
+                router,
+                state.clone(),
+                &self.bundles,
+                self.families.as_ref(),
+            );
             if self.raw_command_policy.is_enabled() {
                 router = tools::add_raw_tool(router, state);
             }
@@ -304,6 +362,9 @@ pub enum RedisMcpBuildError {
     RawCommandsRequireFullAccess,
     /// Stateful Pub/Sub tools require an explicit lifecycle manager.
     SessionsRequireManager,
+    /// A precise runtime family selection referenced a handler family omitted
+    /// from this crate's Cargo feature set.
+    FamilyNotCompiled(ToolFamily),
 }
 
 impl std::fmt::Display for RedisMcpBuildError {
@@ -324,6 +385,11 @@ impl std::fmt::Display for RedisMcpBuildError {
             Self::SessionsRequireManager => {
                 formatter.write_str("the sessions bundle requires a Pub/Sub session manager")
             }
+            Self::FamilyNotCompiled(family) => write!(
+                formatter,
+                "the {family} family requires the `{}` Cargo feature",
+                family.feature_name()
+            ),
         }
     }
 }
@@ -343,6 +409,18 @@ pub fn tool_names_for(
 ) -> Vec<&'static str> {
     let bundles = bundles.into_iter().collect::<Vec<_>>();
     catalog::selected_tool_names(access, &bundles, raw_commands)
+}
+
+/// Tool names exposed for a precise Redis family selection.
+///
+/// This helper covers data families only. Cross-cutting bundles and the raw
+/// command escape hatch remain separate policy choices.
+pub fn tool_names_for_families(
+    access: AccessMode,
+    families: impl IntoIterator<Item = ToolFamily>,
+) -> Vec<&'static str> {
+    let families = families.into_iter().collect::<Vec<_>>();
+    catalog::selected_family_tool_names(access, &families)
 }
 
 /// Tool names exposed for a selection after applying known target

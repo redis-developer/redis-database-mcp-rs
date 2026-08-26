@@ -17,6 +17,44 @@ categories = ["database", "development-tools"]
 name = "redis_mcp"
 path = "src/lib.rs"
 
+[features]
+default = ["full"]
+full = ["all-families", "diagnostics", "sessions"]
+all-families = [
+    "keyspace",
+    "strings",
+    "hashes",
+    "lists",
+    "sets",
+    "sorted-sets",
+    "streams",
+    "bitmaps",
+    "arrays",
+    "hyperloglog",
+    "geospatial",
+    "vector-sets",
+    "pubsub",
+    "json",
+    "search",
+]
+keyspace = []
+strings = []
+hashes = []
+lists = []
+sets = []
+sorted-sets = []
+streams = []
+bitmaps = []
+arrays = []
+hyperloglog = []
+geospatial = []
+vector-sets = []
+pubsub = []
+json = []
+search = []
+diagnostics = []
+sessions = []
+
 [dependencies]
 async-trait.workspace = true
 base64.workspace = true

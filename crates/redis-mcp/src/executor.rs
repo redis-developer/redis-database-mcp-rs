@@ -670,6 +670,62 @@ fn validate_cluster_command_slots(command: &RedisCommand) -> Result<(), RedisErr
             }
         }
     }
+    if command.name().eq_ignore_ascii_case("SORT")
+        && !command.arguments().is_empty()
+        && let Some(store_position) = command
+            .arguments()
+            .iter()
+            .position(|argument| argument.eq_ignore_ascii_case(b"STORE"))
+    {
+        let destination = command.arguments().get(store_position + 1).ok_or_else(|| {
+            RedisError::new(
+                RedisErrorKind::InvalidRequest,
+                "SORT STORE is missing its destination key",
+            )
+        })?;
+        if route(&command.arguments()[0]) != route(destination) {
+            return Err(RedisError::new(
+                RedisErrorKind::InvalidRequest,
+                "source and destination in SORT STORE must hash to the same Redis Cluster slot",
+            )
+            .with_code("CROSSSLOT"));
+        }
+    }
+    if command.name().eq_ignore_ascii_case("SORT") || command.name().eq_ignore_ascii_case("SORT_RO")
+    {
+        let mut arguments = command.arguments().iter().skip(1);
+        while let Some(argument) = arguments.next() {
+            if argument.eq_ignore_ascii_case(b"BY") {
+                let pattern = arguments.next().ok_or_else(|| {
+                    RedisError::new(
+                        RedisErrorKind::InvalidRequest,
+                        "SORT BY is missing its pattern",
+                    )
+                })?;
+                if !pattern.eq_ignore_ascii_case(b"nosort") {
+                    return Err(RedisError::new(
+                        RedisErrorKind::InvalidRequest,
+                        "SORT external-key BY patterns are unavailable on Redis Cluster",
+                    )
+                    .with_code("CLUSTER_SORT_EXTERNAL_KEYS_UNSUPPORTED"));
+                }
+            } else if argument.eq_ignore_ascii_case(b"GET") {
+                let pattern = arguments.next().ok_or_else(|| {
+                    RedisError::new(
+                        RedisErrorKind::InvalidRequest,
+                        "SORT GET is missing its pattern",
+                    )
+                })?;
+                if pattern != b"#" {
+                    return Err(RedisError::new(
+                        RedisErrorKind::InvalidRequest,
+                        "SORT external-key GET patterns are unavailable on Redis Cluster",
+                    )
+                    .with_code("CLUSTER_SORT_EXTERNAL_KEYS_UNSUPPORTED"));
+                }
+            }
+        }
+    }
     if matches!(
         command.name().to_ascii_uppercase().as_str(),
         "FT.ALIASADD" | "FT.ALIASUPDATE"
@@ -737,6 +793,10 @@ fn cluster_routing_key(command: &RedisCommand) -> Option<&[u8]> {
     }
     if command.name().eq_ignore_ascii_case("MSETEX") {
         return command.arguments().get(1).map(Vec::as_slice);
+    }
+    if command.name().eq_ignore_ascii_case("SORT") || command.name().eq_ignore_ascii_case("SORT_RO")
+    {
+        return command.arguments().first().map(Vec::as_slice);
     }
     if matches!(
         command.name().to_ascii_uppercase().as_str(),
@@ -987,6 +1047,61 @@ mod tests {
         assert_eq!(
             validate_cluster_command_slots(&invalid).unwrap_err().kind(),
             RedisErrorKind::InvalidRequest
+        );
+    }
+
+    #[test]
+    fn sort_cluster_routing_allows_local_patterns_and_rejects_external_keys() {
+        let mut store = RedisCommand::new("redis_sort_store", AccessMode::Full, "SORT");
+        store
+            .arg("list:{tenant}:source")
+            .arg("BY")
+            .arg("nosort")
+            .arg("LIMIT")
+            .arg("0")
+            .arg("10")
+            .arg("GET")
+            .arg("#")
+            .arg("STORE")
+            .arg("list:{tenant}:sorted");
+        assert!(validate_cluster_command_slots(&store).is_ok());
+        assert_eq!(
+            cluster_routing_key(&store),
+            Some(b"list:{tenant}:source".as_slice())
+        );
+
+        let mut cross_slot = store.clone();
+        *cross_slot.arguments.last_mut().expect("STORE destination") =
+            b"list:{other}:sorted".to_vec();
+        assert_eq!(
+            validate_cluster_command_slots(&cross_slot)
+                .unwrap_err()
+                .code(),
+            Some("CROSSSLOT")
+        );
+
+        let mut external_by = RedisCommand::new("redis_sort", AccessMode::ReadOnly, "SORT_RO");
+        external_by
+            .arg("list:{tenant}")
+            .arg("BY")
+            .arg("weight:*->score");
+        assert_eq!(
+            validate_cluster_command_slots(&external_by)
+                .unwrap_err()
+                .code(),
+            Some("CLUSTER_SORT_EXTERNAL_KEYS_UNSUPPORTED")
+        );
+
+        let mut external_get = RedisCommand::new("redis_sort", AccessMode::ReadOnly, "SORT_RO");
+        external_get
+            .arg("list:{tenant}")
+            .arg("GET")
+            .arg("object:*->name");
+        assert_eq!(
+            validate_cluster_command_slots(&external_get)
+                .unwrap_err()
+                .code(),
+            Some("CLUSTER_SORT_EXTERNAL_KEYS_UNSUPPORTED")
         );
     }
 

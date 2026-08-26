@@ -129,10 +129,34 @@ straightforward. The current per-call profile/URL surface is recorded as known
 compatibility pressure rather than being smuggled into the executor trait or
 the standalone schemas.
 
-## Bundles and access
+## Families, bundles, and access
 
-Bundles answer which coherent capabilities a host wants; access mode answers
-which side effects that host permits. These decisions are orthogonal.
+Cargo features answer which Redis family handlers a host compiles, runtime
+families or bundles answer which coherent capabilities it advertises, and
+access mode answers which side effects it permits. These decisions are
+orthogonal.
+
+The public family taxonomy is `keyspace`, `strings`, `hashes`, `lists`, `sets`,
+`sorted-sets`, `streams`, `bitmaps`, `arrays`, `hyperloglog`, `geospatial`,
+`vector-sets`, `pubsub`, `json`, and `search`. Each is an additive Cargo feature
+and a `ToolFamily` runtime marker. `all-families` is the data-family aggregate;
+`full` adds the cross-cutting `diagnostics` and `sessions` features. Default
+features select `full` to preserve the crate's pre-refactor compilation and
+server catalog. A size-sensitive host can use `default-features = false` and
+name only the families it embeds.
+
+`RedisMcpBuilder::families` switches to precise family selection and clears the
+legacy bundle defaults. Selecting a family omitted at compile time is a build
+error rather than a silently incomplete router. The builder assembles every
+selected family around one `ToolState`, so executor ownership, capability
+discovery, access policy, budgets, and sessions are never duplicated. Its
+result is a normal Tower-MCP router fragment; redisctl can retain its own server
+identity and product routers by merging the Redis fragment into its root
+`McpRouter`.
+
+Bundles remain the high-level compatibility and cross-cutting assembly API.
+They answer which broad capabilities a host wants while preserving the
+standalone server's existing contract.
 
 The public taxonomy is `essentials`, `data_structures`, `json`, `search`,
 `diagnostics`, `sessions`, `admin`, `bulk`, and `raw`. The curated default enables

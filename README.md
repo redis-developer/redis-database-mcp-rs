@@ -19,14 +19,57 @@ For now, `mcp-repl` dynamically derives both interactive and one-shot commands
 from the server's MCP surface, which lets the library contract drive agent and
 human workflows without duplicating command definitions.
 
+## Library-first family composition
+
+The default `redis-mcp` Cargo feature set compiles the full library surface so
+existing applications remain compatible. Smaller consumers can disable default
+features and enable only the Redis families they embed:
+
+    redis-mcp = { version = "0.1", default-features = false, features = ["strings", "hashes"] }
+
+The additive family features are `keyspace`, `strings`, `hashes`, `lists`,
+`sets`, `sorted-sets`, `streams`, `bitmaps`, `arrays`, `hyperloglog`,
+`geospatial`, `vector-sets`, `pubsub`, `json`, and `search`. The `diagnostics`
+and `sessions` features compile their corresponding cross-cutting bundles.
+`all-families` enables every data family, while `full` also enables diagnostics
+and sessions.
+
+Compile-time inclusion and runtime exposure are separate. `families(...)`
+replaces the compatibility bundle defaults with a precise family selection;
+access mode and capability filtering still apply afterward. All selected
+families are mounted in one builder pass and therefore share one executor,
+capability snapshot, output budget, and session lifecycle:
+
+```rust,ignore
+use redis_mcp::{AccessMode, RedisMcp, families};
+use tower_mcp::McpRouter;
+
+let redis = RedisMcp::builder(executor)
+    .access(AccessMode::ReadWrite)
+    .families([
+        families::strings::FAMILY,
+        families::hashes::FAMILY,
+    ])
+    .build();
+
+let app = McpRouter::new()
+    .server_info("redisctl", "1.0")
+    .merge(redis);
+```
+
+The existing `bundles(...)` API remains the convenient compatibility and
+standalone-server assembly path. See
+[`custom_executor.rs`](crates/redis-mcp/examples/custom_executor.rs) for the
+intended redisctl-style adapter and router merge boundary.
+
 ## Curated default
 
-The standalone default exposes 187 broadly useful tools:
+The standalone default exposes 191 broadly useful tools:
 
 - read-only essentials: `redis_ping`, `redis_dbsize`, `redis_scan`,
   `redis_get`, `redis_type`, `redis_ttl`, `redis_exists`, `redis_mget`,
   `redis_strlen`, `redis_memory_usage`, `redis_randomkey`, `redis_getrange`,
-  `redis_dump`, `redis_object_inspect`, `redis_pubsub_channels`,
+  `redis_dump`, `redis_object_inspect`, `redis_sort`, `redis_pubsub_channels`,
   `redis_pubsub_numsub`, `redis_pubsub_numpat`,
   `redis_pubsub_shardchannels`, `redis_pubsub_shardnumsub`
 - read-write essentials: `redis_set`, `redis_expire`, `redis_persist`,
@@ -36,11 +79,12 @@ The standalone default exposes 187 broadly useful tools:
   `redis_spublish`
 - full-access essentials: `redis_del`, `redis_unlink`, `redis_getdel`,
   `redis_copy_replace`, `redis_rename`, `redis_renamenx`,
-  `redis_restore_replace`
+  `redis_restore_replace`, `redis_sort_store`
 - data structures: `redis_hget`, `redis_hgetall`, `redis_hexists`,
-  `redis_hkeys`, `redis_hlen`, `redis_hmget`, `redis_hstrlen`, `redis_httl`,
+  `redis_hkeys`, `redis_hlen`, `redis_hmget`, `redis_hstrlen`, `redis_hrandfield`, `redis_httl`,
   `redis_hvals`, `redis_hscan`, `redis_hset`, `redis_hincrby`,
-  `redis_hincrbyfloat`, `redis_hexpire`, `redis_hpersist`, `redis_hdel`,
+  `redis_hincrbyfloat`, `redis_hexpire`, `redis_hpersist`,
+  `redis_hexpire_delete`, `redis_hdel`,
   `redis_lindex`, `redis_llen`, `redis_lpos`, `redis_lrange`, `redis_lpush`,
   `redis_rpush`, `redis_lpop`, `redis_rpop`, `redis_lmove`, `redis_lrem`,
   `redis_lset`, `redis_ltrim`, `redis_scard`, `redis_sdiff`, `redis_sinter`,
@@ -93,7 +137,7 @@ The standalone default exposes 187 broadly useful tools:
 The reusable router keeps the stateful `sessions` bundle opt-in because its
 lifecycle belongs to the embedding host. The included `redis-mcp-server`
 provides the built-in DirectRedis manager automatically, so its ordinary
-stdio surface contains the 187 curated defaults plus these six session tools.
+stdio surface contains the 191 curated defaults plus these six session tools.
 
 Every successful tool result includes MCP structuredContent and an output
 schema. Results are limited by default to 256 KiB for the complete encoded MCP
@@ -354,7 +398,7 @@ CI runs the complete suite on Redis 8.8 and the live router/stdio contract on
 every currently supported Redis Open Source series: 6.2, 7.2, 7.4, 8.0, 8.2,
 8.4, 8.6, 8.8, and 8.10.1. Standalone and Cluster jobs cover the latest pin,
 and a separate job regenerates the official command metadata from the pinned
-Redis image. Live tests exercise both RESP2 and RESP3, the 187-tool curated
+Redis image. Live tests exercise both RESP2 and RESP3, the 191-tool curated
 catalog, binary and nil responses, conditional and absolute expiration,
 bounded serialization/restore, complete bounded list semantics, typed
 hash-field expiration, binary-safe membership, budgeted set algebra, complete

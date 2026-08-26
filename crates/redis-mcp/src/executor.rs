@@ -30,6 +30,20 @@ pub struct RedisCommand {
     name: String,
     arguments: Vec<Vec<u8>>,
     cluster_node_limit: Option<usize>,
+    cluster_fanout: Option<RedisClusterFanout>,
+}
+
+/// Explicit Redis Cluster fan-out target requested by a curated tool.
+///
+/// Custom executors can inspect this hint to preserve the direct adapter's
+/// bounded node-local semantics instead of silently collapsing replies.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[non_exhaustive]
+pub enum RedisClusterFanout {
+    /// Execute once on every discovered primary and replica node.
+    AllNodes,
+    /// Execute once on every discovered primary shard.
+    Primaries,
 }
 
 impl RedisCommand {
@@ -45,6 +59,7 @@ impl RedisCommand {
             name: name.into(),
             arguments: Vec::new(),
             cluster_node_limit: None,
+            cluster_fanout: None,
         }
     }
 
@@ -74,6 +89,15 @@ impl RedisCommand {
     /// the public getter to provide the same bounded cluster semantics.
     pub(crate) fn aggregate_cluster_nodes(&mut self, max_nodes: usize) -> &mut Self {
         self.cluster_node_limit = Some(max_nodes);
+        self.cluster_fanout = Some(RedisClusterFanout::AllNodes);
+        self
+    }
+
+    /// Request one raw response from every Redis Cluster primary, rejecting
+    /// the aggregation when the discovered topology exceeds `max_nodes`.
+    pub(crate) fn aggregate_cluster_primaries(&mut self, max_nodes: usize) -> &mut Self {
+        self.cluster_node_limit = Some(max_nodes);
+        self.cluster_fanout = Some(RedisClusterFanout::Primaries);
         self
     }
 
@@ -107,6 +131,11 @@ impl RedisCommand {
     pub fn cluster_node_limit(&self) -> Option<usize> {
         self.cluster_node_limit
     }
+
+    /// Node set requested for an explicitly bounded Cluster fan-out.
+    pub fn cluster_fanout(&self) -> Option<RedisClusterFanout> {
+        self.cluster_fanout
+    }
 }
 
 impl fmt::Debug for RedisCommand {
@@ -119,6 +148,7 @@ impl fmt::Debug for RedisCommand {
             .field("name", &self.name)
             .field("argument_count", &self.arguments.len())
             .field("cluster_node_limit", &self.cluster_node_limit)
+            .field("cluster_fanout", &self.cluster_fanout)
             .finish()
     }
 }
@@ -634,6 +664,32 @@ fn counted_cluster_keys(
         })
 }
 
+fn declared_script_keys(command: &RedisCommand) -> Result<&[Vec<u8>], RedisError> {
+    let count = command
+        .arguments()
+        .get(1)
+        .and_then(|count| std::str::from_utf8(count).ok())
+        .and_then(|count| count.parse::<usize>().ok())
+        .ok_or_else(|| {
+            RedisError::new(
+                RedisErrorKind::InvalidRequest,
+                format!("{} contained an invalid key count", command.name()),
+            )
+        })?;
+    command
+        .arguments()
+        .get(2..2_usize.saturating_add(count))
+        .ok_or_else(|| {
+            RedisError::new(
+                RedisErrorKind::InvalidRequest,
+                format!(
+                    "{} key count exceeded the supplied key arguments",
+                    command.name()
+                ),
+            )
+        })
+}
+
 fn validate_same_cluster_slot<'a>(
     keys: impl IntoIterator<Item = &'a [u8]>,
     context: &str,
@@ -663,6 +719,13 @@ fn validate_cluster_command_slots(command: &RedisCommand) -> Result<(), RedisErr
     };
     let command_name = command.name().to_ascii_uppercase();
     match command_name.as_str() {
+        "EVAL" | "EVALSHA" | "EVALSHA_RO" | "EVAL_RO" | "FCALL" | "FCALL_RO" => {
+            let keys = declared_script_keys(command)?;
+            validate_same_cluster_slot(
+                keys.iter().map(Vec::as_slice),
+                "declared script keys must hash to the same Redis Cluster slot",
+            )?;
+        }
         "SDIFF" | "SINTER" | "SUNION" => validate_same_cluster_slot(
             command.arguments().iter().map(Vec::as_slice),
             "source keys must hash to the same Redis Cluster slot",
@@ -874,6 +937,19 @@ fn validate_cluster_command_slots(command: &RedisCommand) -> Result<(), RedisErr
 }
 
 fn cluster_routing_key(command: &RedisCommand) -> Option<&[u8]> {
+    if matches!(
+        command.name().to_ascii_uppercase().as_str(),
+        "EVAL" | "EVALSHA" | "EVALSHA_RO" | "EVAL_RO" | "FCALL" | "FCALL_RO"
+    ) {
+        return command
+            .arguments()
+            .get(1)
+            .and_then(|count| std::str::from_utf8(count).ok())
+            .and_then(|count| count.parse::<usize>().ok())
+            .filter(|count| *count > 0)
+            .and_then(|_| command.arguments().get(2))
+            .map(Vec::as_slice);
+    }
     if command.name().eq_ignore_ascii_case("FT.CURSOR") {
         return command.arguments().get(1).map(Vec::as_slice);
     }
@@ -966,19 +1042,25 @@ async fn execute_cluster_command(
     let required_module = command.required_module();
     let command_name = command.name().to_string();
     let cluster_node_limit = command.cluster_node_limit();
+    let cluster_fanout = command.cluster_fanout();
     let routing_key = cluster_routing_key(&command).map(Vec::from);
     let mut redis_command = redis::cmd(command.name());
     for argument in command.arguments() {
         redis_command.arg(argument);
     }
     let result = if let Some(max_nodes) = cluster_node_limit {
+        let routing = match cluster_fanout.unwrap_or(RedisClusterFanout::AllNodes) {
+            RedisClusterFanout::AllNodes => {
+                redis::cluster_routing::MultipleNodeRoutingInfo::AllNodes
+            }
+            RedisClusterFanout::Primaries => {
+                redis::cluster_routing::MultipleNodeRoutingInfo::AllMasters
+            }
+        };
         let value = connection
             .route_command(
                 redis_command,
-                redis::cluster_routing::RoutingInfo::MultiNode((
-                    redis::cluster_routing::MultipleNodeRoutingInfo::AllNodes,
-                    None,
-                )),
+                redis::cluster_routing::RoutingInfo::MultiNode((routing, None)),
             )
             .await?;
         let redis::Value::Map(responses) = value else {
@@ -1112,6 +1194,69 @@ mod tests {
         let error = validate_cluster_command_slots(&cross_slot).unwrap_err();
         assert_eq!(error.kind(), RedisErrorKind::InvalidRequest);
         assert_eq!(error.code(), Some("CROSSSLOT"));
+    }
+
+    #[test]
+    fn scripting_cluster_routing_uses_declared_keys_and_rejects_cross_slot_calls() {
+        for command_name in [
+            "EVAL",
+            "EVALSHA",
+            "EVAL_RO",
+            "EVALSHA_RO",
+            "FCALL",
+            "FCALL_RO",
+        ] {
+            let mut command =
+                RedisCommand::new("redis_scripting_test", AccessMode::Full, command_name);
+            command
+                .arg("subject")
+                .arg("2")
+                .arg("key:{tenant}:1")
+                .arg("key:{tenant}:2")
+                .arg("argument");
+            assert!(
+                validate_cluster_command_slots(&command).is_ok(),
+                "{command_name}"
+            );
+            assert_eq!(
+                cluster_routing_key(&command),
+                Some(b"key:{tenant}:1".as_slice()),
+                "{command_name}"
+            );
+
+            command.arguments[3] = b"key:{other}:2".to_vec();
+            assert_eq!(
+                validate_cluster_command_slots(&command).unwrap_err().code(),
+                Some("CROSSSLOT"),
+                "{command_name}"
+            );
+        }
+
+        let mut keyless = RedisCommand::new("redis_eval_ro", AccessMode::ReadOnly, "EVAL_RO");
+        keyless.arg("return ARGV[1]").arg("0").arg("not-a-key");
+        assert!(validate_cluster_command_slots(&keyless).is_ok());
+        assert_eq!(cluster_routing_key(&keyless), None);
+    }
+
+    #[test]
+    fn scripting_cluster_key_counts_fail_closed_when_malformed() {
+        let mut invalid_count = RedisCommand::new("redis_eval", AccessMode::Full, "EVAL");
+        invalid_count.arg("return 1").arg("not-a-number");
+        assert_eq!(
+            validate_cluster_command_slots(&invalid_count)
+                .unwrap_err()
+                .kind(),
+            RedisErrorKind::InvalidRequest
+        );
+
+        let mut missing_key = RedisCommand::new("redis_fcall", AccessMode::Full, "FCALL");
+        missing_key.arg("lookup").arg("2").arg("only-one-key");
+        assert_eq!(
+            validate_cluster_command_slots(&missing_key)
+                .unwrap_err()
+                .kind(),
+            RedisErrorKind::InvalidRequest
+        );
     }
 
     #[test]

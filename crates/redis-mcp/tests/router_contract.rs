@@ -9,10 +9,10 @@ use pretty_assertions::assert_eq;
 use redis_mcp::{
     AccessMode, CapabilityStatus, OutputBudget, PubSubMessage, PubSubReadRequest, PubSubReadResult,
     PubSubSessionError, PubSubSessionManager, PubSubSessionOwner, PubSubSessionSnapshot,
-    PubSubSubscription, PubSubSubscriptionKind, RawCommandPolicy, RedisCapabilities, RedisCommand,
-    RedisDeployment, RedisError, RedisExecutor, RedisMcp, RedisMcpBuildError, RedisModule,
-    RedisModuleCapability, RedisValue, RedisVersion, ToolBundle, UnavailableToolPolicy,
-    tool_catalog, tool_names, tool_names_for, tool_names_for_capabilities,
+    PubSubSubscription, PubSubSubscriptionKind, RawCommandPolicy, RedisCapabilities,
+    RedisClusterFanout, RedisCommand, RedisDeployment, RedisError, RedisExecutor, RedisMcp,
+    RedisMcpBuildError, RedisModule, RedisModuleCapability, RedisValue, RedisVersion, ToolBundle,
+    UnavailableToolPolicy, tool_catalog, tool_names, tool_names_for, tool_names_for_capabilities,
 };
 use tower_mcp::client::{ChannelTransport, McpClient};
 
@@ -8120,6 +8120,306 @@ async fn search_annotations_match_data_and_cursor_semantics() {
         assert!(!annotation.read_only_hint, "{name}");
         assert!(annotation.destructive_hint, "{name}");
     }
+}
+
+#[derive(Clone, Default)]
+struct ScriptingRedis {
+    commands: Arc<Mutex<Vec<RedisCommand>>>,
+}
+
+#[async_trait]
+impl RedisExecutor for ScriptingRedis {
+    async fn execute(&self, command: RedisCommand) -> Result<RedisValue, RedisError> {
+        let response = match command.name() {
+            "EVAL" | "EVAL_RO" | "EVALSHA" | "EVALSHA_RO" | "FCALL" | "FCALL_RO" => {
+                RedisValue::BulkString(vec![0xff, 0x00])
+            }
+            "SCRIPT" => match command.arguments().first().map(Vec::as_slice) {
+                Some(b"EXISTS") => RedisValue::Array(vec![RedisValue::Integer(1)]),
+                Some(b"LOAD") => {
+                    RedisValue::BulkString(b"0123456789abcdef0123456789abcdef01234567".to_vec())
+                }
+                _ => RedisValue::Okay,
+            },
+            "FUNCTION" => match command.arguments().first().map(Vec::as_slice) {
+                Some(b"DUMP") => RedisValue::BulkString(vec![0xff, 0x00, 0x01]),
+                Some(b"LIST") => RedisValue::Array(vec![RedisValue::Map(vec![(
+                    RedisValue::BulkString(b"library_name".to_vec()),
+                    RedisValue::BulkString(b"agents".to_vec()),
+                )])]),
+                Some(b"STATS") => RedisValue::Map(vec![(
+                    RedisValue::BulkString(b"engines".to_vec()),
+                    RedisValue::Map(Vec::new()),
+                )]),
+                Some(b"LOAD") => RedisValue::BulkString(b"agents".to_vec()),
+                _ => RedisValue::Okay,
+            },
+            _ => RedisValue::Nil,
+        };
+        self.commands
+            .lock()
+            .expect("scripting command lock")
+            .push(command);
+        Ok(response)
+    }
+}
+
+async fn scripting_client(executor: impl RedisExecutor, access: AccessMode) -> McpClient {
+    let router = RedisMcp::builder(executor)
+        .access(access)
+        .bundles([ToolBundle::Scripting])
+        .capabilities(
+            RedisCapabilities::unknown()
+                .with_redis_version(RedisVersion::new(8, 2, 0))
+                .with_deployment(RedisDeployment::Cluster),
+        )
+        .build();
+    let client = McpClient::connect(ChannelTransport::new(router))
+        .await
+        .expect("connect scripting contract client");
+    client
+        .initialize("redis-mcp-scripting-contract-test", "0")
+        .await
+        .expect("initialize scripting contract client");
+    client
+}
+
+#[tokio::test]
+async fn scripting_family_access_annotations_and_binary_argv_are_explicit() {
+    let read_only = scripting_client(ScriptingRedis::default(), AccessMode::ReadOnly).await;
+    let listed = read_only
+        .list_tools()
+        .await
+        .expect("list read-only scripting tools");
+    let names = listed
+        .tools
+        .iter()
+        .map(|tool| tool.name.as_str())
+        .collect::<Vec<_>>();
+    assert_eq!(
+        names,
+        [
+            "redis_eval_ro",
+            "redis_evalsha_ro",
+            "redis_fcall_ro",
+            "redis_script_exists"
+        ]
+    );
+    assert!(listed.tools.iter().all(|tool| {
+        tool.annotations
+            .as_ref()
+            .is_some_and(|annotations| annotations.read_only_hint)
+    }));
+
+    let executor = ScriptingRedis::default();
+    let commands = executor.commands.clone();
+    let full = scripting_client(executor, AccessMode::Full).await;
+    let listed = full.list_tools().await.expect("list full scripting tools");
+    assert_eq!(listed.tools.len(), 18);
+    for name in ["redis_eval", "redis_fcall", "redis_function_flush"] {
+        let annotations = listed
+            .tools
+            .iter()
+            .find(|tool| tool.name == name)
+            .and_then(|tool| tool.annotations.as_ref())
+            .unwrap_or_else(|| panic!("missing annotations for {name}"));
+        assert!(!annotations.read_only_hint, "{name}");
+        assert!(annotations.destructive_hint, "{name}");
+    }
+
+    let eval = full
+        .call_tool(
+            "redis_eval_ro",
+            serde_json::json!({
+                "script": {"value": "cmV0dXJuIEFSR1ZbMV0=", "encoding": "base64"},
+                "keys": [{"value": "a2V5Ont0ZW5hbnR9", "encoding": "base64"}],
+                "arguments": [{"value": "/wA=", "encoding": "base64"}]
+            }),
+        )
+        .await
+        .expect("call binary EVAL_RO");
+    assert!(!eval.is_error, "{eval:?}");
+    assert_eq!(
+        eval.structured_content.as_ref().unwrap()["result"]["encoding"],
+        "base64"
+    );
+
+    let fcall = full
+        .call_tool(
+            "redis_fcall",
+            serde_json::json!({
+                "function": "lookup",
+                "keys": [{"value": "key:{tenant}"}],
+                "arguments": [{"value": "AAE=", "encoding": "base64"}]
+            }),
+        )
+        .await
+        .expect("call binary FCALL");
+    assert!(!fcall.is_error, "{fcall:?}");
+
+    let script_load = full
+        .call_tool(
+            "redis_script_load",
+            serde_json::json!({"script": {"value": "return 1"}, "max_cluster_nodes": 7}),
+        )
+        .await
+        .expect("call SCRIPT LOAD");
+    assert!(!script_load.is_error, "{script_load:?}");
+
+    let function_restore = full
+        .call_tool(
+            "redis_function_restore",
+            serde_json::json!({
+                "payload": {"value": "/wAB", "encoding": "base64"},
+                "policy": "replace",
+                "max_cluster_nodes": 5
+            }),
+        )
+        .await
+        .expect("call FUNCTION RESTORE");
+    assert!(!function_restore.is_error, "{function_restore:?}");
+
+    let commands = commands.lock().expect("record scripting commands");
+    let command = |tool_name: &str| {
+        commands
+            .iter()
+            .find(|command| command.tool_name() == tool_name)
+            .unwrap_or_else(|| panic!("missing {tool_name}"))
+    };
+    assert_eq!(
+        command("redis_eval_ro").arguments(),
+        &[
+            b"return ARGV[1]".to_vec(),
+            b"1".to_vec(),
+            b"key:{tenant}".to_vec(),
+            vec![0xff, 0x00]
+        ]
+    );
+    assert_eq!(
+        command("redis_fcall").arguments(),
+        &[
+            b"lookup".to_vec(),
+            b"1".to_vec(),
+            b"key:{tenant}".to_vec(),
+            vec![0x00, 0x01]
+        ]
+    );
+    assert_eq!(
+        command("redis_script_load").cluster_fanout(),
+        Some(RedisClusterFanout::AllNodes)
+    );
+    assert_eq!(command("redis_script_load").cluster_node_limit(), Some(7));
+    assert_eq!(
+        command("redis_function_restore").cluster_fanout(),
+        Some(RedisClusterFanout::Primaries)
+    );
+    assert_eq!(
+        command("redis_function_restore").arguments(),
+        &[
+            b"RESTORE".to_vec(),
+            vec![0xff, 0x00, 0x01],
+            b"REPLACE".to_vec()
+        ]
+    );
+}
+
+#[tokio::test]
+async fn scripting_inputs_and_outputs_fail_closed_at_declared_bounds() {
+    let executor = ScriptingRedis::default();
+    let commands = executor.commands.clone();
+    let client = scripting_client(executor, AccessMode::Full).await;
+
+    for (name, input) in [
+        (
+            "redis_evalsha_ro",
+            serde_json::json!({"sha1": "not-a-sha1"}),
+        ),
+        (
+            "redis_script_exists",
+            serde_json::json!({"sha1": [], "max_cluster_nodes": 32}),
+        ),
+        (
+            "redis_script_load",
+            serde_json::json!({"script": {"value": "return 1"}, "max_cluster_nodes": 0}),
+        ),
+        (
+            "redis_function_list",
+            serde_json::json!({"library_name": "not a library"}),
+        ),
+        ("redis_function_dump", serde_json::json!({"max_bytes": 2})),
+    ] {
+        let result = client
+            .call_tool(name, input)
+            .await
+            .unwrap_or_else(|error| panic!("{name}: {error}"));
+        assert!(result.is_error, "{name}: {result:?}");
+    }
+    assert_eq!(
+        commands.lock().expect("bounded scripting commands").len(),
+        1,
+        "only FUNCTION DUMP should execute before its response-size check"
+    );
+}
+
+#[tokio::test]
+async fn scripting_results_obey_the_global_encoded_output_budget() {
+    let router = RedisMcp::builder(FixedRedis::new(RedisValue::BulkString(vec![b'x'; 8_192])))
+        .access(AccessMode::Full)
+        .bundles([ToolBundle::Scripting])
+        .capabilities(RedisCapabilities::unknown().with_redis_version(RedisVersion::new(8, 2, 0)))
+        .output_budget(OutputBudget::new(1_024, 100))
+        .build();
+    let client = McpClient::connect(ChannelTransport::new(router))
+        .await
+        .expect("connect scripting output-budget client");
+    client
+        .initialize("redis-mcp-scripting-output-budget-test", "0")
+        .await
+        .expect("initialize scripting output-budget client");
+
+    let result = client
+        .call_tool(
+            "redis_eval_ro",
+            serde_json::json!({"script": {"value": "return string.rep('x', 8192)"}}),
+        )
+        .await
+        .expect("large scripting result is a tool result");
+    assert!(result.is_error, "{result:?}");
+    assert_eq!(
+        result.meta.as_ref().expect("output-limit metadata")["io.redis.mcp/outputLimit"]["code"],
+        "output_limit_exceeded"
+    );
+}
+
+#[tokio::test]
+async fn scripting_cluster_partial_failures_are_structured_and_messages_redacted() {
+    let executor = FixedRedis::new(RedisValue::ClusterNodes(vec![
+        ("10.0.0.1:6379".to_string(), RedisValue::Okay),
+        (
+            "10.0.0.2:6379".to_string(),
+            RedisValue::ServerError {
+                code: "NOPERM".to_string(),
+                message: Some("secret ACL detail".to_string()),
+            },
+        ),
+    ]));
+    let client = scripting_client(executor, AccessMode::Full).await;
+    let result = client
+        .call_tool(
+            "redis_function_flush",
+            serde_json::json!({"mode": "sync", "max_cluster_nodes": 4}),
+        )
+        .await
+        .expect("call partial FUNCTION FLUSH");
+    assert!(!result.is_error, "{result:?}");
+    let structured = result
+        .structured_content
+        .expect("structured cluster result");
+    assert_eq!(structured["scope"], "cluster_primaries");
+    assert_eq!(structured["cluster"]["complete"], false);
+    assert_eq!(structured["cluster"]["nodes_succeeded"], 1);
+    assert_eq!(structured["cluster"]["replies"][1]["error_code"], "NOPERM");
+    assert!(!structured.to_string().contains("secret ACL detail"));
 }
 
 fn canonical_json(value: serde_json::Value) -> serde_json::Value {

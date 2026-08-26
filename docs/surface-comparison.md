@@ -209,6 +209,17 @@ Connection-local migration state, destructive node lifecycle commands, and
 internal protocol commands remain classified outside the agent-safe database
 surface.
 
+Lua scripting and Redis Functions are now a separate opt-in command family.
+The 18-tool surface covers EVAL/EVALSHA and FCALL read/write variants, cache
+inspection and lifecycle, and function-library inspection, dump/restore, load,
+delete, flush, and kill. Binary keys and arguments are declared explicitly,
+Cluster calls reject cross-slot keys before execution, dynamic results share
+the global output budget, and node-local, all-primary, and all-node behavior is
+visible in schemas and results. Read-only execution has distinct annotations;
+arbitrary-code and lifecycle operations require full access. Live RESP2,
+RESP3, ACL, cached-script miss, and three-primary Cluster tests exercise the
+boundary, while timeout descriptions avoid claiming server-side cancellation.
+
 RedisJSON is now a strict superset of the redisctl JSON family. Seventeen tools
 cover structured reads, conditional writes, numeric and boolean mutation,
 object inspection, array lifecycle operations, deletion, clearing, and RFC

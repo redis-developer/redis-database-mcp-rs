@@ -25,6 +25,7 @@ pub enum ToolFamily {
     Geospatial,
     VectorSets,
     PubSub,
+    Scripting,
     Json,
     Search,
 }
@@ -45,6 +46,7 @@ impl ToolFamily {
         Self::Geospatial,
         Self::VectorSets,
         Self::PubSub,
+        Self::Scripting,
         Self::Json,
         Self::Search,
     ];
@@ -82,6 +84,7 @@ impl ToolFamily {
             Self::Geospatial => "geospatial",
             Self::VectorSets => "vector-sets",
             Self::PubSub => "pubsub",
+            Self::Scripting => "scripting",
             Self::Json => "json",
             Self::Search => "search",
         }
@@ -103,6 +106,7 @@ impl ToolFamily {
             Self::Geospatial => cfg!(feature = "geospatial"),
             Self::VectorSets => cfg!(feature = "vector-sets"),
             Self::PubSub => cfg!(feature = "pubsub"),
+            Self::Scripting => cfg!(feature = "scripting"),
             Self::Json => cfg!(feature = "json"),
             Self::Search => cfg!(feature = "search"),
         }
@@ -148,6 +152,7 @@ family_module!(hyperloglog, HyperLogLog, "hyperloglog");
 family_module!(geospatial, Geospatial, "geospatial");
 family_module!(vector_sets, VectorSets, "vector-sets");
 family_module!(pubsub, PubSub, "pubsub");
+family_module!(scripting, Scripting, "scripting");
 family_module!(json, Json, "json");
 family_module!(search, Search, "search");
 

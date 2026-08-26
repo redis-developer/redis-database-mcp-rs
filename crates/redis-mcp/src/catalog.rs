@@ -134,6 +134,8 @@ pub enum ToolBundle {
     Diagnostics,
     /// Stateful, owner-isolated Redis session operations.
     Sessions,
+    /// Bounded Lua scripting and Redis Functions operations.
+    Scripting,
     /// Server configuration and administrative operations.
     Admin,
     /// Deliberately bounded bulk workflows.
@@ -155,6 +157,7 @@ impl ToolBundle {
         Self::Search,
         Self::Diagnostics,
         Self::Sessions,
+        Self::Scripting,
         Self::Admin,
         Self::Bulk,
         Self::Raw,
@@ -168,6 +171,7 @@ impl ToolBundle {
             Self::Search => "search",
             Self::Diagnostics => "diagnostics",
             Self::Sessions => "sessions",
+            Self::Scripting => "scripting",
             Self::Admin => "admin",
             Self::Bulk => "bulk",
             Self::Raw => "raw",
@@ -198,6 +202,7 @@ impl ToolMetadata {
         match self.bundle {
             ToolBundle::Json => Some(ToolFamily::Json),
             ToolBundle::Search => Some(ToolFamily::Search),
+            ToolBundle::Scripting => Some(ToolFamily::Scripting),
             ToolBundle::Essentials => match self.name {
                 "redis_pubsub_channels"
                 | "redis_pubsub_numsub"
@@ -268,7 +273,8 @@ impl ToolMetadata {
                 ToolBundle::Essentials
                 | ToolBundle::DataStructures
                 | ToolBundle::Json
-                | ToolBundle::Search => false,
+                | ToolBundle::Search
+                | ToolBundle::Scripting => false,
             },
             ToolFamily::is_compiled,
         )
@@ -310,6 +316,24 @@ impl ToolMetadata {
             | "redis_pubsub_shardchannels"
             | "redis_pubsub_shardnumsub" => Some(RedisVersion::new(7, 0, 0)),
             "redis_sort" | "redis_zintercard" => Some(RedisVersion::new(7, 0, 0)),
+            "redis_eval"
+            | "redis_evalsha"
+            | "redis_script_exists"
+            | "redis_script_load"
+            | "redis_script_flush"
+            | "redis_script_kill" => Some(RedisVersion::new(2, 6, 0)),
+            "redis_eval_ro"
+            | "redis_evalsha_ro"
+            | "redis_fcall"
+            | "redis_fcall_ro"
+            | "redis_function_list"
+            | "redis_function_stats"
+            | "redis_function_dump"
+            | "redis_function_load"
+            | "redis_function_restore"
+            | "redis_function_delete"
+            | "redis_function_flush"
+            | "redis_function_kill" => Some(RedisVersion::new(7, 0, 0)),
             "redis_dump" => Some(RedisVersion::new(2, 6, 0)),
             "redis_getbit" | "redis_setbit" => Some(RedisVersion::new(2, 2, 0)),
             "redis_bitcount" | "redis_bitop" => Some(RedisVersion::new(2, 6, 0)),
@@ -434,6 +458,24 @@ impl ToolMetadata {
             "redis_dump" => &["DUMP"],
             "redis_object_inspect" => &["OBJECT"],
             "redis_sort" => &["SORT_RO", "EXISTS"],
+            "redis_eval" => &["EVAL"],
+            "redis_eval_ro" => &["EVAL_RO"],
+            "redis_evalsha" => &["EVALSHA"],
+            "redis_evalsha_ro" => &["EVALSHA_RO"],
+            "redis_fcall" => &["FCALL"],
+            "redis_fcall_ro" => &["FCALL_RO"],
+            "redis_script_exists"
+            | "redis_script_load"
+            | "redis_script_flush"
+            | "redis_script_kill" => &["SCRIPT"],
+            "redis_function_list"
+            | "redis_function_stats"
+            | "redis_function_dump"
+            | "redis_function_load"
+            | "redis_function_restore"
+            | "redis_function_delete"
+            | "redis_function_flush"
+            | "redis_function_kill" => &["FUNCTION"],
             "redis_publish" => &["PUBLISH"],
             "redis_spublish" => &["SPUBLISH"],
             "redis_subscribe" => &["SUBSCRIBE"],
@@ -742,6 +784,15 @@ impl ToolMetadata {
             | "redis_pubsub_read"
             | "redis_hrandfield"
             | "redis_sort"
+            | "redis_eval"
+            | "redis_eval_ro"
+            | "redis_evalsha"
+            | "redis_evalsha_ro"
+            | "redis_fcall"
+            | "redis_fcall_ro"
+            | "redis_function_list"
+            | "redis_function_stats"
+            | "redis_function_dump"
             | "redis_command" => ToolOutputPolicy::BudgetGuarded,
             _ => ToolOutputPolicy::IntrinsicallyBounded,
         }
@@ -1548,6 +1599,30 @@ pub(crate) const CATALOG: &[ToolMetadata] = &[
         requires_raw_opt_in: false,
     },
     ToolMetadata {
+        name: "redis_eval_ro",
+        bundle: ToolBundle::Scripting,
+        required_access: AccessMode::ReadOnly,
+        requires_raw_opt_in: false,
+    },
+    ToolMetadata {
+        name: "redis_evalsha_ro",
+        bundle: ToolBundle::Scripting,
+        required_access: AccessMode::ReadOnly,
+        requires_raw_opt_in: false,
+    },
+    ToolMetadata {
+        name: "redis_fcall_ro",
+        bundle: ToolBundle::Scripting,
+        required_access: AccessMode::ReadOnly,
+        requires_raw_opt_in: false,
+    },
+    ToolMetadata {
+        name: "redis_script_exists",
+        bundle: ToolBundle::Scripting,
+        required_access: AccessMode::ReadOnly,
+        requires_raw_opt_in: false,
+    },
+    ToolMetadata {
         name: "redis_set",
         bundle: ToolBundle::Essentials,
         required_access: AccessMode::ReadWrite,
@@ -1917,6 +1992,90 @@ pub(crate) const CATALOG: &[ToolMetadata] = &[
         name: "redis_ft_aliasadd",
         bundle: ToolBundle::Search,
         required_access: AccessMode::ReadWrite,
+        requires_raw_opt_in: false,
+    },
+    ToolMetadata {
+        name: "redis_eval",
+        bundle: ToolBundle::Scripting,
+        required_access: AccessMode::Full,
+        requires_raw_opt_in: false,
+    },
+    ToolMetadata {
+        name: "redis_evalsha",
+        bundle: ToolBundle::Scripting,
+        required_access: AccessMode::Full,
+        requires_raw_opt_in: false,
+    },
+    ToolMetadata {
+        name: "redis_fcall",
+        bundle: ToolBundle::Scripting,
+        required_access: AccessMode::Full,
+        requires_raw_opt_in: false,
+    },
+    ToolMetadata {
+        name: "redis_script_load",
+        bundle: ToolBundle::Scripting,
+        required_access: AccessMode::Full,
+        requires_raw_opt_in: false,
+    },
+    ToolMetadata {
+        name: "redis_script_flush",
+        bundle: ToolBundle::Scripting,
+        required_access: AccessMode::Full,
+        requires_raw_opt_in: false,
+    },
+    ToolMetadata {
+        name: "redis_script_kill",
+        bundle: ToolBundle::Scripting,
+        required_access: AccessMode::Full,
+        requires_raw_opt_in: false,
+    },
+    ToolMetadata {
+        name: "redis_function_list",
+        bundle: ToolBundle::Scripting,
+        required_access: AccessMode::Full,
+        requires_raw_opt_in: false,
+    },
+    ToolMetadata {
+        name: "redis_function_stats",
+        bundle: ToolBundle::Scripting,
+        required_access: AccessMode::Full,
+        requires_raw_opt_in: false,
+    },
+    ToolMetadata {
+        name: "redis_function_dump",
+        bundle: ToolBundle::Scripting,
+        required_access: AccessMode::Full,
+        requires_raw_opt_in: false,
+    },
+    ToolMetadata {
+        name: "redis_function_load",
+        bundle: ToolBundle::Scripting,
+        required_access: AccessMode::Full,
+        requires_raw_opt_in: false,
+    },
+    ToolMetadata {
+        name: "redis_function_restore",
+        bundle: ToolBundle::Scripting,
+        required_access: AccessMode::Full,
+        requires_raw_opt_in: false,
+    },
+    ToolMetadata {
+        name: "redis_function_delete",
+        bundle: ToolBundle::Scripting,
+        required_access: AccessMode::Full,
+        requires_raw_opt_in: false,
+    },
+    ToolMetadata {
+        name: "redis_function_flush",
+        bundle: ToolBundle::Scripting,
+        required_access: AccessMode::Full,
+        requires_raw_opt_in: false,
+    },
+    ToolMetadata {
+        name: "redis_function_kill",
+        bundle: ToolBundle::Scripting,
+        required_access: AccessMode::Full,
         requires_raw_opt_in: false,
     },
     ToolMetadata {
@@ -2317,6 +2476,7 @@ mod tests {
                     | ToolBundle::DataStructures
                     | ToolBundle::Json
                     | ToolBundle::Search
+                    | ToolBundle::Scripting
             ) {
                 assert!(tool.family().is_some(), "{} has no family", tool.name);
             }

@@ -26,6 +26,8 @@ mod modern_data;
 mod pubsub;
 #[cfg(feature = "sessions")]
 mod pubsub_sessions;
+#[cfg(feature = "scripting")]
+mod scripting;
 #[cfg(feature = "search")]
 mod search;
 #[cfg(any(feature = "bitmaps", feature = "geospatial", feature = "hyperloglog"))]
@@ -491,6 +493,15 @@ pub(crate) fn add_read_only_tools(
     if family_selected(families, bundles, ToolFamily::Search, ToolBundle::Search) {
         router = search::add_read_tools(router, state.clone());
     }
+    #[cfg(feature = "scripting")]
+    if family_selected(
+        families,
+        bundles,
+        ToolFamily::Scripting,
+        ToolBundle::Scripting,
+    ) {
+        router = scripting::add_read_tools(router, state.clone());
+    }
     #[cfg(feature = "diagnostics")]
     if bundles.contains(&ToolBundle::Diagnostics) {
         router = router.tool(info_tool(state.clone()));
@@ -783,7 +794,16 @@ pub(crate) fn add_destructive_tools(
     }
     #[cfg(feature = "search")]
     if family_selected(families, bundles, ToolFamily::Search, ToolBundle::Search) {
-        router = search::add_destructive_tools(router, state);
+        router = search::add_destructive_tools(router, state.clone());
+    }
+    #[cfg(feature = "scripting")]
+    if family_selected(
+        families,
+        bundles,
+        ToolFamily::Scripting,
+        ToolBundle::Scripting,
+    ) {
+        router = scripting::add_full_tools(router, state);
     }
     router
 }

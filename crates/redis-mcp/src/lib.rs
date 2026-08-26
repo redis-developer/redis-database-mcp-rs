@@ -31,8 +31,8 @@ pub use catalog::{
     ToolOutputPolicy, tool_catalog,
 };
 pub use executor::{
-    DirectRedis, DirectRedisCluster, RedisCommand, RedisError, RedisErrorKind, RedisExecutor,
-    RedisValue,
+    DirectRedis, DirectRedisCluster, RedisClusterFanout, RedisCommand, RedisError, RedisErrorKind,
+    RedisExecutor, RedisValue,
 };
 pub use families::{ToolFamily, compiled_tool_families};
 pub use invocation::{

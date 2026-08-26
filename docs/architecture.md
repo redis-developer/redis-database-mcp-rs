@@ -138,8 +138,9 @@ orthogonal.
 
 The public family taxonomy is `keyspace`, `strings`, `hashes`, `lists`, `sets`,
 `sorted-sets`, `streams`, `bitmaps`, `arrays`, `hyperloglog`, `geospatial`,
-`vector-sets`, `pubsub`, `json`, and `search`. Each is an additive Cargo feature
-and a `ToolFamily` runtime marker. `all-families` is the data-family aggregate;
+`vector-sets`, `pubsub`, `scripting`, `json`, and `search`. Each is an additive
+Cargo feature and a `ToolFamily` runtime marker. `all-families` is the
+command-family aggregate;
 `full` adds the cross-cutting `diagnostics` and `sessions` features. Default
 features select `full` to preserve the crate's pre-refactor compilation and
 server catalog. A size-sensitive host can use `default-features = false` and
@@ -159,15 +160,19 @@ They answer which broad capabilities a host wants while preserving the
 standalone server's existing contract.
 
 The public taxonomy is `essentials`, `data_structures`, `json`, `search`,
-`diagnostics`, `sessions`, `admin`, `bulk`, and `raw`. The curated default enables
-`essentials`, `data_structures`, and `diagnostics`, totaling 187 tools. The
-module-backed `json` and `search` bundles are explicitly selected so a default
-router never advertises capabilities that its Redis target may not provide.
+`diagnostics`, `sessions`, `scripting`, `admin`, `bulk`, and `raw`. The curated
+default enables `essentials`, `data_structures`, and `diagnostics`, totaling 201
+tools. The module-backed `json` and `search` bundles are explicitly selected so
+a default router never advertises capabilities that its Redis target may not
+provide.
 The stateful `sessions` bundle is enabled only by supplying a lifecycle manager.
+The `scripting` family/bundle is also opt-in at runtime because even its
+read-only forms execute server-side code; full access additionally exposes
+arbitrary-write execution and script/function lifecycle operations.
 Empty bundles are reserved for coherent catalog growth and do not expose
 placeholder tools. The bundled stdio executable installs the DirectRedis
-session manager itself and therefore exposes 193 tools before module or raw
-additions.
+session manager itself and therefore exposes 207 tools before module,
+scripting, or raw additions.
 
 The Data Structures bundle includes the current Redis 8 core data model rather
 than freezing the contract at older Redis releases. Redis 8.0 introduces typed
@@ -267,9 +272,30 @@ redis-rs' opaque aggregate. Handlers then byte-sort and deduplicate channel
 names, sum subscriber and pattern counts, and expose server-side node failures
 alongside an explicit completeness flag. Transport failures fail the whole
 request rather than presenting partial data as complete. Custom executors can
-read `RedisCommand::cluster_node_limit` and return `RedisValue::ClusterNodes`
-to preserve the same behavior. Long-lived subscription sessions remain a
-separate lifecycle surface in their own optional bundle.
+read `RedisCommand::cluster_node_limit` plus `RedisCommand::cluster_fanout` and
+return `RedisValue::ClusterNodes` to preserve the same behavior. Long-lived
+subscription sessions remain a separate lifecycle surface in their own
+optional bundle.
+
+The optional Scripting family/bundle contains 18 Lua and Redis Functions tools.
+EVAL/EVALSHA and FCALL inputs carry explicit binary-safe key and argument
+arrays; the direct Cluster adapter routes by the first declared key and rejects
+different slots before execution. Redis 7+ `_RO` variants are the only
+execution tools available to a read-only router. The ordinary forms can run
+arbitrary writes or deletions and therefore require full access.
+
+Script-cache inspection fans out to primaries, cache load/flush fans out to all
+nodes, function lifecycle and statistics fan out to primaries, and FUNCTION
+LIST/DUMP explicitly report one-node scope. Every fan-out has a caller ceiling,
+returns address-tagged replies with a completeness flag, and suppresses server
+error messages from partial results. Custom executors distinguish the target
+through `RedisClusterFanout::Primaries` and `RedisClusterFanout::AllNodes`.
+Sources, library code, dump/restore payloads, keys, arguments, and dynamic
+results all have hard byte or collection ceilings. The shared request timeout
+bounds client waiting; dropping the future does not establish that Redis
+stopped script execution. SCRIPT/FUNCTION KILL preserve Redis's rule that an
+execution which already wrote cannot be killed safely. `SCRIPT DEBUG` remains
+excluded.
 
 The optional Sessions bundle contains six long-lived Pub/Sub operations:
 `redis_subscribe`, `redis_psubscribe`, Redis 7+ `redis_ssubscribe`,
@@ -321,8 +347,9 @@ authorized per classified command. Both use one of two enabled policies:
   request/response operations and fails closed for unknown names.
 - `Unrestricted` permits unknown request/response commands, while retaining
   hard blocks for authentication/connection state, transactions, streaming,
-  subscriptions, replication handshakes, unbounded scripts, and blocking
-  forms.
+  subscriptions, replication handshakes, script/function execution and
+  lifecycle, and blocking forms. Scripting stays behind its dedicated typed
+  family even when unrestricted native invocation is enabled.
 
 ## Output budgets and continuation contracts
 

@@ -1289,39 +1289,47 @@
     },
     {
       "name": "EVAL",
-      "disposition": "session",
+      "disposition": "typed",
       "access": "full",
       "cluster_behavior": "key_routed",
-      "tools": [],
-      "tracking_issue": 58,
-      "rationale": "Script execution and lifecycle require explicit keys, result budgets, and a dedicated bounded API."
+      "tools": [
+        "redis_eval"
+      ],
+      "tracking_issue": null,
+      "rationale": "Bounded Lua execution declares every binary-safe key and argument, enforces Cluster same-slot routing, and requires full access."
     },
     {
       "name": "EVALSHA",
-      "disposition": "session",
+      "disposition": "typed",
       "access": "full",
       "cluster_behavior": "key_routed",
-      "tools": [],
-      "tracking_issue": 58,
-      "rationale": "Script execution and lifecycle require explicit keys, result budgets, and a dedicated bounded API."
+      "tools": [
+        "redis_evalsha"
+      ],
+      "tracking_issue": null,
+      "rationale": "Bounded cached Lua execution validates SHA1 and declares every binary-safe key and argument explicitly."
     },
     {
       "name": "EVALSHA_RO",
-      "disposition": "session",
+      "disposition": "typed",
       "access": "read_only",
       "cluster_behavior": "key_routed",
-      "tools": [],
-      "tracking_issue": 58,
-      "rationale": "Script execution and lifecycle require explicit keys, result budgets, and a dedicated bounded API."
+      "tools": [
+        "redis_evalsha_ro"
+      ],
+      "tracking_issue": null,
+      "rationale": "The Redis 7+ read-only cached-script form validates SHA1, declared keys, Cluster slots, inputs, and results."
     },
     {
       "name": "EVAL_RO",
-      "disposition": "session",
+      "disposition": "typed",
       "access": "read_only",
       "cluster_behavior": "key_routed",
-      "tools": [],
-      "tracking_issue": 58,
-      "rationale": "Script execution and lifecycle require explicit keys, result budgets, and a dedicated bounded API."
+      "tools": [
+        "redis_eval_ro"
+      ],
+      "tracking_issue": null,
+      "rationale": "The Redis 7+ read-only Lua form declares every binary-safe key and applies input, timeout, and result budgets."
     },
     {
       "name": "EXEC",
@@ -1389,21 +1397,25 @@
     },
     {
       "name": "FCALL",
-      "disposition": "session",
+      "disposition": "typed",
       "access": "full",
       "cluster_behavior": "key_routed",
-      "tools": [],
-      "tracking_issue": 58,
-      "rationale": "Script execution and lifecycle require explicit keys, result budgets, and a dedicated bounded API."
+      "tools": [
+        "redis_fcall"
+      ],
+      "tracking_issue": null,
+      "rationale": "Bounded Redis Function execution declares every binary-safe key and argument and requires full access."
     },
     {
       "name": "FCALL_RO",
-      "disposition": "session",
+      "disposition": "typed",
       "access": "read_only",
       "cluster_behavior": "key_routed",
-      "tools": [],
-      "tracking_issue": 58,
-      "rationale": "Script execution and lifecycle require explicit keys, result budgets, and a dedicated bounded API."
+      "tools": [
+        "redis_fcall_ro"
+      ],
+      "tracking_issue": null,
+      "rationale": "Read-only Redis Function execution declares every binary-safe key and applies Cluster and output bounds."
     },
     {
       "name": "FLUSHALL",
@@ -1434,30 +1446,36 @@
     },
     {
       "name": "FUNCTION DELETE",
-      "disposition": "session",
+      "disposition": "typed",
       "access": "full",
       "cluster_behavior": "all_shards",
-      "tools": [],
-      "tracking_issue": 58,
-      "rationale": "Script execution and lifecycle require explicit keys, result budgets, and a dedicated bounded API."
+      "tools": [
+        "redis_function_delete"
+      ],
+      "tracking_issue": null,
+      "rationale": "Named library deletion fans out to a bounded primary set and exposes partial outcomes."
     },
     {
       "name": "FUNCTION DUMP",
-      "disposition": "session",
+      "disposition": "typed",
       "access": "full",
       "cluster_behavior": "node_local",
-      "tools": [],
-      "tracking_issue": 58,
-      "rationale": "Script execution and lifecycle require explicit keys, result budgets, and a dedicated bounded API."
+      "tools": [
+        "redis_function_dump"
+      ],
+      "tracking_issue": null,
+      "rationale": "Binary-safe library dumps are node-local and guarded by caller and global encoded-byte ceilings."
     },
     {
       "name": "FUNCTION FLUSH",
-      "disposition": "session",
+      "disposition": "typed",
       "access": "full",
       "cluster_behavior": "all_shards",
-      "tools": [],
-      "tracking_issue": 58,
-      "rationale": "Script execution and lifecycle require explicit keys, result budgets, and a dedicated bounded API."
+      "tools": [
+        "redis_function_flush"
+      ],
+      "tracking_issue": null,
+      "rationale": "Library flush uses an explicit sync mode and bounded primary fan-out with partial outcomes."
     },
     {
       "name": "FUNCTION HELP",
@@ -1470,48 +1488,58 @@
     },
     {
       "name": "FUNCTION KILL",
-      "disposition": "session",
+      "disposition": "typed",
       "access": "full",
       "cluster_behavior": "all_shards",
-      "tools": [],
-      "tracking_issue": 58,
-      "rationale": "Script execution and lifecycle require explicit keys, result budgets, and a dedicated bounded API."
+      "tools": [
+        "redis_function_kill"
+      ],
+      "tracking_issue": null,
+      "rationale": "Function cancellation is attempted across a bounded primary set with Redis write-safety limits explicit."
     },
     {
       "name": "FUNCTION LIST",
-      "disposition": "session",
+      "disposition": "typed",
       "access": "full",
       "cluster_behavior": "node_local",
-      "tools": [],
-      "tracking_issue": 58,
-      "rationale": "Script execution and lifecycle require explicit keys, result budgets, and a dedicated bounded API."
+      "tools": [
+        "redis_function_list"
+      ],
+      "tracking_issue": null,
+      "rationale": "Node-local function inspection is pattern-filterable, source inclusion is explicit, and output is budgeted."
     },
     {
       "name": "FUNCTION LOAD",
-      "disposition": "session",
+      "disposition": "typed",
       "access": "full",
       "cluster_behavior": "all_shards",
-      "tools": [],
-      "tracking_issue": 58,
-      "rationale": "Script execution and lifecycle require explicit keys, result budgets, and a dedicated bounded API."
+      "tools": [
+        "redis_function_load"
+      ],
+      "tracking_issue": null,
+      "rationale": "Bounded binary-safe library source loads across primaries with explicit replacement and partial outcomes."
     },
     {
       "name": "FUNCTION RESTORE",
-      "disposition": "session",
+      "disposition": "typed",
       "access": "full",
       "cluster_behavior": "all_shards",
-      "tools": [],
-      "tracking_issue": 58,
-      "rationale": "Script execution and lifecycle require explicit keys, result budgets, and a dedicated bounded API."
+      "tools": [
+        "redis_function_restore"
+      ],
+      "tracking_issue": null,
+      "rationale": "Bounded binary-safe restore payloads use an explicit collision policy and primary fan-out."
     },
     {
       "name": "FUNCTION STATS",
-      "disposition": "session",
+      "disposition": "typed",
       "access": "full",
       "cluster_behavior": "all_shards",
-      "tools": [],
-      "tracking_issue": 58,
-      "rationale": "Script execution and lifecycle require explicit keys, result budgets, and a dedicated bounded API."
+      "tools": [
+        "redis_function_stats"
+      ],
+      "tracking_issue": null,
+      "rationale": "Runtime statistics are output-budgeted and retain bounded per-primary results and failures."
     },
     {
       "name": "GEOADD",
@@ -3131,21 +3159,25 @@
     },
     {
       "name": "SCRIPT EXISTS",
-      "disposition": "session",
+      "disposition": "typed",
       "access": "read_only",
       "cluster_behavior": "all_shards",
-      "tools": [],
-      "tracking_issue": 58,
-      "rationale": "Script execution and lifecycle require explicit keys, result budgets, and a dedicated bounded API."
+      "tools": [
+        "redis_script_exists"
+      ],
+      "tracking_issue": null,
+      "rationale": "A bounded validated SHA1 list is inspected across primaries with per-node cache results."
     },
     {
       "name": "SCRIPT FLUSH",
-      "disposition": "session",
+      "disposition": "typed",
       "access": "full",
       "cluster_behavior": "all_nodes",
-      "tools": [],
-      "tracking_issue": 58,
-      "rationale": "Script execution and lifecycle require explicit keys, result budgets, and a dedicated bounded API."
+      "tools": [
+        "redis_script_flush"
+      ],
+      "tracking_issue": null,
+      "rationale": "Script cache flush is version-aware and bounded across all Cluster nodes with partial outcomes."
     },
     {
       "name": "SCRIPT HELP",
@@ -3158,21 +3190,25 @@
     },
     {
       "name": "SCRIPT KILL",
-      "disposition": "session",
+      "disposition": "typed",
       "access": "full",
       "cluster_behavior": "all_shards",
-      "tools": [],
-      "tracking_issue": 58,
-      "rationale": "Script execution and lifecycle require explicit keys, result budgets, and a dedicated bounded API."
+      "tools": [
+        "redis_script_kill"
+      ],
+      "tracking_issue": null,
+      "rationale": "Script cancellation is attempted across a bounded primary set with Redis write-safety limits explicit."
     },
     {
       "name": "SCRIPT LOAD",
-      "disposition": "session",
+      "disposition": "typed",
       "access": "full",
       "cluster_behavior": "all_nodes",
-      "tools": [],
-      "tracking_issue": 58,
-      "rationale": "Script execution and lifecycle require explicit keys, result budgets, and a dedicated bounded API."
+      "tools": [
+        "redis_script_load"
+      ],
+      "tracking_issue": null,
+      "rationale": "Bounded binary-safe Lua source is loaded across all Cluster nodes with per-node SHA1 results."
     },
     {
       "name": "SDIFF",

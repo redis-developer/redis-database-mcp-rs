@@ -95,6 +95,13 @@ subscriptions, finite bounded reads, exact unsubscribe, and explicit close.
 Those tools have no redisctl baseline names; they are a library lifecycle
 surface backed by a host-supplied manager rather than ordinary command
 execution.
+The optional `scripting` family adds explicit binary-safe Lua and Redis
+Functions execution plus cache and library lifecycle operations. Callers
+declare keys separately from arguments, Cluster execution enforces same-slot
+keys, and node-wide cache or library changes use bounded fan-out with partial
+failures represented in structured output. Read-only execution is available
+at the read-only tier; arbitrary execution and lifecycle operations require
+full access.
 These are command-surface improvements rather than redisctl name overlap. Hash
 reads distinguish a missing hash, missing field, and empty value;
 field-expiration tools are capability-gated to Redis 7.4 or newer and return
@@ -212,6 +219,7 @@ hybrid search, plus explicit `redis_ft_cursor_read` and
 - `data_structures`: native hashes, lists, sets, sorted sets, and streams
 - `json`: explicitly selected RedisJSON operations
 - `search`: Redis Query Engine (`FT.*`) operations and module/version behavior
+- `scripting`: Lua, script-cache, and Redis Functions execution and lifecycle
 - `diagnostics`: health, connection, latency, memory, and safe server inspection
 - `sessions`: owner-isolated, quota-bound Pub/Sub subscription lifecycles
 - `admin`: ACL/configuration and destructive server administration

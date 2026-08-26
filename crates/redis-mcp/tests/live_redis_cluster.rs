@@ -800,6 +800,157 @@ async fn bounded_sort_routes_and_enforces_cluster_key_contracts() {
     }
 }
 
+#[tokio::test]
+async fn scripting_routes_declared_keys_and_fans_out_lifecycle_in_cluster() {
+    let _cluster_guard = CLUSTER_TEST_LOCK.lock().await;
+    let Some(cluster) = TestCluster::start().await else {
+        return;
+    };
+    let discovery = DirectRedisCluster::connect(&cluster.seed_urls)
+        .await
+        .expect("connect scripting Cluster discovery adapter");
+    let version = discovery
+        .discover_capabilities()
+        .await
+        .expect("discover scripting Cluster capabilities")
+        .redis_version()
+        .expect("Redis Cluster reports its version");
+
+    for protocol in ["resp2", "resp3"] {
+        let urls = cluster
+            .seed_urls
+            .iter()
+            .map(|url| with_protocol(url, protocol))
+            .collect::<Vec<_>>();
+        let client = scripting_router_client(
+            DirectRedisCluster::connect(&urls)
+                .await
+                .expect("connect scripting Cluster protocol adapter"),
+        )
+        .await;
+        let same = format!("script:{{same-{}}}:{protocol}", std::process::id());
+        let other = format!("script:{{other-{}}}:{protocol}", std::process::id());
+
+        let eval = client
+            .call_tool(
+                "redis_eval_ro",
+                serde_json::json!({
+                    "script": {"value": "return {KEYS[1], KEYS[2], ARGV[1]}"},
+                    "keys": [
+                        {"value": format!("{same}:1")},
+                        {"value": format!("{same}:2")}
+                    ],
+                    "arguments": [{"value": "/wA=", "encoding": "base64"}]
+                }),
+            )
+            .await
+            .expect("same-slot EVAL_RO");
+        assert!(!eval.is_error, "{protocol}: {eval:?}");
+        let eval = eval.structured_content.expect("structured Cluster EVAL_RO");
+        assert_eq!(eval["result"][2]["encoding"], "base64");
+
+        let cross_slot = client
+            .call_tool(
+                "redis_eval_ro",
+                serde_json::json!({
+                    "script": {"value": "return 1"},
+                    "keys": [
+                        {"value": format!("{same}:1")},
+                        {"value": format!("{other}:2")}
+                    ]
+                }),
+            )
+            .await
+            .expect("cross-slot EVAL_RO is a tool result");
+        assert!(cross_slot.is_error, "{protocol}: {cross_slot:?}");
+        assert!(
+            serde_json::to_string(&cross_slot)
+                .expect("serialize scripting CROSSSLOT")
+                .contains("CROSSSLOT")
+        );
+
+        let loaded = client
+            .call_tool(
+                "redis_script_load",
+                serde_json::json!({"script": {"value": "return 1"}, "max_cluster_nodes": 8}),
+            )
+            .await
+            .expect("Cluster SCRIPT LOAD")
+            .structured_content
+            .expect("structured Cluster SCRIPT LOAD");
+        assert_eq!(loaded["scope"], "cluster_all_nodes");
+        assert_eq!(loaded["cluster"]["complete"], true);
+        let node_count = loaded["cluster"]["nodes_queried"]
+            .as_u64()
+            .expect("Cluster SCRIPT LOAD node count");
+        assert!(node_count > 0);
+        if cluster._managed.is_some() {
+            assert_eq!(node_count, 3);
+        }
+        let sha1 = loaded["cluster"]["replies"][0]["value"]["value"]
+            .as_str()
+            .expect("Cluster SCRIPT LOAD SHA1")
+            .to_string();
+
+        let exists = client
+            .call_tool(
+                "redis_script_exists",
+                serde_json::json!({"sha1": [sha1], "max_cluster_nodes": 8}),
+            )
+            .await
+            .expect("Cluster SCRIPT EXISTS")
+            .structured_content
+            .expect("structured Cluster SCRIPT EXISTS");
+        assert_eq!(exists["scope"], "cluster_primaries");
+        assert_eq!(exists["cluster"]["complete"], true);
+        let primary_count = exists["cluster"]["nodes_queried"]
+            .as_u64()
+            .expect("Cluster SCRIPT EXISTS primary count");
+        assert!(primary_count > 0 && primary_count <= node_count);
+
+        if version >= RedisVersion::new(7, 0, 0) {
+            let library = format!("clusterlib_{}_{}", std::process::id(), protocol);
+            let function = format!("echo_{}_{}", std::process::id(), protocol);
+            let code = format!(
+                "#!lua name={library}\nredis.register_function{{function_name='{function}', callback=function(keys, args) return args[1] end, flags={{'no-writes'}}}}"
+            );
+            let loaded = client
+                .call_tool(
+                    "redis_function_load",
+                    serde_json::json!({"library_code": {"value": code}, "max_cluster_nodes": 8}),
+                )
+                .await
+                .expect("Cluster FUNCTION LOAD")
+                .structured_content
+                .expect("structured Cluster FUNCTION LOAD");
+            assert_eq!(loaded["scope"], "cluster_primaries");
+            assert_eq!(loaded["cluster"]["nodes_queried"], primary_count);
+
+            let called = client
+                .call_tool(
+                    "redis_fcall_ro",
+                    serde_json::json!({
+                        "function": function,
+                        "keys": [{"value": format!("{same}:function")}],
+                        "arguments": [{"value": "hello"}]
+                    }),
+                )
+                .await
+                .expect("Cluster FCALL_RO");
+            assert!(!called.is_error, "{protocol}: {called:?}");
+
+            let deleted = client
+                .call_tool(
+                    "redis_function_delete",
+                    serde_json::json!({"library_name": library, "max_cluster_nodes": 8}),
+                )
+                .await
+                .expect("Cluster FUNCTION DELETE");
+            assert!(!deleted.is_error, "{protocol}: {deleted:?}");
+        }
+    }
+}
+
 impl TestCluster {
     async fn start() -> Option<Self> {
         if let Ok(seed_urls) = std::env::var("REDIS_CLUSTER_URLS") {
@@ -1028,6 +1179,26 @@ async fn router_client(executor: impl RedisExecutor) -> McpClient {
         .initialize("redis-mcp-cluster-test", "0")
         .await
         .expect("initialize cluster MCP client");
+    client
+}
+
+async fn scripting_router_client(executor: impl RedisExecutor) -> McpClient {
+    let router = RedisMcp::builder(executor)
+        .access(AccessMode::Full)
+        .bundles([ToolBundle::Scripting])
+        .capabilities(
+            redis_mcp::RedisCapabilities::unknown()
+                .with_redis_version(RedisVersion::new(8, 2, 0))
+                .with_deployment(RedisDeployment::Cluster),
+        )
+        .build();
+    let client = McpClient::connect(ChannelTransport::new(router))
+        .await
+        .expect("connect scripting Cluster MCP client");
+    client
+        .initialize("redis-mcp-scripting-cluster-test", "0")
+        .await
+        .expect("initialize scripting Cluster MCP client");
     client
 }
 

@@ -29,10 +29,10 @@ features and enable only the Redis families they embed:
 
 The additive family features are `keyspace`, `strings`, `hashes`, `lists`,
 `sets`, `sorted-sets`, `streams`, `bitmaps`, `arrays`, `hyperloglog`,
-`geospatial`, `vector-sets`, `pubsub`, `json`, and `search`. The `diagnostics`
-and `sessions` features compile their corresponding cross-cutting bundles.
-`all-families` enables every data family, while `full` also enables diagnostics
-and sessions.
+`geospatial`, `vector-sets`, `pubsub`, `scripting`, `json`, and `search`. The
+`diagnostics` and `sessions` features compile their corresponding cross-cutting
+bundles. `all-families` enables every command family, while `full` also enables
+diagnostics and sessions.
 
 Compile-time inclusion and runtime exposure are separate. `families(...)`
 replaces the compatibility bundle defaults with a precise family selection;
@@ -136,6 +136,12 @@ The standalone default exposes 201 broadly useful tools:
 - optional owner-isolated Pub/Sub sessions: `redis_subscribe`,
   `redis_psubscribe`, `redis_ssubscribe`, `redis_pubsub_read`,
   `redis_pubsub_unsubscribe`, `redis_pubsub_close`
+- optional scripting family: `redis_eval`, `redis_eval_ro`, `redis_evalsha`,
+  `redis_evalsha_ro`, `redis_fcall`, `redis_fcall_ro`, `redis_script_exists`,
+  `redis_script_load`, `redis_script_flush`, `redis_script_kill`,
+  `redis_function_list`, `redis_function_stats`, `redis_function_dump`,
+  `redis_function_load`, `redis_function_restore`, `redis_function_delete`,
+  `redis_function_flush`, `redis_function_kill`
 - explicit full-access escape hatch: `redis_command`
 
 The reusable router keeps the stateful `sessions` bundle opt-in because its
@@ -158,6 +164,12 @@ Pub/Sub publication and inspection are binary-safe too. Channel enumeration
 requires a result limit; cluster inspection requires a node limit, deduplicates
 or sums node-local replies deterministically, and reports partial node failures.
 `SPUBLISH` and shard inspection are capability-gated to Redis 7.0 or newer.
+The non-default `scripting` family preserves binary keys, arguments, sources,
+and dump payloads; requires declared same-slot keys on Cluster; and separates
+read-only execution from arbitrary-code and lifecycle operations. Script and
+function results share the global output budgets. A request timeout bounds how
+long the MCP call waits, but cannot promise that Redis stopped server-side
+execution; explicit kill tools retain Redis's own write-safety limitations.
 
 See [the spike decision record](docs/spike.md) for the tested architecture,
 REPL findings, and redisctl migration sequence.
@@ -174,7 +186,8 @@ Use it with any stdio MCP client. With
 
     mcp-repl -- redis-mcp-server \
       --url redis://127.0.0.1:6379 \
-      --access read-write \
+      --access full \
+      --enable-bundle scripting \
       --stdio
 
 The same generated command surface is available non-interactively through
@@ -223,18 +236,19 @@ commands fail closed:
 
 An intentionally stronger flag permits unclassified request/response commands
 while retaining hard blocks for session, streaming, transaction, replication,
-script, and indefinite-blocking forms:
+script/function, and indefinite-blocking forms:
 
     redis-mcp-server --access full --raw-unrestricted --stdio
 
-RedisJSON and Search are explicit additions to the curated defaults. The JSON
-bundle exposes 17 structured tools spanning reads, typed mutations, arrays,
-objects, deletion, clearing, and RFC 7396 merge. Enhanced JSONPath (`$`) is the
-default; callers can explicitly select legacy paths where RedisJSON has
-different reply semantics. The configured Redis target must provide the
-corresponding capability:
+Scripting, RedisJSON, and Search are explicit additions to the curated
+defaults. The JSON bundle exposes 17 structured tools spanning reads, typed
+mutations, arrays, objects, deletion, clearing, and RFC 7396 merge. Enhanced
+JSONPath (`$`) is the default; callers can explicitly select legacy paths where
+RedisJSON has different reply semantics. The configured Redis target must
+provide the corresponding capability:
 
     redis-mcp-server --access full \
+      --enable-bundle scripting \
       --enable-bundle json \
       --enable-bundle search \
       --stdio

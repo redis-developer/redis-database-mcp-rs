@@ -206,6 +206,32 @@ async fn module_router_client(url: &str) -> McpClient {
     client
 }
 
+async fn scripting_router_client(
+    url: &str,
+    access: AccessMode,
+) -> (McpClient, redis_mcp::RedisCapabilities) {
+    let executor = DirectRedis::connect(url)
+        .await
+        .expect("connect scripting executor");
+    let capabilities = executor
+        .discover_capabilities()
+        .await
+        .expect("discover scripting capabilities");
+    let router = RedisMcp::builder(executor)
+        .access(access)
+        .bundles([ToolBundle::Scripting])
+        .capabilities(capabilities.clone())
+        .build();
+    let client = McpClient::connect(ChannelTransport::new(router))
+        .await
+        .expect("connect scripting MCP client");
+    client
+        .initialize("redis-mcp-live-scripting-test", "0")
+        .await
+        .expect("initialize scripting MCP client");
+    (client, capabilities)
+}
+
 async fn call_structured(
     client: &McpClient,
     tool: &'static str,
@@ -316,6 +342,252 @@ async fn live_redis_round_trip_through_router() {
             .await
             .expect("delete key");
         assert_eq!(delete.structured_content.as_ref().unwrap()["deleted"], 1);
+    }
+}
+
+#[tokio::test]
+async fn live_scripting_is_binary_safe_bounded_and_lifecycle_aware_in_resp2_and_resp3() {
+    let Some(redis) = TestRedis::start().await else {
+        return;
+    };
+    let isolated = {
+        #[cfg(unix)]
+        {
+            redis._managed.is_some()
+        }
+        #[cfg(not(unix))]
+        {
+            false
+        }
+    };
+
+    for protocol in ["resp2", "resp3"] {
+        let (client, capabilities) =
+            scripting_router_client(&with_protocol(&redis.url, protocol), AccessMode::Full).await;
+        let version = capabilities
+            .redis_version()
+            .expect("live Redis reports a version");
+        let key = test_key(&format!("script:{protocol}"));
+        let script = "redis.call('SET', KEYS[1], ARGV[1]); return redis.call('GET', KEYS[1])";
+        let binary = vec![0xff, 0x00, 0x01];
+
+        let eval = call_structured(
+            &client,
+            "redis_eval",
+            serde_json::json!({
+                "script": {"value": script},
+                "keys": [{"value": key}],
+                "arguments": [{"value": BASE64.encode(&binary), "encoding": "base64"}]
+            }),
+        )
+        .await;
+        assert_eq!(eval["result"]["encoding"], "base64");
+        assert_eq!(eval["result"]["value"], BASE64.encode(&binary));
+
+        let load = call_structured(
+            &client,
+            "redis_script_load",
+            serde_json::json!({"script": {"value": "return ARGV[1]"}}),
+        )
+        .await;
+        let sha1 = load["result"]["value"]
+            .as_str()
+            .expect("SCRIPT LOAD SHA1")
+            .to_string();
+        assert_eq!(sha1.len(), 40);
+        let exists = call_structured(
+            &client,
+            "redis_script_exists",
+            serde_json::json!({"sha1": [sha1]}),
+        )
+        .await;
+        assert_eq!(exists["result"][0], 1);
+        let evalsha = call_structured(
+            &client,
+            "redis_evalsha",
+            serde_json::json!({
+                "sha1": sha1,
+                "arguments": [{"value": BASE64.encode(&binary), "encoding": "base64"}]
+            }),
+        )
+        .await;
+        assert_eq!(evalsha["result"]["value"], BASE64.encode(&binary));
+
+        let cache_miss = client
+            .call_tool(
+                "redis_evalsha",
+                serde_json::json!({"sha1": "0000000000000000000000000000000000000000"}),
+            )
+            .await
+            .expect("NOSCRIPT is a tool result");
+        assert!(cache_miss.is_error, "{cache_miss:?}");
+
+        let malformed = client
+            .call_tool(
+                "redis_eval_ro",
+                serde_json::json!({"script": {"value": "this is not valid lua"}}),
+            )
+            .await
+            .expect("malformed Lua is a tool result");
+        assert!(malformed.is_error, "{malformed:?}");
+
+        call_structured(
+            &client,
+            "redis_eval",
+            serde_json::json!({
+                "script": {"value": "redis.call('DEL', KEYS[1]); return redis.call('LPUSH', KEYS[1], ARGV[1])"},
+                "keys": [{"value": key}],
+                "arguments": [{"value": "not-a-string"}]
+            }),
+        )
+        .await;
+        let wrong_type = client
+            .call_tool(
+                "redis_eval_ro",
+                serde_json::json!({
+                    "script": {"value": "return redis.call('GET', KEYS[1])"},
+                    "keys": [{"value": key}]
+                }),
+            )
+            .await
+            .expect("scripting WRONGTYPE is a tool result");
+        assert!(wrong_type.is_error, "{wrong_type:?}");
+        assert!(
+            serde_json::to_string(&wrong_type)
+                .expect("serialize scripting WRONGTYPE")
+                .contains("WRONGTYPE")
+        );
+
+        let large_result = client
+            .call_tool(
+                "redis_eval_ro",
+                serde_json::json!({
+                    "script": {"value": "return string.rep('x', 300000)"}
+                }),
+            )
+            .await
+            .expect("large scripting response is a tool result");
+        assert!(large_result.is_error, "{large_result:?}");
+        assert_eq!(
+            large_result
+                .meta
+                .as_ref()
+                .expect("scripting output metadata")["io.redis.mcp/outputLimit"]["code"],
+            "output_limit_exceeded"
+        );
+
+        if isolated {
+            call_structured(
+                &client,
+                "redis_script_flush",
+                serde_json::json!({"mode": "sync"}),
+            )
+            .await;
+            let missing_after_flush = call_structured(
+                &client,
+                "redis_script_exists",
+                serde_json::json!({"sha1": [sha1]}),
+            )
+            .await;
+            assert_eq!(missing_after_flush["result"][0], 0);
+
+            let idle_kill = client
+                .call_tool("redis_script_kill", serde_json::json!({}))
+                .await
+                .expect("idle SCRIPT KILL is a tool result");
+            assert!(idle_kill.is_error, "{idle_kill:?}");
+        }
+
+        if version < RedisVersion::new(7, 0, 0) {
+            continue;
+        }
+
+        let library = format!("agentlib_{}_{}", std::process::id(), protocol);
+        let function = format!("echo_{}_{}", std::process::id(), protocol);
+        let library_code = format!(
+            "#!lua name={library}\nredis.register_function{{function_name='{function}', callback=function(keys, args) return args[1] end, flags={{'no-writes'}}}}"
+        );
+        let loaded = call_structured(
+            &client,
+            "redis_function_load",
+            serde_json::json!({"library_code": {"value": library_code}}),
+        )
+        .await;
+        assert_eq!(loaded["result"]["value"], library);
+
+        let fcall = call_structured(
+            &client,
+            "redis_fcall_ro",
+            serde_json::json!({
+                "function": function,
+                "arguments": [{"value": BASE64.encode(&binary), "encoding": "base64"}]
+            }),
+        )
+        .await;
+        assert_eq!(fcall["result"]["encoding"], "base64");
+        assert_eq!(fcall["result"]["value"], BASE64.encode(&binary));
+
+        let listed = call_structured(
+            &client,
+            "redis_function_list",
+            serde_json::json!({"library_name": library}),
+        )
+        .await;
+        assert!(
+            listed["result"]
+                .as_array()
+                .is_some_and(|values| !values.is_empty())
+        );
+        let stats = call_structured(&client, "redis_function_stats", serde_json::json!({})).await;
+        assert!(!stats["result"].is_null());
+
+        if isolated {
+            let dump = call_structured(
+                &client,
+                "redis_function_dump",
+                serde_json::json!({"max_bytes": 1048576}),
+            )
+            .await;
+            let payload = dump["result"].clone();
+            call_structured(
+                &client,
+                "redis_function_delete",
+                serde_json::json!({"library_name": library}),
+            )
+            .await;
+            call_structured(
+                &client,
+                "redis_function_restore",
+                serde_json::json!({"payload": payload, "policy": "append"}),
+            )
+            .await;
+
+            let idle_kill = client
+                .call_tool("redis_function_kill", serde_json::json!({}))
+                .await
+                .expect("idle FUNCTION KILL is a tool result");
+            assert!(idle_kill.is_error, "{idle_kill:?}");
+            call_structured(
+                &client,
+                "redis_function_flush",
+                serde_json::json!({"mode": "sync"}),
+            )
+            .await;
+            let listed = call_structured(
+                &client,
+                "redis_function_list",
+                serde_json::json!({"library_name": library}),
+            )
+            .await;
+            assert_eq!(listed["result"], serde_json::json!([]));
+        } else {
+            call_structured(
+                &client,
+                "redis_function_delete",
+                serde_json::json!({"library_name": library}),
+            )
+            .await;
+        }
     }
 }
 
@@ -5415,6 +5687,37 @@ async fn live_acl_failures_are_classified_without_leaking_credentials() {
     assert!(!denied_native.to_string().contains("blocked-native-value"));
 
     let client = router_client(restricted_url.as_str(), AccessMode::ReadWrite).await;
+    if redis_version >= RedisVersion::new(7, 0, 0) {
+        let scripting_executor = DirectRedis::connect(restricted_url.as_str())
+            .await
+            .expect("connect restricted scripting executor");
+        let scripting_router = RedisMcp::builder(scripting_executor)
+            .access(AccessMode::ReadOnly)
+            .bundles([ToolBundle::Scripting])
+            .capabilities(redis_mcp::RedisCapabilities::unknown().with_redis_version(redis_version))
+            .build();
+        let scripting_client = McpClient::connect(ChannelTransport::new(scripting_router))
+            .await
+            .expect("connect restricted scripting client");
+        scripting_client
+            .initialize("redis-mcp-live-scripting-acl-test", "0")
+            .await
+            .expect("initialize restricted scripting client");
+        let denied = scripting_client
+            .call_tool(
+                "redis_eval_ro",
+                serde_json::json!({
+                    "script": {"value": "return 'secret-script-body'"}
+                }),
+            )
+            .await
+            .expect("ACL-denied EVAL_RO is represented as a tool result");
+        assert!(denied.is_error, "{denied:?}");
+        let denied = serde_json::to_string(&denied).expect("serialize EVAL_RO ACL denial");
+        assert!(denied.contains("[Authorization]"), "{denied}");
+        assert!(!denied.contains(password));
+        assert!(!denied.contains("secret-script-body"));
+    }
     let allowed = client
         .call_tool(
             "redis_get",

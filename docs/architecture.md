@@ -141,10 +141,11 @@ The public family taxonomy is `keyspace`, `strings`, `hashes`, `lists`, `sets`,
 `vector-sets`, `pubsub`, `scripting`, `json`, and `search`. Each is an additive
 Cargo feature and a `ToolFamily` runtime marker. `all-families` is the
 command-family aggregate;
-`full` adds the cross-cutting `diagnostics` and `sessions` features. Default
-features select `full` to preserve the crate's pre-refactor compilation and
-server catalog. A size-sensitive host can use `default-features = false` and
-name only the families it embeds.
+`full` adds the cross-cutting `diagnostics`, `sessions`, and `admin` features.
+Default features select `full` to preserve the complete library build; runtime
+bundle selection still keeps administration out of the default server catalog.
+A size-sensitive host can use `default-features = false` and name only the
+families and cross-cutting features it embeds.
 
 `RedisMcpBuilder::families` switches to precise family selection and clears the
 legacy bundle defaults. Selecting a family omitted at compile time is a build
@@ -169,10 +170,15 @@ The stateful `sessions` bundle is enabled only by supplying a lifecycle manager.
 The `scripting` family/bundle is also opt-in at runtime because even its
 read-only forms execute server-side code; full access additionally exposes
 arbitrary-write execution and script/function lifecycle operations.
-Empty bundles are reserved for coherent catalog growth and do not expose
-placeholder tools. The bundled stdio executable installs the DirectRedis
-session manager itself and therefore exposes 207 tools before module,
-scripting, or raw additions.
+The `admin` bundle is independently opt-in at runtime. Read access adds
+redacted operational inspection; Full access additionally adds confirmed
+control operations. Bounded Cluster fan-out exposes pseudonymous per-node
+results and partial failures, configuration reads use a fixed non-secret
+allowlist, and raw invocation hard-blocks this surface so it cannot bypass the
+typed policy. Empty bundles are reserved for coherent catalog growth and do
+not expose placeholder tools. The bundled stdio executable installs the
+DirectRedis session manager itself and therefore exposes 207 tools before
+admin, module, scripting, or raw additions.
 
 The Data Structures bundle includes the current Redis 8 core data model rather
 than freezing the contract at older Redis releases. Redis 8.0 introduces typed
@@ -348,8 +354,9 @@ authorized per classified command. Both use one of two enabled policies:
 - `Unrestricted` permits unknown request/response commands, while retaining
   hard blocks for authentication/connection state, transactions, streaming,
   subscriptions, replication handshakes, script/function execution and
-  lifecycle, and blocking forms. Scripting stays behind its dedicated typed
-  family even when unrestricted native invocation is enabled.
+  lifecycle, guarded administration, and blocking forms. Scripting and
+  administration stay behind their dedicated typed surfaces even when
+  unrestricted native invocation is enabled.
 
 ## Output budgets and continuation contracts
 

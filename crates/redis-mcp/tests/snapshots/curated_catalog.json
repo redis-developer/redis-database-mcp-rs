@@ -1,6 +1,588 @@
 {
   "catalog": [
     {
+      "bundle": "admin",
+      "capability_requirements": {
+        "deployment": "standalone",
+        "minimum_module_version": null,
+        "minimum_redis_version": "6.0.0",
+        "required_commands": [
+          "ACL"
+        ],
+        "required_module": null
+      },
+      "family": null,
+      "name": "redis_acl_categories",
+      "output_policy": "budget_guarded",
+      "protocol": {
+        "annotations": {
+          "destructiveHint": false,
+          "idempotentHint": true,
+          "readOnlyHint": true
+        },
+        "description": "List Redis ACL categories or commands in one exact category. Requires Redis @admin +acl|cat permission; read-only and node-local.",
+        "inputSchema": {
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "category": {
+              "default": null,
+              "description": "Optional exact ACL category name without the leading `@`.",
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          "title": "AclCategoriesInput",
+          "type": "object"
+        },
+        "name": "redis_acl_categories",
+        "outputSchema": {
+          "$defs": {
+            "EncodedValue": {
+              "additionalProperties": false,
+              "properties": {
+                "encoding": {
+                  "$ref": "#/$defs/ValueEncoding"
+                },
+                "value": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "value",
+                "encoding"
+              ],
+              "type": "object"
+            },
+            "ValueEncoding": {
+              "enum": [
+                "utf8",
+                "base64"
+              ],
+              "type": "string"
+            }
+          },
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "category": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "values": {
+              "items": {
+                "$ref": "#/$defs/EncodedValue"
+              },
+              "type": "array"
+            }
+          },
+          "required": [
+            "values"
+          ],
+          "title": "AclCategoriesOutput",
+          "type": "object"
+        },
+        "title": "Inspect Redis ACL Categories"
+      },
+      "required_access": "read_only",
+      "required_module": null,
+      "requires_raw_opt_in": false
+    },
+    {
+      "bundle": "admin",
+      "capability_requirements": {
+        "deployment": "standalone",
+        "minimum_module_version": null,
+        "minimum_redis_version": "7.0.0",
+        "required_commands": [
+          "ACL"
+        ],
+        "required_module": null
+      },
+      "family": null,
+      "name": "redis_acl_dryrun",
+      "output_policy": "intrinsically_bounded",
+      "protocol": {
+        "annotations": {
+          "destructiveHint": false,
+          "idempotentHint": true,
+          "readOnlyHint": true
+        },
+        "description": "Ask Redis whether an ACL user may run one bounded command without executing it. Command arguments are sent to Redis but are never returned or logged. Requires Redis @admin +acl|dryrun; read-only and node-local.",
+        "inputSchema": {
+          "$defs": {
+            "EncodedInput": {
+              "additionalProperties": false,
+              "properties": {
+                "encoding": {
+                  "$ref": "#/$defs/InputEncoding",
+                  "default": "utf8"
+                },
+                "value": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "value"
+              ],
+              "type": "object"
+            },
+            "InputEncoding": {
+              "enum": [
+                "utf8",
+                "base64"
+              ],
+              "type": "string"
+            }
+          },
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "arguments": {
+              "description": "Bounded command arguments represented as strings or standard base64.",
+              "items": {
+                "$ref": "#/$defs/EncodedInput"
+              },
+              "type": "array"
+            },
+            "command": {
+              "description": "Redis command name. This is checked, never executed.",
+              "type": "string"
+            },
+            "username": {
+              "description": "Exact ACL username whose permissions should be checked.",
+              "type": "string"
+            }
+          },
+          "required": [
+            "username",
+            "command"
+          ],
+          "title": "AclDryRunInput",
+          "type": "object"
+        },
+        "name": "redis_acl_dryrun",
+        "outputSchema": {
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "status": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "status"
+          ],
+          "title": "StatusOutput",
+          "type": "object"
+        },
+        "title": "Dry-run Redis ACL Permission"
+      },
+      "required_access": "read_only",
+      "required_module": null,
+      "requires_raw_opt_in": false
+    },
+    {
+      "bundle": "admin",
+      "capability_requirements": {
+        "deployment": "standalone",
+        "minimum_module_version": null,
+        "minimum_redis_version": "6.0.0",
+        "required_commands": [
+          "ACL"
+        ],
+        "required_module": null
+      },
+      "family": null,
+      "name": "redis_acl_log",
+      "output_policy": "budget_guarded",
+      "protocol": {
+        "annotations": {
+          "destructiveHint": false,
+          "idempotentHint": true,
+          "readOnlyHint": true
+        },
+        "description": "Return bounded ACL denial counts grouped by reason and context. Usernames, client identity, keys/channels, commands, and arguments are always redacted. Requires Redis @admin +acl|log; read-only and node-local.",
+        "inputSchema": {
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "limit": {
+              "description": "Maximum records requested from Redis.",
+              "format": "uint",
+              "maximum": 1000,
+              "minimum": 1,
+              "type": "integer"
+            }
+          },
+          "required": [
+            "limit"
+          ],
+          "title": "LimitInput",
+          "type": "object"
+        },
+        "name": "redis_acl_log",
+        "outputSchema": {
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "by_context": {
+              "additionalProperties": {
+                "format": "uint",
+                "minimum": 0,
+                "type": "integer"
+              },
+              "type": "object"
+            },
+            "by_reason": {
+              "additionalProperties": {
+                "format": "uint",
+                "minimum": 0,
+                "type": "integer"
+              },
+              "type": "object"
+            },
+            "identities_objects_and_arguments_redacted": {
+              "type": "boolean"
+            },
+            "returned": {
+              "format": "uint",
+              "minimum": 0,
+              "type": "integer"
+            }
+          },
+          "required": [
+            "returned",
+            "by_reason",
+            "by_context",
+            "identities_objects_and_arguments_redacted"
+          ],
+          "title": "AclLogOutput",
+          "type": "object"
+        },
+        "title": "Inspect Redis ACL Log"
+      },
+      "required_access": "read_only",
+      "required_module": null,
+      "requires_raw_opt_in": false
+    },
+    {
+      "bundle": "admin",
+      "capability_requirements": {
+        "deployment": "standalone",
+        "minimum_module_version": null,
+        "minimum_redis_version": "6.0.0",
+        "required_commands": [
+          "ACL"
+        ],
+        "required_module": null
+      },
+      "family": null,
+      "name": "redis_acl_log_reset",
+      "output_policy": "intrinsically_bounded",
+      "protocol": {
+        "annotations": {
+          "idempotentHint": true
+        },
+        "description": "Clear this node's ACL security log. Requires Full access and Redis @admin +acl|log; destructive, idempotent, and node-local.",
+        "inputSchema": {
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "confirm": {
+              "description": "Must be true to confirm this operationally destructive action.",
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "confirm"
+          ],
+          "title": "ConfirmationInput",
+          "type": "object"
+        },
+        "name": "redis_acl_log_reset",
+        "outputSchema": {
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "status": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "status"
+          ],
+          "title": "StatusOutput",
+          "type": "object"
+        },
+        "title": "Reset Redis ACL Log"
+      },
+      "required_access": "full",
+      "required_module": null,
+      "requires_raw_opt_in": false
+    },
+    {
+      "bundle": "admin",
+      "capability_requirements": {
+        "deployment": "standalone",
+        "minimum_module_version": null,
+        "minimum_redis_version": "6.0.0",
+        "required_commands": [
+          "ACL"
+        ],
+        "required_module": null
+      },
+      "family": null,
+      "name": "redis_acl_rules",
+      "output_policy": "budget_guarded",
+      "protocol": {
+        "annotations": {
+          "destructiveHint": false,
+          "idempotentHint": true,
+          "readOnlyHint": true
+        },
+        "description": "Summarize ACL LIST without returning password hashes, key/channel patterns, command rules, or future tokens. Requires Redis @admin +acl|list; read-only and node-local.",
+        "inputSchema": {
+          "additionalProperties": false,
+          "type": "object"
+        },
+        "name": "redis_acl_rules",
+        "outputSchema": {
+          "$defs": {
+            "AclRuleSummary": {
+              "additionalProperties": false,
+              "properties": {
+                "enabled": {
+                  "type": "boolean"
+                },
+                "no_password": {
+                  "type": "boolean"
+                },
+                "rules_redacted": {
+                  "type": "boolean"
+                },
+                "selector_count": {
+                  "format": "uint",
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                "username": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                }
+              },
+              "required": [
+                "enabled",
+                "no_password",
+                "selector_count",
+                "rules_redacted"
+              ],
+              "type": "object"
+            }
+          },
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "users": {
+              "items": {
+                "$ref": "#/$defs/AclRuleSummary"
+              },
+              "type": "array"
+            }
+          },
+          "required": [
+            "users"
+          ],
+          "title": "AclRulesOutput",
+          "type": "object"
+        },
+        "title": "Summarize Redis ACL Rules"
+      },
+      "required_access": "read_only",
+      "required_module": null,
+      "requires_raw_opt_in": false
+    },
+    {
+      "bundle": "admin",
+      "capability_requirements": {
+        "deployment": "standalone",
+        "minimum_module_version": null,
+        "minimum_redis_version": "6.0.0",
+        "required_commands": [
+          "ACL"
+        ],
+        "required_module": null
+      },
+      "family": null,
+      "name": "redis_acl_user",
+      "output_policy": "budget_guarded",
+      "protocol": {
+        "annotations": {
+          "destructiveHint": false,
+          "idempotentHint": true,
+          "readOnlyHint": true
+        },
+        "description": "Summarize one ACL user while always redacting password hashes, command rules, key patterns, and channel patterns. Requires Redis @admin +acl|getuser; read-only and node-local.",
+        "inputSchema": {
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "username": {
+              "description": "Exact Redis ACL username.",
+              "type": "string"
+            }
+          },
+          "required": [
+            "username"
+          ],
+          "title": "AclUserInput",
+          "type": "object"
+        },
+        "name": "redis_acl_user",
+        "outputSchema": {
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "channel_pattern_count": {
+              "format": "uint",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "commands_redacted": {
+              "type": "boolean"
+            },
+            "credentials_redacted": {
+              "type": "boolean"
+            },
+            "exists": {
+              "type": "boolean"
+            },
+            "flags": {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "key_pattern_count": {
+              "format": "uint",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "password_hash_count": {
+              "format": "uint",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "selector_count": {
+              "format": "uint",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "username": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "username",
+            "exists",
+            "flags",
+            "password_hash_count",
+            "key_pattern_count",
+            "channel_pattern_count",
+            "selector_count",
+            "commands_redacted",
+            "credentials_redacted"
+          ],
+          "title": "AclUserOutput",
+          "type": "object"
+        },
+        "title": "Inspect One Redis ACL User"
+      },
+      "required_access": "read_only",
+      "required_module": null,
+      "requires_raw_opt_in": false
+    },
+    {
+      "bundle": "admin",
+      "capability_requirements": {
+        "deployment": "standalone",
+        "minimum_module_version": null,
+        "minimum_redis_version": "6.0.0",
+        "required_commands": [
+          "ACL"
+        ],
+        "required_module": null
+      },
+      "family": null,
+      "name": "redis_acl_users",
+      "output_policy": "budget_guarded",
+      "protocol": {
+        "annotations": {
+          "destructiveHint": false,
+          "idempotentHint": true,
+          "readOnlyHint": true
+        },
+        "description": "List ACL usernames without rules or credentials. Requires Redis @admin +acl|users permission; read-only and node-local.",
+        "inputSchema": {
+          "additionalProperties": false,
+          "type": "object"
+        },
+        "name": "redis_acl_users",
+        "outputSchema": {
+          "$defs": {
+            "EncodedValue": {
+              "additionalProperties": false,
+              "properties": {
+                "encoding": {
+                  "$ref": "#/$defs/ValueEncoding"
+                },
+                "value": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "value",
+                "encoding"
+              ],
+              "type": "object"
+            },
+            "ValueEncoding": {
+              "enum": [
+                "utf8",
+                "base64"
+              ],
+              "type": "string"
+            }
+          },
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "users": {
+              "items": {
+                "$ref": "#/$defs/EncodedValue"
+              },
+              "type": "array"
+            }
+          },
+          "required": [
+            "users"
+          ],
+          "title": "AclUsersOutput",
+          "type": "object"
+        },
+        "title": "List Redis ACL Users"
+      },
+      "required_access": "read_only",
+      "required_module": null,
+      "requires_raw_opt_in": false
+    },
+    {
       "bundle": "diagnostics",
       "capability_requirements": {
         "deployment": "any",
@@ -2511,6 +3093,134 @@
       "requires_raw_opt_in": false
     },
     {
+      "bundle": "admin",
+      "capability_requirements": {
+        "deployment": "standalone",
+        "minimum_module_version": null,
+        "minimum_redis_version": "8.10.0",
+        "required_commands": [
+          "BACKUP"
+        ],
+        "required_module": null
+      },
+      "family": null,
+      "name": "redis_backup_files",
+      "output_policy": "intrinsically_bounded",
+      "protocol": {
+        "annotations": {
+          "destructiveHint": false,
+          "idempotentHint": true,
+          "readOnlyHint": true
+        },
+        "description": "Count Redis backup file records without exposing absolute paths or file metadata. Requires Redis @admin +backup|list; read-only and node-local.",
+        "inputSchema": {
+          "additionalProperties": false,
+          "type": "object"
+        },
+        "name": "redis_backup_files",
+        "outputSchema": {
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "entry_count": {
+              "format": "uint",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "paths_and_file_metadata_redacted": {
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "entry_count",
+            "paths_and_file_metadata_redacted"
+          ],
+          "title": "BackupFilesOutput",
+          "type": "object"
+        },
+        "title": "Count Redis Backup Files"
+      },
+      "required_access": "read_only",
+      "required_module": null,
+      "requires_raw_opt_in": false
+    },
+    {
+      "bundle": "admin",
+      "capability_requirements": {
+        "deployment": "standalone",
+        "minimum_module_version": null,
+        "minimum_redis_version": "8.10.0",
+        "required_commands": [
+          "BACKUP"
+        ],
+        "required_module": null
+      },
+      "family": null,
+      "name": "redis_backup_status",
+      "output_policy": "budget_guarded",
+      "protocol": {
+        "annotations": {
+          "destructiveHint": false,
+          "idempotentHint": true,
+          "readOnlyHint": true
+        },
+        "description": "Inspect Redis 8 backup state with paths and future sensitive fields redacted. Requires Redis @admin +backup|status; read-only and node-local.",
+        "inputSchema": {
+          "additionalProperties": false,
+          "type": "object"
+        },
+        "name": "redis_backup_status",
+        "outputSchema": {
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "end_time_unix_seconds": {
+              "format": "int64",
+              "type": [
+                "integer",
+                "null"
+              ]
+            },
+            "error_and_future_field_values_redacted": {
+              "type": "boolean"
+            },
+            "error_present": {
+              "type": "boolean"
+            },
+            "start_time_unix_seconds": {
+              "format": "int64",
+              "type": [
+                "integer",
+                "null"
+              ]
+            },
+            "state": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "unrecognized_fields_redacted": {
+              "format": "uint",
+              "minimum": 0,
+              "type": "integer"
+            }
+          },
+          "required": [
+            "error_present",
+            "unrecognized_fields_redacted",
+            "error_and_future_field_values_redacted"
+          ],
+          "title": "BackupStatusOutput",
+          "type": "object"
+        },
+        "title": "Inspect Redis Backup Status"
+      },
+      "required_access": "read_only",
+      "required_module": null,
+      "requires_raw_opt_in": false
+    },
+    {
       "bundle": "data_structures",
       "capability_requirements": {
         "deployment": "any",
@@ -3510,6 +4220,96 @@
       "requires_raw_opt_in": false
     },
     {
+      "bundle": "admin",
+      "capability_requirements": {
+        "deployment": "standalone",
+        "minimum_module_version": null,
+        "minimum_redis_version": "6.2.0",
+        "required_commands": [
+          "CLIENT"
+        ],
+        "required_module": null
+      },
+      "family": null,
+      "name": "redis_client_control",
+      "output_policy": "intrinsically_bounded",
+      "protocol": {
+        "annotations": {},
+        "description": "Kill or unblock exactly one numeric CLIENT ID, or unpause clients on the configured standalone node. Broad filters are intentionally unavailable. Requires Full access and Redis @admin +client permissions; service-impacting and Standalone-only.",
+        "inputSchema": {
+          "$defs": {
+            "ClientControlKind": {
+              "enum": [
+                "kill",
+                "unblock_error",
+                "unblock_timeout",
+                "unpause"
+              ],
+              "type": "string"
+            }
+          },
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "confirm_service_impact": {
+              "type": "boolean"
+            },
+            "id": {
+              "default": null,
+              "description": "Exact CLIENT ID. Required for kill and unblock operations.",
+              "format": "uint64",
+              "minimum": 0,
+              "type": [
+                "integer",
+                "null"
+              ]
+            },
+            "operation": {
+              "$ref": "#/$defs/ClientControlKind"
+            }
+          },
+          "required": [
+            "operation",
+            "confirm_service_impact"
+          ],
+          "title": "ClientControlInput",
+          "type": "object"
+        },
+        "name": "redis_client_control",
+        "outputSchema": {
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "affected": {
+              "format": "int64",
+              "type": [
+                "integer",
+                "null"
+              ]
+            },
+            "operation": {
+              "type": "string"
+            },
+            "status": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          "required": [
+            "operation"
+          ],
+          "title": "ClientControlOutput",
+          "type": "object"
+        },
+        "title": "Control One Redis Client"
+      },
+      "required_access": "full",
+      "required_module": null,
+      "requires_raw_opt_in": false
+    },
+    {
       "bundle": "diagnostics",
       "capability_requirements": {
         "deployment": "any",
@@ -4230,6 +5030,564 @@
       "requires_raw_opt_in": false
     },
     {
+      "bundle": "admin",
+      "capability_requirements": {
+        "deployment": "cluster",
+        "minimum_module_version": null,
+        "minimum_redis_version": "8.4.0",
+        "required_commands": [
+          "CLUSTER"
+        ],
+        "required_module": null
+      },
+      "family": null,
+      "name": "redis_cluster_inspect",
+      "output_policy": "budget_guarded",
+      "protocol": {
+        "annotations": {
+          "destructiveHint": false,
+          "idempotentHint": true,
+          "readOnlyHint": true
+        },
+        "description": "Inspect bounded Cluster nodes, shards, links, identities, or migration status. Requires Redis @admin +cluster; read-only, Cluster-only, and always redacts node addresses. Partial failures are returned per pseudonymous node.",
+        "inputSchema": {
+          "$defs": {
+            "ClusterInspectKind": {
+              "enum": [
+                "nodes",
+                "shards",
+                "links",
+                "my_id",
+                "my_shard_id",
+                "migration_status"
+              ],
+              "type": "string"
+            }
+          },
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "max_cluster_nodes": {
+              "default": 32,
+              "format": "uint",
+              "maximum": 256,
+              "minimum": 1,
+              "type": "integer"
+            },
+            "operation": {
+              "$ref": "#/$defs/ClusterInspectKind"
+            }
+          },
+          "required": [
+            "operation"
+          ],
+          "title": "ClusterInspectInput",
+          "type": "object"
+        },
+        "name": "redis_cluster_inspect",
+        "outputSchema": {
+          "$defs": {
+            "ClusterFailure": {
+              "additionalProperties": false,
+              "properties": {
+                "error_code": {
+                  "type": "string"
+                },
+                "message_redacted": {
+                  "type": "boolean"
+                },
+                "node": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "node",
+                "error_code",
+                "message_redacted"
+              ],
+              "type": "object"
+            },
+            "ClusterSummary": {
+              "additionalProperties": false,
+              "properties": {
+                "complete": {
+                  "type": "boolean"
+                },
+                "failures": {
+                  "items": {
+                    "$ref": "#/$defs/ClusterFailure"
+                  },
+                  "type": "array"
+                },
+                "node_addresses_redacted": {
+                  "type": "boolean"
+                },
+                "node_limit": {
+                  "format": "uint",
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                "nodes_queried": {
+                  "format": "uint",
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                "nodes_succeeded": {
+                  "format": "uint",
+                  "minimum": 0,
+                  "type": "integer"
+                }
+              },
+              "required": [
+                "node_limit",
+                "nodes_queried",
+                "nodes_succeeded",
+                "complete",
+                "node_addresses_redacted",
+                "failures"
+              ],
+              "type": "object"
+            },
+            "NodeValue": {
+              "additionalProperties": false,
+              "properties": {
+                "node": {
+                  "type": "string"
+                },
+                "value": true
+              },
+              "required": [
+                "node",
+                "value"
+              ],
+              "type": "object"
+            }
+          },
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "addresses_redacted": {
+              "type": "boolean"
+            },
+            "cluster": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/ClusterSummary"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "operation": {
+              "type": "string"
+            },
+            "replies": {
+              "items": {
+                "$ref": "#/$defs/NodeValue"
+              },
+              "type": "array"
+            }
+          },
+          "required": [
+            "operation",
+            "replies",
+            "addresses_redacted"
+          ],
+          "title": "ClusterInspectOutput",
+          "type": "object"
+        },
+        "title": "Inspect Redis Cluster Control Plane"
+      },
+      "required_access": "read_only",
+      "required_module": null,
+      "requires_raw_opt_in": false
+    },
+    {
+      "bundle": "admin",
+      "capability_requirements": {
+        "deployment": "cluster",
+        "minimum_module_version": null,
+        "minimum_redis_version": "5.0.0",
+        "required_commands": [
+          "CLUSTER"
+        ],
+        "required_module": null
+      },
+      "family": null,
+      "name": "redis_cluster_slot",
+      "output_policy": "budget_guarded",
+      "protocol": {
+        "annotations": {
+          "destructiveHint": false,
+          "idempotentHint": true,
+          "readOnlyHint": true
+        },
+        "description": "Run one bounded Cluster slot, replica, or failure-report inspection. Slot-local counts and keys fan out to primaries; node-local reports fan out to all nodes. Requires Redis @admin +cluster; read-only and Cluster-only with pseudonymous partial failures.",
+        "inputSchema": {
+          "$defs": {
+            "ClusterSlotKind": {
+              "enum": [
+                "key_slot",
+                "count_keys",
+                "get_keys",
+                "failure_reports",
+                "replicas"
+              ],
+              "type": "string"
+            },
+            "InputEncoding": {
+              "enum": [
+                "utf8",
+                "base64"
+              ],
+              "type": "string"
+            }
+          },
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "count": {
+              "default": null,
+              "format": "uint",
+              "minimum": 0,
+              "type": [
+                "integer",
+                "null"
+              ]
+            },
+            "key": {
+              "default": null,
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "key_encoding": {
+              "$ref": "#/$defs/InputEncoding",
+              "default": "utf8"
+            },
+            "max_cluster_nodes": {
+              "default": 32,
+              "format": "uint",
+              "maximum": 256,
+              "minimum": 1,
+              "type": "integer"
+            },
+            "node_id": {
+              "default": null,
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "operation": {
+              "$ref": "#/$defs/ClusterSlotKind"
+            },
+            "slot": {
+              "default": null,
+              "format": "uint16",
+              "maximum": 65535,
+              "minimum": 0,
+              "type": [
+                "integer",
+                "null"
+              ]
+            }
+          },
+          "required": [
+            "operation"
+          ],
+          "title": "ClusterSlotInput",
+          "type": "object"
+        },
+        "name": "redis_cluster_slot",
+        "outputSchema": {
+          "$defs": {
+            "ClusterFailure": {
+              "additionalProperties": false,
+              "properties": {
+                "error_code": {
+                  "type": "string"
+                },
+                "message_redacted": {
+                  "type": "boolean"
+                },
+                "node": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "node",
+                "error_code",
+                "message_redacted"
+              ],
+              "type": "object"
+            },
+            "ClusterSummary": {
+              "additionalProperties": false,
+              "properties": {
+                "complete": {
+                  "type": "boolean"
+                },
+                "failures": {
+                  "items": {
+                    "$ref": "#/$defs/ClusterFailure"
+                  },
+                  "type": "array"
+                },
+                "node_addresses_redacted": {
+                  "type": "boolean"
+                },
+                "node_limit": {
+                  "format": "uint",
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                "nodes_queried": {
+                  "format": "uint",
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                "nodes_succeeded": {
+                  "format": "uint",
+                  "minimum": 0,
+                  "type": "integer"
+                }
+              },
+              "required": [
+                "node_limit",
+                "nodes_queried",
+                "nodes_succeeded",
+                "complete",
+                "node_addresses_redacted",
+                "failures"
+              ],
+              "type": "object"
+            },
+            "NodeValue": {
+              "additionalProperties": false,
+              "properties": {
+                "node": {
+                  "type": "string"
+                },
+                "value": true
+              },
+              "required": [
+                "node",
+                "value"
+              ],
+              "type": "object"
+            }
+          },
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "addresses_redacted": {
+              "type": "boolean"
+            },
+            "cluster": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/ClusterSummary"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "operation": {
+              "type": "string"
+            },
+            "replies": {
+              "items": {
+                "$ref": "#/$defs/NodeValue"
+              },
+              "type": "array"
+            }
+          },
+          "required": [
+            "operation",
+            "replies",
+            "addresses_redacted"
+          ],
+          "title": "ClusterSlotOutput",
+          "type": "object"
+        },
+        "title": "Inspect Redis Cluster Slots"
+      },
+      "required_access": "read_only",
+      "required_module": null,
+      "requires_raw_opt_in": false
+    },
+    {
+      "bundle": "admin",
+      "capability_requirements": {
+        "deployment": "cluster",
+        "minimum_module_version": null,
+        "minimum_redis_version": "8.2.0",
+        "required_commands": [
+          "CLUSTER"
+        ],
+        "required_module": null
+      },
+      "family": null,
+      "name": "redis_cluster_slot_stats",
+      "output_policy": "budget_guarded",
+      "protocol": {
+        "annotations": {
+          "destructiveHint": false,
+          "idempotentHint": true,
+          "readOnlyHint": true
+        },
+        "description": "Read Redis 8.2 slot statistics for one bounded inclusive slot range across Cluster primaries. Requires Redis @slow +cluster|slot-stats; read-only, byte-budgeted, and address-redacted.",
+        "inputSchema": {
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "end_slot": {
+              "format": "uint16",
+              "maximum": 16383,
+              "minimum": 0,
+              "type": "integer"
+            },
+            "max_cluster_nodes": {
+              "default": 32,
+              "format": "uint",
+              "maximum": 256,
+              "minimum": 1,
+              "type": "integer"
+            },
+            "start_slot": {
+              "format": "uint16",
+              "maximum": 16383,
+              "minimum": 0,
+              "type": "integer"
+            }
+          },
+          "required": [
+            "start_slot",
+            "end_slot"
+          ],
+          "title": "ClusterSlotStatsInput",
+          "type": "object"
+        },
+        "name": "redis_cluster_slot_stats",
+        "outputSchema": {
+          "$defs": {
+            "ClusterFailure": {
+              "additionalProperties": false,
+              "properties": {
+                "error_code": {
+                  "type": "string"
+                },
+                "message_redacted": {
+                  "type": "boolean"
+                },
+                "node": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "node",
+                "error_code",
+                "message_redacted"
+              ],
+              "type": "object"
+            },
+            "ClusterSummary": {
+              "additionalProperties": false,
+              "properties": {
+                "complete": {
+                  "type": "boolean"
+                },
+                "failures": {
+                  "items": {
+                    "$ref": "#/$defs/ClusterFailure"
+                  },
+                  "type": "array"
+                },
+                "node_addresses_redacted": {
+                  "type": "boolean"
+                },
+                "node_limit": {
+                  "format": "uint",
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                "nodes_queried": {
+                  "format": "uint",
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                "nodes_succeeded": {
+                  "format": "uint",
+                  "minimum": 0,
+                  "type": "integer"
+                }
+              },
+              "required": [
+                "node_limit",
+                "nodes_queried",
+                "nodes_succeeded",
+                "complete",
+                "node_addresses_redacted",
+                "failures"
+              ],
+              "type": "object"
+            },
+            "NodeValue": {
+              "additionalProperties": false,
+              "properties": {
+                "node": {
+                  "type": "string"
+                },
+                "value": true
+              },
+              "required": [
+                "node",
+                "value"
+              ],
+              "type": "object"
+            }
+          },
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "cluster": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/ClusterSummary"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "replies": {
+              "items": {
+                "$ref": "#/$defs/NodeValue"
+              },
+              "type": "array"
+            },
+            "scope": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "scope",
+            "replies"
+          ],
+          "title": "FanoutStatusOutput",
+          "type": "object"
+        },
+        "title": "Inspect Redis Cluster Slot Statistics"
+      },
+      "required_access": "read_only",
+      "required_module": null,
+      "requires_raw_opt_in": false
+    },
+    {
       "bundle": "raw",
       "capability_requirements": {
         "deployment": "any",
@@ -4289,6 +5647,426 @@
       "required_access": "full",
       "required_module": null,
       "requires_raw_opt_in": true
+    },
+    {
+      "bundle": "admin",
+      "capability_requirements": {
+        "deployment": "standalone",
+        "minimum_module_version": null,
+        "minimum_redis_version": null,
+        "required_commands": [
+          "CONFIG"
+        ],
+        "required_module": null
+      },
+      "family": null,
+      "name": "redis_config_get",
+      "output_policy": "budget_guarded",
+      "protocol": {
+        "annotations": {
+          "destructiveHint": false,
+          "idempotentHint": true,
+          "readOnlyHint": true
+        },
+        "description": "Read exact non-secret operational configuration names from a fixed allowlist; glob patterns, paths, credentials, ACL files, and future fields are rejected. Requires Redis @admin +config|get; read-only and node-local.",
+        "inputSchema": {
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "parameters": {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            }
+          },
+          "required": [
+            "parameters"
+          ],
+          "title": "ConfigGetInput",
+          "type": "object"
+        },
+        "name": "redis_config_get",
+        "outputSchema": {
+          "$defs": {
+            "EncodedValue": {
+              "additionalProperties": false,
+              "properties": {
+                "encoding": {
+                  "$ref": "#/$defs/ValueEncoding"
+                },
+                "value": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "value",
+                "encoding"
+              ],
+              "type": "object"
+            },
+            "ValueEncoding": {
+              "enum": [
+                "utf8",
+                "base64"
+              ],
+              "type": "string"
+            }
+          },
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "allowlist_enforced": {
+              "type": "boolean"
+            },
+            "values": {
+              "additionalProperties": {
+                "$ref": "#/$defs/EncodedValue"
+              },
+              "type": "object"
+            }
+          },
+          "required": [
+            "values",
+            "allowlist_enforced"
+          ],
+          "title": "ConfigGetOutput",
+          "type": "object"
+        },
+        "title": "Read Safe Redis Configuration"
+      },
+      "required_access": "read_only",
+      "required_module": null,
+      "requires_raw_opt_in": false
+    },
+    {
+      "bundle": "admin",
+      "capability_requirements": {
+        "deployment": "any",
+        "minimum_module_version": null,
+        "minimum_redis_version": null,
+        "required_commands": [
+          "CONFIG"
+        ],
+        "required_module": null
+      },
+      "family": null,
+      "name": "redis_config_resetstat",
+      "output_policy": "intrinsically_bounded",
+      "protocol": {
+        "annotations": {
+          "idempotentHint": true
+        },
+        "description": "Reset INFO statistics on every bounded Cluster node. Requires Full access and Redis @admin +config|resetstat; destructive to observability history and idempotent.",
+        "inputSchema": {
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "confirm": {
+              "type": "boolean"
+            },
+            "max_cluster_nodes": {
+              "default": 32,
+              "format": "uint",
+              "maximum": 256,
+              "minimum": 1,
+              "type": "integer"
+            }
+          },
+          "required": [
+            "confirm"
+          ],
+          "title": "ClusterConfirmationInput",
+          "type": "object"
+        },
+        "name": "redis_config_resetstat",
+        "outputSchema": {
+          "$defs": {
+            "ClusterFailure": {
+              "additionalProperties": false,
+              "properties": {
+                "error_code": {
+                  "type": "string"
+                },
+                "message_redacted": {
+                  "type": "boolean"
+                },
+                "node": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "node",
+                "error_code",
+                "message_redacted"
+              ],
+              "type": "object"
+            },
+            "ClusterSummary": {
+              "additionalProperties": false,
+              "properties": {
+                "complete": {
+                  "type": "boolean"
+                },
+                "failures": {
+                  "items": {
+                    "$ref": "#/$defs/ClusterFailure"
+                  },
+                  "type": "array"
+                },
+                "node_addresses_redacted": {
+                  "type": "boolean"
+                },
+                "node_limit": {
+                  "format": "uint",
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                "nodes_queried": {
+                  "format": "uint",
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                "nodes_succeeded": {
+                  "format": "uint",
+                  "minimum": 0,
+                  "type": "integer"
+                }
+              },
+              "required": [
+                "node_limit",
+                "nodes_queried",
+                "nodes_succeeded",
+                "complete",
+                "node_addresses_redacted",
+                "failures"
+              ],
+              "type": "object"
+            },
+            "NodeValue": {
+              "additionalProperties": false,
+              "properties": {
+                "node": {
+                  "type": "string"
+                },
+                "value": true
+              },
+              "required": [
+                "node",
+                "value"
+              ],
+              "type": "object"
+            }
+          },
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "cluster": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/ClusterSummary"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "replies": {
+              "items": {
+                "$ref": "#/$defs/NodeValue"
+              },
+              "type": "array"
+            },
+            "scope": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "scope",
+            "replies"
+          ],
+          "title": "FanoutStatusOutput",
+          "type": "object"
+        },
+        "title": "Reset Redis Server Statistics"
+      },
+      "required_access": "full",
+      "required_module": null,
+      "requires_raw_opt_in": false
+    },
+    {
+      "bundle": "admin",
+      "capability_requirements": {
+        "deployment": "any",
+        "minimum_module_version": null,
+        "minimum_redis_version": null,
+        "required_commands": [
+          "CONFIG"
+        ],
+        "required_module": null
+      },
+      "family": null,
+      "name": "redis_config_set",
+      "output_policy": "intrinsically_bounded",
+      "protocol": {
+        "annotations": {},
+        "description": "Set one reversible numeric setting from a fixed allowlist across bounded Cluster nodes. Requires Full access and Redis @admin +config|set; may affect service behavior. Values are never echoed in errors.",
+        "inputSchema": {
+          "$defs": {
+            "SafeConfigParameter": {
+              "enum": [
+                "latency-monitor-threshold",
+                "slowlog-log-slower-than",
+                "slowlog-max-len",
+                "tcp-keepalive",
+                "timeout"
+              ],
+              "type": "string"
+            }
+          },
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "confirm_service_impact": {
+              "type": "boolean"
+            },
+            "max_cluster_nodes": {
+              "default": 32,
+              "format": "uint",
+              "maximum": 256,
+              "minimum": 1,
+              "type": "integer"
+            },
+            "parameter": {
+              "$ref": "#/$defs/SafeConfigParameter"
+            },
+            "value": {
+              "format": "int64",
+              "type": "integer"
+            }
+          },
+          "required": [
+            "parameter",
+            "value",
+            "confirm_service_impact"
+          ],
+          "title": "ConfigSetInput",
+          "type": "object"
+        },
+        "name": "redis_config_set",
+        "outputSchema": {
+          "$defs": {
+            "ClusterFailure": {
+              "additionalProperties": false,
+              "properties": {
+                "error_code": {
+                  "type": "string"
+                },
+                "message_redacted": {
+                  "type": "boolean"
+                },
+                "node": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "node",
+                "error_code",
+                "message_redacted"
+              ],
+              "type": "object"
+            },
+            "ClusterSummary": {
+              "additionalProperties": false,
+              "properties": {
+                "complete": {
+                  "type": "boolean"
+                },
+                "failures": {
+                  "items": {
+                    "$ref": "#/$defs/ClusterFailure"
+                  },
+                  "type": "array"
+                },
+                "node_addresses_redacted": {
+                  "type": "boolean"
+                },
+                "node_limit": {
+                  "format": "uint",
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                "nodes_queried": {
+                  "format": "uint",
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                "nodes_succeeded": {
+                  "format": "uint",
+                  "minimum": 0,
+                  "type": "integer"
+                }
+              },
+              "required": [
+                "node_limit",
+                "nodes_queried",
+                "nodes_succeeded",
+                "complete",
+                "node_addresses_redacted",
+                "failures"
+              ],
+              "type": "object"
+            },
+            "NodeValue": {
+              "additionalProperties": false,
+              "properties": {
+                "node": {
+                  "type": "string"
+                },
+                "value": true
+              },
+              "required": [
+                "node",
+                "value"
+              ],
+              "type": "object"
+            }
+          },
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "cluster": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/ClusterSummary"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "replies": {
+              "items": {
+                "$ref": "#/$defs/NodeValue"
+              },
+              "type": "array"
+            },
+            "scope": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "scope",
+            "replies"
+          ],
+          "title": "FanoutStatusOutput",
+          "type": "object"
+        },
+        "title": "Set Safe Redis Operational Configuration"
+      },
+      "required_access": "full",
+      "required_module": null,
+      "requires_raw_opt_in": false
     },
     {
       "bundle": "diagnostics",
@@ -6708,6 +8486,187 @@
         "title": "Run Read-Only Redis Function"
       },
       "required_access": "read_only",
+      "required_module": null,
+      "requires_raw_opt_in": false
+    },
+    {
+      "bundle": "admin",
+      "capability_requirements": {
+        "deployment": "any",
+        "minimum_module_version": null,
+        "minimum_redis_version": null,
+        "required_commands": [
+          "FLUSHDB",
+          "FLUSHALL"
+        ],
+        "required_module": null
+      },
+      "family": null,
+      "name": "redis_flush",
+      "output_policy": "intrinsically_bounded",
+      "protocol": {
+        "annotations": {
+          "idempotentHint": true
+        },
+        "description": "Delete all keys in the selected database or all databases across bounded Cluster primaries. Requires Full access and Redis @dangerous +flushdb/+flushall; irreversible, highly service-impacting, and explicitly confirmed.",
+        "inputSchema": {
+          "$defs": {
+            "FlushMode": {
+              "enum": [
+                "sync",
+                "async"
+              ],
+              "type": "string"
+            },
+            "FlushScope": {
+              "enum": [
+                "database",
+                "all"
+              ],
+              "type": "string"
+            }
+          },
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "confirmation": {
+              "description": "Must exactly equal FLUSHDB or FLUSHALL for the selected scope.",
+              "type": "string"
+            },
+            "max_cluster_nodes": {
+              "default": 32,
+              "format": "uint",
+              "maximum": 256,
+              "minimum": 1,
+              "type": "integer"
+            },
+            "mode": {
+              "$ref": "#/$defs/FlushMode"
+            },
+            "scope": {
+              "$ref": "#/$defs/FlushScope"
+            }
+          },
+          "required": [
+            "scope",
+            "mode",
+            "confirmation"
+          ],
+          "title": "FlushInput",
+          "type": "object"
+        },
+        "name": "redis_flush",
+        "outputSchema": {
+          "$defs": {
+            "ClusterFailure": {
+              "additionalProperties": false,
+              "properties": {
+                "error_code": {
+                  "type": "string"
+                },
+                "message_redacted": {
+                  "type": "boolean"
+                },
+                "node": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "node",
+                "error_code",
+                "message_redacted"
+              ],
+              "type": "object"
+            },
+            "ClusterSummary": {
+              "additionalProperties": false,
+              "properties": {
+                "complete": {
+                  "type": "boolean"
+                },
+                "failures": {
+                  "items": {
+                    "$ref": "#/$defs/ClusterFailure"
+                  },
+                  "type": "array"
+                },
+                "node_addresses_redacted": {
+                  "type": "boolean"
+                },
+                "node_limit": {
+                  "format": "uint",
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                "nodes_queried": {
+                  "format": "uint",
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                "nodes_succeeded": {
+                  "format": "uint",
+                  "minimum": 0,
+                  "type": "integer"
+                }
+              },
+              "required": [
+                "node_limit",
+                "nodes_queried",
+                "nodes_succeeded",
+                "complete",
+                "node_addresses_redacted",
+                "failures"
+              ],
+              "type": "object"
+            },
+            "NodeValue": {
+              "additionalProperties": false,
+              "properties": {
+                "node": {
+                  "type": "string"
+                },
+                "value": true
+              },
+              "required": [
+                "node",
+                "value"
+              ],
+              "type": "object"
+            }
+          },
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "cluster": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/ClusterSummary"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "replies": {
+              "items": {
+                "$ref": "#/$defs/NodeValue"
+              },
+              "type": "array"
+            },
+            "scope": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "scope",
+            "replies"
+          ],
+          "title": "FanoutStatusOutput",
+          "type": "object"
+        },
+        "title": "Flush Redis Data"
+      },
+      "required_access": "full",
       "required_module": null,
       "requires_raw_opt_in": false
     },
@@ -16709,6 +18668,346 @@
       "requires_raw_opt_in": false
     },
     {
+      "bundle": "admin",
+      "capability_requirements": {
+        "deployment": "any",
+        "minimum_module_version": null,
+        "minimum_redis_version": "8.6.0",
+        "required_commands": [
+          "HOTKEYS"
+        ],
+        "required_module": null
+      },
+      "family": null,
+      "name": "redis_hotkeys_control",
+      "output_policy": "intrinsically_bounded",
+      "protocol": {
+        "annotations": {},
+        "description": "Start a duration- and count-bounded Redis 8.6 HOTKEYS session, stop it, or reset its data on every bounded Cluster primary. Requires Full access and Redis @admin HOTKEYS permission; affects server-global tracking state.",
+        "inputSchema": {
+          "$defs": {
+            "HotkeysControlKind": {
+              "enum": [
+                "start",
+                "stop",
+                "reset"
+              ],
+              "type": "string"
+            }
+          },
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "confirm_service_impact": {
+              "type": "boolean"
+            },
+            "count": {
+              "default": null,
+              "description": "Required for START; maximum hot keys retained per primary.",
+              "format": "uint",
+              "maximum": 1000,
+              "minimum": 1,
+              "type": [
+                "integer",
+                "null"
+              ]
+            },
+            "duration_seconds": {
+              "default": null,
+              "description": "Required for START; bounds the server-global tracking session.",
+              "format": "uint64",
+              "maximum": 3600,
+              "minimum": 1,
+              "type": [
+                "integer",
+                "null"
+              ]
+            },
+            "max_cluster_nodes": {
+              "default": 32,
+              "format": "uint",
+              "maximum": 256,
+              "minimum": 1,
+              "type": "integer"
+            },
+            "operation": {
+              "$ref": "#/$defs/HotkeysControlKind"
+            }
+          },
+          "required": [
+            "operation",
+            "confirm_service_impact"
+          ],
+          "title": "HotkeysControlInput",
+          "type": "object"
+        },
+        "name": "redis_hotkeys_control",
+        "outputSchema": {
+          "$defs": {
+            "ClusterFailure": {
+              "additionalProperties": false,
+              "properties": {
+                "error_code": {
+                  "type": "string"
+                },
+                "message_redacted": {
+                  "type": "boolean"
+                },
+                "node": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "node",
+                "error_code",
+                "message_redacted"
+              ],
+              "type": "object"
+            },
+            "ClusterSummary": {
+              "additionalProperties": false,
+              "properties": {
+                "complete": {
+                  "type": "boolean"
+                },
+                "failures": {
+                  "items": {
+                    "$ref": "#/$defs/ClusterFailure"
+                  },
+                  "type": "array"
+                },
+                "node_addresses_redacted": {
+                  "type": "boolean"
+                },
+                "node_limit": {
+                  "format": "uint",
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                "nodes_queried": {
+                  "format": "uint",
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                "nodes_succeeded": {
+                  "format": "uint",
+                  "minimum": 0,
+                  "type": "integer"
+                }
+              },
+              "required": [
+                "node_limit",
+                "nodes_queried",
+                "nodes_succeeded",
+                "complete",
+                "node_addresses_redacted",
+                "failures"
+              ],
+              "type": "object"
+            },
+            "NodeValue": {
+              "additionalProperties": false,
+              "properties": {
+                "node": {
+                  "type": "string"
+                },
+                "value": true
+              },
+              "required": [
+                "node",
+                "value"
+              ],
+              "type": "object"
+            }
+          },
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "cluster": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/ClusterSummary"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "replies": {
+              "items": {
+                "$ref": "#/$defs/NodeValue"
+              },
+              "type": "array"
+            },
+            "scope": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "scope",
+            "replies"
+          ],
+          "title": "FanoutStatusOutput",
+          "type": "object"
+        },
+        "title": "Control Redis Hot Keys Tracking"
+      },
+      "required_access": "full",
+      "required_module": null,
+      "requires_raw_opt_in": false
+    },
+    {
+      "bundle": "admin",
+      "capability_requirements": {
+        "deployment": "any",
+        "minimum_module_version": null,
+        "minimum_redis_version": "8.6.0",
+        "required_commands": [
+          "HOTKEYS"
+        ],
+        "required_module": null
+      },
+      "family": null,
+      "name": "redis_hotkeys_get",
+      "output_policy": "budget_guarded",
+      "protocol": {
+        "annotations": {
+          "destructiveHint": false,
+          "idempotentHint": true,
+          "readOnlyHint": true
+        },
+        "description": "Read Redis 8.6 HOTKEYS tracking results from every bounded Cluster primary. Requires Redis @admin +hotkeys|get; read-only, byte-budgeted, and address-redacted.",
+        "inputSchema": {
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "max_cluster_nodes": {
+              "default": 32,
+              "format": "uint",
+              "maximum": 256,
+              "minimum": 1,
+              "type": "integer"
+            }
+          },
+          "title": "ClusterInput",
+          "type": "object"
+        },
+        "name": "redis_hotkeys_get",
+        "outputSchema": {
+          "$defs": {
+            "ClusterFailure": {
+              "additionalProperties": false,
+              "properties": {
+                "error_code": {
+                  "type": "string"
+                },
+                "message_redacted": {
+                  "type": "boolean"
+                },
+                "node": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "node",
+                "error_code",
+                "message_redacted"
+              ],
+              "type": "object"
+            },
+            "ClusterSummary": {
+              "additionalProperties": false,
+              "properties": {
+                "complete": {
+                  "type": "boolean"
+                },
+                "failures": {
+                  "items": {
+                    "$ref": "#/$defs/ClusterFailure"
+                  },
+                  "type": "array"
+                },
+                "node_addresses_redacted": {
+                  "type": "boolean"
+                },
+                "node_limit": {
+                  "format": "uint",
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                "nodes_queried": {
+                  "format": "uint",
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                "nodes_succeeded": {
+                  "format": "uint",
+                  "minimum": 0,
+                  "type": "integer"
+                }
+              },
+              "required": [
+                "node_limit",
+                "nodes_queried",
+                "nodes_succeeded",
+                "complete",
+                "node_addresses_redacted",
+                "failures"
+              ],
+              "type": "object"
+            },
+            "NodeValue": {
+              "additionalProperties": false,
+              "properties": {
+                "node": {
+                  "type": "string"
+                },
+                "value": true
+              },
+              "required": [
+                "node",
+                "value"
+              ],
+              "type": "object"
+            }
+          },
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "cluster": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/ClusterSummary"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "replies": {
+              "items": {
+                "$ref": "#/$defs/NodeValue"
+              },
+              "type": "array"
+            },
+            "scope": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "scope",
+            "replies"
+          ],
+          "title": "FanoutStatusOutput",
+          "type": "object"
+        },
+        "title": "Inspect Redis Hot Keys Tracking"
+      },
+      "required_access": "read_only",
+      "required_module": null,
+      "requires_raw_opt_in": false
+    },
+    {
       "bundle": "data_structures",
       "capability_requirements": {
         "deployment": "any",
@@ -21093,6 +23392,350 @@
       "requires_raw_opt_in": false
     },
     {
+      "bundle": "admin",
+      "capability_requirements": {
+        "deployment": "any",
+        "minimum_module_version": null,
+        "minimum_redis_version": "7.0.0",
+        "required_commands": [
+          "LATENCY"
+        ],
+        "required_module": null
+      },
+      "family": null,
+      "name": "redis_latency_overview",
+      "output_policy": "budget_guarded",
+      "protocol": {
+        "annotations": {
+          "destructiveHint": false,
+          "idempotentHint": true,
+          "readOnlyHint": true
+        },
+        "description": "Inspect LATENCY LATEST, DOCTOR, GRAPH, or bounded HISTOGRAM results across Redis nodes. Requires Redis @admin +latency; read-only, byte-budgeted, and address-redacted.",
+        "inputSchema": {
+          "$defs": {
+            "LatencyKind": {
+              "enum": [
+                "latest",
+                "doctor",
+                "graph",
+                "histogram"
+              ],
+              "type": "string"
+            }
+          },
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "commands": {
+              "default": [],
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "event": {
+              "default": null,
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "max_cluster_nodes": {
+              "default": 32,
+              "format": "uint",
+              "maximum": 256,
+              "minimum": 1,
+              "type": "integer"
+            },
+            "operation": {
+              "$ref": "#/$defs/LatencyKind"
+            }
+          },
+          "required": [
+            "operation"
+          ],
+          "title": "LatencyOverviewInput",
+          "type": "object"
+        },
+        "name": "redis_latency_overview",
+        "outputSchema": {
+          "$defs": {
+            "ClusterFailure": {
+              "additionalProperties": false,
+              "properties": {
+                "error_code": {
+                  "type": "string"
+                },
+                "message_redacted": {
+                  "type": "boolean"
+                },
+                "node": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "node",
+                "error_code",
+                "message_redacted"
+              ],
+              "type": "object"
+            },
+            "ClusterSummary": {
+              "additionalProperties": false,
+              "properties": {
+                "complete": {
+                  "type": "boolean"
+                },
+                "failures": {
+                  "items": {
+                    "$ref": "#/$defs/ClusterFailure"
+                  },
+                  "type": "array"
+                },
+                "node_addresses_redacted": {
+                  "type": "boolean"
+                },
+                "node_limit": {
+                  "format": "uint",
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                "nodes_queried": {
+                  "format": "uint",
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                "nodes_succeeded": {
+                  "format": "uint",
+                  "minimum": 0,
+                  "type": "integer"
+                }
+              },
+              "required": [
+                "node_limit",
+                "nodes_queried",
+                "nodes_succeeded",
+                "complete",
+                "node_addresses_redacted",
+                "failures"
+              ],
+              "type": "object"
+            },
+            "NodeValue": {
+              "additionalProperties": false,
+              "properties": {
+                "node": {
+                  "type": "string"
+                },
+                "value": true
+              },
+              "required": [
+                "node",
+                "value"
+              ],
+              "type": "object"
+            }
+          },
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "cluster": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/ClusterSummary"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "replies": {
+              "items": {
+                "$ref": "#/$defs/NodeValue"
+              },
+              "type": "array"
+            },
+            "scope": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "scope",
+            "replies"
+          ],
+          "title": "FanoutStatusOutput",
+          "type": "object"
+        },
+        "title": "Inspect Redis Latency"
+      },
+      "required_access": "read_only",
+      "required_module": null,
+      "requires_raw_opt_in": false
+    },
+    {
+      "bundle": "admin",
+      "capability_requirements": {
+        "deployment": "any",
+        "minimum_module_version": null,
+        "minimum_redis_version": "2.8.0",
+        "required_commands": [
+          "LATENCY"
+        ],
+        "required_module": null
+      },
+      "family": null,
+      "name": "redis_latency_reset",
+      "output_policy": "intrinsically_bounded",
+      "protocol": {
+        "annotations": {
+          "idempotentHint": true
+        },
+        "description": "Reset all or selected latency-monitor events across bounded Redis nodes. Requires Full access and Redis @admin +latency|reset; destructive to observability history and idempotent.",
+        "inputSchema": {
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "confirm": {
+              "type": "boolean"
+            },
+            "events": {
+              "default": [],
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "max_cluster_nodes": {
+              "default": 32,
+              "format": "uint",
+              "maximum": 256,
+              "minimum": 1,
+              "type": "integer"
+            }
+          },
+          "required": [
+            "confirm"
+          ],
+          "title": "LatencyResetInput",
+          "type": "object"
+        },
+        "name": "redis_latency_reset",
+        "outputSchema": {
+          "$defs": {
+            "ClusterFailure": {
+              "additionalProperties": false,
+              "properties": {
+                "error_code": {
+                  "type": "string"
+                },
+                "message_redacted": {
+                  "type": "boolean"
+                },
+                "node": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "node",
+                "error_code",
+                "message_redacted"
+              ],
+              "type": "object"
+            },
+            "ClusterSummary": {
+              "additionalProperties": false,
+              "properties": {
+                "complete": {
+                  "type": "boolean"
+                },
+                "failures": {
+                  "items": {
+                    "$ref": "#/$defs/ClusterFailure"
+                  },
+                  "type": "array"
+                },
+                "node_addresses_redacted": {
+                  "type": "boolean"
+                },
+                "node_limit": {
+                  "format": "uint",
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                "nodes_queried": {
+                  "format": "uint",
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                "nodes_succeeded": {
+                  "format": "uint",
+                  "minimum": 0,
+                  "type": "integer"
+                }
+              },
+              "required": [
+                "node_limit",
+                "nodes_queried",
+                "nodes_succeeded",
+                "complete",
+                "node_addresses_redacted",
+                "failures"
+              ],
+              "type": "object"
+            },
+            "NodeValue": {
+              "additionalProperties": false,
+              "properties": {
+                "node": {
+                  "type": "string"
+                },
+                "value": true
+              },
+              "required": [
+                "node",
+                "value"
+              ],
+              "type": "object"
+            }
+          },
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "cluster": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/ClusterSummary"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "replies": {
+              "items": {
+                "$ref": "#/$defs/NodeValue"
+              },
+              "type": "array"
+            },
+            "scope": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "scope",
+            "replies"
+          ],
+          "title": "FanoutStatusOutput",
+          "type": "object"
+        },
+        "title": "Reset Redis Latency Events"
+      },
+      "required_access": "full",
+      "required_module": null,
+      "requires_raw_opt_in": false
+    },
+    {
       "bundle": "data_structures",
       "capability_requirements": {
         "deployment": "any",
@@ -22661,6 +25304,327 @@
           "type": "object"
         },
         "title": "Trim Redis List"
+      },
+      "required_access": "full",
+      "required_module": null,
+      "requires_raw_opt_in": false
+    },
+    {
+      "bundle": "admin",
+      "capability_requirements": {
+        "deployment": "any",
+        "minimum_module_version": null,
+        "minimum_redis_version": "4.0.0",
+        "required_commands": [
+          "MEMORY"
+        ],
+        "required_module": null
+      },
+      "family": null,
+      "name": "redis_memory_diagnostics",
+      "output_policy": "budget_guarded",
+      "protocol": {
+        "annotations": {
+          "destructiveHint": false,
+          "idempotentHint": true,
+          "readOnlyHint": true
+        },
+        "description": "Read MEMORY DOCTOR or MALLOC-STATS once per bounded Cluster primary. Requires Redis @read +memory; read-only and byte-budgeted with pseudonymous node labels.",
+        "inputSchema": {
+          "$defs": {
+            "MemoryDiagnosticKind": {
+              "enum": [
+                "doctor",
+                "malloc_stats"
+              ],
+              "type": "string"
+            }
+          },
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "max_cluster_nodes": {
+              "default": 32,
+              "format": "uint",
+              "maximum": 256,
+              "minimum": 1,
+              "type": "integer"
+            },
+            "operation": {
+              "$ref": "#/$defs/MemoryDiagnosticKind"
+            }
+          },
+          "required": [
+            "operation"
+          ],
+          "title": "MemoryDiagnosticInput",
+          "type": "object"
+        },
+        "name": "redis_memory_diagnostics",
+        "outputSchema": {
+          "$defs": {
+            "ClusterFailure": {
+              "additionalProperties": false,
+              "properties": {
+                "error_code": {
+                  "type": "string"
+                },
+                "message_redacted": {
+                  "type": "boolean"
+                },
+                "node": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "node",
+                "error_code",
+                "message_redacted"
+              ],
+              "type": "object"
+            },
+            "ClusterSummary": {
+              "additionalProperties": false,
+              "properties": {
+                "complete": {
+                  "type": "boolean"
+                },
+                "failures": {
+                  "items": {
+                    "$ref": "#/$defs/ClusterFailure"
+                  },
+                  "type": "array"
+                },
+                "node_addresses_redacted": {
+                  "type": "boolean"
+                },
+                "node_limit": {
+                  "format": "uint",
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                "nodes_queried": {
+                  "format": "uint",
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                "nodes_succeeded": {
+                  "format": "uint",
+                  "minimum": 0,
+                  "type": "integer"
+                }
+              },
+              "required": [
+                "node_limit",
+                "nodes_queried",
+                "nodes_succeeded",
+                "complete",
+                "node_addresses_redacted",
+                "failures"
+              ],
+              "type": "object"
+            },
+            "NodeValue": {
+              "additionalProperties": false,
+              "properties": {
+                "node": {
+                  "type": "string"
+                },
+                "value": true
+              },
+              "required": [
+                "node",
+                "value"
+              ],
+              "type": "object"
+            }
+          },
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "cluster": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/ClusterSummary"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "replies": {
+              "items": {
+                "$ref": "#/$defs/NodeValue"
+              },
+              "type": "array"
+            },
+            "scope": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "scope",
+            "replies"
+          ],
+          "title": "FanoutStatusOutput",
+          "type": "object"
+        },
+        "title": "Inspect Redis Memory Diagnostics"
+      },
+      "required_access": "read_only",
+      "required_module": null,
+      "requires_raw_opt_in": false
+    },
+    {
+      "bundle": "admin",
+      "capability_requirements": {
+        "deployment": "any",
+        "minimum_module_version": null,
+        "minimum_redis_version": "4.0.0",
+        "required_commands": [
+          "MEMORY"
+        ],
+        "required_module": null
+      },
+      "family": null,
+      "name": "redis_memory_purge",
+      "output_policy": "intrinsically_bounded",
+      "protocol": {
+        "annotations": {
+          "idempotentHint": true
+        },
+        "description": "Ask every bounded Cluster primary's allocator to release reclaimable pages. Requires Full access and Redis @slow +memory|purge; may cause latency and is idempotent.",
+        "inputSchema": {
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "confirm": {
+              "type": "boolean"
+            },
+            "max_cluster_nodes": {
+              "default": 32,
+              "format": "uint",
+              "maximum": 256,
+              "minimum": 1,
+              "type": "integer"
+            }
+          },
+          "required": [
+            "confirm"
+          ],
+          "title": "ClusterConfirmationInput",
+          "type": "object"
+        },
+        "name": "redis_memory_purge",
+        "outputSchema": {
+          "$defs": {
+            "ClusterFailure": {
+              "additionalProperties": false,
+              "properties": {
+                "error_code": {
+                  "type": "string"
+                },
+                "message_redacted": {
+                  "type": "boolean"
+                },
+                "node": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "node",
+                "error_code",
+                "message_redacted"
+              ],
+              "type": "object"
+            },
+            "ClusterSummary": {
+              "additionalProperties": false,
+              "properties": {
+                "complete": {
+                  "type": "boolean"
+                },
+                "failures": {
+                  "items": {
+                    "$ref": "#/$defs/ClusterFailure"
+                  },
+                  "type": "array"
+                },
+                "node_addresses_redacted": {
+                  "type": "boolean"
+                },
+                "node_limit": {
+                  "format": "uint",
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                "nodes_queried": {
+                  "format": "uint",
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                "nodes_succeeded": {
+                  "format": "uint",
+                  "minimum": 0,
+                  "type": "integer"
+                }
+              },
+              "required": [
+                "node_limit",
+                "nodes_queried",
+                "nodes_succeeded",
+                "complete",
+                "node_addresses_redacted",
+                "failures"
+              ],
+              "type": "object"
+            },
+            "NodeValue": {
+              "additionalProperties": false,
+              "properties": {
+                "node": {
+                  "type": "string"
+                },
+                "value": true
+              },
+              "required": [
+                "node",
+                "value"
+              ],
+              "type": "object"
+            }
+          },
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "cluster": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/ClusterSummary"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "replies": {
+              "items": {
+                "$ref": "#/$defs/NodeValue"
+              },
+              "type": "array"
+            },
+            "scope": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "scope",
+            "replies"
+          ],
+          "title": "FanoutStatusOutput",
+          "type": "object"
+        },
+        "title": "Purge Redis Allocator Memory"
       },
       "required_access": "full",
       "required_module": null,
@@ -28701,6 +31665,77 @@
       "requires_raw_opt_in": false
     },
     {
+      "bundle": "admin",
+      "capability_requirements": {
+        "deployment": "standalone",
+        "minimum_module_version": null,
+        "minimum_redis_version": "2.8.0",
+        "required_commands": [
+          "TIME",
+          "LASTSAVE",
+          "ROLE"
+        ],
+        "required_module": null
+      },
+      "family": null,
+      "name": "redis_server_state",
+      "output_policy": "intrinsically_bounded",
+      "protocol": {
+        "annotations": {
+          "destructiveHint": false,
+          "idempotentHint": true,
+          "readOnlyHint": true
+        },
+        "description": "Read TIME, LASTSAVE, and ROLE as a compact server-state snapshot. Replication peer addresses and details are redacted. Requires Redis @fast +time +lastsave +role; read-only and node-local.",
+        "inputSchema": {
+          "additionalProperties": false,
+          "type": "object"
+        },
+        "name": "redis_server_state",
+        "outputSchema": {
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "deployment": {
+              "type": "string"
+            },
+            "last_save_unix_seconds": {
+              "format": "int64",
+              "type": "integer"
+            },
+            "microseconds": {
+              "format": "int64",
+              "type": "integer"
+            },
+            "replication_details_redacted": {
+              "type": "boolean"
+            },
+            "role": {
+              "type": "string"
+            },
+            "unix_time_seconds": {
+              "format": "int64",
+              "type": "integer"
+            }
+          },
+          "required": [
+            "deployment",
+            "unix_time_seconds",
+            "microseconds",
+            "last_save_unix_seconds",
+            "role",
+            "replication_details_redacted"
+          ],
+          "title": "ServerStateOutput",
+          "type": "object"
+        },
+        "title": "Read Redis Server State"
+      },
+      "required_access": "read_only",
+      "required_module": null,
+      "requires_raw_opt_in": false
+    },
+    {
       "bundle": "essentials",
       "capability_requirements": {
         "deployment": "any",
@@ -30045,6 +33080,308 @@
         "title": "Read Redis Slow Log"
       },
       "required_access": "read_only",
+      "required_module": null,
+      "requires_raw_opt_in": false
+    },
+    {
+      "bundle": "admin",
+      "capability_requirements": {
+        "deployment": "any",
+        "minimum_module_version": null,
+        "minimum_redis_version": "2.2.0",
+        "required_commands": [
+          "SLOWLOG"
+        ],
+        "required_module": null
+      },
+      "family": null,
+      "name": "redis_slowlog_len",
+      "output_policy": "intrinsically_bounded",
+      "protocol": {
+        "annotations": {
+          "destructiveHint": false,
+          "idempotentHint": true,
+          "readOnlyHint": true
+        },
+        "description": "Count slow-log entries on every bounded Redis node without returning command arguments. Requires Redis @admin +slowlog|len; read-only and address-redacted.",
+        "inputSchema": {
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "max_cluster_nodes": {
+              "default": 32,
+              "format": "uint",
+              "maximum": 256,
+              "minimum": 1,
+              "type": "integer"
+            }
+          },
+          "title": "ClusterInput",
+          "type": "object"
+        },
+        "name": "redis_slowlog_len",
+        "outputSchema": {
+          "$defs": {
+            "ClusterFailure": {
+              "additionalProperties": false,
+              "properties": {
+                "error_code": {
+                  "type": "string"
+                },
+                "message_redacted": {
+                  "type": "boolean"
+                },
+                "node": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "node",
+                "error_code",
+                "message_redacted"
+              ],
+              "type": "object"
+            },
+            "ClusterSummary": {
+              "additionalProperties": false,
+              "properties": {
+                "complete": {
+                  "type": "boolean"
+                },
+                "failures": {
+                  "items": {
+                    "$ref": "#/$defs/ClusterFailure"
+                  },
+                  "type": "array"
+                },
+                "node_addresses_redacted": {
+                  "type": "boolean"
+                },
+                "node_limit": {
+                  "format": "uint",
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                "nodes_queried": {
+                  "format": "uint",
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                "nodes_succeeded": {
+                  "format": "uint",
+                  "minimum": 0,
+                  "type": "integer"
+                }
+              },
+              "required": [
+                "node_limit",
+                "nodes_queried",
+                "nodes_succeeded",
+                "complete",
+                "node_addresses_redacted",
+                "failures"
+              ],
+              "type": "object"
+            },
+            "NodeValue": {
+              "additionalProperties": false,
+              "properties": {
+                "node": {
+                  "type": "string"
+                },
+                "value": true
+              },
+              "required": [
+                "node",
+                "value"
+              ],
+              "type": "object"
+            }
+          },
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "cluster": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/ClusterSummary"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "replies": {
+              "items": {
+                "$ref": "#/$defs/NodeValue"
+              },
+              "type": "array"
+            }
+          },
+          "required": [
+            "replies"
+          ],
+          "title": "SlowlogLenOutput",
+          "type": "object"
+        },
+        "title": "Count Redis Slow Log Entries"
+      },
+      "required_access": "read_only",
+      "required_module": null,
+      "requires_raw_opt_in": false
+    },
+    {
+      "bundle": "admin",
+      "capability_requirements": {
+        "deployment": "any",
+        "minimum_module_version": null,
+        "minimum_redis_version": "2.2.0",
+        "required_commands": [
+          "SLOWLOG"
+        ],
+        "required_module": null
+      },
+      "family": null,
+      "name": "redis_slowlog_reset",
+      "output_policy": "intrinsically_bounded",
+      "protocol": {
+        "annotations": {
+          "idempotentHint": true
+        },
+        "description": "Clear slow-log history on every bounded Redis node. Requires Full access and Redis @admin +slowlog|reset; destructive to observability history and idempotent.",
+        "inputSchema": {
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "confirm": {
+              "type": "boolean"
+            },
+            "max_cluster_nodes": {
+              "default": 32,
+              "format": "uint",
+              "maximum": 256,
+              "minimum": 1,
+              "type": "integer"
+            }
+          },
+          "required": [
+            "confirm"
+          ],
+          "title": "ClusterConfirmationInput",
+          "type": "object"
+        },
+        "name": "redis_slowlog_reset",
+        "outputSchema": {
+          "$defs": {
+            "ClusterFailure": {
+              "additionalProperties": false,
+              "properties": {
+                "error_code": {
+                  "type": "string"
+                },
+                "message_redacted": {
+                  "type": "boolean"
+                },
+                "node": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "node",
+                "error_code",
+                "message_redacted"
+              ],
+              "type": "object"
+            },
+            "ClusterSummary": {
+              "additionalProperties": false,
+              "properties": {
+                "complete": {
+                  "type": "boolean"
+                },
+                "failures": {
+                  "items": {
+                    "$ref": "#/$defs/ClusterFailure"
+                  },
+                  "type": "array"
+                },
+                "node_addresses_redacted": {
+                  "type": "boolean"
+                },
+                "node_limit": {
+                  "format": "uint",
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                "nodes_queried": {
+                  "format": "uint",
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                "nodes_succeeded": {
+                  "format": "uint",
+                  "minimum": 0,
+                  "type": "integer"
+                }
+              },
+              "required": [
+                "node_limit",
+                "nodes_queried",
+                "nodes_succeeded",
+                "complete",
+                "node_addresses_redacted",
+                "failures"
+              ],
+              "type": "object"
+            },
+            "NodeValue": {
+              "additionalProperties": false,
+              "properties": {
+                "node": {
+                  "type": "string"
+                },
+                "value": true
+              },
+              "required": [
+                "node",
+                "value"
+              ],
+              "type": "object"
+            }
+          },
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "cluster": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/ClusterSummary"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "replies": {
+              "items": {
+                "$ref": "#/$defs/NodeValue"
+              },
+              "type": "array"
+            },
+            "scope": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "scope",
+            "replies"
+          ],
+          "title": "FanoutStatusOutput",
+          "type": "object"
+        },
+        "title": "Reset Redis Slow Logs"
+      },
+      "required_access": "full",
       "required_module": null,
       "requires_raw_opt_in": false
     },
@@ -32127,6 +35464,72 @@
           "type": "object"
         },
         "title": "Store Redis Set Union"
+      },
+      "required_access": "full",
+      "required_module": null,
+      "requires_raw_opt_in": false
+    },
+    {
+      "bundle": "admin",
+      "capability_requirements": {
+        "deployment": "standalone",
+        "minimum_module_version": null,
+        "minimum_redis_version": null,
+        "required_commands": [
+          "SWAPDB"
+        ],
+        "required_module": null
+      },
+      "family": null,
+      "name": "redis_swapdb",
+      "output_policy": "intrinsically_bounded",
+      "protocol": {
+        "annotations": {
+          "idempotentHint": true
+        },
+        "description": "Atomically swap two distinct database numbers on a standalone Redis target. Requires Full access and Redis @keyspace +swapdb; destructive to logical key placement, service-impacting, and Standalone-only.",
+        "inputSchema": {
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "confirmation": {
+              "type": "string"
+            },
+            "first_database": {
+              "format": "uint32",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "second_database": {
+              "format": "uint32",
+              "minimum": 0,
+              "type": "integer"
+            }
+          },
+          "required": [
+            "first_database",
+            "second_database",
+            "confirmation"
+          ],
+          "title": "SwapDbInput",
+          "type": "object"
+        },
+        "name": "redis_swapdb",
+        "outputSchema": {
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "status": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "status"
+          ],
+          "title": "StatusOutput",
+          "type": "object"
+        },
+        "title": "Swap Redis Databases"
       },
       "required_access": "full",
       "required_module": null,

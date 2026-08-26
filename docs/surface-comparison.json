@@ -225,7 +225,7 @@
   },
   "current_gate": {
     "met": true,
-    "blockers": [32, 33]
+    "blockers": [33]
   },
   "contract_scorecard": {
     "scale": {
@@ -1089,10 +1089,37 @@
       "id": "admin.guarded",
       "redis_mcp_tools": [],
       "redisctl_tools": ["redis_acl_list", "redis_config_get", "redis_config_set", "redis_flushdb"],
-      "library_tools": [],
-      "disposition": "planned",
-      "issue": 32,
-      "reason": "Issue #32 activates an explicitly selected admin bundle with accurate destructive and per-node behavior."
+      "library_tools": [
+        "redis_acl_categories",
+        "redis_acl_dryrun",
+        "redis_acl_log",
+        "redis_acl_log_reset",
+        "redis_acl_rules",
+        "redis_acl_user",
+        "redis_acl_users",
+        "redis_backup_files",
+        "redis_backup_status",
+        "redis_client_control",
+        "redis_cluster_inspect",
+        "redis_cluster_slot",
+        "redis_cluster_slot_stats",
+        "redis_config_get",
+        "redis_config_resetstat",
+        "redis_config_set",
+        "redis_flush",
+        "redis_hotkeys_control",
+        "redis_hotkeys_get",
+        "redis_latency_overview",
+        "redis_latency_reset",
+        "redis_memory_diagnostics",
+        "redis_memory_purge",
+        "redis_server_state",
+        "redis_slowlog_len",
+        "redis_slowlog_reset",
+        "redis_swapdb"
+      ],
+      "disposition": "implemented",
+      "reason": "The explicitly selected admin bundle now provides bounded, redacted inspection and separately Full-gated controls. Configuration reads use a fixed non-secret allowlist; destructive calls require confirmation; Cluster fan-out has node and result ceilings with pseudonymous partial failures; credential generation, filesystem persistence, and uncoordinated topology mutation remain outside ordinary request/response tools."
     },
     {
       "id": "bulk.workflows",

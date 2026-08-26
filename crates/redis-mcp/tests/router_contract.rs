@@ -912,6 +912,30 @@ async fn fixed_client(executor: FixedRedis, capabilities: RedisCapabilities) -> 
     client
 }
 
+async fn fixed_admin_client(
+    executor: FixedRedis,
+    access: AccessMode,
+    deployment: RedisDeployment,
+) -> McpClient {
+    let router = RedisMcp::builder(executor)
+        .access(access)
+        .bundles([ToolBundle::Admin])
+        .capabilities(
+            RedisCapabilities::unknown()
+                .with_redis_version(RedisVersion::new(8, 10, 1))
+                .with_deployment(deployment),
+        )
+        .build();
+    let client = McpClient::connect(ChannelTransport::new(router))
+        .await
+        .expect("connect fixed admin client");
+    client
+        .initialize("redis-mcp-admin-test", "0")
+        .await
+        .expect("initialize fixed admin client");
+    client
+}
+
 #[tokio::test]
 async fn pubsub_publish_is_binary_safe_and_exposes_cluster_count_scope() {
     for tool in ["redis_publish", "redis_spublish"] {
@@ -4688,6 +4712,325 @@ async fn bundles_are_composable_and_raw_remains_a_separate_opt_in() {
     );
 }
 
+#[tokio::test]
+async fn admin_bundle_is_explicit_and_controls_are_separately_full_gated() {
+    let defaults = client(AccessMode::Full, false)
+        .await
+        .list_tools()
+        .await
+        .expect("list default tools")
+        .tools;
+    assert!(defaults.iter().all(|tool| {
+        !tool_catalog()
+            .iter()
+            .any(|metadata| metadata.name == tool.name && metadata.bundle == ToolBundle::Admin)
+    }));
+
+    let read_only = client_for_bundles(
+        AccessMode::ReadOnly,
+        [ToolBundle::Admin],
+        RawCommandPolicy::Disabled,
+    )
+    .await
+    .list_tools()
+    .await
+    .expect("list read-only admin tools")
+    .tools
+    .into_iter()
+    .map(|tool| tool.name)
+    .collect::<Vec<_>>();
+    assert!(read_only.iter().any(|name| name == "redis_acl_users"));
+    assert!(
+        read_only
+            .iter()
+            .any(|name| name == "redis_cluster_slot_stats")
+    );
+    assert!(!read_only.iter().any(|name| name == "redis_flush"));
+    assert!(!read_only.iter().any(|name| name == "redis_config_set"));
+
+    let full = client_for_bundles(
+        AccessMode::Full,
+        [ToolBundle::Admin],
+        RawCommandPolicy::Disabled,
+    )
+    .await
+    .list_tools()
+    .await
+    .expect("list full admin tools")
+    .tools
+    .into_iter()
+    .map(|tool| tool.name)
+    .collect::<Vec<_>>();
+    assert!(full.iter().any(|name| name == "redis_flush"));
+    assert!(full.iter().any(|name| name == "redis_config_set"));
+    assert!(!full.iter().any(|name| name == "redis_command"));
+}
+
+#[tokio::test]
+async fn admin_config_allowlist_rejects_secret_and_path_names_before_execution() {
+    let executor = FixedRedis::new(RedisValue::Nil);
+    let commands = executor.commands.clone();
+    let client =
+        fixed_admin_client(executor, AccessMode::ReadOnly, RedisDeployment::Standalone).await;
+
+    for parameter in ["requirepass", "dir", "aclfile", "*"] {
+        let result = client
+            .call_tool(
+                "redis_config_get",
+                serde_json::json!({"parameters": [parameter]}),
+            )
+            .await
+            .expect("unsafe CONFIG GET input returns a tool result");
+        assert!(result.is_error, "{parameter}: {result:?}");
+    }
+    assert!(
+        commands
+            .lock()
+            .expect("no unsafe CONFIG GET commands")
+            .is_empty()
+    );
+}
+
+#[tokio::test]
+async fn backup_status_uses_a_fixed_shape_and_redacts_errors_and_future_fields() {
+    let executor = FixedRedis::new(RedisValue::Array(vec![
+        RedisValue::BulkString(b"state".to_vec()),
+        RedisValue::BulkString(b"incrementing".to_vec()),
+        RedisValue::BulkString(b"error".to_vec()),
+        RedisValue::BulkString(b"failed at /private/backup with token=secret".to_vec()),
+        RedisValue::BulkString(b"start_time".to_vec()),
+        RedisValue::BulkString(b"1717921800".to_vec()),
+        RedisValue::BulkString(b"end_time".to_vec()),
+        RedisValue::BulkString(b"0".to_vec()),
+        RedisValue::BulkString(b"path".to_vec()),
+        RedisValue::BulkString(b"/private/backup".to_vec()),
+        RedisValue::BulkString(b"future_secret".to_vec()),
+        RedisValue::BulkString(b"do-not-return".to_vec()),
+    ]));
+    let client =
+        fixed_admin_client(executor, AccessMode::ReadOnly, RedisDeployment::Standalone).await;
+    let result = client
+        .call_tool("redis_backup_status", serde_json::json!({}))
+        .await
+        .expect("BACKUP STATUS summary");
+    assert!(!result.is_error, "{result:?}");
+    let structured = result.structured_content.expect("BACKUP STATUS output");
+    let serialized = serde_json::to_string(&structured).expect("serialize BACKUP STATUS");
+    assert_eq!(structured["state"], "incrementing");
+    assert_eq!(structured["error_present"], true);
+    assert_eq!(structured["start_time_unix_seconds"], 1_717_921_800_i64);
+    assert_eq!(structured["end_time_unix_seconds"], 0);
+    assert_eq!(structured["unrecognized_fields_redacted"], 2);
+    assert_eq!(structured["error_and_future_field_values_redacted"], true);
+    assert!(!serialized.contains("/private/backup"));
+    assert!(!serialized.contains("secret"));
+    assert!(!serialized.contains("do-not-return"));
+}
+
+#[tokio::test]
+async fn admin_variable_requests_require_explicit_bounded_shapes() {
+    let executor = FixedRedis::new(RedisValue::Okay);
+    let commands = executor.commands.clone();
+    let client = fixed_admin_client(executor, AccessMode::Full, RedisDeployment::Cluster).await;
+
+    let histogram = client
+        .call_tool(
+            "redis_latency_overview",
+            serde_json::json!({
+                "operation": "histogram",
+                "commands": [],
+                "max_cluster_nodes": 4
+            }),
+        )
+        .await
+        .expect("unbounded histogram returns a tool result");
+    assert!(histogram.is_error);
+
+    let hotkeys = client
+        .call_tool(
+            "redis_hotkeys_control",
+            serde_json::json!({
+                "operation": "start",
+                "duration_seconds": 60,
+                "confirm_service_impact": true,
+                "max_cluster_nodes": 4
+            }),
+        )
+        .await
+        .expect("unbounded hotkeys start returns a tool result");
+    assert!(hotkeys.is_error);
+    assert!(
+        commands
+            .lock()
+            .expect("no unbounded admin commands")
+            .is_empty()
+    );
+}
+
+#[tokio::test]
+async fn admin_cluster_inspection_redacts_addresses_and_partial_failure_messages() {
+    let executor = FixedRedis::new(RedisValue::ClusterNodes(vec![
+        (
+            "10.0.0.1:6379".to_string(),
+            RedisValue::BulkString(
+                b"node-id 10.0.0.1:6379@16379 master - 0 0 1 connected 0-100\n".to_vec(),
+            ),
+        ),
+        (
+            "10.0.0.2:6379".to_string(),
+            RedisValue::ServerError {
+                code: "NOPERM".to_string(),
+                message: Some("secret topology detail at 10.0.0.2:6379".to_string()),
+            },
+        ),
+    ]));
+    let commands = executor.commands.clone();
+    let client = fixed_admin_client(executor, AccessMode::ReadOnly, RedisDeployment::Cluster).await;
+    let result = client
+        .call_tool(
+            "redis_cluster_inspect",
+            serde_json::json!({"operation": "nodes", "max_cluster_nodes": 4}),
+        )
+        .await
+        .expect("cluster inspection");
+    assert!(!result.is_error, "{result:?}");
+    let structured = result
+        .structured_content
+        .expect("cluster structured output");
+    let serialized = serde_json::to_string(&structured).expect("serialize cluster inspection");
+    assert!(!serialized.contains("10.0.0."));
+    assert!(!serialized.contains("secret topology detail"));
+    assert_eq!(structured["replies"][0]["node"], "node-1");
+    assert_eq!(structured["cluster"]["complete"], false);
+    assert_eq!(structured["cluster"]["failures"][0]["error_code"], "NOPERM");
+
+    let commands = commands.lock().expect("cluster inspect command");
+    assert_eq!(commands.len(), 1);
+    assert_eq!(commands[0].arguments(), [b"NODES".to_vec()]);
+    assert_eq!(
+        commands[0].cluster_fanout(),
+        Some(RedisClusterFanout::AllNodes)
+    );
+    assert_eq!(commands[0].cluster_node_limit(), Some(4));
+}
+
+#[tokio::test]
+async fn cluster_slot_local_inspection_uses_bounded_primary_fanout() {
+    let executor = FixedRedis::new(RedisValue::ClusterNodes(vec![
+        ("10.0.0.1:6379".to_string(), RedisValue::Integer(0)),
+        ("10.0.0.2:6379".to_string(), RedisValue::Integer(7)),
+        ("10.0.0.3:6379".to_string(), RedisValue::Integer(0)),
+    ]));
+    let commands = executor.commands.clone();
+    let client = fixed_admin_client(executor, AccessMode::ReadOnly, RedisDeployment::Cluster).await;
+    let result = client
+        .call_tool(
+            "redis_cluster_slot",
+            serde_json::json!({
+                "operation": "count_keys",
+                "slot": 42,
+                "max_cluster_nodes": 4
+            }),
+        )
+        .await
+        .expect("cluster slot count");
+    assert!(!result.is_error, "{result:?}");
+    let structured = result.structured_content.expect("cluster slot output");
+    assert_eq!(structured["replies"].as_array().unwrap().len(), 3);
+    assert_eq!(structured["cluster"]["complete"], true);
+    assert!(!structured.to_string().contains("10.0.0."));
+
+    let commands = commands.lock().expect("cluster slot command");
+    assert_eq!(commands.len(), 1);
+    assert_eq!(
+        commands[0].arguments(),
+        [b"COUNTKEYSINSLOT".to_vec(), b"42".to_vec()]
+    );
+    assert_eq!(
+        commands[0].cluster_fanout(),
+        Some(RedisClusterFanout::Primaries)
+    );
+    assert_eq!(commands[0].cluster_node_limit(), Some(4));
+}
+
+#[tokio::test]
+async fn destructive_admin_tools_require_confirmation_and_use_bounded_primary_fanout() {
+    let executor = FixedRedis::new(RedisValue::Okay);
+    let commands = executor.commands.clone();
+    let client = fixed_admin_client(executor, AccessMode::Full, RedisDeployment::Cluster).await;
+
+    let denied = client
+        .call_tool(
+            "redis_flush",
+            serde_json::json!({
+                "scope": "database",
+                "mode": "async",
+                "confirmation": "no",
+                "max_cluster_nodes": 3
+            }),
+        )
+        .await
+        .expect("unconfirmed flush returns a tool result");
+    assert!(denied.is_error);
+    assert!(commands.lock().expect("unconfirmed commands").is_empty());
+
+    let allowed = client
+        .call_tool(
+            "redis_flush",
+            serde_json::json!({
+                "scope": "database",
+                "mode": "async",
+                "confirmation": "FLUSHDB",
+                "max_cluster_nodes": 3
+            }),
+        )
+        .await
+        .expect("confirmed flush");
+    assert!(!allowed.is_error, "{allowed:?}");
+    let commands = commands.lock().expect("confirmed flush command");
+    assert_eq!(commands.len(), 1);
+    assert_eq!(commands[0].name(), "FLUSHDB");
+    assert_eq!(commands[0].arguments(), [b"ASYNC".to_vec()]);
+    assert_eq!(
+        commands[0].cluster_fanout(),
+        Some(RedisClusterFanout::Primaries)
+    );
+    assert_eq!(commands[0].cluster_node_limit(), Some(3));
+}
+
+#[tokio::test]
+async fn acl_user_summary_never_returns_credentials_or_rules() {
+    let executor = FixedRedis::new(RedisValue::Array(vec![
+        RedisValue::BulkString(b"flags".to_vec()),
+        RedisValue::Array(vec![RedisValue::BulkString(b"on".to_vec())]),
+        RedisValue::BulkString(b"passwords".to_vec()),
+        RedisValue::Array(vec![RedisValue::BulkString(b"#secret-hash".to_vec())]),
+        RedisValue::BulkString(b"commands".to_vec()),
+        RedisValue::BulkString(b"+@all -config".to_vec()),
+        RedisValue::BulkString(b"keys".to_vec()),
+        RedisValue::Array(vec![RedisValue::BulkString(b"~tenant:*".to_vec())]),
+        RedisValue::BulkString(b"channels".to_vec()),
+        RedisValue::Array(vec![RedisValue::BulkString(b"&events:*".to_vec())]),
+        RedisValue::BulkString(b"selectors".to_vec()),
+        RedisValue::Array(vec![]),
+    ]));
+    let client =
+        fixed_admin_client(executor, AccessMode::ReadOnly, RedisDeployment::Standalone).await;
+    let result = client
+        .call_tool("redis_acl_user", serde_json::json!({"username": "agent"}))
+        .await
+        .expect("ACL user summary");
+    assert!(!result.is_error, "{result:?}");
+    let structured = result.structured_content.expect("ACL user output");
+    let serialized = serde_json::to_string(&structured).expect("serialize ACL user");
+    assert_eq!(structured["password_hash_count"], 1);
+    assert_eq!(structured["credentials_redacted"], true);
+    assert!(!serialized.contains("secret-hash"));
+    assert!(!serialized.contains("tenant:"));
+    assert!(!serialized.contains("events:"));
+    assert!(!serialized.contains("-config"));
+}
+
 #[test]
 fn invalid_builder_safety_configuration_is_rejected() {
     assert!(matches!(
@@ -7215,6 +7558,29 @@ async fn unrestricted_raw_policy_allows_unknown_names_but_keeps_hard_blocks() {
             .expect("serialize blocked result")
             .contains("SESSION_COMMAND_UNSUPPORTED")
     );
+
+    for (command, arguments) in [
+        ("CONFIG", serde_json::json!(["GET", "requirepass"])),
+        ("CLUSTER", serde_json::json!(["NODES"])),
+        ("ACL", serde_json::json!(["LIST"])),
+        ("FLUSHALL", serde_json::json!([])),
+        ("MEMORY", serde_json::json!(["PURGE"])),
+    ] {
+        let blocked = client
+            .call_tool(
+                "redis_command",
+                serde_json::json!({"command": command, "arguments": arguments}),
+            )
+            .await
+            .expect("admin hard block is represented as an MCP result");
+        assert!(blocked.is_error, "{command}: {blocked:?}");
+        assert!(
+            serde_json::to_string(&blocked)
+                .expect("serialize blocked admin result")
+                .contains("ADMIN_COMMAND_UNSUPPORTED"),
+            "{command}: {blocked:?}"
+        );
+    }
 }
 
 #[derive(Clone, Copy)]

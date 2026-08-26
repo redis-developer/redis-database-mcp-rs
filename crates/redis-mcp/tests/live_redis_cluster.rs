@@ -826,14 +826,20 @@ async fn scripting_routes_declared_keys_and_fans_out_lifecycle_in_cluster() {
             DirectRedisCluster::connect(&urls)
                 .await
                 .expect("connect scripting Cluster protocol adapter"),
+            version,
         )
         .await;
+        let read_eval_tool = if version >= RedisVersion::new(7, 0, 0) {
+            "redis_eval_ro"
+        } else {
+            "redis_eval"
+        };
         let same = format!("script:{{same-{}}}:{protocol}", std::process::id());
         let other = format!("script:{{other-{}}}:{protocol}", std::process::id());
 
         let eval = client
             .call_tool(
-                "redis_eval_ro",
+                read_eval_tool,
                 serde_json::json!({
                     "script": {"value": "return {KEYS[1], KEYS[2], ARGV[1]}"},
                     "keys": [
@@ -851,7 +857,7 @@ async fn scripting_routes_declared_keys_and_fans_out_lifecycle_in_cluster() {
 
         let cross_slot = client
             .call_tool(
-                "redis_eval_ro",
+                read_eval_tool,
                 serde_json::json!({
                     "script": {"value": "return 1"},
                     "keys": [
@@ -1182,13 +1188,16 @@ async fn router_client(executor: impl RedisExecutor) -> McpClient {
     client
 }
 
-async fn scripting_router_client(executor: impl RedisExecutor) -> McpClient {
+async fn scripting_router_client(
+    executor: impl RedisExecutor,
+    redis_version: RedisVersion,
+) -> McpClient {
     let router = RedisMcp::builder(executor)
         .access(AccessMode::Full)
         .bundles([ToolBundle::Scripting])
         .capabilities(
             redis_mcp::RedisCapabilities::unknown()
-                .with_redis_version(RedisVersion::new(8, 2, 0))
+                .with_redis_version(redis_version)
                 .with_deployment(RedisDeployment::Cluster),
         )
         .build();
@@ -1200,6 +1209,94 @@ async fn scripting_router_client(executor: impl RedisExecutor) -> McpClient {
         .await
         .expect("initialize scripting Cluster MCP client");
     client
+}
+
+async fn admin_router_client(executor: DirectRedisCluster) -> McpClient {
+    let capabilities = executor
+        .discover_capabilities()
+        .await
+        .expect("discover admin Cluster capabilities");
+    let router = RedisMcp::builder(executor)
+        .access(AccessMode::Full)
+        .bundles([ToolBundle::Admin])
+        .capabilities(capabilities)
+        .build();
+    let client = McpClient::connect(ChannelTransport::new(router))
+        .await
+        .expect("connect admin Cluster MCP client");
+    client
+        .initialize("redis-mcp-admin-cluster-test", "0")
+        .await
+        .expect("initialize admin Cluster MCP client");
+    client
+}
+
+#[tokio::test]
+async fn guarded_admin_flush_fans_out_only_across_an_isolated_cluster() {
+    let _cluster_guard = CLUSTER_TEST_LOCK.lock().await;
+    let managed = match ManagedCluster::start().await {
+        Ok(managed) => managed,
+        Err(RedisServerError::BinaryNotFound { binary, .. }) => {
+            eprintln!("skipping isolated Cluster admin test: {binary} is not on PATH");
+            return;
+        }
+        Err(error) => panic!("start isolated admin Redis Cluster: {error}"),
+    };
+    let seed_urls = managed.seed_urls();
+    let redis = redis::cluster::ClusterClient::new(seed_urls.clone())
+        .expect("open isolated Redis Cluster client");
+    let mut connection = redis
+        .get_async_connection()
+        .await
+        .expect("connect isolated Redis Cluster client");
+    let keys = [
+        "admin:isolated:{alpha}",
+        "admin:isolated:{bravo}",
+        "admin:isolated:{charlie}",
+    ];
+    for key in keys {
+        let _: () = redis::cmd("SET")
+            .arg(key)
+            .arg("value")
+            .query_async(&mut connection)
+            .await
+            .expect("seed isolated Cluster key");
+    }
+
+    let client = admin_router_client(
+        DirectRedisCluster::connect(&seed_urls)
+            .await
+            .expect("connect isolated admin Cluster adapter"),
+    )
+    .await;
+    let result = client
+        .call_tool(
+            "redis_flush",
+            serde_json::json!({
+                "scope": "database",
+                "mode": "sync",
+                "confirmation": "FLUSHDB",
+                "max_cluster_nodes": 8
+            }),
+        )
+        .await
+        .expect("flush isolated Redis Cluster");
+    assert!(!result.is_error, "{result:?}");
+    let structured = result
+        .structured_content
+        .expect("structured isolated Cluster flush");
+    assert_eq!(structured["scope"], "cluster");
+    assert_eq!(structured["cluster"]["complete"], true);
+    assert_eq!(structured["cluster"]["nodes_succeeded"], 3);
+
+    for key in keys {
+        let value: Option<String> = redis::cmd("GET")
+            .arg(key)
+            .query_async(&mut connection)
+            .await
+            .expect("verify isolated Cluster key was flushed");
+        assert_eq!(value, None, "{key}");
+    }
 }
 
 async fn pubsub_session_router_client(

@@ -3187,21 +3187,25 @@
     },
     {
       "name": "SDIFFCARD",
-      "disposition": "planned",
+      "disposition": "typed",
       "access": "read_only",
       "cluster_behavior": "key_routed",
-      "tools": [],
-      "tracking_issue": 63,
-      "rationale": "Structured coverage is planned in issue #63; unrestricted raw execution is not the completeness contract."
+      "tools": [
+        "redis_sdiffcard"
+      ],
+      "tracking_issue": null,
+      "rationale": "Covered by one or more cataloged structured MCP tools."
     },
     {
       "name": "SDIFFSTORE",
-      "disposition": "planned",
+      "disposition": "typed",
       "access": "full",
       "cluster_behavior": "key_routed",
-      "tools": [],
-      "tracking_issue": 63,
-      "rationale": "Structured coverage is planned in issue #63; unrestricted raw execution is not the completeness contract."
+      "tools": [
+        "redis_sdiffstore"
+      ],
+      "tracking_issue": null,
+      "rationale": "Covered by one or more cataloged structured MCP tools."
     },
     {
       "name": "SELECT",
@@ -3299,12 +3303,14 @@
     },
     {
       "name": "SINTERSTORE",
-      "disposition": "planned",
+      "disposition": "typed",
       "access": "full",
       "cluster_behavior": "key_routed",
-      "tools": [],
-      "tracking_issue": 63,
-      "rationale": "Structured coverage is planned in issue #63; unrestricted raw execution is not the completeness contract."
+      "tools": [
+        "redis_sinterstore"
+      ],
+      "tracking_issue": null,
+      "rationale": "Covered by one or more cataloged structured MCP tools."
     },
     {
       "name": "SISMEMBER",
@@ -3543,21 +3549,25 @@
     },
     {
       "name": "SUNIONCARD",
-      "disposition": "planned",
+      "disposition": "typed",
       "access": "read_only",
       "cluster_behavior": "key_routed",
-      "tools": [],
-      "tracking_issue": 63,
-      "rationale": "Structured coverage is planned in issue #63; unrestricted raw execution is not the completeness contract."
+      "tools": [
+        "redis_sunioncard"
+      ],
+      "tracking_issue": null,
+      "rationale": "Covered by one or more cataloged structured MCP tools."
     },
     {
       "name": "SUNIONSTORE",
-      "disposition": "planned",
+      "disposition": "typed",
       "access": "full",
       "cluster_behavior": "key_routed",
-      "tools": [],
-      "tracking_issue": 63,
-      "rationale": "Structured coverage is planned in issue #63; unrestricted raw execution is not the completeness contract."
+      "tools": [
+        "redis_sunionstore"
+      ],
+      "tracking_issue": null,
+      "rationale": "Covered by one or more cataloged structured MCP tools."
     },
     {
       "name": "SUNSUBSCRIBE",
@@ -4171,12 +4181,14 @@
     },
     {
       "name": "ZDIFFSTORE",
-      "disposition": "planned",
+      "disposition": "typed",
       "access": "full",
       "cluster_behavior": "key_routed",
-      "tools": [],
-      "tracking_issue": 63,
-      "rationale": "Structured coverage is planned in issue #63; unrestricted raw execution is not the completeness contract."
+      "tools": [
+        "redis_zdiffstore"
+      ],
+      "tracking_issue": null,
+      "rationale": "Covered by one or more cataloged structured MCP tools."
     },
     {
       "name": "ZINCRBY",
@@ -4203,21 +4215,25 @@
     },
     {
       "name": "ZINTERCARD",
-      "disposition": "planned",
+      "disposition": "typed",
       "access": "read_only",
       "cluster_behavior": "key_routed",
-      "tools": [],
-      "tracking_issue": 63,
-      "rationale": "Structured coverage is planned in issue #63; unrestricted raw execution is not the completeness contract."
+      "tools": [
+        "redis_zintercard"
+      ],
+      "tracking_issue": null,
+      "rationale": "Covered by one or more cataloged structured MCP tools."
     },
     {
       "name": "ZINTERSTORE",
-      "disposition": "planned",
+      "disposition": "typed",
       "access": "full",
       "cluster_behavior": "key_routed",
-      "tools": [],
-      "tracking_issue": 63,
-      "rationale": "Structured coverage is planned in issue #63; unrestricted raw execution is not the completeness contract."
+      "tools": [
+        "redis_zinterstore"
+      ],
+      "tracking_issue": null,
+      "rationale": "Covered by one or more cataloged structured MCP tools."
     },
     {
       "name": "ZLEXCOUNT",
@@ -4323,12 +4339,14 @@
     },
     {
       "name": "ZRANGESTORE",
-      "disposition": "planned",
+      "disposition": "typed",
       "access": "full",
       "cluster_behavior": "key_routed",
-      "tools": [],
-      "tracking_issue": 63,
-      "rationale": "Structured coverage is planned in issue #63; unrestricted raw execution is not the completeness contract."
+      "tools": [
+        "redis_zrangestore"
+      ],
+      "tracking_issue": null,
+      "rationale": "Covered by one or more cataloged structured MCP tools."
     },
     {
       "name": "ZRANK",
@@ -4467,12 +4485,14 @@
     },
     {
       "name": "ZUNIONSTORE",
-      "disposition": "planned",
+      "disposition": "typed",
       "access": "full",
       "cluster_behavior": "key_routed",
-      "tools": [],
-      "tracking_issue": 63,
-      "rationale": "Structured coverage is planned in issue #63; unrestricted raw execution is not the completeness contract."
+      "tools": [
+        "redis_zunionstore"
+      ],
+      "tracking_issue": null,
+      "rationale": "Covered by one or more cataloged structured MCP tools."
     }
   ]
 }

@@ -220,9 +220,10 @@ fn classified_access(command: &str, arguments: &[Vec<u8>]) -> Option<AccessMode>
         | "GETDEL" | "HDEL" | "HGETDEL" | "JSON.ARRPOP" | "JSON.ARRTRIM" | "JSON.CLEAR"
         | "JSON.DEL" | "LMOVEM" | "LPOP" | "LMOVE" | "LMPOP" | "LREM" | "LSET" | "LTRIM"
         | "PFMERGE" | "RENAME" | "RENAMENX" | "RPOP" | "RPOPLPUSH" | "SMOVE" | "SPOP" | "SREM"
-        | "UNLINK" | "VREM" | "XACKDEL" | "XDEL" | "XDELEX" | "XNACK" | "XTRIM" | "ZMPOP"
-        | "ZPOPMAX" | "ZPOPMIN" | "ZREM" | "ZREMRANGEBYLEX" | "ZREMRANGEBYRANK"
-        | "ZREMRANGEBYSCORE" => AccessMode::Full,
+        | "SDIFFSTORE" | "SINTERSTORE" | "SUNIONSTORE" | "UNLINK" | "VREM" | "XACKDEL" | "XDEL"
+        | "XDELEX" | "XNACK" | "XTRIM" | "ZDIFFSTORE" | "ZINTERSTORE" | "ZMPOP" | "ZPOPMAX"
+        | "ZPOPMIN" | "ZRANGESTORE" | "ZREM" | "ZREMRANGEBYLEX" | "ZREMRANGEBYRANK"
+        | "ZREMRANGEBYSCORE" | "ZUNIONSTORE" => AccessMode::Full,
         "COPY" | "RESTORE"
             if arguments
                 .iter()
@@ -255,19 +256,26 @@ fn classified_access(command: &str, arguments: &[Vec<u8>]) -> Option<AccessMode>
         | "HTTL" | "HVALS" | "INFO" | "JSON.ARRLEN" | "JSON.GET" | "JSON.MGET" | "JSON.OBJKEYS"
         | "JSON.OBJLEN" | "JSON.STRLEN" | "JSON.TYPE" | "LCS" | "LINDEX" | "LLEN" | "LPOS"
         | "LRANGE" | "MEMORY" | "MGET" | "OBJECT" | "PEXPIRETIME" | "PFCOUNT" | "PING" | "PTTL"
-        | "RANDOMKEY" | "SCAN" | "SCARD" | "SDIFF" | "SINTER" | "SINTERCARD" | "SISMEMBER"
-        | "SMEMBERS" | "SMISMEMBER" | "SRANDMEMBER" | "SSCAN" | "STRLEN" | "SUNION" | "TTL"
-        | "TYPE" | "VCARD" | "VDIM" | "VEMB" | "VGETATTR" | "VINFO" | "VISMEMBER" | "VLINKS"
-        | "VRANDMEMBER" | "VRANGE" | "VSIM" | "XINFO" | "XLEN" | "XPENDING" | "XRANGE"
-        | "XREAD" | "XREVRANGE" | "ZCARD" | "ZCOUNT" | "ZDIFF" | "ZINTER" | "ZLEXCOUNT"
-        | "ZMSCORE" | "ZRANDMEMBER" | "ZRANGE" | "ZRANK" | "ZREVRANK" | "ZSCAN" | "ZSCORE"
-        | "ZUNION" => AccessMode::ReadOnly,
+        | "RANDOMKEY" | "SCAN" | "SCARD" | "SDIFF" | "SDIFFCARD" | "SINTER" | "SINTERCARD"
+        | "SISMEMBER" | "SMEMBERS" | "SMISMEMBER" | "SRANDMEMBER" | "SSCAN" | "STRLEN"
+        | "SUNION" | "SUNIONCARD" | "TTL" | "TYPE" | "VCARD" | "VDIM" | "VEMB" | "VGETATTR"
+        | "VINFO" | "VISMEMBER" | "VLINKS" | "VRANDMEMBER" | "VRANGE" | "VSIM" | "XINFO"
+        | "XLEN" | "XPENDING" | "XRANGE" | "XREAD" | "XREVRANGE" | "ZCARD" | "ZCOUNT" | "ZDIFF"
+        | "ZINTER" | "ZINTERCARD" | "ZLEXCOUNT" | "ZMSCORE" | "ZRANDMEMBER" | "ZRANGE"
+        | "ZRANK" | "ZREVRANK" | "ZSCAN" | "ZSCORE" | "ZUNION" => AccessMode::ReadOnly,
         _ => return None,
     };
     Some(access)
 }
 
 fn minimum_redis_version(command: &str, arguments: &[Vec<u8>]) -> Option<RedisVersion> {
+    if matches!(command, "ZINTERSTORE" | "ZUNIONSTORE")
+        && arguments.windows(2).any(|arguments| {
+            eq_ascii_case(&arguments[0], b"AGGREGATE") && eq_ascii_case(&arguments[1], b"COUNT")
+        })
+    {
+        return Some(RedisVersion::new(8, 8, 0));
+    }
     if (command == "BITCOUNT" && arguments.len() >= 4)
         || (command == "BITPOS" && arguments.len() >= 5)
     {
@@ -327,8 +335,10 @@ fn minimum_redis_version(command: &str, arguments: &[Vec<u8>]) -> Option<RedisVe
         "LPOS" => (6, 0),
         "LPOP" | "RPOP" if arguments.len() > 1 => (6, 2),
         "COPY" | "GETDEL" | "GETEX" | "LMOVE" | "SMISMEMBER" | "XAUTOCLAIM" | "ZDIFF"
-        | "ZINTER" | "ZMSCORE" | "ZRANDMEMBER" | "ZUNION" => (6, 2),
-        "EXPIRETIME" | "LCS" | "LMPOP" | "PEXPIRETIME" | "SINTERCARD" | "ZMPOP" => (7, 0),
+        | "ZDIFFSTORE" | "ZINTER" | "ZMSCORE" | "ZRANDMEMBER" | "ZRANGESTORE" | "ZUNION" => (6, 2),
+        "EXPIRETIME" | "LCS" | "LMPOP" | "PEXPIRETIME" | "SINTERCARD" | "ZINTERCARD" | "ZMPOP" => {
+            (7, 0)
+        }
         "HEXPIRE" | "HPERSIST" | "HTTL" => (7, 4),
         "HGETDEL" | "HGETEX" | "HSETEX" | "VADD" | "VCARD" | "VDIM" | "VEMB" | "VGETATTR"
         | "VINFO" | "VLINKS" | "VRANDMEMBER" | "VREM" | "VSETATTR" | "VSIM" => (8, 0),
@@ -337,7 +347,7 @@ fn minimum_redis_version(command: &str, arguments: &[Vec<u8>]) -> Option<RedisVe
         "ARCOUNT" | "ARDEL" | "ARDELRANGE" | "ARGET" | "ARGETRANGE" | "ARGREP" | "ARINFO"
         | "ARINSERT" | "ARLASTITEMS" | "ARLEN" | "ARMGET" | "ARMSET" | "ARNEXT" | "AROP"
         | "ARRING" | "ARSCAN" | "ARSEEK" | "ARSET" | "INCREX" | "XNACK" => (8, 8),
-        "LMOVEM" => (8, 10),
+        "LMOVEM" | "SDIFFCARD" | "SUNIONCARD" => (8, 10),
         _ => return None,
     };
     Some(RedisVersion::new(version.0, version.1, 0))
@@ -701,6 +711,28 @@ mod tests {
                 .minimum_redis_version(),
             Some(RedisVersion::new(6, 2, 0))
         );
+        for command in ["ZINTERSTORE", "ZUNIONSTORE"] {
+            assert_eq!(
+                invocation(
+                    command,
+                    &["destination", "2", "one", "two", "AGGREGATE", "COUNT"]
+                )
+                .unwrap_or_else(|error| panic!("{command} COUNT metadata: {error}"))
+                .minimum_redis_version(),
+                Some(RedisVersion::new(8, 8, 0)),
+                "{command}"
+            );
+            assert_eq!(
+                invocation(
+                    command,
+                    &["destination", "2", "one", "two", "AGGREGATE", "SUM"]
+                )
+                .unwrap_or_else(|error| panic!("{command} SUM metadata: {error}"))
+                .minimum_redis_version(),
+                None,
+                "{command}"
+            );
+        }
         let json = invocation("JSON.GET", &["doc"]).expect("JSON.GET metadata");
         assert_eq!(json.required_module(), Some(RedisModule::Json));
         let getdel = invocation("GETDEL", &["key"]).expect("GETDEL metadata");

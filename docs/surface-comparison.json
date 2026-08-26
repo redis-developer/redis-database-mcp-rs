@@ -768,14 +768,19 @@
       "library_tools": [
         "redis_scard",
         "redis_sdiff",
+        "redis_sdiffcard",
+        "redis_sdiffstore",
         "redis_sinter",
+        "redis_sinterstore",
         "redis_sismember",
         "redis_smismember",
         "redis_srem",
-        "redis_sunion"
+        "redis_sunion",
+        "redis_sunioncard",
+        "redis_sunionstore"
       ],
       "disposition": "implemented",
-      "reason": "The set family is a strict superset of both baselines: binary-safe single and ordered multi-member checks, cardinality, removal, deterministic budget-guarded algebra, explicit missing-set results, Redis 6.2 capability metadata, and live ACL, RESP2/RESP3, large-set, and Cluster slot coverage. Store variants remain raw full-access operations because their destination writes cannot be bounded by the MCP output budget."
+      "reason": "The set family is a strict superset of both baselines: binary-safe single and ordered multi-member checks, cardinality, removal, deterministic budget-guarded algebra, count-only difference and union forms, and full-access destination stores with bounded source lists and scalar effect results. Version gates cover Redis 6.2 and 8.10, while live ACL, RESP2/RESP3, large-set, and same-slot/CROSSSLOT Cluster tests exercise the full contract."
     },
     {
       "id": "sorted_set.expansion",
@@ -784,18 +789,23 @@
       "library_tools": [
         "redis_zcard",
         "redis_zcount",
+        "redis_zdiffstore",
         "redis_zincrby",
+        "redis_zintercard",
+        "redis_zinterstore",
         "redis_zmscore",
         "redis_zpopmax",
         "redis_zpopmin",
+        "redis_zrangestore",
         "redis_zrank",
         "redis_zrem",
         "redis_zremrangebyscore",
         "redis_zrevrank",
-        "redis_zscore"
+        "redis_zscore",
+        "redis_zunionstore"
       ],
       "disposition": "implemented",
-      "reason": "The single-key sorted-set family is a strict superset of both baselines: binary-safe members, exact decimal inputs, string scores, request-aligned multi-score reads, rank and reverse-rank lookup, bounded destructive pops and removals, explicit missing-key/member semantics, Redis 5.0/6.2 capability metadata, and live ACL, RESP2/RESP3, output-budget, and Cluster routing coverage. Multi-key union/intersection remains deferred until its slot contract is explicit."
+      "reason": "The sorted-set family is a strict superset of both baselines: binary-safe members, exact decimal inputs and weights, string scores, request-aligned multi-score reads, rank and reverse-rank lookup, bounded destructive pops and removals, count-only intersection, weighted store algebra, and bounded range stores. Redis 5.0/6.2/7.0/8.8 capability metadata plus live ACL, RESP2/RESP3, output-budget, and same-slot/CROSSSLOT Cluster coverage make multi-key destination semantics explicit."
     },
     {
       "id": "streams.consumer_groups",

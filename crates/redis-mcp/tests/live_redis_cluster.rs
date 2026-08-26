@@ -19,6 +19,273 @@ struct TestCluster {
 }
 
 #[tokio::test]
+async fn set_and_sorted_set_store_tools_route_only_same_slot_keys_in_cluster() {
+    let _cluster_guard = CLUSTER_TEST_LOCK.lock().await;
+    let Some(cluster) = TestCluster::start().await else {
+        return;
+    };
+    let discovery = DirectRedisCluster::connect(&cluster.seed_urls)
+        .await
+        .expect("connect cluster algebra capability discovery adapter");
+    let version = discovery
+        .discover_capabilities()
+        .await
+        .expect("discover cluster algebra capabilities")
+        .redis_version()
+        .expect("Redis Cluster reports its version");
+
+    for protocol in ["resp2", "resp3"] {
+        let urls = cluster
+            .seed_urls
+            .iter()
+            .map(|url| with_protocol(url, protocol))
+            .collect::<Vec<_>>();
+        let client = router_client(
+            DirectRedisCluster::connect(&urls)
+                .await
+                .expect("connect cluster algebra protocol adapter"),
+        )
+        .await;
+        let same = format!(
+            "redis-mcp:algebra:{{same-{}}}:{protocol}",
+            std::process::id()
+        );
+        let other = format!(
+            "redis-mcp:algebra:{{other-{}}}:{protocol}",
+            std::process::id()
+        );
+        let set_left = format!("{same}:set-left");
+        let set_right = format!("{same}:set-right");
+        let cross_set = format!("{other}:set");
+        let zset_left = format!("{same}:zset-left");
+        let zset_right = format!("{same}:zset-right");
+        let cross_zset = format!("{other}:zset");
+
+        for (key, members) in [
+            (&set_left, serde_json::json!(["alpha", "beta"])),
+            (&set_right, serde_json::json!(["beta", "gamma"])),
+            (&cross_set, serde_json::json!(["delta"])),
+        ] {
+            client
+                .call_tool(
+                    "redis_sadd",
+                    serde_json::json!({"key": key, "members": members}),
+                )
+                .await
+                .expect("seed cluster algebra set");
+        }
+        for (key, members) in [
+            (
+                &zset_left,
+                serde_json::json!([
+                    {"score": 1, "member": "alpha"},
+                    {"score": 2, "member": "beta"}
+                ]),
+            ),
+            (
+                &zset_right,
+                serde_json::json!([
+                    {"score": 3, "member": "beta"},
+                    {"score": 4, "member": "gamma"}
+                ]),
+            ),
+            (
+                &cross_zset,
+                serde_json::json!([{"score": 5, "member": "delta"}]),
+            ),
+        ] {
+            client
+                .call_tool(
+                    "redis_zadd",
+                    serde_json::json!({"key": key, "members": members}),
+                )
+                .await
+                .expect("seed cluster algebra sorted set");
+        }
+
+        if version >= RedisVersion::new(8, 10, 0) {
+            for (tool, expected) in [("redis_sdiffcard", 1), ("redis_sunioncard", 3)] {
+                let result = client
+                    .call_tool(
+                        tool,
+                        serde_json::json!({"keys": [set_left, set_right], "limit": 10}),
+                    )
+                    .await
+                    .unwrap_or_else(|error| panic!("same-slot {tool}: {error}"))
+                    .structured_content
+                    .unwrap_or_else(|| panic!("same-slot {tool}: structured result"));
+                assert_eq!(result["cardinality"], expected, "{tool}");
+            }
+        }
+        if version >= RedisVersion::new(7, 0, 0) {
+            let result = client
+                .call_tool(
+                    "redis_zintercard",
+                    serde_json::json!({"keys": [zset_left, zset_right], "limit": 10}),
+                )
+                .await
+                .expect("same-slot ZINTERCARD")
+                .structured_content
+                .expect("structured same-slot ZINTERCARD");
+            assert_eq!(result["cardinality"], 1);
+        }
+
+        for (tool, suffix, expected) in [
+            ("redis_sdiffstore", "set-difference", 1),
+            ("redis_sinterstore", "set-intersection", 1),
+            ("redis_sunionstore", "set-union", 3),
+        ] {
+            let destination = format!("{same}:{suffix}");
+            let result = client
+                .call_tool(
+                    tool,
+                    serde_json::json!({
+                        "destination": destination,
+                        "keys": [set_left, set_right]
+                    }),
+                )
+                .await
+                .unwrap_or_else(|error| panic!("same-slot {tool}: {error}"))
+                .structured_content
+                .unwrap_or_else(|| panic!("same-slot {tool}: structured result"));
+            assert_eq!(result["destination_cardinality"], expected, "{tool}");
+        }
+
+        let zdiff = client
+            .call_tool(
+                "redis_zdiffstore",
+                serde_json::json!({
+                    "destination": format!("{same}:zset-difference"),
+                    "keys": [zset_left, zset_right]
+                }),
+            )
+            .await
+            .expect("same-slot ZDIFFSTORE")
+            .structured_content
+            .expect("structured same-slot ZDIFFSTORE");
+        assert_eq!(zdiff["destination_cardinality"], 1);
+
+        for (tool, suffix, expected) in [
+            ("redis_zinterstore", "zset-intersection", 1),
+            ("redis_zunionstore", "zset-union", 3),
+        ] {
+            let result = client
+                .call_tool(
+                    tool,
+                    serde_json::json!({
+                        "destination": format!("{same}:{suffix}"),
+                        "sources": [
+                            {"key": zset_left, "weight": 2},
+                            {"key": zset_right, "weight": 1}
+                        ],
+                        "aggregate": "max"
+                    }),
+                )
+                .await
+                .unwrap_or_else(|error| panic!("same-slot {tool}: {error}"))
+                .structured_content
+                .unwrap_or_else(|| panic!("same-slot {tool}: structured result"));
+            assert_eq!(result["destination_cardinality"], expected, "{tool}");
+        }
+        let range = client
+            .call_tool(
+                "redis_zrangestore",
+                serde_json::json!({
+                    "destination": format!("{same}:zset-range"),
+                    "source": zset_left,
+                    "range": {"kind": "rank", "start": 0, "stop": 1}
+                }),
+            )
+            .await
+            .expect("same-slot ZRANGESTORE")
+            .structured_content
+            .expect("structured same-slot ZRANGESTORE");
+        assert_eq!(range["destination_cardinality"], 2);
+
+        let mut cross_slot_calls = vec![
+            (
+                "redis_sdiffstore",
+                serde_json::json!({
+                    "destination": format!("{same}:cross-set-difference"),
+                    "keys": [set_left, cross_set]
+                }),
+            ),
+            (
+                "redis_sinterstore",
+                serde_json::json!({
+                    "destination": format!("{same}:cross-set-intersection"),
+                    "keys": [set_left, cross_set]
+                }),
+            ),
+            (
+                "redis_sunionstore",
+                serde_json::json!({
+                    "destination": format!("{same}:cross-set-union"),
+                    "keys": [set_left, cross_set]
+                }),
+            ),
+            (
+                "redis_zdiffstore",
+                serde_json::json!({
+                    "destination": format!("{same}:cross-zset-difference"),
+                    "keys": [zset_left, cross_zset]
+                }),
+            ),
+            (
+                "redis_zinterstore",
+                serde_json::json!({
+                    "destination": format!("{same}:cross-zset-intersection"),
+                    "sources": [zset_left, cross_zset]
+                }),
+            ),
+            (
+                "redis_zunionstore",
+                serde_json::json!({
+                    "destination": format!("{same}:cross-zset-union"),
+                    "sources": [zset_left, cross_zset]
+                }),
+            ),
+            (
+                "redis_zrangestore",
+                serde_json::json!({
+                    "destination": format!("{same}:cross-zset-range"),
+                    "source": cross_zset,
+                    "range": {"kind": "rank", "start": 0, "stop": 0}
+                }),
+            ),
+        ];
+        if version >= RedisVersion::new(8, 10, 0) {
+            cross_slot_calls.extend([
+                (
+                    "redis_sdiffcard",
+                    serde_json::json!({"keys": [set_left, cross_set]}),
+                ),
+                (
+                    "redis_sunioncard",
+                    serde_json::json!({"keys": [set_left, cross_set]}),
+                ),
+            ]);
+        }
+        if version >= RedisVersion::new(7, 0, 0) {
+            cross_slot_calls.push((
+                "redis_zintercard",
+                serde_json::json!({"keys": [zset_left, cross_zset]}),
+            ));
+        }
+        for (tool, arguments) in cross_slot_calls {
+            let result = client
+                .call_tool(tool, arguments)
+                .await
+                .unwrap_or_else(|error| panic!("{tool} cross-slot result: {error}"));
+            assert!(result.is_error, "{tool}: {result:?}");
+            let result = serde_json::to_string(&result)
+                .unwrap_or_else(|error| panic!("serialize {tool} CROSSSLOT: {error}"));
+            assert!(result.contains("CROSSSLOT"), "{tool}: {result}");
+        }
+    }
+}
+
+#[tokio::test]
 async fn bitmap_geo_and_hll_multi_key_tools_enforce_same_slot_cluster_contracts() {
     let _cluster_guard = CLUSTER_TEST_LOCK.lock().await;
     let Some(cluster) = TestCluster::start().await else {

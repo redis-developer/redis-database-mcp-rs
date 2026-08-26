@@ -13,7 +13,7 @@ use super::{
     InputEncoding, ToolState, ValueEncoding, command, decode_input, destructive_annotations,
     encode_bytes, optional_bytes, output_schema, read_annotations, write_annotations,
 };
-use crate::{AccessMode, RedisCommand, RedisValue};
+use crate::{AccessMode, RedisCommand, RedisDeployment, RedisValue};
 
 const MAX_ITEMS: usize = 1_000;
 const MAX_RANGE_BYTES: u64 = 64 * 1024;
@@ -1447,12 +1447,309 @@ fn unlink_tool(state: Arc<ToolState>) -> Tool {
         .build()
 }
 
+const MAX_SORT_PATTERNS: usize = 64;
+
+#[derive(Debug, Clone, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+struct EncodedSortPattern {
+    /// Redis SORT BY/GET pattern.
+    value: String,
+    /// Encoding of `value`.
+    #[serde(default)]
+    encoding: InputEncoding,
+}
+
+#[derive(Debug, Clone, Deserialize, JsonSchema)]
+#[serde(untagged)]
+enum SortPatternSelector {
+    Utf8(String),
+    Encoded(EncodedSortPattern),
+}
+
+impl SortPatternSelector {
+    fn decode(&self, name: &str) -> tower_mcp::Result<Vec<u8>> {
+        let value = match self {
+            Self::Utf8(value) => Ok(value.as_bytes().to_vec()),
+            Self::Encoded(value) => decode_input(&value.value, value.encoding, name),
+        }?;
+        if value.is_empty() {
+            return Err(tower_mcp::Error::tool(format!("{name} must not be empty")));
+        }
+        Ok(value)
+    }
+}
+
+#[derive(Debug, Clone, Copy, Default, Deserialize, Serialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+enum SortOrder {
+    #[default]
+    Ascending,
+    Descending,
+}
+
+impl SortOrder {
+    fn redis_token(self) -> &'static str {
+        match self {
+            Self::Ascending => "ASC",
+            Self::Descending => "DESC",
+        }
+    }
+}
+
+fn default_sort_count() -> usize {
+    100
+}
+
+#[derive(Debug, Clone, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+struct SortOptions {
+    /// Optional external-key BY pattern. Rejected on Redis Cluster because the expanded keys cannot be prevalidated.
+    #[serde(default)]
+    by: Option<SortPatternSelector>,
+    /// Optional external-key or `#` GET patterns.
+    #[serde(default)]
+    #[schemars(length(max = 64))]
+    get: Vec<SortPatternSelector>,
+    /// Zero-based result offset.
+    #[serde(default)]
+    offset: u64,
+    /// Maximum source elements to sort and return/store.
+    #[serde(default = "default_sort_count")]
+    #[schemars(range(min = 1, max = 1000))]
+    count: usize,
+    /// Sort ascending or descending.
+    #[serde(default)]
+    order: SortOrder,
+    /// Sort lexicographically instead of parsing numeric values.
+    #[serde(default)]
+    alpha: bool,
+}
+
+impl SortOptions {
+    fn validate(&self, state: &ToolState) -> tower_mcp::Result<()> {
+        state.validate_requested_entries(self.count, "count")?;
+        if self.get.len() > MAX_SORT_PATTERNS {
+            return Err(tower_mcp::Error::tool(format!(
+                "get must contain at most {MAX_SORT_PATTERNS} patterns"
+            )));
+        }
+        let multiplier = self.get.len().max(1);
+        let returned = self.count.checked_mul(multiplier).ok_or_else(|| {
+            tower_mcp::Error::tool("count multiplied by GET patterns exceeds supported bounds")
+        })?;
+        state.validate_requested_entries(returned, "maximum returned values")?;
+        if state.deployment() == RedisDeployment::Cluster {
+            let external_by = self
+                .by
+                .as_ref()
+                .map(|pattern| pattern.decode("by"))
+                .transpose()?
+                .is_some_and(|pattern| !pattern.eq_ignore_ascii_case(b"nosort"));
+            let external_get = self
+                .get
+                .iter()
+                .enumerate()
+                .map(|(index, pattern)| pattern.decode(&format!("get[{index}]")))
+                .collect::<tower_mcp::Result<Vec<_>>>()?
+                .into_iter()
+                .any(|pattern| pattern != b"#");
+            if external_by || external_get {
+                return Err(tower_mcp::Error::tool(
+                    "SORT external-key BY/GET patterns are unavailable on Redis Cluster because expanded keys cannot be proven to share the source slot; BY nosort and GET # remain available",
+                ));
+            }
+        }
+        Ok(())
+    }
+
+    fn append_to(&self, command: &mut RedisCommand) -> tower_mcp::Result<()> {
+        if let Some(by) = &self.by {
+            command.arg("BY").arg(by.decode("by")?);
+        }
+        command
+            .arg("LIMIT")
+            .arg(self.offset.to_string())
+            .arg(self.count.to_string());
+        for (index, pattern) in self.get.iter().enumerate() {
+            command
+                .arg("GET")
+                .arg(pattern.decode(&format!("get[{index}]"))?);
+        }
+        command.arg(self.order.redis_token());
+        if self.alpha {
+            command.arg("ALPHA");
+        }
+        Ok(())
+    }
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+struct SortInput {
+    /// List, set, or sorted-set source key.
+    key: String,
+    /// Encoding of `key`.
+    #[serde(default)]
+    key_encoding: InputEncoding,
+    #[serde(flatten)]
+    options: SortOptions,
+}
+
+#[derive(Debug, Serialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+struct SortValue {
+    value: Option<String>,
+    encoding: Option<ValueEncoding>,
+}
+
+#[derive(Debug, Serialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+struct SortOutput {
+    key: String,
+    key_encoding: InputEncoding,
+    source_exists: bool,
+    offset: u64,
+    requested_count: usize,
+    get_pattern_count: usize,
+    returned: usize,
+    values: Vec<SortValue>,
+}
+
+fn sort_read_tool(state: Arc<ToolState>) -> Tool {
+    ToolBuilder::new("redis_sort")
+        .title("Sort Redis Collection")
+        .description(
+            "Read one explicitly bounded SORT_RO window from a list, set, or sorted set. BY/GET external-key patterns are rejected on Cluster.",
+        )
+        .output_schema(output_schema::<SortOutput>())
+        .annotations(read_annotations())
+        .extractor_handler(
+            state,
+            |State(state): State<Arc<ToolState>>, Json(input): Json<SortInput>| async move {
+                input.options.validate(&state)?;
+                let key = decode_input(&input.key, input.key_encoding, "key")?;
+                let mut sort_command = command("redis_sort", AccessMode::ReadOnly, "SORT_RO");
+                sort_command.arg(key.clone());
+                input.options.append_to(&mut sort_command)?;
+                let values: Vec<Option<Vec<u8>>> =
+                    state.query(sort_command, "SORT_RO failed").await?;
+                let source_exists = if values.is_empty() {
+                    let mut exists = command("redis_sort", AccessMode::ReadOnly, "EXISTS");
+                    exists.arg(key);
+                    state.query::<u64>(exists, "EXISTS failed").await? != 0
+                } else {
+                    true
+                };
+                let values = values
+                    .into_iter()
+                    .map(|value| match value {
+                        Some(value) => {
+                            let (value, encoding) = encode_bytes(value);
+                            SortValue {
+                                value: Some(value),
+                                encoding: Some(encoding),
+                            }
+                        }
+                        None => SortValue {
+                            value: None,
+                            encoding: None,
+                        },
+                    })
+                    .collect::<Vec<_>>();
+                let output = SortOutput {
+                    key: input.key,
+                    key_encoding: input.key_encoding,
+                    source_exists,
+                    offset: input.options.offset,
+                    requested_count: input.options.count,
+                    get_pattern_count: input.options.get.len(),
+                    returned: values.len(),
+                    values,
+                };
+                state.output_collection(
+                    &output,
+                    output.returned,
+                    "Retry SORT with a smaller count or fewer GET patterns.",
+                )
+            },
+        )
+        .build()
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+struct SortStoreInput {
+    /// List, set, or sorted-set source key.
+    key: String,
+    /// Encoding of `key`.
+    #[serde(default)]
+    key_encoding: InputEncoding,
+    /// Destination list key overwritten by SORT STORE.
+    destination: String,
+    /// Encoding of `destination`.
+    #[serde(default)]
+    destination_encoding: InputEncoding,
+    #[serde(flatten)]
+    options: SortOptions,
+}
+
+#[derive(Debug, Serialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+struct SortStoreOutput {
+    key: String,
+    key_encoding: InputEncoding,
+    destination: String,
+    destination_encoding: InputEncoding,
+    requested_count: usize,
+    stored: u64,
+    destination_overwritten: bool,
+    cluster_requires_same_slot: bool,
+}
+
+fn sort_store_tool(state: Arc<ToolState>) -> Tool {
+    ToolBuilder::new("redis_sort_store")
+        .title("Sort and Store Redis Collection")
+        .description(
+            "Sort one explicitly bounded window and overwrite a destination list. Source and destination must share a Cluster slot; BY/GET external-key patterns are rejected on Cluster.",
+        )
+        .output_schema(output_schema::<SortStoreOutput>())
+        .annotations(destructive_annotations(true))
+        .extractor_handler(
+            state,
+            |State(state): State<Arc<ToolState>>, Json(input): Json<SortStoreInput>| async move {
+                state.require(AccessMode::Full, "redis_sort_store")?;
+                input.options.validate(&state)?;
+                let mut command = command("redis_sort_store", AccessMode::Full, "SORT");
+                command.arg(decode_input(&input.key, input.key_encoding, "key")?);
+                input.options.append_to(&mut command)?;
+                command.arg("STORE").arg(decode_input(
+                    &input.destination,
+                    input.destination_encoding,
+                    "destination",
+                )?);
+                let stored = state.query(command, "SORT STORE failed").await?;
+                state.output(&SortStoreOutput {
+                    key: input.key,
+                    key_encoding: input.key_encoding,
+                    destination: input.destination,
+                    destination_encoding: input.destination_encoding,
+                    requested_count: input.options.count,
+                    stored,
+                    destination_overwritten: true,
+                    cluster_requires_same_slot: true,
+                })
+            },
+        )
+        .build()
+}
+
 #[cfg(feature = "keyspace")]
 pub(super) fn add_keyspace_read_tools(mut router: McpRouter, state: Arc<ToolState>) -> McpRouter {
     router = router.tool(exists_tool(state.clone()));
     router = router.tool(memory_usage_tool(state.clone()));
     router = router.tool(randomkey_tool(state.clone()));
     router = router.tool(dump_tool(state.clone()));
+    router = router.tool(sort_read_tool(state.clone()));
     router.tool(object_inspect_tool(state))
 }
 
@@ -1513,6 +1810,7 @@ pub(super) fn add_keyspace_destructive_tools(
     router = router.tool(copy_tool(state.clone(), true));
     router = router.tool(rename_tool(state.clone(), false));
     router = router.tool(rename_tool(state.clone(), true));
+    router = router.tool(sort_store_tool(state.clone()));
     router.tool(restore_tool(state, true))
 }
 

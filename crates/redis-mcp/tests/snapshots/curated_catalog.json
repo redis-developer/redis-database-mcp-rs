@@ -12215,7 +12215,10 @@
         "minimum_module_version": null,
         "minimum_redis_version": "7.4.0",
         "required_commands": [
-          "HEXPIRE"
+          "HEXPIRE",
+          "HPEXPIRE",
+          "HEXPIREAT",
+          "HPEXPIREAT"
         ],
         "required_module": null
       },
@@ -12226,7 +12229,7 @@
         "annotations": {
           "destructiveHint": false
         },
-        "description": "Set positive relative field expirations on Redis 7.4 or newer with a typed NX, XX, GT, or LT condition.",
+        "description": "Set positive relative or future absolute hash-field expirations in seconds or milliseconds on Redis 7.4 or newer. Past absolute timestamps are rejected; use redis_hdel for immediate deletion.",
         "inputSchema": {
           "$defs": {
             "EncodedHashFieldInput": {
@@ -12246,6 +12249,15 @@
                 "field"
               ],
               "type": "object"
+            },
+            "HashExpirationMode": {
+              "enum": [
+                "relative_seconds",
+                "relative_milliseconds",
+                "unix_seconds",
+                "unix_milliseconds"
+              ],
+              "type": "string"
             },
             "HashExpireCondition": {
               "enum": [
@@ -12291,6 +12303,16 @@
               "default": null,
               "description": "Optional NX, XX, GT, or LT condition."
             },
+            "expiration": {
+              "default": null,
+              "description": "Positive expiration value interpreted according to `mode`.",
+              "format": "int64",
+              "minimum": 1,
+              "type": [
+                "integer",
+                "null"
+              ]
+            },
             "fields": {
               "description": "One to 1000 unique fields. Strings are UTF-8 shorthand; objects can select base64.",
               "items": {
@@ -12309,16 +12331,24 @@
               "default": "utf8",
               "description": "Encoding of `key`."
             },
+            "mode": {
+              "$ref": "#/$defs/HashExpirationMode",
+              "default": "relative_seconds",
+              "description": "Relative/absolute and second/millisecond interpretation."
+            },
             "seconds": {
-              "description": "Positive relative expiration in seconds.",
+              "default": null,
+              "description": "Compatibility shorthand for a relative expiration in seconds.",
               "format": "int64",
               "minimum": 1,
-              "type": "integer"
+              "type": [
+                "integer",
+                "null"
+              ]
             }
           },
           "required": [
             "key",
-            "seconds",
             "fields"
           ],
           "title": "HexpireInput",
@@ -12327,6 +12357,15 @@
         "name": "redis_hexpire",
         "outputSchema": {
           "$defs": {
+            "HashExpirationMode": {
+              "enum": [
+                "relative_seconds",
+                "relative_milliseconds",
+                "unix_seconds",
+                "unix_milliseconds"
+              ],
+              "type": "string"
+            },
             "HashExpireCondition": {
               "enum": [
                 "nx",
@@ -12400,6 +12439,10 @@
               "minimum": 0,
               "type": "integer"
             },
+            "expiration": {
+              "format": "int64",
+              "type": "integer"
+            },
             "expirations_set": {
               "format": "uint",
               "minimum": 0,
@@ -12422,15 +12465,23 @@
             "key_encoding": {
               "$ref": "#/$defs/InputEncoding"
             },
+            "mode": {
+              "$ref": "#/$defs/HashExpirationMode"
+            },
             "seconds": {
+              "description": "Compatibility field populated only for relative-seconds mode.",
               "format": "int64",
-              "type": "integer"
+              "type": [
+                "integer",
+                "null"
+              ]
             }
           },
           "required": [
             "key",
             "key_encoding",
-            "seconds",
+            "expiration",
+            "mode",
             "count",
             "expirations_set",
             "condition_not_met",
@@ -12443,6 +12494,262 @@
         "title": "Expire Redis Hash Fields"
       },
       "required_access": "read_write",
+      "required_module": null,
+      "requires_raw_opt_in": false
+    },
+    {
+      "bundle": "data_structures",
+      "capability_requirements": {
+        "deployment": "any",
+        "minimum_module_version": null,
+        "minimum_redis_version": "7.4.0",
+        "required_commands": [
+          "HEXPIRE",
+          "HPEXPIRE",
+          "HEXPIREAT",
+          "HPEXPIREAT"
+        ],
+        "required_module": null
+      },
+      "family": "hashes",
+      "name": "redis_hexpire_delete",
+      "output_policy": "intrinsically_bounded",
+      "protocol": {
+        "annotations": {
+          "idempotentHint": true
+        },
+        "description": "Immediately and conditionally delete hash fields through a selected Redis 7.4+ HEXPIRE/HPEXPIRE/HEXPIREAT/HPEXPIREAT form. This exposes the commands' destructive past-expiration semantics separately from ordinary expiration updates and requires full access.",
+        "inputSchema": {
+          "$defs": {
+            "EncodedHashFieldInput": {
+              "additionalProperties": false,
+              "properties": {
+                "field": {
+                  "description": "Hash field.",
+                  "type": "string"
+                },
+                "field_encoding": {
+                  "$ref": "#/$defs/InputEncoding",
+                  "default": "utf8",
+                  "description": "Encoding of `field`."
+                }
+              },
+              "required": [
+                "field"
+              ],
+              "type": "object"
+            },
+            "HashExpirationMode": {
+              "enum": [
+                "relative_seconds",
+                "relative_milliseconds",
+                "unix_seconds",
+                "unix_milliseconds"
+              ],
+              "type": "string"
+            },
+            "HashExpireCondition": {
+              "enum": [
+                "nx",
+                "xx",
+                "gt",
+                "lt"
+              ],
+              "type": "string"
+            },
+            "HashFieldSelector": {
+              "anyOf": [
+                {
+                  "description": "UTF-8 hash field shorthand.",
+                  "type": "string"
+                },
+                {
+                  "$ref": "#/$defs/EncodedHashFieldInput",
+                  "description": "Explicitly encoded hash field."
+                }
+              ]
+            },
+            "InputEncoding": {
+              "enum": [
+                "utf8",
+                "base64"
+              ],
+              "type": "string"
+            }
+          },
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "condition": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/HashExpireCondition"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "description": "Optional NX, XX, GT, or LT condition applied by Redis before deletion."
+            },
+            "fields": {
+              "description": "One to 1000 unique fields. Strings are UTF-8 shorthand; objects can select base64.",
+              "items": {
+                "$ref": "#/$defs/HashFieldSelector"
+              },
+              "maxItems": 1000,
+              "minItems": 1,
+              "type": "array"
+            },
+            "key": {
+              "description": "Redis hash key.",
+              "type": "string"
+            },
+            "key_encoding": {
+              "$ref": "#/$defs/InputEncoding",
+              "default": "utf8",
+              "description": "Encoding of `key`."
+            },
+            "mode": {
+              "$ref": "#/$defs/HashExpirationMode",
+              "default": "relative_seconds",
+              "description": "Expiration command family to use for the immediate deletion."
+            }
+          },
+          "required": [
+            "key",
+            "fields"
+          ],
+          "title": "HexpireDeleteInput",
+          "type": "object"
+        },
+        "name": "redis_hexpire_delete",
+        "outputSchema": {
+          "$defs": {
+            "HashExpirationMode": {
+              "enum": [
+                "relative_seconds",
+                "relative_milliseconds",
+                "unix_seconds",
+                "unix_milliseconds"
+              ],
+              "type": "string"
+            },
+            "HashExpireCondition": {
+              "enum": [
+                "nx",
+                "xx",
+                "gt",
+                "lt"
+              ],
+              "type": "string"
+            },
+            "HashExpireDeleteEntry": {
+              "additionalProperties": false,
+              "properties": {
+                "field": {
+                  "type": "string"
+                },
+                "field_encoding": {
+                  "$ref": "#/$defs/InputEncoding"
+                },
+                "redis_code": {
+                  "format": "int64",
+                  "type": "integer"
+                },
+                "status": {
+                  "$ref": "#/$defs/HashExpireDeleteStatus"
+                }
+              },
+              "required": [
+                "field",
+                "field_encoding",
+                "status",
+                "redis_code"
+              ],
+              "type": "object"
+            },
+            "HashExpireDeleteStatus": {
+              "enum": [
+                "field_missing",
+                "condition_not_met",
+                "deleted"
+              ],
+              "type": "string"
+            },
+            "InputEncoding": {
+              "enum": [
+                "utf8",
+                "base64"
+              ],
+              "type": "string"
+            }
+          },
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "condition": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/HashExpireCondition"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "condition_not_met": {
+              "format": "uint",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "count": {
+              "format": "uint",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "deleted": {
+              "format": "uint",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "fields": {
+              "items": {
+                "$ref": "#/$defs/HashExpireDeleteEntry"
+              },
+              "type": "array"
+            },
+            "fields_missing": {
+              "format": "uint",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "key": {
+              "type": "string"
+            },
+            "key_encoding": {
+              "$ref": "#/$defs/InputEncoding"
+            },
+            "mode": {
+              "$ref": "#/$defs/HashExpirationMode"
+            }
+          },
+          "required": [
+            "key",
+            "key_encoding",
+            "mode",
+            "count",
+            "deleted",
+            "condition_not_met",
+            "fields_missing",
+            "fields"
+          ],
+          "title": "HexpireDeleteOutput",
+          "type": "object"
+        },
+        "title": "Delete Redis Hash Fields by Expiration"
+      },
+      "required_access": "full",
       "required_module": null,
       "requires_raw_opt_in": false
     },
@@ -14157,6 +14464,178 @@
       "capability_requirements": {
         "deployment": "any",
         "minimum_module_version": null,
+        "minimum_redis_version": "6.2.0",
+        "required_commands": [
+          "HRANDFIELD",
+          "EXISTS"
+        ],
+        "required_module": null
+      },
+      "family": "hashes",
+      "name": "redis_hrandfield",
+      "output_policy": "budget_guarded",
+      "protocol": {
+        "annotations": {
+          "destructiveHint": false,
+          "idempotentHint": true,
+          "readOnlyHint": true
+        },
+        "description": "Sample one or a bounded count of binary-safe hash fields. Positive counts are unique, negative counts permit duplicates, and WITHVALUES requires an explicit count.",
+        "inputSchema": {
+          "$defs": {
+            "InputEncoding": {
+              "enum": [
+                "utf8",
+                "base64"
+              ],
+              "type": "string"
+            }
+          },
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "count": {
+              "default": null,
+              "description": "Omit for one unique field. Positive counts return unique fields; negative counts permit duplicates.",
+              "format": "int64",
+              "maximum": 1000,
+              "minimum": -1000,
+              "type": [
+                "integer",
+                "null"
+              ]
+            },
+            "key": {
+              "description": "Redis hash key.",
+              "type": "string"
+            },
+            "key_encoding": {
+              "$ref": "#/$defs/InputEncoding",
+              "default": "utf8",
+              "description": "Encoding of `key`."
+            },
+            "with_values": {
+              "default": false,
+              "description": "Include the value paired with each returned field. Requires `count`.",
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "key"
+          ],
+          "title": "HrandfieldInput",
+          "type": "object"
+        },
+        "name": "redis_hrandfield",
+        "outputSchema": {
+          "$defs": {
+            "HrandfieldEntry": {
+              "additionalProperties": false,
+              "properties": {
+                "field": {
+                  "type": "string"
+                },
+                "field_encoding": {
+                  "$ref": "#/$defs/ValueEncoding"
+                },
+                "value": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "value_encoding": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/$defs/ValueEncoding"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                }
+              },
+              "required": [
+                "field",
+                "field_encoding"
+              ],
+              "type": "object"
+            },
+            "InputEncoding": {
+              "enum": [
+                "utf8",
+                "base64"
+              ],
+              "type": "string"
+            },
+            "ValueEncoding": {
+              "enum": [
+                "utf8",
+                "base64"
+              ],
+              "type": "string"
+            }
+          },
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "duplicates_allowed": {
+              "type": "boolean"
+            },
+            "entries": {
+              "items": {
+                "$ref": "#/$defs/HrandfieldEntry"
+              },
+              "type": "array"
+            },
+            "hash_exists": {
+              "type": "boolean"
+            },
+            "key": {
+              "type": "string"
+            },
+            "key_encoding": {
+              "$ref": "#/$defs/InputEncoding"
+            },
+            "requested_count": {
+              "format": "int64",
+              "type": [
+                "integer",
+                "null"
+              ]
+            },
+            "returned": {
+              "format": "uint",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "with_values": {
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "key",
+            "key_encoding",
+            "hash_exists",
+            "duplicates_allowed",
+            "with_values",
+            "returned",
+            "entries"
+          ],
+          "title": "HrandfieldOutput",
+          "type": "object"
+        },
+        "title": "Sample Redis Hash Fields"
+      },
+      "required_access": "read_only",
+      "required_module": null,
+      "requires_raw_opt_in": false
+    },
+    {
+      "bundle": "data_structures",
+      "capability_requirements": {
+        "deployment": "any",
+        "minimum_module_version": null,
         "minimum_redis_version": null,
         "required_commands": [
           "HSCAN"
@@ -14884,6 +15363,9 @@
         "minimum_redis_version": "7.4.0",
         "required_commands": [
           "HTTL",
+          "HPTTL",
+          "HEXPIRETIME",
+          "HPEXPIRETIME",
           "EXISTS"
         ],
         "required_module": null
@@ -14897,7 +15379,7 @@
           "idempotentHint": true,
           "readOnlyHint": true
         },
-        "description": "Read remaining field TTLs in seconds on Redis 7.4 or newer. Results preserve request order and distinguish missing and persistent fields.",
+        "description": "Read remaining or absolute hash-field expirations in seconds or milliseconds on Redis 7.4 or newer. Results preserve request order and distinguish missing and persistent fields.",
         "inputSchema": {
           "$defs": {
             "EncodedHashFieldInput": {
@@ -14930,6 +15412,15 @@
                 }
               ]
             },
+            "HashTtlMode": {
+              "enum": [
+                "remaining_seconds",
+                "remaining_milliseconds",
+                "unix_seconds",
+                "unix_milliseconds"
+              ],
+              "type": "string"
+            },
             "InputEncoding": {
               "enum": [
                 "utf8",
@@ -14942,7 +15433,7 @@
           "additionalProperties": false,
           "properties": {
             "fields": {
-              "description": "One to 1000 fields. Strings are UTF-8 shorthand; objects can select base64.",
+              "description": "One to 1000 unique fields. Strings are UTF-8 shorthand; objects can select base64.",
               "items": {
                 "$ref": "#/$defs/HashFieldSelector"
               },
@@ -14958,18 +15449,32 @@
               "$ref": "#/$defs/InputEncoding",
               "default": "utf8",
               "description": "Encoding of `key`."
+            },
+            "mode": {
+              "$ref": "#/$defs/HashTtlMode",
+              "default": "remaining_seconds",
+              "description": "Remaining or absolute time representation to return."
             }
           },
           "required": [
             "key",
             "fields"
           ],
-          "title": "HashFieldsInput",
+          "title": "HttlInput",
           "type": "object"
         },
         "name": "redis_httl",
         "outputSchema": {
           "$defs": {
+            "HashTtlMode": {
+              "enum": [
+                "remaining_seconds",
+                "remaining_milliseconds",
+                "unix_seconds",
+                "unix_milliseconds"
+              ],
+              "type": "string"
+            },
             "HashTtlStatus": {
               "enum": [
                 "field_missing",
@@ -14995,6 +15500,15 @@
                   "$ref": "#/$defs/HashTtlStatus"
                 },
                 "ttl_seconds": {
+                  "description": "Compatibility field populated only for remaining-seconds mode.",
+                  "format": "uint64",
+                  "minimum": 0,
+                  "type": [
+                    "integer",
+                    "null"
+                  ]
+                },
+                "value": {
                   "format": "uint64",
                   "minimum": 0,
                   "type": [
@@ -15041,12 +15555,16 @@
             },
             "key_encoding": {
               "$ref": "#/$defs/InputEncoding"
+            },
+            "mode": {
+              "$ref": "#/$defs/HashTtlMode"
             }
           },
           "required": [
             "key",
             "key_encoding",
             "hash_exists",
+            "mode",
             "count",
             "fields"
           ],
@@ -26273,6 +26791,433 @@
         "title": "Check Multiple Redis Set Members"
       },
       "required_access": "read_only",
+      "required_module": null,
+      "requires_raw_opt_in": false
+    },
+    {
+      "bundle": "essentials",
+      "capability_requirements": {
+        "deployment": "any",
+        "minimum_module_version": null,
+        "minimum_redis_version": "7.0.0",
+        "required_commands": [
+          "SORT_RO",
+          "EXISTS"
+        ],
+        "required_module": null
+      },
+      "family": "keyspace",
+      "name": "redis_sort",
+      "output_policy": "budget_guarded",
+      "protocol": {
+        "annotations": {
+          "destructiveHint": false,
+          "idempotentHint": true,
+          "readOnlyHint": true
+        },
+        "description": "Read one explicitly bounded SORT_RO window from a list, set, or sorted set. BY/GET external-key patterns are rejected on Cluster.",
+        "inputSchema": {
+          "$defs": {
+            "EncodedSortPattern": {
+              "additionalProperties": false,
+              "properties": {
+                "encoding": {
+                  "$ref": "#/$defs/InputEncoding",
+                  "default": "utf8",
+                  "description": "Encoding of `value`."
+                },
+                "value": {
+                  "description": "Redis SORT BY/GET pattern.",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "value"
+              ],
+              "type": "object"
+            },
+            "InputEncoding": {
+              "enum": [
+                "utf8",
+                "base64"
+              ],
+              "type": "string"
+            },
+            "SortOrder": {
+              "enum": [
+                "ascending",
+                "descending"
+              ],
+              "type": "string"
+            },
+            "SortPatternSelector": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "$ref": "#/$defs/EncodedSortPattern"
+                }
+              ]
+            }
+          },
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "alpha": {
+              "default": false,
+              "description": "Sort lexicographically instead of parsing numeric values.",
+              "type": "boolean"
+            },
+            "by": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/SortPatternSelector"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Optional external-key BY pattern. Rejected on Redis Cluster because the expanded keys cannot be prevalidated."
+            },
+            "count": {
+              "default": 100,
+              "description": "Maximum source elements to sort and return/store.",
+              "format": "uint",
+              "maximum": 1000,
+              "minimum": 1,
+              "type": "integer"
+            },
+            "get": {
+              "description": "Optional external-key or `#` GET patterns.",
+              "items": {
+                "$ref": "#/$defs/SortPatternSelector"
+              },
+              "maxItems": 64,
+              "type": "array"
+            },
+            "key": {
+              "description": "List, set, or sorted-set source key.",
+              "type": "string"
+            },
+            "key_encoding": {
+              "$ref": "#/$defs/InputEncoding",
+              "default": "utf8",
+              "description": "Encoding of `key`."
+            },
+            "offset": {
+              "default": 0,
+              "description": "Zero-based result offset.",
+              "format": "uint64",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "order": {
+              "$ref": "#/$defs/SortOrder",
+              "default": "ascending",
+              "description": "Sort ascending or descending."
+            }
+          },
+          "required": [
+            "key"
+          ],
+          "title": "SortInput",
+          "type": "object"
+        },
+        "name": "redis_sort",
+        "outputSchema": {
+          "$defs": {
+            "InputEncoding": {
+              "enum": [
+                "utf8",
+                "base64"
+              ],
+              "type": "string"
+            },
+            "SortValue": {
+              "additionalProperties": false,
+              "properties": {
+                "encoding": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/$defs/ValueEncoding"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "value": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                }
+              },
+              "type": "object"
+            },
+            "ValueEncoding": {
+              "enum": [
+                "utf8",
+                "base64"
+              ],
+              "type": "string"
+            }
+          },
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "get_pattern_count": {
+              "format": "uint",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "key": {
+              "type": "string"
+            },
+            "key_encoding": {
+              "$ref": "#/$defs/InputEncoding"
+            },
+            "offset": {
+              "format": "uint64",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "requested_count": {
+              "format": "uint",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "returned": {
+              "format": "uint",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "source_exists": {
+              "type": "boolean"
+            },
+            "values": {
+              "items": {
+                "$ref": "#/$defs/SortValue"
+              },
+              "type": "array"
+            }
+          },
+          "required": [
+            "key",
+            "key_encoding",
+            "source_exists",
+            "offset",
+            "requested_count",
+            "get_pattern_count",
+            "returned",
+            "values"
+          ],
+          "title": "SortOutput",
+          "type": "object"
+        },
+        "title": "Sort Redis Collection"
+      },
+      "required_access": "read_only",
+      "required_module": null,
+      "requires_raw_opt_in": false
+    },
+    {
+      "bundle": "essentials",
+      "capability_requirements": {
+        "deployment": "any",
+        "minimum_module_version": null,
+        "minimum_redis_version": null,
+        "required_commands": [
+          "SORT"
+        ],
+        "required_module": null
+      },
+      "family": "keyspace",
+      "name": "redis_sort_store",
+      "output_policy": "intrinsically_bounded",
+      "protocol": {
+        "annotations": {
+          "idempotentHint": true
+        },
+        "description": "Sort one explicitly bounded window and overwrite a destination list. Source and destination must share a Cluster slot; BY/GET external-key patterns are rejected on Cluster.",
+        "inputSchema": {
+          "$defs": {
+            "EncodedSortPattern": {
+              "additionalProperties": false,
+              "properties": {
+                "encoding": {
+                  "$ref": "#/$defs/InputEncoding",
+                  "default": "utf8",
+                  "description": "Encoding of `value`."
+                },
+                "value": {
+                  "description": "Redis SORT BY/GET pattern.",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "value"
+              ],
+              "type": "object"
+            },
+            "InputEncoding": {
+              "enum": [
+                "utf8",
+                "base64"
+              ],
+              "type": "string"
+            },
+            "SortOrder": {
+              "enum": [
+                "ascending",
+                "descending"
+              ],
+              "type": "string"
+            },
+            "SortPatternSelector": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "$ref": "#/$defs/EncodedSortPattern"
+                }
+              ]
+            }
+          },
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "alpha": {
+              "default": false,
+              "description": "Sort lexicographically instead of parsing numeric values.",
+              "type": "boolean"
+            },
+            "by": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/SortPatternSelector"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Optional external-key BY pattern. Rejected on Redis Cluster because the expanded keys cannot be prevalidated."
+            },
+            "count": {
+              "default": 100,
+              "description": "Maximum source elements to sort and return/store.",
+              "format": "uint",
+              "maximum": 1000,
+              "minimum": 1,
+              "type": "integer"
+            },
+            "destination": {
+              "description": "Destination list key overwritten by SORT STORE.",
+              "type": "string"
+            },
+            "destination_encoding": {
+              "$ref": "#/$defs/InputEncoding",
+              "default": "utf8",
+              "description": "Encoding of `destination`."
+            },
+            "get": {
+              "description": "Optional external-key or `#` GET patterns.",
+              "items": {
+                "$ref": "#/$defs/SortPatternSelector"
+              },
+              "maxItems": 64,
+              "type": "array"
+            },
+            "key": {
+              "description": "List, set, or sorted-set source key.",
+              "type": "string"
+            },
+            "key_encoding": {
+              "$ref": "#/$defs/InputEncoding",
+              "default": "utf8",
+              "description": "Encoding of `key`."
+            },
+            "offset": {
+              "default": 0,
+              "description": "Zero-based result offset.",
+              "format": "uint64",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "order": {
+              "$ref": "#/$defs/SortOrder",
+              "default": "ascending",
+              "description": "Sort ascending or descending."
+            }
+          },
+          "required": [
+            "key",
+            "destination"
+          ],
+          "title": "SortStoreInput",
+          "type": "object"
+        },
+        "name": "redis_sort_store",
+        "outputSchema": {
+          "$defs": {
+            "InputEncoding": {
+              "enum": [
+                "utf8",
+                "base64"
+              ],
+              "type": "string"
+            }
+          },
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "cluster_requires_same_slot": {
+              "type": "boolean"
+            },
+            "destination": {
+              "type": "string"
+            },
+            "destination_encoding": {
+              "$ref": "#/$defs/InputEncoding"
+            },
+            "destination_overwritten": {
+              "type": "boolean"
+            },
+            "key": {
+              "type": "string"
+            },
+            "key_encoding": {
+              "$ref": "#/$defs/InputEncoding"
+            },
+            "requested_count": {
+              "format": "uint",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "stored": {
+              "format": "uint64",
+              "minimum": 0,
+              "type": "integer"
+            }
+          },
+          "required": [
+            "key",
+            "key_encoding",
+            "destination",
+            "destination_encoding",
+            "requested_count",
+            "stored",
+            "destination_overwritten",
+            "cluster_requires_same_slot"
+          ],
+          "title": "SortStoreOutput",
+          "type": "object"
+        },
+        "title": "Sort and Store Redis Collection"
+      },
+      "required_access": "full",
       "required_module": null,
       "requires_raw_opt_in": false
     },
@@ -37794,6 +38739,7 @@
       "condition": null,
       "condition_not_met": 0,
       "count": 1,
+      "expiration": 60,
       "expirations_set": 1,
       "fields": [
         {
@@ -37806,7 +38752,26 @@
       "fields_missing": 0,
       "key": "user:1",
       "key_encoding": "utf8",
+      "mode": "relative_seconds",
       "seconds": 60
+    },
+    "redis_hexpire_delete": {
+      "condition": null,
+      "condition_not_met": 0,
+      "count": 1,
+      "deleted": 1,
+      "fields": [
+        {
+          "field": "name",
+          "field_encoding": "utf8",
+          "redis_code": 2,
+          "status": "deleted"
+        }
+      ],
+      "fields_missing": 0,
+      "key": "user:1",
+      "key_encoding": "utf8",
+      "mode": "relative_seconds"
     },
     "redis_hget": {
       "encoding": "utf8",
@@ -37928,6 +38893,29 @@
       "key": "user:1",
       "key_encoding": "utf8"
     },
+    "redis_hrandfield": {
+      "duplicates_allowed": true,
+      "entries": [
+        {
+          "field": "name",
+          "field_encoding": "utf8",
+          "value": "Ada",
+          "value_encoding": "utf8"
+        },
+        {
+          "field": "name",
+          "field_encoding": "utf8",
+          "value": "Ada",
+          "value_encoding": "utf8"
+        }
+      ],
+      "hash_exists": true,
+      "key": "user:1",
+      "key_encoding": "utf8",
+      "requested_count": -2,
+      "returned": 2,
+      "with_values": true
+    },
     "redis_hscan": {
       "count": 1,
       "cursor": 7,
@@ -37976,12 +38964,14 @@
           "field_encoding": "utf8",
           "redis_code": -1,
           "status": "persistent",
-          "ttl_seconds": null
+          "ttl_seconds": null,
+          "value": null
         }
       ],
       "hash_exists": true,
       "key": "user:1",
-      "key_encoding": "utf8"
+      "key_encoding": "utf8",
+      "mode": "remaining_seconds"
     },
     "redis_hvals": {
       "count": 1,
@@ -38917,6 +39907,35 @@
         }
       ],
       "set_exists": true
+    },
+    "redis_sort": {
+      "get_pattern_count": 0,
+      "key": "queue",
+      "key_encoding": "utf8",
+      "offset": 0,
+      "requested_count": 2,
+      "returned": 2,
+      "source_exists": true,
+      "values": [
+        {
+          "encoding": "utf8",
+          "value": "first"
+        },
+        {
+          "encoding": "utf8",
+          "value": "second"
+        }
+      ]
+    },
+    "redis_sort_store": {
+      "cluster_requires_same_slot": true,
+      "destination": "sorted:{tenant}",
+      "destination_encoding": "utf8",
+      "destination_overwritten": true,
+      "key": "queue:{tenant}",
+      "key_encoding": "utf8",
+      "requested_count": 2,
+      "stored": 2
     },
     "redis_spublish": {
       "channel": {

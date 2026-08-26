@@ -1711,21 +1711,25 @@
     },
     {
       "name": "HEXPIREAT",
-      "disposition": "planned",
+      "disposition": "typed",
       "access": "read_write",
       "cluster_behavior": "key_routed",
-      "tools": [],
-      "tracking_issue": 62,
-      "rationale": "Structured coverage is planned in issue #62; unrestricted raw execution is not the completeness contract."
+      "tools": [
+        "redis_hexpire"
+      ],
+      "tracking_issue": null,
+      "rationale": "Covered by one or more cataloged structured MCP tools."
     },
     {
       "name": "HEXPIRETIME",
-      "disposition": "planned",
+      "disposition": "typed",
       "access": "read_only",
       "cluster_behavior": "key_routed",
-      "tools": [],
-      "tracking_issue": 62,
-      "rationale": "Structured coverage is planned in issue #62; unrestricted raw execution is not the completeness contract."
+      "tools": [
+        "redis_httl"
+      ],
+      "tracking_issue": null,
+      "rationale": "Covered by one or more cataloged structured MCP tools."
     },
     {
       "name": "HGET",
@@ -1945,48 +1949,58 @@
     },
     {
       "name": "HPEXPIRE",
-      "disposition": "planned",
+      "disposition": "typed",
       "access": "read_write",
       "cluster_behavior": "key_routed",
-      "tools": [],
-      "tracking_issue": 62,
-      "rationale": "Structured coverage is planned in issue #62; unrestricted raw execution is not the completeness contract."
+      "tools": [
+        "redis_hexpire"
+      ],
+      "tracking_issue": null,
+      "rationale": "Covered by one or more cataloged structured MCP tools."
     },
     {
       "name": "HPEXPIREAT",
-      "disposition": "planned",
+      "disposition": "typed",
       "access": "read_write",
       "cluster_behavior": "key_routed",
-      "tools": [],
-      "tracking_issue": 62,
-      "rationale": "Structured coverage is planned in issue #62; unrestricted raw execution is not the completeness contract."
+      "tools": [
+        "redis_hexpire"
+      ],
+      "tracking_issue": null,
+      "rationale": "Covered by one or more cataloged structured MCP tools."
     },
     {
       "name": "HPEXPIRETIME",
-      "disposition": "planned",
+      "disposition": "typed",
       "access": "read_only",
       "cluster_behavior": "key_routed",
-      "tools": [],
-      "tracking_issue": 62,
-      "rationale": "Structured coverage is planned in issue #62; unrestricted raw execution is not the completeness contract."
+      "tools": [
+        "redis_httl"
+      ],
+      "tracking_issue": null,
+      "rationale": "Covered by one or more cataloged structured MCP tools."
     },
     {
       "name": "HPTTL",
-      "disposition": "planned",
+      "disposition": "typed",
       "access": "read_only",
       "cluster_behavior": "key_routed",
-      "tools": [],
-      "tracking_issue": 62,
-      "rationale": "Structured coverage is planned in issue #62; unrestricted raw execution is not the completeness contract."
+      "tools": [
+        "redis_httl"
+      ],
+      "tracking_issue": null,
+      "rationale": "Covered by one or more cataloged structured MCP tools."
     },
     {
       "name": "HRANDFIELD",
-      "disposition": "planned",
+      "disposition": "typed",
       "access": "read_only",
       "cluster_behavior": "key_routed",
-      "tools": [],
-      "tracking_issue": 62,
-      "rationale": "Structured coverage is planned in issue #62; unrestricted raw execution is not the completeness contract."
+      "tools": [
+        "redis_hrandfield"
+      ],
+      "tracking_issue": null,
+      "rationale": "Covered by one or more cataloged structured MCP tools."
     },
     {
       "name": "HSCAN",
@@ -3395,21 +3409,25 @@
     },
     {
       "name": "SORT",
-      "disposition": "planned",
+      "disposition": "typed",
       "access": "full",
       "cluster_behavior": "key_routed",
-      "tools": [],
-      "tracking_issue": 62,
-      "rationale": "Structured coverage is planned in issue #62; unrestricted raw execution is not the completeness contract."
+      "tools": [
+        "redis_sort_store"
+      ],
+      "tracking_issue": null,
+      "rationale": "Covered by one or more cataloged structured MCP tools."
     },
     {
       "name": "SORT_RO",
-      "disposition": "planned",
+      "disposition": "typed",
       "access": "read_only",
       "cluster_behavior": "key_routed",
-      "tools": [],
-      "tracking_issue": 62,
-      "rationale": "Structured coverage is planned in issue #62; unrestricted raw execution is not the completeness contract."
+      "tools": [
+        "redis_sort"
+      ],
+      "tracking_issue": null,
+      "rationale": "Covered by one or more cataloged structured MCP tools."
     },
     {
       "name": "SPOP",

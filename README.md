@@ -30,9 +30,9 @@ features and enable only the Redis families they embed:
 The additive family features are `keyspace`, `strings`, `hashes`, `lists`,
 `sets`, `sorted-sets`, `streams`, `bitmaps`, `arrays`, `hyperloglog`,
 `geospatial`, `vector-sets`, `pubsub`, `scripting`, `json`, and `search`. The
-`diagnostics` and `sessions` features compile their corresponding cross-cutting
-bundles. `all-families` enables every command family, while `full` also enables
-diagnostics and sessions.
+`diagnostics`, `sessions`, and `admin` features compile their corresponding
+cross-cutting bundles. `all-families` enables every command family, while
+`full` also enables diagnostics, sessions, and guarded administration.
 
 Compile-time inclusion and runtime exposure are separate. `families(...)`
 replaces the compatibility bundle defaults with a precise family selection;
@@ -142,6 +142,10 @@ The standalone default exposes 201 broadly useful tools:
   `redis_function_list`, `redis_function_stats`, `redis_function_dump`,
   `redis_function_load`, `redis_function_restore`, `redis_function_delete`,
   `redis_function_flush`, `redis_function_kill`
+- optional guarded administration: redacted ACL, backup, Cluster,
+  configuration, server-state, latency, memory, slow-log, and hot-key
+  inspection plus separately Full-gated client, configuration, flush, reset,
+  purge, hot-key, and database controls
 - explicit full-access escape hatch: `redis_command`
 
 The reusable router keeps the stateful `sessions` bundle opt-in because its
@@ -187,6 +191,7 @@ Use it with any stdio MCP client. With
     mcp-repl -- redis-mcp-server \
       --url redis://127.0.0.1:6379 \
       --access full \
+      --enable-bundle admin \
       --enable-bundle scripting \
       --stdio
 
@@ -240,14 +245,18 @@ script/function, and indefinite-blocking forms:
 
     redis-mcp-server --access full --raw-unrestricted --stdio
 
-Scripting, RedisJSON, and Search are explicit additions to the curated
-defaults. The JSON bundle exposes 17 structured tools spanning reads, typed
+Administration, Scripting, RedisJSON, and Search are explicit additions to the
+curated defaults. The `admin` bundle remains off even under Full access; it
+uses fixed non-secret configuration allowlists, confirmation fields, bounded
+Cluster fan-out, pseudonymous nodes, and redacted partial failures. The JSON
+bundle exposes 17 structured tools spanning reads, typed
 mutations, arrays, objects, deletion, clearing, and RFC 7396 merge. Enhanced
 JSONPath (`$`) is the default; callers can explicitly select legacy paths where
 RedisJSON has different reply semantics. The configured Redis target must
 provide the corresponding capability:
 
     redis-mcp-server --access full \
+      --enable-bundle admin \
       --enable-bundle scripting \
       --enable-bundle json \
       --enable-bundle search \
@@ -372,11 +381,12 @@ snapshot therefore hides or rejects those tools instead of silently reporting
 one node as the whole database.
 
 The curated default enables the `essentials`, `data_structures`, and
-`diagnostics` bundles. The module-backed `json` and `search` bundles are
-available only through deliberate composition. The `sessions` bundle is
-enabled by supplying its manager; `admin`, `bulk`, and `raw` are reserved for
-further catalog growth. Raw execution is always controlled by its separate
-policy rather than bundle selection alone.
+`diagnostics` bundles. The module-backed `json` and `search` bundles and the
+guarded `admin` bundle are available only through deliberate composition. The
+`sessions` bundle is enabled by supplying its manager; `bulk` remains reserved
+for further catalog growth. Raw execution is always controlled by its separate
+policy rather than bundle selection alone, and unrestricted raw invocation
+cannot bypass guarded administration tools.
 
 See [the architecture decisions](docs/architecture.md) for the intentional
 Tower-MCP boundary and fixed-target model, and the

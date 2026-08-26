@@ -28,11 +28,12 @@ Vector Set commands remain part of the core inventory.
 
 | Disposition | Commands | Meaning |
 | --- | ---: | --- |
-| `typed` | 219 | Covered by cataloged structured MCP tools. |
+| `typed` | 261 | Covered by cataloged structured MCP tools. |
+| `composed` | 3 | Covered as part of a bounded multi-command structured tool. |
 | `native` | 32 | Available through fail-closed classified native invocation. |
-| `session` | 22 | Implemented or planned through a bounded dedicated connection/workflow. |
-| `planned` | 67 | Assigned to a concrete command-completeness backlog issue. |
-| `excluded` | 62 | Outside the product or safety boundary with an explicit rationale. |
+| `session` | 26 | Implemented or planned through a bounded dedicated connection/workflow. |
+| `planned` | 0 | Assigned to a concrete command-completeness backlog issue. |
+| `excluded` | 80 | Outside the product or safety boundary with an explicit rationale. |
 | `deprecated` | 21 | Redis marks the command deprecated; richer replacements are preferred. |
 | `internal` | 8 | Redis marks the command as a system command. |
 | `container` | 18 | Namespace-only command whose useful subcommands are mapped separately. |
@@ -41,7 +42,7 @@ The counts describe official Redis command definitions, not MCP tool count.
 One structured tool can compose multiple commands, and one Redis command can
 support multiple tools.
 
-Planned and session work is tied to issues #32, #61, and #66. The six
+Planned and session work is tied to issues #61 and #66. The six
 already-implemented Pub/Sub connection commands retain their
 closed implementation reference, #30.
 
@@ -53,6 +54,16 @@ function-library lifecycle operations distinguish all-node, all-primary, and
 node-local behavior, require explicit fan-out and payload ceilings, expose
 partial node failures without server error text, and keep `SCRIPT DEBUG`
 outside the supported boundary.
+
+The opt-in `admin` bundle gives all 67 administration and operations entries
+an explicit disposition. It adds redacted ACL, backup, Cluster, configuration,
+server-state, latency, memory, slow-log, and hot-key inspection plus separately
+Full-gated client, configuration, flush, reset, purge, and database controls.
+Node fan-out has explicit ceilings and pseudonymous partial-failure results;
+configuration reads use a fixed non-secret allowlist. Credential generation,
+filesystem configuration persistence, and uncoordinated Cluster topology
+mutation remain excluded, while the stateful backup lifecycle remains a
+dedicated workflow tracked by #66.
 
 Bitmap/bitfield, geospatial, and HyperLogLog coverage is fully typed. Its
 contracts cap item counts and bitmap write extent, preserve exact integer and

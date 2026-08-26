@@ -268,8 +268,9 @@ impl ToolMetadata {
             || match self.bundle {
                 ToolBundle::Diagnostics => cfg!(feature = "diagnostics"),
                 ToolBundle::Sessions => cfg!(feature = "sessions"),
+                ToolBundle::Admin => cfg!(feature = "admin"),
                 ToolBundle::Raw => true,
-                ToolBundle::Admin | ToolBundle::Bulk => true,
+                ToolBundle::Bulk => true,
                 ToolBundle::Essentials
                 | ToolBundle::DataStructures
                 | ToolBundle::Json
@@ -301,7 +302,25 @@ impl ToolMetadata {
             | "redis_module_list"
             | "redis_key_summary"
             | "redis_hotkeys" => Some(RedisVersion::new(4, 0, 0)),
-            "redis_acl_whoami" => Some(RedisVersion::new(6, 0, 0)),
+            "redis_acl_whoami"
+            | "redis_acl_categories"
+            | "redis_acl_users"
+            | "redis_acl_user"
+            | "redis_acl_rules"
+            | "redis_acl_log"
+            | "redis_acl_log_reset" => Some(RedisVersion::new(6, 0, 0)),
+            "redis_acl_dryrun" => Some(RedisVersion::new(7, 0, 0)),
+            "redis_backup_status" | "redis_backup_files" => Some(RedisVersion::new(8, 10, 0)),
+            "redis_cluster_inspect" => Some(RedisVersion::new(8, 4, 0)),
+            "redis_cluster_slot_stats" => Some(RedisVersion::new(8, 2, 0)),
+            "redis_cluster_slot" => Some(RedisVersion::new(5, 0, 0)),
+            "redis_client_control" => Some(RedisVersion::new(6, 2, 0)),
+            "redis_server_state" => Some(RedisVersion::new(2, 8, 0)),
+            "redis_latency_overview" => Some(RedisVersion::new(7, 0, 0)),
+            "redis_latency_reset" => Some(RedisVersion::new(2, 8, 0)),
+            "redis_memory_diagnostics" | "redis_memory_purge" => Some(RedisVersion::new(4, 0, 0)),
+            "redis_slowlog_len" | "redis_slowlog_reset" => Some(RedisVersion::new(2, 2, 0)),
+            "redis_hotkeys_get" | "redis_hotkeys_control" => Some(RedisVersion::new(8, 6, 0)),
             "redis_publish"
             | "redis_subscribe"
             | "redis_psubscribe"
@@ -441,6 +460,26 @@ impl ToolMetadata {
             "redis_slowlog" => &["SLOWLOG"],
             "redis_latency_history" => &["LATENCY"],
             "redis_acl_whoami" => &["ACL"],
+            "redis_acl_categories"
+            | "redis_acl_users"
+            | "redis_acl_user"
+            | "redis_acl_rules"
+            | "redis_acl_dryrun"
+            | "redis_acl_log"
+            | "redis_acl_log_reset" => &["ACL"],
+            "redis_backup_status" | "redis_backup_files" => &["BACKUP"],
+            "redis_cluster_inspect" | "redis_cluster_slot" | "redis_cluster_slot_stats" => {
+                &["CLUSTER"]
+            }
+            "redis_config_get" | "redis_config_set" | "redis_config_resetstat" => &["CONFIG"],
+            "redis_server_state" => &["TIME", "LASTSAVE", "ROLE"],
+            "redis_latency_overview" | "redis_latency_reset" => &["LATENCY"],
+            "redis_memory_diagnostics" | "redis_memory_purge" => &["MEMORY"],
+            "redis_slowlog_len" | "redis_slowlog_reset" => &["SLOWLOG"],
+            "redis_hotkeys_get" | "redis_hotkeys_control" => &["HOTKEYS"],
+            "redis_client_control" => &["CLIENT"],
+            "redis_flush" => &["FLUSHDB", "FLUSHALL"],
+            "redis_swapdb" => &["SWAPDB"],
             "redis_health_check" | "redis_keyspace_summary" => &["INFO"],
             "redis_key_summary" => &["TYPE", "TTL", "MEMORY", "OBJECT"],
             "redis_hotkeys" => &["SCAN", "TYPE", "MEMORY"],
@@ -689,12 +728,32 @@ impl ToolMetadata {
             _ => &[],
         };
         let deployment = match self.name {
-            "redis_cluster_info" => ToolDeploymentRequirement::Cluster,
+            "redis_cluster_info"
+            | "redis_cluster_inspect"
+            | "redis_cluster_slot"
+            | "redis_cluster_slot_stats" => ToolDeploymentRequirement::Cluster,
             // redis-rs routes these no-key or cursor commands to one node, or
             // returns a fan-out shape the tool does not aggregate. Advertising
             // database-wide semantics on Cluster would therefore mislead.
-            "redis_info" | "redis_dbsize" | "redis_scan" | "redis_randomkey" | "redis_hotkeys"
-            | "redis_ft_list" => ToolDeploymentRequirement::Standalone,
+            "redis_info"
+            | "redis_dbsize"
+            | "redis_scan"
+            | "redis_randomkey"
+            | "redis_hotkeys"
+            | "redis_ft_list"
+            | "redis_acl_categories"
+            | "redis_acl_users"
+            | "redis_acl_user"
+            | "redis_acl_rules"
+            | "redis_acl_dryrun"
+            | "redis_acl_log"
+            | "redis_acl_log_reset"
+            | "redis_backup_status"
+            | "redis_backup_files"
+            | "redis_config_get"
+            | "redis_server_state"
+            | "redis_client_control"
+            | "redis_swapdb" => ToolDeploymentRequirement::Standalone,
             _ => ToolDeploymentRequirement::Any,
         };
         ToolCapabilityRequirements {
@@ -793,6 +852,19 @@ impl ToolMetadata {
             | "redis_function_list"
             | "redis_function_stats"
             | "redis_function_dump"
+            | "redis_acl_categories"
+            | "redis_acl_users"
+            | "redis_acl_user"
+            | "redis_acl_rules"
+            | "redis_acl_log"
+            | "redis_backup_status"
+            | "redis_cluster_inspect"
+            | "redis_cluster_slot"
+            | "redis_cluster_slot_stats"
+            | "redis_config_get"
+            | "redis_latency_overview"
+            | "redis_memory_diagnostics"
+            | "redis_hotkeys_get"
             | "redis_command" => ToolOutputPolicy::BudgetGuarded,
             _ => ToolOutputPolicy::IntrinsicallyBounded,
         }
@@ -888,6 +960,168 @@ pub(crate) const CATALOG: &[ToolMetadata] = &[
         name: "redis_hotkeys",
         bundle: ToolBundle::Diagnostics,
         required_access: AccessMode::ReadOnly,
+        requires_raw_opt_in: false,
+    },
+    ToolMetadata {
+        name: "redis_acl_categories",
+        bundle: ToolBundle::Admin,
+        required_access: AccessMode::ReadOnly,
+        requires_raw_opt_in: false,
+    },
+    ToolMetadata {
+        name: "redis_acl_users",
+        bundle: ToolBundle::Admin,
+        required_access: AccessMode::ReadOnly,
+        requires_raw_opt_in: false,
+    },
+    ToolMetadata {
+        name: "redis_acl_user",
+        bundle: ToolBundle::Admin,
+        required_access: AccessMode::ReadOnly,
+        requires_raw_opt_in: false,
+    },
+    ToolMetadata {
+        name: "redis_acl_rules",
+        bundle: ToolBundle::Admin,
+        required_access: AccessMode::ReadOnly,
+        requires_raw_opt_in: false,
+    },
+    ToolMetadata {
+        name: "redis_acl_dryrun",
+        bundle: ToolBundle::Admin,
+        required_access: AccessMode::ReadOnly,
+        requires_raw_opt_in: false,
+    },
+    ToolMetadata {
+        name: "redis_acl_log",
+        bundle: ToolBundle::Admin,
+        required_access: AccessMode::ReadOnly,
+        requires_raw_opt_in: false,
+    },
+    ToolMetadata {
+        name: "redis_acl_log_reset",
+        bundle: ToolBundle::Admin,
+        required_access: AccessMode::Full,
+        requires_raw_opt_in: false,
+    },
+    ToolMetadata {
+        name: "redis_backup_status",
+        bundle: ToolBundle::Admin,
+        required_access: AccessMode::ReadOnly,
+        requires_raw_opt_in: false,
+    },
+    ToolMetadata {
+        name: "redis_backup_files",
+        bundle: ToolBundle::Admin,
+        required_access: AccessMode::ReadOnly,
+        requires_raw_opt_in: false,
+    },
+    ToolMetadata {
+        name: "redis_cluster_inspect",
+        bundle: ToolBundle::Admin,
+        required_access: AccessMode::ReadOnly,
+        requires_raw_opt_in: false,
+    },
+    ToolMetadata {
+        name: "redis_cluster_slot",
+        bundle: ToolBundle::Admin,
+        required_access: AccessMode::ReadOnly,
+        requires_raw_opt_in: false,
+    },
+    ToolMetadata {
+        name: "redis_cluster_slot_stats",
+        bundle: ToolBundle::Admin,
+        required_access: AccessMode::ReadOnly,
+        requires_raw_opt_in: false,
+    },
+    ToolMetadata {
+        name: "redis_config_get",
+        bundle: ToolBundle::Admin,
+        required_access: AccessMode::ReadOnly,
+        requires_raw_opt_in: false,
+    },
+    ToolMetadata {
+        name: "redis_config_set",
+        bundle: ToolBundle::Admin,
+        required_access: AccessMode::Full,
+        requires_raw_opt_in: false,
+    },
+    ToolMetadata {
+        name: "redis_config_resetstat",
+        bundle: ToolBundle::Admin,
+        required_access: AccessMode::Full,
+        requires_raw_opt_in: false,
+    },
+    ToolMetadata {
+        name: "redis_server_state",
+        bundle: ToolBundle::Admin,
+        required_access: AccessMode::ReadOnly,
+        requires_raw_opt_in: false,
+    },
+    ToolMetadata {
+        name: "redis_latency_overview",
+        bundle: ToolBundle::Admin,
+        required_access: AccessMode::ReadOnly,
+        requires_raw_opt_in: false,
+    },
+    ToolMetadata {
+        name: "redis_latency_reset",
+        bundle: ToolBundle::Admin,
+        required_access: AccessMode::Full,
+        requires_raw_opt_in: false,
+    },
+    ToolMetadata {
+        name: "redis_memory_diagnostics",
+        bundle: ToolBundle::Admin,
+        required_access: AccessMode::ReadOnly,
+        requires_raw_opt_in: false,
+    },
+    ToolMetadata {
+        name: "redis_memory_purge",
+        bundle: ToolBundle::Admin,
+        required_access: AccessMode::Full,
+        requires_raw_opt_in: false,
+    },
+    ToolMetadata {
+        name: "redis_slowlog_len",
+        bundle: ToolBundle::Admin,
+        required_access: AccessMode::ReadOnly,
+        requires_raw_opt_in: false,
+    },
+    ToolMetadata {
+        name: "redis_slowlog_reset",
+        bundle: ToolBundle::Admin,
+        required_access: AccessMode::Full,
+        requires_raw_opt_in: false,
+    },
+    ToolMetadata {
+        name: "redis_hotkeys_get",
+        bundle: ToolBundle::Admin,
+        required_access: AccessMode::ReadOnly,
+        requires_raw_opt_in: false,
+    },
+    ToolMetadata {
+        name: "redis_hotkeys_control",
+        bundle: ToolBundle::Admin,
+        required_access: AccessMode::Full,
+        requires_raw_opt_in: false,
+    },
+    ToolMetadata {
+        name: "redis_client_control",
+        bundle: ToolBundle::Admin,
+        required_access: AccessMode::Full,
+        requires_raw_opt_in: false,
+    },
+    ToolMetadata {
+        name: "redis_flush",
+        bundle: ToolBundle::Admin,
+        required_access: AccessMode::Full,
+        requires_raw_opt_in: false,
+    },
+    ToolMetadata {
+        name: "redis_swapdb",
+        bundle: ToolBundle::Admin,
+        required_access: AccessMode::Full,
         requires_raw_opt_in: false,
     },
     ToolMetadata {

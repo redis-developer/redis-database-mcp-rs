@@ -232,6 +232,29 @@ async fn scripting_router_client(
     (client, capabilities)
 }
 
+async fn admin_router_client(url: &str) -> McpClient {
+    let executor = DirectRedis::connect(url)
+        .await
+        .expect("connect admin executor");
+    let capabilities = executor
+        .discover_capabilities()
+        .await
+        .expect("discover admin capabilities");
+    let router = RedisMcp::builder(executor)
+        .access(AccessMode::Full)
+        .bundles([ToolBundle::Admin])
+        .capabilities(capabilities)
+        .build();
+    let client = McpClient::connect(ChannelTransport::new(router))
+        .await
+        .expect("connect admin MCP client");
+    client
+        .initialize("redis-mcp-live-admin-test", "0")
+        .await
+        .expect("initialize admin MCP client");
+    client
+}
+
 async fn call_structured(
     client: &McpClient,
     tool: &'static str,
@@ -245,6 +268,89 @@ async fn call_structured(
     result
         .structured_content
         .unwrap_or_else(|| panic!("{tool}: missing structured content"))
+}
+
+#[cfg(unix)]
+#[tokio::test]
+async fn guarded_admin_configuration_and_flush_run_only_on_an_isolated_server() {
+    let managed = match ManagedRedis::start().await {
+        Ok(managed) => managed,
+        Err(RedisServerError::BinaryNotFound { binary }) => {
+            eprintln!("skipping isolated admin test: {binary} is not on PATH");
+            return;
+        }
+        Err(error) => panic!("start isolated admin Redis: {error}"),
+    };
+    let url = managed.url();
+    let client = admin_router_client(&url).await;
+
+    let before = call_structured(
+        &client,
+        "redis_config_get",
+        serde_json::json!({"parameters": ["latency-monitor-threshold"]}),
+    )
+    .await;
+    assert!(
+        before["values"]["latency-monitor-threshold"]["value"]
+            .as_str()
+            .is_some()
+    );
+
+    let changed = call_structured(
+        &client,
+        "redis_config_set",
+        serde_json::json!({
+            "parameter": "latency-monitor-threshold",
+            "value": 25,
+            "confirm_service_impact": true,
+            "max_cluster_nodes": 1
+        }),
+    )
+    .await;
+    assert_eq!(changed["scope"], "standalone");
+    let after = call_structured(
+        &client,
+        "redis_config_get",
+        serde_json::json!({"parameters": ["latency-monitor-threshold"]}),
+    )
+    .await;
+    assert_eq!(after["values"]["latency-monitor-threshold"]["value"], "25");
+
+    let redis = redis::Client::open(url.as_str()).expect("open isolated Redis client");
+    let mut connection = redis
+        .get_multiplexed_async_connection()
+        .await
+        .expect("connect isolated Redis client");
+    let _: () = redis::cmd("SET")
+        .arg("admin:isolated:one")
+        .arg("one")
+        .query_async(&mut connection)
+        .await
+        .expect("seed first isolated key");
+    let _: () = redis::cmd("SET")
+        .arg("admin:isolated:two")
+        .arg("two")
+        .query_async(&mut connection)
+        .await
+        .expect("seed second isolated key");
+
+    let flushed = call_structured(
+        &client,
+        "redis_flush",
+        serde_json::json!({
+            "scope": "database",
+            "mode": "sync",
+            "confirmation": "FLUSHDB",
+            "max_cluster_nodes": 1
+        }),
+    )
+    .await;
+    assert_eq!(flushed["scope"], "standalone");
+    let remaining: i64 = redis::cmd("DBSIZE")
+        .query_async(&mut connection)
+        .await
+        .expect("read isolated database size");
+    assert_eq!(remaining, 0);
 }
 
 #[tokio::test]
@@ -367,6 +473,11 @@ async fn live_scripting_is_binary_safe_bounded_and_lifecycle_aware_in_resp2_and_
         let version = capabilities
             .redis_version()
             .expect("live Redis reports a version");
+        let read_eval_tool = if version >= RedisVersion::new(7, 0, 0) {
+            "redis_eval_ro"
+        } else {
+            "redis_eval"
+        };
         let key = test_key(&format!("script:{protocol}"));
         let script = "redis.call('SET', KEYS[1], ARGV[1]); return redis.call('GET', KEYS[1])";
         let binary = vec![0xff, 0x00, 0x01];
@@ -424,7 +535,7 @@ async fn live_scripting_is_binary_safe_bounded_and_lifecycle_aware_in_resp2_and_
 
         let malformed = client
             .call_tool(
-                "redis_eval_ro",
+                read_eval_tool,
                 serde_json::json!({"script": {"value": "this is not valid lua"}}),
             )
             .await
@@ -443,7 +554,7 @@ async fn live_scripting_is_binary_safe_bounded_and_lifecycle_aware_in_resp2_and_
         .await;
         let wrong_type = client
             .call_tool(
-                "redis_eval_ro",
+                read_eval_tool,
                 serde_json::json!({
                     "script": {"value": "return redis.call('GET', KEYS[1])"},
                     "keys": [{"value": key}]
@@ -460,7 +571,7 @@ async fn live_scripting_is_binary_safe_bounded_and_lifecycle_aware_in_resp2_and_
 
         let large_result = client
             .call_tool(
-                "redis_eval_ro",
+                read_eval_tool,
                 serde_json::json!({
                     "script": {"value": "return string.rep('x', 300000)"}
                 }),

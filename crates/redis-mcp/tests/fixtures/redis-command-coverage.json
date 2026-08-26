@@ -34,12 +34,14 @@
     },
     {
       "name": "ACL CAT",
-      "disposition": "planned",
+      "disposition": "typed",
       "access": "read_only",
       "cluster_behavior": "node_local",
-      "tools": [],
-      "tracking_issue": 32,
-      "rationale": "Structured coverage is planned in issue #32; unrestricted raw execution is not the completeness contract."
+      "tools": [
+        "redis_acl_categories"
+      ],
+      "tracking_issue": null,
+      "rationale": "The guarded admin bundle exposes ACL CAT through an exact typed operation with bounded input/output, explicit access, deployment scope, and redaction policy."
     },
     {
       "name": "ACL DELUSER",
@@ -52,30 +54,34 @@
     },
     {
       "name": "ACL DRYRUN",
-      "disposition": "planned",
+      "disposition": "typed",
       "access": "read_only",
       "cluster_behavior": "node_local",
-      "tools": [],
-      "tracking_issue": 32,
-      "rationale": "Structured coverage is planned in issue #32; unrestricted raw execution is not the completeness contract."
+      "tools": [
+        "redis_acl_dryrun"
+      ],
+      "tracking_issue": null,
+      "rationale": "The guarded admin bundle exposes ACL DRYRUN through an exact typed operation with bounded input/output, explicit access, deployment scope, and redaction policy."
     },
     {
       "name": "ACL GENPASS",
-      "disposition": "planned",
+      "disposition": "excluded",
       "access": "read_only",
       "cluster_behavior": "node_local",
       "tools": [],
-      "tracking_issue": 32,
-      "rationale": "Structured coverage is planned in issue #32; unrestricted raw execution is not the completeness contract."
+      "tracking_issue": null,
+      "rationale": "Credential generation is intentionally excluded so generated secrets never cross the MCP result or logging boundary."
     },
     {
       "name": "ACL GETUSER",
-      "disposition": "planned",
+      "disposition": "typed",
       "access": "read_only",
       "cluster_behavior": "node_local",
-      "tools": [],
-      "tracking_issue": 32,
-      "rationale": "Structured coverage is planned in issue #32; unrestricted raw execution is not the completeness contract."
+      "tools": [
+        "redis_acl_user"
+      ],
+      "tracking_issue": null,
+      "rationale": "The guarded admin bundle exposes ACL GETUSER through an exact typed operation with bounded input/output, explicit access, deployment scope, and redaction policy."
     },
     {
       "name": "ACL HELP",
@@ -88,12 +94,14 @@
     },
     {
       "name": "ACL LIST",
-      "disposition": "planned",
+      "disposition": "typed",
       "access": "read_only",
       "cluster_behavior": "node_local",
-      "tools": [],
-      "tracking_issue": 32,
-      "rationale": "Structured coverage is planned in issue #32; unrestricted raw execution is not the completeness contract."
+      "tools": [
+        "redis_acl_rules"
+      ],
+      "tracking_issue": null,
+      "rationale": "The guarded admin bundle exposes ACL LIST through an exact typed operation with bounded input/output, explicit access, deployment scope, and redaction policy."
     },
     {
       "name": "ACL LOAD",
@@ -106,12 +114,14 @@
     },
     {
       "name": "ACL LOG",
-      "disposition": "planned",
+      "disposition": "typed",
       "access": "full",
       "cluster_behavior": "node_local",
-      "tools": [],
-      "tracking_issue": 32,
-      "rationale": "Structured coverage is planned in issue #32; unrestricted raw execution is not the completeness contract."
+      "tools": [
+        "redis_acl_log_reset"
+      ],
+      "tracking_issue": null,
+      "rationale": "The guarded admin bundle exposes ACL LOG through an exact typed operation with bounded input/output, explicit access, deployment scope, and redaction policy."
     },
     {
       "name": "ACL SAVE",
@@ -133,12 +143,14 @@
     },
     {
       "name": "ACL USERS",
-      "disposition": "planned",
+      "disposition": "typed",
       "access": "read_only",
       "cluster_behavior": "node_local",
-      "tools": [],
-      "tracking_issue": 32,
-      "rationale": "Structured coverage is planned in issue #32; unrestricted raw execution is not the completeness contract."
+      "tools": [
+        "redis_acl_users"
+      ],
+      "tracking_issue": null,
+      "rationale": "The guarded admin bundle exposes ACL USERS through an exact typed operation with bounded input/output, explicit access, deployment scope, and redaction policy."
     },
     {
       "name": "ACL WHOAMI",
@@ -353,21 +365,21 @@
     },
     {
       "name": "BACKUP ABORT",
-      "disposition": "planned",
+      "disposition": "session",
       "access": "full",
       "cluster_behavior": "node_local",
       "tools": [],
-      "tracking_issue": 32,
-      "rationale": "Structured coverage is planned in issue #32; unrestricted raw execution is not the completeness contract."
+      "tracking_issue": 66,
+      "rationale": "The server-global backup lifecycle requires owned state, sequencing, cleanup, and recovery rather than unrelated request/response calls; the workflow remains tracked by issue #66."
     },
     {
       "name": "BACKUP CLEANUP",
-      "disposition": "planned",
+      "disposition": "session",
       "access": "full",
       "cluster_behavior": "node_local",
       "tools": [],
-      "tracking_issue": 32,
-      "rationale": "Structured coverage is planned in issue #32; unrestricted raw execution is not the completeness contract."
+      "tracking_issue": 66,
+      "rationale": "The server-global backup lifecycle requires owned state, sequencing, cleanup, and recovery rather than unrelated request/response calls; the workflow remains tracked by issue #66."
     },
     {
       "name": "BACKUP HELP",
@@ -380,39 +392,43 @@
     },
     {
       "name": "BACKUP LIST",
-      "disposition": "planned",
+      "disposition": "typed",
       "access": "read_only",
       "cluster_behavior": "node_local",
-      "tools": [],
-      "tracking_issue": 32,
-      "rationale": "Structured coverage is planned in issue #32; unrestricted raw execution is not the completeness contract."
+      "tools": [
+        "redis_backup_files"
+      ],
+      "tracking_issue": null,
+      "rationale": "The guarded admin bundle exposes BACKUP LIST through an exact typed operation with bounded input/output, explicit access, deployment scope, and redaction policy."
     },
     {
       "name": "BACKUP SEAL",
-      "disposition": "planned",
+      "disposition": "session",
       "access": "full",
       "cluster_behavior": "node_local",
       "tools": [],
-      "tracking_issue": 32,
-      "rationale": "Structured coverage is planned in issue #32; unrestricted raw execution is not the completeness contract."
+      "tracking_issue": 66,
+      "rationale": "The server-global backup lifecycle requires owned state, sequencing, cleanup, and recovery rather than unrelated request/response calls; the workflow remains tracked by issue #66."
     },
     {
       "name": "BACKUP START",
-      "disposition": "planned",
+      "disposition": "session",
       "access": "full",
       "cluster_behavior": "node_local",
       "tools": [],
-      "tracking_issue": 32,
-      "rationale": "Structured coverage is planned in issue #32; unrestricted raw execution is not the completeness contract."
+      "tracking_issue": 66,
+      "rationale": "The server-global backup lifecycle requires owned state, sequencing, cleanup, and recovery rather than unrelated request/response calls; the workflow remains tracked by issue #66."
     },
     {
       "name": "BACKUP STATUS",
-      "disposition": "planned",
+      "disposition": "typed",
       "access": "read_only",
       "cluster_behavior": "node_local",
-      "tools": [],
-      "tracking_issue": 32,
-      "rationale": "Structured coverage is planned in issue #32; unrestricted raw execution is not the completeness contract."
+      "tools": [
+        "redis_backup_status"
+      ],
+      "tracking_issue": null,
+      "rationale": "The guarded admin bundle exposes BACKUP STATUS through an exact typed operation with bounded input/output, explicit access, deployment scope, and redaction policy."
     },
     {
       "name": "BGREWRITEAOF",
@@ -625,12 +641,14 @@
     },
     {
       "name": "CLIENT KILL",
-      "disposition": "planned",
+      "disposition": "typed",
       "access": "full",
       "cluster_behavior": "node_local",
-      "tools": [],
-      "tracking_issue": 32,
-      "rationale": "Structured coverage is planned in issue #32; unrestricted raw execution is not the completeness contract."
+      "tools": [
+        "redis_client_control"
+      ],
+      "tracking_issue": null,
+      "rationale": "The guarded admin bundle exposes CLIENT KILL through an exact typed operation with bounded input/output, explicit access, deployment scope, and redaction policy."
     },
     {
       "name": "CLIENT LIST",
@@ -717,21 +735,25 @@
     },
     {
       "name": "CLIENT UNBLOCK",
-      "disposition": "planned",
+      "disposition": "typed",
       "access": "full",
       "cluster_behavior": "node_local",
-      "tools": [],
-      "tracking_issue": 32,
-      "rationale": "Structured coverage is planned in issue #32; unrestricted raw execution is not the completeness contract."
+      "tools": [
+        "redis_client_control"
+      ],
+      "tracking_issue": null,
+      "rationale": "The guarded admin bundle exposes CLIENT UNBLOCK through an exact typed operation with bounded input/output, explicit access, deployment scope, and redaction policy."
     },
     {
       "name": "CLIENT UNPAUSE",
-      "disposition": "planned",
+      "disposition": "typed",
       "access": "full",
       "cluster_behavior": "node_local",
-      "tools": [],
-      "tracking_issue": 32,
-      "rationale": "Structured coverage is planned in issue #32; unrestricted raw execution is not the completeness contract."
+      "tools": [
+        "redis_client_control"
+      ],
+      "tracking_issue": null,
+      "rationale": "The guarded admin bundle exposes CLIENT UNPAUSE through an exact typed operation with bounded input/output, explicit access, deployment scope, and redaction policy."
     },
     {
       "name": "CLUSTER",
@@ -744,102 +766,108 @@
     },
     {
       "name": "CLUSTER ADDSLOTS",
-      "disposition": "planned",
+      "disposition": "excluded",
       "access": "full",
       "cluster_behavior": "cluster_control_plane",
       "tools": [],
-      "tracking_issue": 32,
-      "rationale": "Structured coverage is planned in issue #32; unrestricted raw execution is not the completeness contract."
+      "tracking_issue": null,
+      "rationale": "CLUSTER ADDSLOTS mutates Cluster topology or lifecycle state and is intentionally excluded until a coordinated, recoverable workflow can preserve multi-node invariants."
     },
     {
       "name": "CLUSTER ADDSLOTSRANGE",
-      "disposition": "planned",
+      "disposition": "excluded",
       "access": "full",
       "cluster_behavior": "cluster_control_plane",
       "tools": [],
-      "tracking_issue": 32,
-      "rationale": "Structured coverage is planned in issue #32; unrestricted raw execution is not the completeness contract."
+      "tracking_issue": null,
+      "rationale": "CLUSTER ADDSLOTSRANGE mutates Cluster topology or lifecycle state and is intentionally excluded until a coordinated, recoverable workflow can preserve multi-node invariants."
     },
     {
       "name": "CLUSTER BUMPEPOCH",
-      "disposition": "planned",
+      "disposition": "excluded",
       "access": "full",
       "cluster_behavior": "cluster_control_plane",
       "tools": [],
-      "tracking_issue": 32,
-      "rationale": "Structured coverage is planned in issue #32; unrestricted raw execution is not the completeness contract."
+      "tracking_issue": null,
+      "rationale": "CLUSTER BUMPEPOCH mutates Cluster topology or lifecycle state and is intentionally excluded until a coordinated, recoverable workflow can preserve multi-node invariants."
     },
     {
       "name": "CLUSTER COUNT-FAILURE-REPORTS",
-      "disposition": "planned",
+      "disposition": "typed",
       "access": "read_only",
       "cluster_behavior": "cluster_control_plane",
-      "tools": [],
-      "tracking_issue": 32,
-      "rationale": "Structured coverage is planned in issue #32; unrestricted raw execution is not the completeness contract."
+      "tools": [
+        "redis_cluster_slot"
+      ],
+      "tracking_issue": null,
+      "rationale": "The guarded admin bundle exposes CLUSTER COUNT-FAILURE-REPORTS through an exact typed operation with bounded input/output, explicit access, deployment scope, and redaction policy."
     },
     {
       "name": "CLUSTER COUNTKEYSINSLOT",
-      "disposition": "planned",
+      "disposition": "typed",
       "access": "read_only",
       "cluster_behavior": "cluster_control_plane",
-      "tools": [],
-      "tracking_issue": 32,
-      "rationale": "Structured coverage is planned in issue #32; unrestricted raw execution is not the completeness contract."
+      "tools": [
+        "redis_cluster_slot"
+      ],
+      "tracking_issue": null,
+      "rationale": "The guarded admin bundle exposes CLUSTER COUNTKEYSINSLOT through an exact typed operation with bounded input/output, explicit access, deployment scope, and redaction policy."
     },
     {
       "name": "CLUSTER DELSLOTS",
-      "disposition": "planned",
+      "disposition": "excluded",
       "access": "full",
       "cluster_behavior": "cluster_control_plane",
       "tools": [],
-      "tracking_issue": 32,
-      "rationale": "Structured coverage is planned in issue #32; unrestricted raw execution is not the completeness contract."
+      "tracking_issue": null,
+      "rationale": "CLUSTER DELSLOTS mutates Cluster topology or lifecycle state and is intentionally excluded until a coordinated, recoverable workflow can preserve multi-node invariants."
     },
     {
       "name": "CLUSTER DELSLOTSRANGE",
-      "disposition": "planned",
+      "disposition": "excluded",
       "access": "full",
       "cluster_behavior": "cluster_control_plane",
       "tools": [],
-      "tracking_issue": 32,
-      "rationale": "Structured coverage is planned in issue #32; unrestricted raw execution is not the completeness contract."
+      "tracking_issue": null,
+      "rationale": "CLUSTER DELSLOTSRANGE mutates Cluster topology or lifecycle state and is intentionally excluded until a coordinated, recoverable workflow can preserve multi-node invariants."
     },
     {
       "name": "CLUSTER FAILOVER",
-      "disposition": "planned",
+      "disposition": "excluded",
       "access": "full",
       "cluster_behavior": "cluster_control_plane",
       "tools": [],
-      "tracking_issue": 32,
-      "rationale": "Structured coverage is planned in issue #32; unrestricted raw execution is not the completeness contract."
+      "tracking_issue": null,
+      "rationale": "CLUSTER FAILOVER mutates Cluster topology or lifecycle state and is intentionally excluded until a coordinated, recoverable workflow can preserve multi-node invariants."
     },
     {
       "name": "CLUSTER FLUSHSLOTS",
-      "disposition": "planned",
+      "disposition": "excluded",
       "access": "full",
       "cluster_behavior": "cluster_control_plane",
       "tools": [],
-      "tracking_issue": 32,
-      "rationale": "Structured coverage is planned in issue #32; unrestricted raw execution is not the completeness contract."
+      "tracking_issue": null,
+      "rationale": "CLUSTER FLUSHSLOTS mutates Cluster topology or lifecycle state and is intentionally excluded until a coordinated, recoverable workflow can preserve multi-node invariants."
     },
     {
       "name": "CLUSTER FORGET",
-      "disposition": "planned",
+      "disposition": "excluded",
       "access": "full",
       "cluster_behavior": "cluster_control_plane",
       "tools": [],
-      "tracking_issue": 32,
-      "rationale": "Structured coverage is planned in issue #32; unrestricted raw execution is not the completeness contract."
+      "tracking_issue": null,
+      "rationale": "CLUSTER FORGET mutates Cluster topology or lifecycle state and is intentionally excluded until a coordinated, recoverable workflow can preserve multi-node invariants."
     },
     {
       "name": "CLUSTER GETKEYSINSLOT",
-      "disposition": "planned",
+      "disposition": "typed",
       "access": "read_only",
       "cluster_behavior": "cluster_control_plane",
-      "tools": [],
-      "tracking_issue": 32,
-      "rationale": "Structured coverage is planned in issue #32; unrestricted raw execution is not the completeness contract."
+      "tools": [
+        "redis_cluster_slot"
+      ],
+      "tracking_issue": null,
+      "rationale": "The guarded admin bundle exposes CLUSTER GETKEYSINSLOT through an exact typed operation with bounded input/output, explicit access, deployment scope, and redaction policy."
     },
     {
       "name": "CLUSTER HELP",
@@ -863,129 +891,143 @@
     },
     {
       "name": "CLUSTER KEYSLOT",
-      "disposition": "planned",
+      "disposition": "typed",
       "access": "read_only",
       "cluster_behavior": "cluster_control_plane",
-      "tools": [],
-      "tracking_issue": 32,
-      "rationale": "Structured coverage is planned in issue #32; unrestricted raw execution is not the completeness contract."
+      "tools": [
+        "redis_cluster_slot"
+      ],
+      "tracking_issue": null,
+      "rationale": "The guarded admin bundle exposes CLUSTER KEYSLOT through an exact typed operation with bounded input/output, explicit access, deployment scope, and redaction policy."
     },
     {
       "name": "CLUSTER LINKS",
-      "disposition": "planned",
+      "disposition": "typed",
       "access": "read_only",
       "cluster_behavior": "cluster_control_plane",
-      "tools": [],
-      "tracking_issue": 32,
-      "rationale": "Structured coverage is planned in issue #32; unrestricted raw execution is not the completeness contract."
+      "tools": [
+        "redis_cluster_inspect"
+      ],
+      "tracking_issue": null,
+      "rationale": "The guarded admin bundle exposes CLUSTER LINKS through an exact typed operation with bounded input/output, explicit access, deployment scope, and redaction policy."
     },
     {
       "name": "CLUSTER MEET",
-      "disposition": "planned",
+      "disposition": "excluded",
       "access": "full",
       "cluster_behavior": "cluster_control_plane",
       "tools": [],
-      "tracking_issue": 32,
-      "rationale": "Structured coverage is planned in issue #32; unrestricted raw execution is not the completeness contract."
+      "tracking_issue": null,
+      "rationale": "CLUSTER MEET mutates Cluster topology or lifecycle state and is intentionally excluded until a coordinated, recoverable workflow can preserve multi-node invariants."
     },
     {
       "name": "CLUSTER MIGRATION",
-      "disposition": "planned",
+      "disposition": "excluded",
       "access": "full",
       "cluster_behavior": "cluster_control_plane",
       "tools": [],
-      "tracking_issue": 32,
-      "rationale": "Structured coverage is planned in issue #32; unrestricted raw execution is not the completeness contract."
+      "tracking_issue": null,
+      "rationale": "IMPORT and CANCEL are coordinated multi-node workflows with asymmetric cancellation; only redacted STATUS inspection is exposed through redis_cluster_inspect."
     },
     {
       "name": "CLUSTER MYID",
-      "disposition": "planned",
+      "disposition": "typed",
       "access": "read_only",
       "cluster_behavior": "cluster_control_plane",
-      "tools": [],
-      "tracking_issue": 32,
-      "rationale": "Structured coverage is planned in issue #32; unrestricted raw execution is not the completeness contract."
+      "tools": [
+        "redis_cluster_inspect"
+      ],
+      "tracking_issue": null,
+      "rationale": "The guarded admin bundle exposes CLUSTER MYID through an exact typed operation with bounded input/output, explicit access, deployment scope, and redaction policy."
     },
     {
       "name": "CLUSTER MYSHARDID",
-      "disposition": "planned",
+      "disposition": "typed",
       "access": "read_only",
       "cluster_behavior": "cluster_control_plane",
-      "tools": [],
-      "tracking_issue": 32,
-      "rationale": "Structured coverage is planned in issue #32; unrestricted raw execution is not the completeness contract."
+      "tools": [
+        "redis_cluster_inspect"
+      ],
+      "tracking_issue": null,
+      "rationale": "The guarded admin bundle exposes CLUSTER MYSHARDID through an exact typed operation with bounded input/output, explicit access, deployment scope, and redaction policy."
     },
     {
       "name": "CLUSTER NODES",
-      "disposition": "planned",
+      "disposition": "typed",
       "access": "read_only",
       "cluster_behavior": "cluster_control_plane",
-      "tools": [],
-      "tracking_issue": 32,
-      "rationale": "Structured coverage is planned in issue #32; unrestricted raw execution is not the completeness contract."
+      "tools": [
+        "redis_cluster_inspect"
+      ],
+      "tracking_issue": null,
+      "rationale": "The guarded admin bundle exposes CLUSTER NODES through an exact typed operation with bounded input/output, explicit access, deployment scope, and redaction policy."
     },
     {
       "name": "CLUSTER REPLICAS",
-      "disposition": "planned",
+      "disposition": "typed",
       "access": "read_only",
       "cluster_behavior": "cluster_control_plane",
-      "tools": [],
-      "tracking_issue": 32,
-      "rationale": "Structured coverage is planned in issue #32; unrestricted raw execution is not the completeness contract."
+      "tools": [
+        "redis_cluster_slot"
+      ],
+      "tracking_issue": null,
+      "rationale": "The guarded admin bundle exposes CLUSTER REPLICAS through an exact typed operation with bounded input/output, explicit access, deployment scope, and redaction policy."
     },
     {
       "name": "CLUSTER REPLICATE",
-      "disposition": "planned",
+      "disposition": "excluded",
       "access": "full",
       "cluster_behavior": "cluster_control_plane",
       "tools": [],
-      "tracking_issue": 32,
-      "rationale": "Structured coverage is planned in issue #32; unrestricted raw execution is not the completeness contract."
+      "tracking_issue": null,
+      "rationale": "CLUSTER REPLICATE mutates Cluster topology or lifecycle state and is intentionally excluded until a coordinated, recoverable workflow can preserve multi-node invariants."
     },
     {
       "name": "CLUSTER RESET",
-      "disposition": "planned",
+      "disposition": "excluded",
       "access": "full",
       "cluster_behavior": "cluster_control_plane",
       "tools": [],
-      "tracking_issue": 32,
-      "rationale": "Structured coverage is planned in issue #32; unrestricted raw execution is not the completeness contract."
+      "tracking_issue": null,
+      "rationale": "CLUSTER RESET mutates Cluster topology or lifecycle state and is intentionally excluded until a coordinated, recoverable workflow can preserve multi-node invariants."
     },
     {
       "name": "CLUSTER SAVECONFIG",
-      "disposition": "planned",
+      "disposition": "excluded",
       "access": "full",
       "cluster_behavior": "cluster_control_plane",
       "tools": [],
-      "tracking_issue": 32,
-      "rationale": "Structured coverage is planned in issue #32; unrestricted raw execution is not the completeness contract."
+      "tracking_issue": null,
+      "rationale": "CLUSTER SAVECONFIG mutates Cluster topology or lifecycle state and is intentionally excluded until a coordinated, recoverable workflow can preserve multi-node invariants."
     },
     {
       "name": "CLUSTER SET-CONFIG-EPOCH",
-      "disposition": "planned",
+      "disposition": "excluded",
       "access": "full",
       "cluster_behavior": "cluster_control_plane",
       "tools": [],
-      "tracking_issue": 32,
-      "rationale": "Structured coverage is planned in issue #32; unrestricted raw execution is not the completeness contract."
+      "tracking_issue": null,
+      "rationale": "CLUSTER SET-CONFIG-EPOCH mutates Cluster topology or lifecycle state and is intentionally excluded until a coordinated, recoverable workflow can preserve multi-node invariants."
     },
     {
       "name": "CLUSTER SETSLOT",
-      "disposition": "planned",
+      "disposition": "excluded",
       "access": "full",
       "cluster_behavior": "cluster_control_plane",
       "tools": [],
-      "tracking_issue": 32,
-      "rationale": "Structured coverage is planned in issue #32; unrestricted raw execution is not the completeness contract."
+      "tracking_issue": null,
+      "rationale": "CLUSTER SETSLOT mutates Cluster topology or lifecycle state and is intentionally excluded until a coordinated, recoverable workflow can preserve multi-node invariants."
     },
     {
       "name": "CLUSTER SHARDS",
-      "disposition": "planned",
+      "disposition": "typed",
       "access": "read_only",
       "cluster_behavior": "cluster_control_plane",
-      "tools": [],
-      "tracking_issue": 32,
-      "rationale": "Structured coverage is planned in issue #32; unrestricted raw execution is not the completeness contract."
+      "tools": [
+        "redis_cluster_inspect"
+      ],
+      "tracking_issue": null,
+      "rationale": "The guarded admin bundle exposes CLUSTER SHARDS through an exact typed operation with bounded input/output, explicit access, deployment scope, and redaction policy."
     },
     {
       "name": "CLUSTER SLAVES",
@@ -998,12 +1040,14 @@
     },
     {
       "name": "CLUSTER SLOT-STATS",
-      "disposition": "planned",
+      "disposition": "typed",
       "access": "read_only",
       "cluster_behavior": "all_shards",
-      "tools": [],
-      "tracking_issue": 32,
-      "rationale": "Structured coverage is planned in issue #32; unrestricted raw execution is not the completeness contract."
+      "tools": [
+        "redis_cluster_slot_stats"
+      ],
+      "tracking_issue": null,
+      "rationale": "The guarded admin bundle exposes CLUSTER SLOT-STATS through an exact typed operation with bounded input/output, explicit access, deployment scope, and redaction policy."
     },
     {
       "name": "CLUSTER SLOTS",
@@ -1016,12 +1060,12 @@
     },
     {
       "name": "CLUSTER SYNCSLOTS",
-      "disposition": "planned",
+      "disposition": "excluded",
       "access": "full",
       "cluster_behavior": "cluster_control_plane",
       "tools": [],
-      "tracking_issue": 32,
-      "rationale": "Structured coverage is planned in issue #32; unrestricted raw execution is not the completeness contract."
+      "tracking_issue": null,
+      "rationale": "CLUSTER SYNCSLOTS mutates Cluster topology or lifecycle state and is intentionally excluded until a coordinated, recoverable workflow can preserve multi-node invariants."
     },
     {
       "name": "COMMAND",
@@ -1130,12 +1174,14 @@
     },
     {
       "name": "CONFIG GET",
-      "disposition": "planned",
+      "disposition": "typed",
       "access": "read_only",
       "cluster_behavior": "node_local",
-      "tools": [],
-      "tracking_issue": 32,
-      "rationale": "Structured coverage is planned in issue #32; unrestricted raw execution is not the completeness contract."
+      "tools": [
+        "redis_config_get"
+      ],
+      "tracking_issue": null,
+      "rationale": "The guarded admin bundle exposes CONFIG GET through an exact typed operation with bounded input/output, explicit access, deployment scope, and redaction policy."
     },
     {
       "name": "CONFIG HELP",
@@ -1148,30 +1194,34 @@
     },
     {
       "name": "CONFIG RESETSTAT",
-      "disposition": "planned",
+      "disposition": "typed",
       "access": "full",
       "cluster_behavior": "all_nodes",
-      "tools": [],
-      "tracking_issue": 32,
-      "rationale": "Structured coverage is planned in issue #32; unrestricted raw execution is not the completeness contract."
+      "tools": [
+        "redis_config_resetstat"
+      ],
+      "tracking_issue": null,
+      "rationale": "The guarded admin bundle exposes CONFIG RESETSTAT through an exact typed operation with bounded input/output, explicit access, deployment scope, and redaction policy."
     },
     {
       "name": "CONFIG REWRITE",
-      "disposition": "planned",
+      "disposition": "excluded",
       "access": "full",
       "cluster_behavior": "all_nodes",
       "tools": [],
-      "tracking_issue": 32,
-      "rationale": "Structured coverage is planned in issue #32; unrestricted raw execution is not the completeness contract."
+      "tracking_issue": null,
+      "rationale": "Filesystem-backed configuration persistence is intentionally excluded from ordinary request/response administration tools."
     },
     {
       "name": "CONFIG SET",
-      "disposition": "planned",
+      "disposition": "typed",
       "access": "full",
       "cluster_behavior": "all_nodes",
-      "tools": [],
-      "tracking_issue": 32,
-      "rationale": "Structured coverage is planned in issue #32; unrestricted raw execution is not the completeness contract."
+      "tools": [
+        "redis_config_set"
+      ],
+      "tracking_issue": null,
+      "rationale": "The guarded admin bundle exposes CONFIG SET through an exact typed operation with bounded input/output, explicit access, deployment scope, and redaction policy."
     },
     {
       "name": "COPY",
@@ -1419,21 +1469,25 @@
     },
     {
       "name": "FLUSHALL",
-      "disposition": "planned",
+      "disposition": "typed",
       "access": "full",
       "cluster_behavior": "all_shards",
-      "tools": [],
-      "tracking_issue": 32,
-      "rationale": "Structured coverage is planned in issue #32; unrestricted raw execution is not the completeness contract."
+      "tools": [
+        "redis_flush"
+      ],
+      "tracking_issue": null,
+      "rationale": "The guarded admin bundle exposes FLUSHALL through an exact typed operation with bounded input/output, explicit access, deployment scope, and redaction policy."
     },
     {
       "name": "FLUSHDB",
-      "disposition": "planned",
+      "disposition": "typed",
       "access": "full",
       "cluster_behavior": "all_shards",
-      "tools": [],
-      "tracking_issue": 32,
-      "rationale": "Structured coverage is planned in issue #32; unrestricted raw execution is not the completeness contract."
+      "tools": [
+        "redis_flush"
+      ],
+      "tracking_issue": null,
+      "rationale": "The guarded admin bundle exposes FLUSHDB through an exact typed operation with bounded input/output, explicit access, deployment scope, and redaction policy."
     },
     {
       "name": "FUNCTION",
@@ -1921,12 +1975,14 @@
     },
     {
       "name": "HOTKEYS GET",
-      "disposition": "planned",
+      "disposition": "typed",
       "access": "read_only",
       "cluster_behavior": "special",
-      "tools": [],
-      "tracking_issue": 32,
-      "rationale": "Structured coverage is planned in issue #32; unrestricted raw execution is not the completeness contract."
+      "tools": [
+        "redis_hotkeys_get"
+      ],
+      "tracking_issue": null,
+      "rationale": "The guarded admin bundle exposes HOTKEYS GET through an exact typed operation with bounded input/output, explicit access, deployment scope, and redaction policy."
     },
     {
       "name": "HOTKEYS HELP",
@@ -1939,30 +1995,36 @@
     },
     {
       "name": "HOTKEYS RESET",
-      "disposition": "planned",
+      "disposition": "typed",
       "access": "full",
       "cluster_behavior": "special",
-      "tools": [],
-      "tracking_issue": 32,
-      "rationale": "Structured coverage is planned in issue #32; unrestricted raw execution is not the completeness contract."
+      "tools": [
+        "redis_hotkeys_control"
+      ],
+      "tracking_issue": null,
+      "rationale": "The guarded admin bundle exposes HOTKEYS RESET through an exact typed operation with bounded input/output, explicit access, deployment scope, and redaction policy."
     },
     {
       "name": "HOTKEYS START",
-      "disposition": "planned",
+      "disposition": "typed",
       "access": "full",
       "cluster_behavior": "special",
-      "tools": [],
-      "tracking_issue": 32,
-      "rationale": "Structured coverage is planned in issue #32; unrestricted raw execution is not the completeness contract."
+      "tools": [
+        "redis_hotkeys_control"
+      ],
+      "tracking_issue": null,
+      "rationale": "The guarded admin bundle exposes HOTKEYS START through an exact typed operation with bounded input/output, explicit access, deployment scope, and redaction policy."
     },
     {
       "name": "HOTKEYS STOP",
-      "disposition": "planned",
+      "disposition": "typed",
       "access": "full",
       "cluster_behavior": "special",
-      "tools": [],
-      "tracking_issue": 32,
-      "rationale": "Structured coverage is planned in issue #32; unrestricted raw execution is not the completeness contract."
+      "tools": [
+        "redis_hotkeys_control"
+      ],
+      "tracking_issue": null,
+      "rationale": "The guarded admin bundle exposes HOTKEYS STOP through an exact typed operation with bounded input/output, explicit access, deployment scope, and redaction policy."
     },
     {
       "name": "HPERSIST",
@@ -2170,12 +2232,14 @@
     },
     {
       "name": "LASTSAVE",
-      "disposition": "planned",
+      "disposition": "composed",
       "access": "read_only",
       "cluster_behavior": "node_local",
-      "tools": [],
-      "tracking_issue": 32,
-      "rationale": "Structured coverage is planned in issue #32; unrestricted raw execution is not the completeness contract."
+      "tools": [
+        "redis_server_state"
+      ],
+      "tracking_issue": null,
+      "rationale": "redis_server_state composes LASTSAVE into a bounded node-local snapshot and omits replication peer addresses and details."
     },
     {
       "name": "LATENCY",
@@ -2188,21 +2252,25 @@
     },
     {
       "name": "LATENCY DOCTOR",
-      "disposition": "planned",
+      "disposition": "typed",
       "access": "read_only",
       "cluster_behavior": "all_nodes",
-      "tools": [],
-      "tracking_issue": 32,
-      "rationale": "Structured coverage is planned in issue #32; unrestricted raw execution is not the completeness contract."
+      "tools": [
+        "redis_latency_overview"
+      ],
+      "tracking_issue": null,
+      "rationale": "The guarded admin bundle exposes LATENCY DOCTOR through an exact typed operation with bounded input/output, explicit access, deployment scope, and redaction policy."
     },
     {
       "name": "LATENCY GRAPH",
-      "disposition": "planned",
+      "disposition": "typed",
       "access": "read_only",
       "cluster_behavior": "all_nodes",
-      "tools": [],
-      "tracking_issue": 32,
-      "rationale": "Structured coverage is planned in issue #32; unrestricted raw execution is not the completeness contract."
+      "tools": [
+        "redis_latency_overview"
+      ],
+      "tracking_issue": null,
+      "rationale": "The guarded admin bundle exposes LATENCY GRAPH through an exact typed operation with bounded input/output, explicit access, deployment scope, and redaction policy."
     },
     {
       "name": "LATENCY HELP",
@@ -2215,12 +2283,14 @@
     },
     {
       "name": "LATENCY HISTOGRAM",
-      "disposition": "planned",
+      "disposition": "typed",
       "access": "read_only",
       "cluster_behavior": "all_nodes",
-      "tools": [],
-      "tracking_issue": 32,
-      "rationale": "Structured coverage is planned in issue #32; unrestricted raw execution is not the completeness contract."
+      "tools": [
+        "redis_latency_overview"
+      ],
+      "tracking_issue": null,
+      "rationale": "The guarded admin bundle exposes LATENCY HISTOGRAM through an exact typed operation with bounded input/output, explicit access, deployment scope, and redaction policy."
     },
     {
       "name": "LATENCY HISTORY",
@@ -2235,21 +2305,25 @@
     },
     {
       "name": "LATENCY LATEST",
-      "disposition": "planned",
+      "disposition": "typed",
       "access": "read_only",
       "cluster_behavior": "all_nodes",
-      "tools": [],
-      "tracking_issue": 32,
-      "rationale": "Structured coverage is planned in issue #32; unrestricted raw execution is not the completeness contract."
+      "tools": [
+        "redis_latency_overview"
+      ],
+      "tracking_issue": null,
+      "rationale": "The guarded admin bundle exposes LATENCY LATEST through an exact typed operation with bounded input/output, explicit access, deployment scope, and redaction policy."
     },
     {
       "name": "LATENCY RESET",
-      "disposition": "planned",
+      "disposition": "typed",
       "access": "full",
       "cluster_behavior": "all_nodes",
-      "tools": [],
-      "tracking_issue": 32,
-      "rationale": "Structured coverage is planned in issue #32; unrestricted raw execution is not the completeness contract."
+      "tools": [
+        "redis_latency_reset"
+      ],
+      "tracking_issue": null,
+      "rationale": "The guarded admin bundle exposes LATENCY RESET through an exact typed operation with bounded input/output, explicit access, deployment scope, and redaction policy."
     },
     {
       "name": "LCS",
@@ -2438,12 +2512,14 @@
     },
     {
       "name": "MEMORY DOCTOR",
-      "disposition": "planned",
+      "disposition": "typed",
       "access": "read_only",
       "cluster_behavior": "all_shards",
-      "tools": [],
-      "tracking_issue": 32,
-      "rationale": "Structured coverage is planned in issue #32; unrestricted raw execution is not the completeness contract."
+      "tools": [
+        "redis_memory_diagnostics"
+      ],
+      "tracking_issue": null,
+      "rationale": "The guarded admin bundle exposes MEMORY DOCTOR through an exact typed operation with bounded input/output, explicit access, deployment scope, and redaction policy."
     },
     {
       "name": "MEMORY HELP",
@@ -2456,21 +2532,25 @@
     },
     {
       "name": "MEMORY MALLOC-STATS",
-      "disposition": "planned",
+      "disposition": "typed",
       "access": "read_only",
       "cluster_behavior": "all_shards",
-      "tools": [],
-      "tracking_issue": 32,
-      "rationale": "Structured coverage is planned in issue #32; unrestricted raw execution is not the completeness contract."
+      "tools": [
+        "redis_memory_diagnostics"
+      ],
+      "tracking_issue": null,
+      "rationale": "The guarded admin bundle exposes MEMORY MALLOC-STATS through an exact typed operation with bounded input/output, explicit access, deployment scope, and redaction policy."
     },
     {
       "name": "MEMORY PURGE",
-      "disposition": "planned",
+      "disposition": "typed",
       "access": "full",
       "cluster_behavior": "all_shards",
-      "tools": [],
-      "tracking_issue": 32,
-      "rationale": "Structured coverage is planned in issue #32; unrestricted raw execution is not the completeness contract."
+      "tools": [
+        "redis_memory_purge"
+      ],
+      "tracking_issue": null,
+      "rationale": "The guarded admin bundle exposes MEMORY PURGE through an exact typed operation with bounded input/output, explicit access, deployment scope, and redaction policy."
     },
     {
       "name": "MEMORY STATS",
@@ -3045,12 +3125,14 @@
     },
     {
       "name": "ROLE",
-      "disposition": "planned",
+      "disposition": "composed",
       "access": "read_only",
       "cluster_behavior": "node_local",
-      "tools": [],
-      "tracking_issue": 32,
-      "rationale": "Structured coverage is planned in issue #32; unrestricted raw execution is not the completeness contract."
+      "tools": [
+        "redis_server_state"
+      ],
+      "tracking_issue": null,
+      "rationale": "redis_server_state composes ROLE into a bounded node-local snapshot and omits replication peer addresses and details."
     },
     {
       "name": "RPOP",
@@ -3399,21 +3481,25 @@
     },
     {
       "name": "SLOWLOG LEN",
-      "disposition": "planned",
+      "disposition": "typed",
       "access": "read_only",
       "cluster_behavior": "all_nodes",
-      "tools": [],
-      "tracking_issue": 32,
-      "rationale": "Structured coverage is planned in issue #32; unrestricted raw execution is not the completeness contract."
+      "tools": [
+        "redis_slowlog_len"
+      ],
+      "tracking_issue": null,
+      "rationale": "The guarded admin bundle exposes SLOWLOG LEN through an exact typed operation with bounded input/output, explicit access, deployment scope, and redaction policy."
     },
     {
       "name": "SLOWLOG RESET",
-      "disposition": "planned",
+      "disposition": "typed",
       "access": "full",
       "cluster_behavior": "all_nodes",
-      "tools": [],
-      "tracking_issue": 32,
-      "rationale": "Structured coverage is planned in issue #32; unrestricted raw execution is not the completeness contract."
+      "tools": [
+        "redis_slowlog_reset"
+      ],
+      "tracking_issue": null,
+      "rationale": "The guarded admin bundle exposes SLOWLOG RESET through an exact typed operation with bounded input/output, explicit access, deployment scope, and redaction policy."
     },
     {
       "name": "SMEMBERS",
@@ -3618,12 +3704,14 @@
     },
     {
       "name": "SWAPDB",
-      "disposition": "planned",
+      "disposition": "typed",
       "access": "full",
       "cluster_behavior": "node_local",
-      "tools": [],
-      "tracking_issue": 32,
-      "rationale": "Structured coverage is planned in issue #32; unrestricted raw execution is not the completeness contract."
+      "tools": [
+        "redis_swapdb"
+      ],
+      "tracking_issue": null,
+      "rationale": "The guarded admin bundle exposes SWAPDB through an exact typed operation with bounded input/output, explicit access, deployment scope, and redaction policy."
     },
     {
       "name": "SYNC",
@@ -3636,12 +3724,14 @@
     },
     {
       "name": "TIME",
-      "disposition": "planned",
+      "disposition": "composed",
       "access": "read_only",
       "cluster_behavior": "node_local",
-      "tools": [],
-      "tracking_issue": 32,
-      "rationale": "Structured coverage is planned in issue #32; unrestricted raw execution is not the completeness contract."
+      "tools": [
+        "redis_server_state"
+      ],
+      "tracking_issue": null,
+      "rationale": "redis_server_state composes TIME into a bounded node-local snapshot and omits replication peer addresses and details."
     },
     {
       "name": "TOUCH",

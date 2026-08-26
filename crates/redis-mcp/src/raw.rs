@@ -57,6 +57,41 @@ pub(crate) fn classify_command(
         .with_code("RAW_COMMANDS_DISABLED"));
     }
 
+    if matches!(
+        command.as_str(),
+        "ACL"
+            | "BACKUP"
+            | "CLUSTER"
+            | "CONFIG"
+            | "FLUSHALL"
+            | "FLUSHDB"
+            | "HOTKEYS"
+            | "LASTSAVE"
+            | "LATENCY"
+            | "ROLE"
+            | "SLOWLOG"
+            | "SWAPDB"
+            | "TIME"
+    ) || (command == "CLIENT"
+        && arguments.first().is_some_and(|argument| {
+            eq_ascii_case(argument, b"KILL")
+                || eq_ascii_case(argument, b"UNBLOCK")
+                || eq_ascii_case(argument, b"UNPAUSE")
+        }))
+        || (command == "MEMORY"
+            && arguments.first().is_some_and(|argument| {
+                eq_ascii_case(argument, b"DOCTOR")
+                    || eq_ascii_case(argument, b"MALLOC-STATS")
+                    || eq_ascii_case(argument, b"PURGE")
+            }))
+    {
+        return unsupported(
+            &command,
+            "requires the explicitly enabled guarded administration bundle",
+            "ADMIN_COMMAND_UNSUPPORTED",
+        );
+    }
+
     if let Some((code, category)) = unsupported_boundary(&command) {
         return unsupported(&command, category, code);
     }

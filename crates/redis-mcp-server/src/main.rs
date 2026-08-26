@@ -31,6 +31,7 @@ impl From<CliAccessMode> for AccessMode {
 
 #[derive(Debug, Clone, Copy, ValueEnum)]
 enum CliOptionalBundle {
+    Admin,
     Json,
     Search,
     Scripting,
@@ -39,6 +40,7 @@ enum CliOptionalBundle {
 impl From<CliOptionalBundle> for ToolBundle {
     fn from(value: CliOptionalBundle) -> Self {
         match value {
+            CliOptionalBundle::Admin => Self::Admin,
             CliOptionalBundle::Json => Self::Json,
             CliOptionalBundle::Search => Self::Search,
             CliOptionalBundle::Scripting => Self::Scripting,
@@ -200,6 +202,25 @@ mod tests {
         assert!(matches!(
             ToolBundle::from(args.optional_bundles[0]),
             ToolBundle::Scripting
+        ));
+    }
+
+    #[test]
+    fn admin_bundle_is_selectable_from_the_server_cli() {
+        let args = Args::try_parse_from([
+            "redis-mcp-server",
+            "--access",
+            "full",
+            "--enable-bundle",
+            "admin",
+            "--stdio",
+        ])
+        .expect("parse admin server arguments");
+
+        assert_eq!(args.optional_bundles.len(), 1);
+        assert!(matches!(
+            ToolBundle::from(args.optional_bundles[0]),
+            ToolBundle::Admin
         ));
     }
 }

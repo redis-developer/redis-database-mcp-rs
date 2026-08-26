@@ -227,5 +227,5 @@ fn planned_and_session_work_is_tied_to_the_known_backlog() {
         .into_iter()
         .filter_map(|command| command.tracking_issue)
         .collect::<BTreeSet<_>>();
-    assert_eq!(tracked, BTreeSet::from([30, 32, 61, 66]));
+    assert_eq!(tracked, BTreeSet::from([30, 61, 66]));
 }

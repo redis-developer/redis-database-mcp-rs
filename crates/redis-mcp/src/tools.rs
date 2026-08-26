@@ -1,5 +1,7 @@
 //! Curated Redis database MCP tools.
 
+#[cfg(feature = "admin")]
+mod admin;
 #[cfg(any(
     feature = "hashes",
     feature = "lists",
@@ -509,7 +511,11 @@ pub(crate) fn add_read_only_tools(
     }
     #[cfg(feature = "sessions")]
     if bundles.contains(&ToolBundle::Sessions) {
-        router = pubsub_sessions::add_tools(router, state);
+        router = pubsub_sessions::add_tools(router, state.clone());
+    }
+    #[cfg(feature = "admin")]
+    if bundles.contains(&ToolBundle::Admin) {
+        router = admin::add_read_tools(router, state);
     }
     router
 }
@@ -803,7 +809,11 @@ pub(crate) fn add_destructive_tools(
         ToolFamily::Scripting,
         ToolBundle::Scripting,
     ) {
-        router = scripting::add_full_tools(router, state);
+        router = scripting::add_full_tools(router, state.clone());
+    }
+    #[cfg(feature = "admin")]
+    if bundles.contains(&ToolBundle::Admin) {
+        router = admin::add_full_tools(router, state);
     }
     router
 }

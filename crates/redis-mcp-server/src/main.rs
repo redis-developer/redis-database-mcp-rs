@@ -179,3 +179,27 @@ async fn main() -> Result<(), tower_mcp::BoxError> {
     transport.run().await?;
     Ok(())
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn scripting_bundle_is_selectable_from_the_server_cli() {
+        let args = Args::try_parse_from([
+            "redis-mcp-server",
+            "--access",
+            "full",
+            "--enable-bundle",
+            "scripting",
+            "--stdio",
+        ])
+        .expect("parse scripting server arguments");
+
+        assert_eq!(args.optional_bundles.len(), 1);
+        assert!(matches!(
+            ToolBundle::from(args.optional_bundles[0]),
+            ToolBundle::Scripting
+        ));
+    }
+}

@@ -1524,6 +1524,69 @@ mod tests {
     }
 
     #[test]
+    fn timeseries_cluster_commands_route_by_key_and_enforce_same_slot_rules() {
+        let mut range = RedisCommand::new("redis_ts_range", AccessMode::ReadOnly, "TS.RANGE");
+        range
+            .require_module(RedisModule::TimeSeries)
+            .arg("ts:{tenant}:temperature")
+            .arg("-")
+            .arg("+");
+        assert!(validate_cluster_command_slots(&range).is_ok());
+        assert_eq!(
+            cluster_routing_key(&range),
+            Some(b"ts:{tenant}:temperature".as_slice())
+        );
+
+        // Keyless multi-series queries observe one node and must not pretend
+        // to have a key route.
+        let mut mrange = RedisCommand::new("redis_ts_mrange", AccessMode::ReadOnly, "TS.MRANGE");
+        mrange
+            .require_module(RedisModule::TimeSeries)
+            .arg("-")
+            .arg("+")
+            .arg("FILTER")
+            .arg("sensor=1");
+        assert_eq!(cluster_routing_key(&mrange), None);
+
+        let mut madd = RedisCommand::new("redis_ts_madd", AccessMode::ReadWrite, "TS.MADD");
+        madd.require_module(RedisModule::TimeSeries)
+            .arg("ts:{tenant}:a")
+            .arg("1")
+            .arg("1.5")
+            .arg("ts:{tenant}:b")
+            .arg("2")
+            .arg("2.5");
+        assert!(validate_cluster_command_slots(&madd).is_ok());
+        assert_eq!(
+            cluster_routing_key(&madd),
+            Some(b"ts:{tenant}:a".as_slice())
+        );
+        madd.arguments[3] = b"ts:{other}:b".to_vec();
+        assert_eq!(
+            validate_cluster_command_slots(&madd).unwrap_err().code(),
+            Some("CROSSSLOT")
+        );
+
+        let mut rule = RedisCommand::new(
+            "redis_ts_createrule",
+            AccessMode::ReadWrite,
+            "TS.CREATERULE",
+        );
+        rule.require_module(RedisModule::TimeSeries)
+            .arg("ts:{tenant}:source")
+            .arg("ts:{tenant}:hourly")
+            .arg("AGGREGATION")
+            .arg("avg")
+            .arg("3600000");
+        assert!(validate_cluster_command_slots(&rule).is_ok());
+        rule.arguments[1] = b"ts:{other}:hourly".to_vec();
+        assert_eq!(
+            validate_cluster_command_slots(&rule).unwrap_err().code(),
+            Some("CROSSSLOT")
+        );
+    }
+
+    #[test]
     fn resp_values_round_trip_without_public_redis_types() {
         let value = RedisValue::Map(vec![(
             RedisValue::BulkString(vec![0xff]),

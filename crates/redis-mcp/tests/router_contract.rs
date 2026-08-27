@@ -22,6 +22,25 @@ struct StubRedis;
 #[derive(Clone, Copy)]
 struct StubPubSubSessions;
 
+#[derive(Clone, Copy)]
+struct StubTransactions;
+
+#[async_trait]
+impl redis_mcp::RedisTransactionExecutor for StubTransactions {
+    async fn execute_transaction(
+        &self,
+        transaction: redis_mcp::RedisPreparedTransaction,
+    ) -> Result<redis_mcp::RedisTransactionOutcome, RedisError> {
+        Ok(redis_mcp::RedisTransactionOutcome::Committed {
+            results: transaction
+                .commands()
+                .iter()
+                .map(|_| RedisValue::Okay)
+                .collect(),
+        })
+    }
+}
+
 #[derive(Clone, Default)]
 struct OwnerRecordingPubSubSessions {
     subscribed_owners: Arc<Mutex<Vec<String>>>,
@@ -850,13 +869,23 @@ async fn client_for_bundles(
     bundles: impl IntoIterator<Item = ToolBundle>,
     raw_policy: RawCommandPolicy,
 ) -> McpClient {
-    let bundles = bundles.into_iter().collect::<Vec<_>>();
+    // Transactions additionally require the raw policy, so drop the bundle
+    // from selections that keep raw commands disabled.
+    let bundles = bundles
+        .into_iter()
+        .filter(|bundle| {
+            *bundle != ToolBundle::Transactions || raw_policy != RawCommandPolicy::Disabled
+        })
+        .collect::<Vec<_>>();
     let mut builder = RedisMcp::builder(StubRedis)
         .access(access)
         .bundles(bundles.iter().copied())
         .raw_command_policy(raw_policy);
     if bundles.contains(&ToolBundle::Sessions) {
         builder = builder.pubsub_sessions(StubPubSubSessions);
+    }
+    if bundles.contains(&ToolBundle::Transactions) {
+        builder = builder.transactions(StubTransactions);
     }
     let router = builder.build();
     let client = McpClient::connect(ChannelTransport::new(router))
@@ -2375,7 +2404,14 @@ async fn capability_client(
 ) -> McpClient {
     let router = RedisMcp::builder(StubRedis)
         .access(AccessMode::Full)
-        .bundles(ToolBundle::ALL.iter().copied())
+        // Transactions are excluded because this client keeps the raw
+        // command policy disabled.
+        .bundles(
+            ToolBundle::ALL
+                .iter()
+                .copied()
+                .filter(|bundle| *bundle != ToolBundle::Transactions),
+        )
         .capabilities(capabilities)
         .unavailable_tool_policy(policy)
         .pubsub_sessions(StubPubSubSessions)
@@ -3502,6 +3538,20 @@ fn structured_cases() -> Vec<(&'static str, serde_json::Value, &'static str)> {
             "redis_command",
             serde_json::json!({"command": "ECHO", "arguments": ["hello"]}),
             "value",
+        ),
+        (
+            "redis_transaction",
+            serde_json::json!({
+                "watch": [{"value": "inventory:widget"}],
+                "commands": [
+                    {"command": "GET", "arguments": [{"value": "inventory:widget"}]},
+                    {
+                        "command": "SET",
+                        "arguments": [{"value": "inventory:widget"}, {"value": "7"}],
+                    },
+                ],
+            }),
+            "status",
         ),
     ]
 }

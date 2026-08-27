@@ -19,7 +19,7 @@ path = "src/lib.rs"
 
 [features]
 default = ["full"]
-full = ["all-families", "diagnostics", "sessions", "admin"]
+full = ["all-families", "diagnostics", "sessions", "transactions", "admin"]
 all-families = [
     "keyspace",
     "strings",
@@ -56,6 +56,7 @@ json = []
 search = []
 diagnostics = []
 sessions = []
+transactions = []
 admin = []
 
 [dependencies]

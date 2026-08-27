@@ -1086,6 +1086,16 @@
       "reason": "The opt-in scripting family covers bounded binary-safe Lua and Redis Functions execution plus guarded cache/library lifecycle. Keys are declared and same-slot validated, dynamic results share global budgets, Redis 7+ read-only forms have distinct access annotations, all-node versus primary fan-out is explicit, partial node failures redact server messages, and timeout behavior does not claim server-side cancellation."
     },
     {
+      "id": "transactions.atomic",
+      "redis_mcp_tools": [],
+      "redisctl_tools": [],
+      "library_tools": [
+        "redis_transaction"
+      ],
+      "disposition": "implemented",
+      "reason": "The opt-in transactions bundle executes one bounded, classified command list atomically inside MULTI/EXEC with optional WATCH keys on a dedicated per-call connection. Nested commands share the raw invocation policy and its hard boundaries, the transaction requires the maximum nested access, outcomes are explicitly committed, aborted, or rejected with per-command alignment, and unknown post-EXEC outcomes are reported without replaying committed writes."
+    },
+    {
       "id": "admin.guarded",
       "redis_mcp_tools": [],
       "redisctl_tools": ["redis_acl_list", "redis_config_get", "redis_config_set", "redis_flushdb"],

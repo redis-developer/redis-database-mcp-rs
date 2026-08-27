@@ -5,8 +5,8 @@ use std::sync::Arc;
 
 use redis_mcp::{
     AccessMode, DirectRedis, DirectRedisCluster, DirectRedisPubSubSessionManager,
-    PubSubSessionLimits, PubSubSessionManager, RawCommandPolicy, RedisExecutor, RedisMcp,
-    ToolBundle,
+    DirectRedisTransactions, PubSubSessionLimits, PubSubSessionManager, RawCommandPolicy,
+    RedisExecutor, RedisMcp, ToolBundle,
 };
 use tower_mcp::{McpRouter, ProtocolSupport, StdioTransport};
 use tracing::info;
@@ -76,6 +76,11 @@ struct Args {
     #[arg(long, conflicts_with = "raw")]
     raw_unrestricted: bool,
 
+    /// Expose bounded atomic redis_transaction execution. Requires --raw or
+    /// --raw-unrestricted.
+    #[arg(long)]
+    transactions: bool,
+
     /// Add an optional tool bundle to the curated defaults.
     #[arg(long = "enable-bundle", value_enum)]
     optional_bundles: Vec<CliOptionalBundle>,
@@ -91,12 +96,16 @@ fn build_router(
     raw_command_policy: RawCommandPolicy,
     optional_bundles: &[CliOptionalBundle],
     pubsub_sessions: Arc<dyn PubSubSessionManager>,
+    transactions: Option<DirectRedisTransactions>,
 ) -> McpRouter {
     let mut builder = RedisMcp::builder(executor)
         .access(access)
         .raw_command_policy(raw_command_policy)
         .shared_pubsub_sessions(pubsub_sessions)
         .server_info("redis-mcp-server", env!("CARGO_PKG_VERSION"));
+    if let Some(transactions) = transactions {
+        builder = builder.transactions(transactions);
+    }
     for bundle in optional_bundles {
         builder = builder.bundle((*bundle).into());
     }
@@ -117,6 +126,9 @@ async fn main() -> Result<(), tower_mcp::BoxError> {
     if raw_command_policy != RawCommandPolicy::Disabled && access != AccessMode::Full {
         return Err("--raw and --raw-unrestricted require --access full".into());
     }
+    if args.transactions && raw_command_policy == RawCommandPolicy::Disabled {
+        return Err("--transactions requires --raw or --raw-unrestricted".into());
+    }
 
     let filter = EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("warn"));
     let _ = tracing_subscriber::fmt()
@@ -131,6 +143,10 @@ async fn main() -> Result<(), tower_mcp::BoxError> {
             &args.cluster_urls,
             PubSubSessionLimits::default(),
         )?);
+        let transactions = args
+            .transactions
+            .then(|| DirectRedisTransactions::cluster(&args.cluster_urls))
+            .transpose()?;
         (
             build_router(
                 executor,
@@ -138,6 +154,7 @@ async fn main() -> Result<(), tower_mcp::BoxError> {
                 raw_command_policy,
                 &args.optional_bundles,
                 sessions.clone(),
+                transactions,
             ),
             sessions,
         )
@@ -148,6 +165,10 @@ async fn main() -> Result<(), tower_mcp::BoxError> {
             url,
             PubSubSessionLimits::default(),
         )?);
+        let transactions = args
+            .transactions
+            .then(|| DirectRedisTransactions::standalone(url))
+            .transpose()?;
         (
             build_router(
                 executor,
@@ -155,6 +176,7 @@ async fn main() -> Result<(), tower_mcp::BoxError> {
                 raw_command_policy,
                 &args.optional_bundles,
                 sessions.clone(),
+                transactions,
             ),
             sessions,
         )
@@ -203,6 +225,21 @@ mod tests {
             ToolBundle::from(args.optional_bundles[0]),
             ToolBundle::Scripting
         ));
+    }
+
+    #[test]
+    fn transactions_flag_is_parsed_and_requires_raw() {
+        let args = Args::try_parse_from([
+            "redis-mcp-server",
+            "--access",
+            "full",
+            "--raw",
+            "--transactions",
+            "--stdio",
+        ])
+        .expect("parse transaction server arguments");
+        assert!(args.transactions);
+        assert!(args.raw);
     }
 
     #[test]

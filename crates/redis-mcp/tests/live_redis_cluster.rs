@@ -5,8 +5,10 @@ use std::{collections::BTreeMap, io, net::TcpListener, time::Duration};
 use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64};
 use redis_mcp::{
     AccessMode, CapabilityStatus, DirectRedis, DirectRedisCluster, DirectRedisPubSubSessionManager,
-    PubSubSessionLimits, PubSubSessionManager, RawCommandPolicy, RedisDeployment, RedisExecutor,
-    RedisMcp, RedisModule, RedisVersion, ToolBundle,
+    DirectRedisTransactions, NativeRedisInvocation, PubSubSessionLimits, PubSubSessionManager,
+    RawCommandPolicy, RedisDeployment, RedisExecutor, RedisInvocationEngine, RedisMcp, RedisModule,
+    RedisTransactionEngine, RedisTransactionOutcome, RedisTransactionRequest, RedisValue,
+    RedisVersion, ToolBundle,
 };
 use redis_server_wrapper::{Error as RedisServerError, RedisCluster, RedisClusterHandle};
 use tower_mcp::client::{ChannelTransport, McpClient};
@@ -2645,4 +2647,110 @@ async fn cluster_routes_curated_and_raw_tools_across_three_masters() {
             .expect("structured same-slot DEL");
         assert_eq!(same_slot_deleted["deleted"], 9);
     }
+}
+
+#[tokio::test]
+async fn transactions_commit_and_enforce_same_slot_semantics_in_cluster() {
+    let _cluster_guard = CLUSTER_TEST_LOCK.lock().await;
+    let Some(cluster) = TestCluster::start().await else {
+        return;
+    };
+    let executor = DirectRedisCluster::connect(&cluster.seed_urls)
+        .await
+        .expect("connect cluster transaction executor");
+    let capabilities = executor
+        .discover_capabilities()
+        .await
+        .expect("discover cluster transaction capabilities");
+    let invocation = RedisInvocationEngine::builder(executor)
+        .access(AccessMode::Full)
+        .raw_command_policy(RawCommandPolicy::Classified)
+        .capabilities(capabilities)
+        .build();
+    let engine = RedisTransactionEngine::new(
+        invocation,
+        DirectRedisTransactions::cluster(&cluster.seed_urls)
+            .expect("prepare cluster transaction adapter"),
+    );
+
+    let counter = format!("txn:{{tenant}}:counter:{}", std::process::id());
+    let mirror = format!("txn:{{tenant}}:mirror:{}", std::process::id());
+
+    let seeded = engine
+        .invoke(
+            RedisTransactionRequest::new()
+                .command(
+                    NativeRedisInvocation::new("SET")
+                        .arg(counter.clone())
+                        .arg("5"),
+                )
+                .command(
+                    NativeRedisInvocation::new("SET")
+                        .arg(mirror.clone())
+                        .arg("5"),
+                ),
+        )
+        .await
+        .expect("same-slot cluster transaction");
+    match seeded {
+        RedisTransactionOutcome::Committed { results } => {
+            assert_eq!(results, vec![RedisValue::Okay, RedisValue::Okay]);
+        }
+        other => panic!("same-slot cluster transaction must commit: {other:?}"),
+    }
+
+    let watched = engine
+        .invoke(
+            RedisTransactionRequest::new()
+                .watch(counter.clone())
+                .command(NativeRedisInvocation::new("INCR").arg(counter.clone()))
+                .command(NativeRedisInvocation::new("GET").arg(mirror.clone())),
+        )
+        .await
+        .expect("watched same-slot cluster transaction");
+    match watched {
+        RedisTransactionOutcome::Committed { results } => {
+            assert_eq!(
+                results,
+                vec![
+                    RedisValue::Integer(6),
+                    RedisValue::BulkString(b"5".to_vec()),
+                ]
+            );
+        }
+        other => panic!("watched same-slot cluster transaction must commit: {other:?}"),
+    }
+
+    let cross_slot_watch = engine
+        .invoke(
+            RedisTransactionRequest::new()
+                .watch("txn:{a}:watch")
+                .watch("txn:{b}:watch")
+                .command(NativeRedisInvocation::new("GET").arg("txn:{a}:watch")),
+        )
+        .await
+        .expect_err("cross-slot watch keys must fail closed before dialing");
+    assert_eq!(cross_slot_watch.code(), Some("CROSSSLOT"));
+
+    let cross_slot_commands = engine
+        .invoke(
+            RedisTransactionRequest::new()
+                .command(NativeRedisInvocation::new("GET").arg("txn:{a}:value"))
+                .command(NativeRedisInvocation::new("GET").arg("txn:{b}:value")),
+        )
+        .await
+        .expect_err("cross-slot command lists must fail structured");
+    assert_eq!(cross_slot_commands.code(), Some("CROSSSLOT"));
+
+    let cross_slot_store = engine
+        .invoke(
+            RedisTransactionRequest::new().command(
+                NativeRedisInvocation::new("SUNIONSTORE")
+                    .arg("txn:{a}:destination")
+                    .arg("txn:{b}:source"),
+            ),
+        )
+        .await
+        .expect_err("cross-slot store commands must fail closed in classification");
+    assert_eq!(cross_slot_store.code(), Some("CROSSSLOT"));
 }

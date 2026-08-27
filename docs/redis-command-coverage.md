@@ -44,7 +44,11 @@ support multiple tools.
 
 Planned and session work is tied to issues #61 and #66. The six
 already-implemented Pub/Sub connection commands retain their
-closed implementation reference, #30.
+closed implementation reference, #30, and the five transaction commands
+(MULTI, EXEC, WATCH, UNWATCH, and DISCARD) retain #61 as the implementation
+reference for the bounded `redis_transaction` tool, which runs one classified
+command list atomically on a dedicated per-call connection with explicit
+committed, aborted, and rejected outcomes.
 
 Lua scripting and Redis Functions coverage is fully typed through the opt-in
 `scripting` family. EVAL, EVALSHA, FCALL, and their Redis 7+ read-only forms

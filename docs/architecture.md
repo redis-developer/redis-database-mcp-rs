@@ -358,6 +358,37 @@ authorized per classified command. Both use one of two enabled policies:
   administration stay behind their dedicated typed surfaces even when
   unrestricted native invocation is enabled.
 
+Atomic transactions extend that policy rather than bypassing it. The
+`transactions` bundle exposes one `redis_transaction` tool that executes a
+bounded command list inside MULTI/EXEC with optional WATCH keys, and the
+library exposes the same capability to non-MCP frontends through
+`RedisTransactionEngine`. Every nested command is classified exactly like a
+native invocation, so the hard boundaries above cannot be smuggled into a
+transaction body, per-command capability checks still apply, and the whole
+transaction requires the maximum access of any nested command. Because the
+body is argv-shaped generic execution, the bundle additionally requires an
+enabled raw command policy and full access.
+
+Execution crosses the public `RedisTransactionExecutor` boundary, which is
+separate from `RedisExecutor` for the same reason Pub/Sub sessions have their
+own manager: MULTI and WATCH are connection state. `DirectRedisTransactions`
+dials one dedicated connection per transaction and drops it afterwards, so
+state never leaks into pooled connections or across MCP calls, and a cancelled
+call abandons its connection instead of leaking a half-built MULTI. WATCH is
+issued as its own fail-closed round trip before the atomic pipeline; a watch
+that cannot be established never reaches MULTI. On Cluster, watched keys must
+hash to one slot, the pipeline is pinned to that slot's node so EXEC observes
+the WATCH state, and the per-transaction cluster client disables request
+retries because a replayed pipeline could commit twice. Command count, watch
+keys, request bytes, and total duration are bounded ahead of execution, and
+committed results share the global output budgets. Outcomes are explicit:
+committed results align one-to-one with the submitted commands and keep
+runtime failures in-band per entry, a watched-key conflict reports `aborted`,
+and queue-time rejections report `rejected` with per-command server codes
+while executing nothing. Connection loss or timeout after EXEC left the client
+reports `TRANSACTION_OUTCOME_UNKNOWN` semantics; the library never replays a
+possibly committed transaction.
+
 ## Output budgets and continuation contracts
 
 `OutputBudget` is host policy applied after each typed tool has built its

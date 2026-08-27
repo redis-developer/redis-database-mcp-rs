@@ -35806,6 +35806,3098 @@
       "requires_raw_opt_in": true
     },
     {
+      "bundle": "timeseries",
+      "capability_requirements": {
+        "deployment": "any",
+        "minimum_module_version": null,
+        "minimum_redis_version": null,
+        "required_commands": [
+          "TS.ADD"
+        ],
+        "required_module": "timeseries"
+      },
+      "family": "timeseries",
+      "name": "redis_ts_add",
+      "output_policy": "intrinsically_bounded",
+      "protocol": {
+        "annotations": {
+          "destructiveHint": false
+        },
+        "description": "Append one sample to a time series, creating it on demand. Timestamps are exact integer milliseconds or `*` for the server clock.",
+        "inputSchema": {
+          "$defs": {
+            "TsDuplicatePolicy": {
+              "enum": [
+                "BLOCK",
+                "FIRST",
+                "LAST",
+                "MIN",
+                "MAX",
+                "SUM"
+              ],
+              "type": "string"
+            },
+            "TsEncoding": {
+              "enum": [
+                "COMPRESSED",
+                "UNCOMPRESSED"
+              ],
+              "type": "string"
+            },
+            "TsIgnoreInput": {
+              "additionalProperties": false,
+              "properties": {
+                "max_time_diff_ms": {
+                  "description": "Maximum timestamp difference for ignoring a near-duplicate insertion,\nin milliseconds.",
+                  "format": "uint64",
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                "max_value_diff": {
+                  "description": "Maximum absolute value difference for ignoring a near-duplicate\ninsertion.",
+                  "format": "double",
+                  "type": "number"
+                }
+              },
+              "required": [
+                "max_time_diff_ms",
+                "max_value_diff"
+              ],
+              "type": "object"
+            },
+            "TsLabelInput": {
+              "additionalProperties": false,
+              "properties": {
+                "name": {
+                  "description": "Label name.",
+                  "maxLength": 128,
+                  "minLength": 1,
+                  "type": "string"
+                },
+                "value": {
+                  "description": "Label value.",
+                  "maxLength": 512,
+                  "type": "string"
+                }
+              },
+              "required": [
+                "name",
+                "value"
+              ],
+              "type": "object"
+            },
+            "TsSeriesOptionsInput": {
+              "additionalProperties": false,
+              "properties": {
+                "chunk_size": {
+                  "default": null,
+                  "description": "Initial chunk allocation in bytes (a multiple of 8, 48 to 1048576).",
+                  "format": "uint64",
+                  "maximum": 1048576,
+                  "minimum": 48,
+                  "type": [
+                    "integer",
+                    "null"
+                  ]
+                },
+                "duplicate_policy": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/$defs/TsDuplicatePolicy"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ],
+                  "default": null,
+                  "description": "Policy for samples that collide with an existing timestamp."
+                },
+                "encoding": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/$defs/TsEncoding"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ],
+                  "default": null,
+                  "description": "Chunk encoding for new chunks."
+                },
+                "ignore": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/$defs/TsIgnoreInput"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ],
+                  "description": "Ignore near-duplicate insertions within these deltas. Requires\nRedisTimeSeries 1.12 or newer."
+                },
+                "labels": {
+                  "description": "Labels attached to the series for multi-series filtering.",
+                  "items": {
+                    "$ref": "#/$defs/TsLabelInput"
+                  },
+                  "maxItems": 64,
+                  "type": [
+                    "array",
+                    "null"
+                  ]
+                },
+                "retention_ms": {
+                  "default": null,
+                  "description": "Sample retention in milliseconds. Zero keeps samples forever.",
+                  "format": "uint64",
+                  "minimum": 0,
+                  "type": [
+                    "integer",
+                    "null"
+                  ]
+                }
+              },
+              "type": "object"
+            }
+          },
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "key": {
+              "description": "Time-series key. The series is created on demand unless creation\noptions say otherwise.",
+              "type": "string"
+            },
+            "options": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/TsSeriesOptionsInput"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Creation options applied when the series does not exist yet, plus the\nON_DUPLICATE override for this insertion."
+            },
+            "timestamp": {
+              "default": null,
+              "description": "Unix millisecond timestamp, or `*` for the server clock.",
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "value": {
+              "description": "Sample value.",
+              "format": "double",
+              "type": "number"
+            }
+          },
+          "required": [
+            "key",
+            "value"
+          ],
+          "title": "TsAddInput",
+          "type": "object"
+        },
+        "name": "redis_ts_add",
+        "outputSchema": {
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "key": {
+              "type": "string"
+            },
+            "timestamp": {
+              "description": "Exact Unix millisecond timestamp assigned by Redis.",
+              "format": "int64",
+              "type": "integer"
+            }
+          },
+          "required": [
+            "key",
+            "timestamp"
+          ],
+          "title": "TsTimestampOutput",
+          "type": "object"
+        },
+        "title": "Add Time-Series Sample"
+      },
+      "required_access": "read_write",
+      "required_module": "timeseries",
+      "requires_raw_opt_in": false
+    },
+    {
+      "bundle": "timeseries",
+      "capability_requirements": {
+        "deployment": "any",
+        "minimum_module_version": null,
+        "minimum_redis_version": null,
+        "required_commands": [
+          "TS.ALTER"
+        ],
+        "required_module": "timeseries"
+      },
+      "family": "timeseries",
+      "name": "redis_ts_alter",
+      "output_policy": "intrinsically_bounded",
+      "protocol": {
+        "annotations": {
+          "idempotentHint": true
+        },
+        "description": "Change retention, chunk size, duplicate policy, ignore deltas, or replace the whole label set of an existing time series. Requires full access because shrinking retention trims stored samples and the label set is replaced, not merged.",
+        "inputSchema": {
+          "$defs": {
+            "TsDuplicatePolicy": {
+              "enum": [
+                "BLOCK",
+                "FIRST",
+                "LAST",
+                "MIN",
+                "MAX",
+                "SUM"
+              ],
+              "type": "string"
+            },
+            "TsIgnoreInput": {
+              "additionalProperties": false,
+              "properties": {
+                "max_time_diff_ms": {
+                  "description": "Maximum timestamp difference for ignoring a near-duplicate insertion,\nin milliseconds.",
+                  "format": "uint64",
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                "max_value_diff": {
+                  "description": "Maximum absolute value difference for ignoring a near-duplicate\ninsertion.",
+                  "format": "double",
+                  "type": "number"
+                }
+              },
+              "required": [
+                "max_time_diff_ms",
+                "max_value_diff"
+              ],
+              "type": "object"
+            },
+            "TsLabelInput": {
+              "additionalProperties": false,
+              "properties": {
+                "name": {
+                  "description": "Label name.",
+                  "maxLength": 128,
+                  "minLength": 1,
+                  "type": "string"
+                },
+                "value": {
+                  "description": "Label value.",
+                  "maxLength": 512,
+                  "type": "string"
+                }
+              },
+              "required": [
+                "name",
+                "value"
+              ],
+              "type": "object"
+            }
+          },
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "chunk_size": {
+              "default": null,
+              "description": "New chunk allocation for future chunks, in bytes.",
+              "format": "uint64",
+              "maximum": 1048576,
+              "minimum": 48,
+              "type": [
+                "integer",
+                "null"
+              ]
+            },
+            "duplicate_policy": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/TsDuplicatePolicy"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "description": "New duplicate-sample policy."
+            },
+            "ignore": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/TsIgnoreInput"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "New near-duplicate ignore deltas. Requires RedisTimeSeries 1.12."
+            },
+            "key": {
+              "description": "Time-series key.",
+              "type": "string"
+            },
+            "labels": {
+              "description": "Replacement label set. The existing labels are removed first; an empty\nlist clears every label.",
+              "items": {
+                "$ref": "#/$defs/TsLabelInput"
+              },
+              "maxItems": 64,
+              "type": [
+                "array",
+                "null"
+              ]
+            },
+            "retention_ms": {
+              "default": null,
+              "description": "New sample retention in milliseconds. Shrinking retention trims\nsamples older than the new window.",
+              "format": "uint64",
+              "minimum": 0,
+              "type": [
+                "integer",
+                "null"
+              ]
+            }
+          },
+          "required": [
+            "key"
+          ],
+          "title": "TsAlterInput",
+          "type": "object"
+        },
+        "name": "redis_ts_alter",
+        "outputSchema": {
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "altered": {
+              "type": "boolean"
+            },
+            "key": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "key",
+            "altered"
+          ],
+          "title": "TsAlterOutput",
+          "type": "object"
+        },
+        "title": "Alter Time Series"
+      },
+      "required_access": "full",
+      "required_module": "timeseries",
+      "requires_raw_opt_in": false
+    },
+    {
+      "bundle": "timeseries",
+      "capability_requirements": {
+        "deployment": "any",
+        "minimum_module_version": null,
+        "minimum_redis_version": null,
+        "required_commands": [
+          "TS.CREATE"
+        ],
+        "required_module": "timeseries"
+      },
+      "family": "timeseries",
+      "name": "redis_ts_create",
+      "output_policy": "intrinsically_bounded",
+      "protocol": {
+        "annotations": {
+          "destructiveHint": false
+        },
+        "description": "Create an empty RedisTimeSeries key with optional retention, encoding, chunk, duplicate-policy, label, and ignore configuration.",
+        "inputSchema": {
+          "$defs": {
+            "TsDuplicatePolicy": {
+              "enum": [
+                "BLOCK",
+                "FIRST",
+                "LAST",
+                "MIN",
+                "MAX",
+                "SUM"
+              ],
+              "type": "string"
+            },
+            "TsEncoding": {
+              "enum": [
+                "COMPRESSED",
+                "UNCOMPRESSED"
+              ],
+              "type": "string"
+            },
+            "TsIgnoreInput": {
+              "additionalProperties": false,
+              "properties": {
+                "max_time_diff_ms": {
+                  "description": "Maximum timestamp difference for ignoring a near-duplicate insertion,\nin milliseconds.",
+                  "format": "uint64",
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                "max_value_diff": {
+                  "description": "Maximum absolute value difference for ignoring a near-duplicate\ninsertion.",
+                  "format": "double",
+                  "type": "number"
+                }
+              },
+              "required": [
+                "max_time_diff_ms",
+                "max_value_diff"
+              ],
+              "type": "object"
+            },
+            "TsLabelInput": {
+              "additionalProperties": false,
+              "properties": {
+                "name": {
+                  "description": "Label name.",
+                  "maxLength": 128,
+                  "minLength": 1,
+                  "type": "string"
+                },
+                "value": {
+                  "description": "Label value.",
+                  "maxLength": 512,
+                  "type": "string"
+                }
+              },
+              "required": [
+                "name",
+                "value"
+              ],
+              "type": "object"
+            },
+            "TsSeriesOptionsInput": {
+              "additionalProperties": false,
+              "properties": {
+                "chunk_size": {
+                  "default": null,
+                  "description": "Initial chunk allocation in bytes (a multiple of 8, 48 to 1048576).",
+                  "format": "uint64",
+                  "maximum": 1048576,
+                  "minimum": 48,
+                  "type": [
+                    "integer",
+                    "null"
+                  ]
+                },
+                "duplicate_policy": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/$defs/TsDuplicatePolicy"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ],
+                  "default": null,
+                  "description": "Policy for samples that collide with an existing timestamp."
+                },
+                "encoding": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/$defs/TsEncoding"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ],
+                  "default": null,
+                  "description": "Chunk encoding for new chunks."
+                },
+                "ignore": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/$defs/TsIgnoreInput"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ],
+                  "description": "Ignore near-duplicate insertions within these deltas. Requires\nRedisTimeSeries 1.12 or newer."
+                },
+                "labels": {
+                  "description": "Labels attached to the series for multi-series filtering.",
+                  "items": {
+                    "$ref": "#/$defs/TsLabelInput"
+                  },
+                  "maxItems": 64,
+                  "type": [
+                    "array",
+                    "null"
+                  ]
+                },
+                "retention_ms": {
+                  "default": null,
+                  "description": "Sample retention in milliseconds. Zero keeps samples forever.",
+                  "format": "uint64",
+                  "minimum": 0,
+                  "type": [
+                    "integer",
+                    "null"
+                  ]
+                }
+              },
+              "type": "object"
+            }
+          },
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "key": {
+              "description": "Time-series key.",
+              "type": "string"
+            },
+            "options": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/TsSeriesOptionsInput"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Optional series configuration."
+            }
+          },
+          "required": [
+            "key"
+          ],
+          "title": "TsCreateInput",
+          "type": "object"
+        },
+        "name": "redis_ts_create",
+        "outputSchema": {
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "created": {
+              "type": "boolean"
+            },
+            "key": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "key",
+            "created"
+          ],
+          "title": "TsCreateOutput",
+          "type": "object"
+        },
+        "title": "Create Time Series"
+      },
+      "required_access": "read_write",
+      "required_module": "timeseries",
+      "requires_raw_opt_in": false
+    },
+    {
+      "bundle": "timeseries",
+      "capability_requirements": {
+        "deployment": "any",
+        "minimum_module_version": null,
+        "minimum_redis_version": null,
+        "required_commands": [
+          "TS.CREATERULE"
+        ],
+        "required_module": "timeseries"
+      },
+      "family": "timeseries",
+      "name": "redis_ts_createrule",
+      "output_policy": "intrinsically_bounded",
+      "protocol": {
+        "annotations": {
+          "destructiveHint": false
+        },
+        "description": "Attach a downsampling compaction rule from a source series into an existing destination series.",
+        "inputSchema": {
+          "$defs": {
+            "TsAggregation": {
+              "enum": [
+                "avg",
+                "sum",
+                "min",
+                "max",
+                "range",
+                "count",
+                "first",
+                "last",
+                "std.p",
+                "std.s",
+                "var.p",
+                "var.s",
+                "twa"
+              ],
+              "type": "string"
+            }
+          },
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "aggregation": {
+              "$ref": "#/$defs/TsAggregation",
+              "description": "Bucket aggregator for the compaction."
+            },
+            "align_timestamp_ms": {
+              "default": null,
+              "description": "Bucket alignment timestamp in milliseconds. Requires RedisTimeSeries\n1.8 or newer.",
+              "format": "uint64",
+              "minimum": 0,
+              "type": [
+                "integer",
+                "null"
+              ]
+            },
+            "bucket_duration_ms": {
+              "description": "Compaction bucket duration in milliseconds.",
+              "format": "uint64",
+              "minimum": 1,
+              "type": "integer"
+            },
+            "destination_key": {
+              "description": "Destination series key. It must already exist; on Redis Cluster it\nmust hash to the same slot as the source.",
+              "type": "string"
+            },
+            "source_key": {
+              "description": "Source series key.",
+              "type": "string"
+            }
+          },
+          "required": [
+            "source_key",
+            "destination_key",
+            "aggregation",
+            "bucket_duration_ms"
+          ],
+          "title": "TsCreateRuleInput",
+          "type": "object"
+        },
+        "name": "redis_ts_createrule",
+        "outputSchema": {
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "applied": {
+              "type": "boolean"
+            },
+            "destination_key": {
+              "type": "string"
+            },
+            "source_key": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "source_key",
+            "destination_key",
+            "applied"
+          ],
+          "title": "TsRuleOutput",
+          "type": "object"
+        },
+        "title": "Create Time-Series Compaction Rule"
+      },
+      "required_access": "read_write",
+      "required_module": "timeseries",
+      "requires_raw_opt_in": false
+    },
+    {
+      "bundle": "timeseries",
+      "capability_requirements": {
+        "deployment": "any",
+        "minimum_module_version": null,
+        "minimum_redis_version": null,
+        "required_commands": [
+          "TS.DECRBY"
+        ],
+        "required_module": "timeseries"
+      },
+      "family": "timeseries",
+      "name": "redis_ts_decrby",
+      "output_policy": "intrinsically_bounded",
+      "protocol": {
+        "annotations": {
+          "destructiveHint": false
+        },
+        "description": "Subtract a value from the latest sample of a counter-style time series, creating the series on demand.",
+        "inputSchema": {
+          "$defs": {
+            "TsDuplicatePolicy": {
+              "enum": [
+                "BLOCK",
+                "FIRST",
+                "LAST",
+                "MIN",
+                "MAX",
+                "SUM"
+              ],
+              "type": "string"
+            },
+            "TsEncoding": {
+              "enum": [
+                "COMPRESSED",
+                "UNCOMPRESSED"
+              ],
+              "type": "string"
+            },
+            "TsIgnoreInput": {
+              "additionalProperties": false,
+              "properties": {
+                "max_time_diff_ms": {
+                  "description": "Maximum timestamp difference for ignoring a near-duplicate insertion,\nin milliseconds.",
+                  "format": "uint64",
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                "max_value_diff": {
+                  "description": "Maximum absolute value difference for ignoring a near-duplicate\ninsertion.",
+                  "format": "double",
+                  "type": "number"
+                }
+              },
+              "required": [
+                "max_time_diff_ms",
+                "max_value_diff"
+              ],
+              "type": "object"
+            },
+            "TsLabelInput": {
+              "additionalProperties": false,
+              "properties": {
+                "name": {
+                  "description": "Label name.",
+                  "maxLength": 128,
+                  "minLength": 1,
+                  "type": "string"
+                },
+                "value": {
+                  "description": "Label value.",
+                  "maxLength": 512,
+                  "type": "string"
+                }
+              },
+              "required": [
+                "name",
+                "value"
+              ],
+              "type": "object"
+            },
+            "TsSeriesOptionsInput": {
+              "additionalProperties": false,
+              "properties": {
+                "chunk_size": {
+                  "default": null,
+                  "description": "Initial chunk allocation in bytes (a multiple of 8, 48 to 1048576).",
+                  "format": "uint64",
+                  "maximum": 1048576,
+                  "minimum": 48,
+                  "type": [
+                    "integer",
+                    "null"
+                  ]
+                },
+                "duplicate_policy": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/$defs/TsDuplicatePolicy"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ],
+                  "default": null,
+                  "description": "Policy for samples that collide with an existing timestamp."
+                },
+                "encoding": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/$defs/TsEncoding"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ],
+                  "default": null,
+                  "description": "Chunk encoding for new chunks."
+                },
+                "ignore": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/$defs/TsIgnoreInput"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ],
+                  "description": "Ignore near-duplicate insertions within these deltas. Requires\nRedisTimeSeries 1.12 or newer."
+                },
+                "labels": {
+                  "description": "Labels attached to the series for multi-series filtering.",
+                  "items": {
+                    "$ref": "#/$defs/TsLabelInput"
+                  },
+                  "maxItems": 64,
+                  "type": [
+                    "array",
+                    "null"
+                  ]
+                },
+                "retention_ms": {
+                  "default": null,
+                  "description": "Sample retention in milliseconds. Zero keeps samples forever.",
+                  "format": "uint64",
+                  "minimum": 0,
+                  "type": [
+                    "integer",
+                    "null"
+                  ]
+                }
+              },
+              "type": "object"
+            }
+          },
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "key": {
+              "description": "Time-series key. The series is created on demand.",
+              "type": "string"
+            },
+            "options": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/TsSeriesOptionsInput"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Creation options applied when the series does not exist yet."
+            },
+            "timestamp": {
+              "default": null,
+              "description": "Explicit Unix millisecond timestamp for the adjusted sample, or `*`\nfor the server clock.",
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "value": {
+              "description": "Non-negative amount to add or subtract from the latest sample.",
+              "format": "double",
+              "type": "number"
+            }
+          },
+          "required": [
+            "key",
+            "value"
+          ],
+          "title": "TsCounterInput",
+          "type": "object"
+        },
+        "name": "redis_ts_decrby",
+        "outputSchema": {
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "key": {
+              "type": "string"
+            },
+            "timestamp": {
+              "description": "Exact Unix millisecond timestamp assigned by Redis.",
+              "format": "int64",
+              "type": "integer"
+            }
+          },
+          "required": [
+            "key",
+            "timestamp"
+          ],
+          "title": "TsTimestampOutput",
+          "type": "object"
+        },
+        "title": "Decrement Time-Series Counter"
+      },
+      "required_access": "read_write",
+      "required_module": "timeseries",
+      "requires_raw_opt_in": false
+    },
+    {
+      "bundle": "timeseries",
+      "capability_requirements": {
+        "deployment": "any",
+        "minimum_module_version": "1.6.0",
+        "minimum_redis_version": null,
+        "required_commands": [
+          "TS.DEL"
+        ],
+        "required_module": "timeseries"
+      },
+      "family": "timeseries",
+      "name": "redis_ts_del",
+      "output_policy": "intrinsically_bounded",
+      "protocol": {
+        "annotations": {
+          "idempotentHint": true
+        },
+        "description": "Permanently delete every sample inside an inclusive timestamp range. Requires full access and RedisTimeSeries 1.6 or newer.",
+        "inputSchema": {
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "from_timestamp": {
+              "description": "Inclusive start of the deleted range, in exact Unix milliseconds or\n`-` for the earliest sample.",
+              "type": "string"
+            },
+            "key": {
+              "description": "Time-series key.",
+              "type": "string"
+            },
+            "to_timestamp": {
+              "description": "Inclusive end of the deleted range, in exact Unix milliseconds or `+`\nfor the latest sample.",
+              "type": "string"
+            }
+          },
+          "required": [
+            "key",
+            "from_timestamp",
+            "to_timestamp"
+          ],
+          "title": "TsDelInput",
+          "type": "object"
+        },
+        "name": "redis_ts_del",
+        "outputSchema": {
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "deleted_samples": {
+              "format": "uint64",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "key": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "key",
+            "deleted_samples"
+          ],
+          "title": "TsDelOutput",
+          "type": "object"
+        },
+        "title": "Delete Time-Series Samples"
+      },
+      "required_access": "full",
+      "required_module": "timeseries",
+      "requires_raw_opt_in": false
+    },
+    {
+      "bundle": "timeseries",
+      "capability_requirements": {
+        "deployment": "any",
+        "minimum_module_version": null,
+        "minimum_redis_version": null,
+        "required_commands": [
+          "TS.DELETERULE"
+        ],
+        "required_module": "timeseries"
+      },
+      "family": "timeseries",
+      "name": "redis_ts_deleterule",
+      "output_policy": "intrinsically_bounded",
+      "protocol": {
+        "annotations": {
+          "idempotentHint": true
+        },
+        "description": "Remove the compaction rule between a source and destination series. Requires full access; the destination series and its samples are kept.",
+        "inputSchema": {
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "destination_key": {
+              "description": "Destination series key of the removed rule.",
+              "type": "string"
+            },
+            "source_key": {
+              "description": "Source series key.",
+              "type": "string"
+            }
+          },
+          "required": [
+            "source_key",
+            "destination_key"
+          ],
+          "title": "TsDeleteRuleInput",
+          "type": "object"
+        },
+        "name": "redis_ts_deleterule",
+        "outputSchema": {
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "applied": {
+              "type": "boolean"
+            },
+            "destination_key": {
+              "type": "string"
+            },
+            "source_key": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "source_key",
+            "destination_key",
+            "applied"
+          ],
+          "title": "TsRuleOutput",
+          "type": "object"
+        },
+        "title": "Delete Time-Series Compaction Rule"
+      },
+      "required_access": "full",
+      "required_module": "timeseries",
+      "requires_raw_opt_in": false
+    },
+    {
+      "bundle": "timeseries",
+      "capability_requirements": {
+        "deployment": "any",
+        "minimum_module_version": null,
+        "minimum_redis_version": null,
+        "required_commands": [
+          "TS.GET"
+        ],
+        "required_module": "timeseries"
+      },
+      "family": "timeseries",
+      "name": "redis_ts_get",
+      "output_policy": "intrinsically_bounded",
+      "protocol": {
+        "annotations": {
+          "destructiveHint": false,
+          "idempotentHint": true,
+          "readOnlyHint": true
+        },
+        "description": "Read the most recent sample of one time series.",
+        "inputSchema": {
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "key": {
+              "description": "Time-series key.",
+              "type": "string"
+            },
+            "latest": {
+              "default": false,
+              "description": "Report the latest possibly-open compaction bucket. Requires\nRedisTimeSeries 1.8 or newer.",
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "key"
+          ],
+          "title": "TsGetInput",
+          "type": "object"
+        },
+        "name": "redis_ts_get",
+        "outputSchema": {
+          "$defs": {
+            "TsSampleOutput": {
+              "additionalProperties": false,
+              "properties": {
+                "timestamp": {
+                  "description": "Exact Unix millisecond timestamp.",
+                  "format": "int64",
+                  "type": "integer"
+                },
+                "value": {
+                  "description": "Sample value as an IEEE 754 double.",
+                  "format": "double",
+                  "type": "number"
+                }
+              },
+              "required": [
+                "timestamp",
+                "value"
+              ],
+              "type": "object"
+            }
+          },
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "key": {
+              "type": "string"
+            },
+            "sample": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/TsSampleOutput"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Latest sample, or null when the series exists but is empty."
+            }
+          },
+          "required": [
+            "key"
+          ],
+          "title": "TsGetOutput",
+          "type": "object"
+        },
+        "title": "Read Latest Time-Series Sample"
+      },
+      "required_access": "read_only",
+      "required_module": "timeseries",
+      "requires_raw_opt_in": false
+    },
+    {
+      "bundle": "timeseries",
+      "capability_requirements": {
+        "deployment": "any",
+        "minimum_module_version": null,
+        "minimum_redis_version": null,
+        "required_commands": [
+          "TS.INCRBY"
+        ],
+        "required_module": "timeseries"
+      },
+      "family": "timeseries",
+      "name": "redis_ts_incrby",
+      "output_policy": "intrinsically_bounded",
+      "protocol": {
+        "annotations": {
+          "destructiveHint": false
+        },
+        "description": "Add a value to the latest sample of a counter-style time series, creating the series on demand.",
+        "inputSchema": {
+          "$defs": {
+            "TsDuplicatePolicy": {
+              "enum": [
+                "BLOCK",
+                "FIRST",
+                "LAST",
+                "MIN",
+                "MAX",
+                "SUM"
+              ],
+              "type": "string"
+            },
+            "TsEncoding": {
+              "enum": [
+                "COMPRESSED",
+                "UNCOMPRESSED"
+              ],
+              "type": "string"
+            },
+            "TsIgnoreInput": {
+              "additionalProperties": false,
+              "properties": {
+                "max_time_diff_ms": {
+                  "description": "Maximum timestamp difference for ignoring a near-duplicate insertion,\nin milliseconds.",
+                  "format": "uint64",
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                "max_value_diff": {
+                  "description": "Maximum absolute value difference for ignoring a near-duplicate\ninsertion.",
+                  "format": "double",
+                  "type": "number"
+                }
+              },
+              "required": [
+                "max_time_diff_ms",
+                "max_value_diff"
+              ],
+              "type": "object"
+            },
+            "TsLabelInput": {
+              "additionalProperties": false,
+              "properties": {
+                "name": {
+                  "description": "Label name.",
+                  "maxLength": 128,
+                  "minLength": 1,
+                  "type": "string"
+                },
+                "value": {
+                  "description": "Label value.",
+                  "maxLength": 512,
+                  "type": "string"
+                }
+              },
+              "required": [
+                "name",
+                "value"
+              ],
+              "type": "object"
+            },
+            "TsSeriesOptionsInput": {
+              "additionalProperties": false,
+              "properties": {
+                "chunk_size": {
+                  "default": null,
+                  "description": "Initial chunk allocation in bytes (a multiple of 8, 48 to 1048576).",
+                  "format": "uint64",
+                  "maximum": 1048576,
+                  "minimum": 48,
+                  "type": [
+                    "integer",
+                    "null"
+                  ]
+                },
+                "duplicate_policy": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/$defs/TsDuplicatePolicy"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ],
+                  "default": null,
+                  "description": "Policy for samples that collide with an existing timestamp."
+                },
+                "encoding": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/$defs/TsEncoding"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ],
+                  "default": null,
+                  "description": "Chunk encoding for new chunks."
+                },
+                "ignore": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/$defs/TsIgnoreInput"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ],
+                  "description": "Ignore near-duplicate insertions within these deltas. Requires\nRedisTimeSeries 1.12 or newer."
+                },
+                "labels": {
+                  "description": "Labels attached to the series for multi-series filtering.",
+                  "items": {
+                    "$ref": "#/$defs/TsLabelInput"
+                  },
+                  "maxItems": 64,
+                  "type": [
+                    "array",
+                    "null"
+                  ]
+                },
+                "retention_ms": {
+                  "default": null,
+                  "description": "Sample retention in milliseconds. Zero keeps samples forever.",
+                  "format": "uint64",
+                  "minimum": 0,
+                  "type": [
+                    "integer",
+                    "null"
+                  ]
+                }
+              },
+              "type": "object"
+            }
+          },
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "key": {
+              "description": "Time-series key. The series is created on demand.",
+              "type": "string"
+            },
+            "options": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/TsSeriesOptionsInput"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Creation options applied when the series does not exist yet."
+            },
+            "timestamp": {
+              "default": null,
+              "description": "Explicit Unix millisecond timestamp for the adjusted sample, or `*`\nfor the server clock.",
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "value": {
+              "description": "Non-negative amount to add or subtract from the latest sample.",
+              "format": "double",
+              "type": "number"
+            }
+          },
+          "required": [
+            "key",
+            "value"
+          ],
+          "title": "TsCounterInput",
+          "type": "object"
+        },
+        "name": "redis_ts_incrby",
+        "outputSchema": {
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "key": {
+              "type": "string"
+            },
+            "timestamp": {
+              "description": "Exact Unix millisecond timestamp assigned by Redis.",
+              "format": "int64",
+              "type": "integer"
+            }
+          },
+          "required": [
+            "key",
+            "timestamp"
+          ],
+          "title": "TsTimestampOutput",
+          "type": "object"
+        },
+        "title": "Increment Time-Series Counter"
+      },
+      "required_access": "read_write",
+      "required_module": "timeseries",
+      "requires_raw_opt_in": false
+    },
+    {
+      "bundle": "timeseries",
+      "capability_requirements": {
+        "deployment": "any",
+        "minimum_module_version": null,
+        "minimum_redis_version": null,
+        "required_commands": [
+          "TS.INFO"
+        ],
+        "required_module": "timeseries"
+      },
+      "family": "timeseries",
+      "name": "redis_ts_info",
+      "output_policy": "budget_guarded",
+      "protocol": {
+        "annotations": {
+          "destructiveHint": false,
+          "idempotentHint": true,
+          "readOnlyHint": true
+        },
+        "description": "Read retention, chunk, duplicate-policy, label, source, and compaction-rule metadata for one time series.",
+        "inputSchema": {
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "key": {
+              "description": "Time-series key.",
+              "type": "string"
+            }
+          },
+          "required": [
+            "key"
+          ],
+          "title": "TsInfoInput",
+          "type": "object"
+        },
+        "name": "redis_ts_info",
+        "outputSchema": {
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "attributes": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "key": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "key",
+            "attributes"
+          ],
+          "title": "TsInfoOutput",
+          "type": "object"
+        },
+        "title": "Inspect Time Series"
+      },
+      "required_access": "read_only",
+      "required_module": "timeseries",
+      "requires_raw_opt_in": false
+    },
+    {
+      "bundle": "timeseries",
+      "capability_requirements": {
+        "deployment": "any",
+        "minimum_module_version": null,
+        "minimum_redis_version": null,
+        "required_commands": [
+          "TS.MADD"
+        ],
+        "required_module": "timeseries"
+      },
+      "family": "timeseries",
+      "name": "redis_ts_madd",
+      "output_policy": "intrinsically_bounded",
+      "protocol": {
+        "annotations": {
+          "destructiveHint": false
+        },
+        "description": "Append up to 100 samples across one or more existing series in one call. Per-sample failures are reported in-band while the remaining samples still apply; on Redis Cluster every key must hash to one slot.",
+        "inputSchema": {
+          "$defs": {
+            "TsMaddSampleInput": {
+              "additionalProperties": false,
+              "properties": {
+                "key": {
+                  "description": "Time-series key. Every series must already exist.",
+                  "type": "string"
+                },
+                "timestamp": {
+                  "default": null,
+                  "description": "Unix millisecond timestamp, or `*` for the server clock.",
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "value": {
+                  "description": "Sample value.",
+                  "format": "double",
+                  "type": "number"
+                }
+              },
+              "required": [
+                "key",
+                "value"
+              ],
+              "type": "object"
+            }
+          },
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "samples": {
+              "description": "Samples appended in order. Results align one-to-one.",
+              "items": {
+                "$ref": "#/$defs/TsMaddSampleInput"
+              },
+              "maxItems": 100,
+              "minItems": 1,
+              "type": "array"
+            }
+          },
+          "required": [
+            "samples"
+          ],
+          "title": "TsMaddInput",
+          "type": "object"
+        },
+        "name": "redis_ts_madd",
+        "outputSchema": {
+          "$defs": {
+            "TsMaddResult": {
+              "additionalProperties": false,
+              "properties": {
+                "error": {
+                  "description": "Server error when this sample was rejected while the rest applied.",
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "index": {
+                  "format": "uint",
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                "key": {
+                  "type": "string"
+                },
+                "timestamp": {
+                  "description": "Assigned timestamp when this sample was accepted.",
+                  "format": "int64",
+                  "type": [
+                    "integer",
+                    "null"
+                  ]
+                }
+              },
+              "required": [
+                "index",
+                "key"
+              ],
+              "type": "object"
+            }
+          },
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "accepted": {
+              "format": "uint",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "requested": {
+              "format": "uint",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "results": {
+              "items": {
+                "$ref": "#/$defs/TsMaddResult"
+              },
+              "type": "array"
+            }
+          },
+          "required": [
+            "requested",
+            "accepted",
+            "results"
+          ],
+          "title": "TsMaddOutput",
+          "type": "object"
+        },
+        "title": "Add Time-Series Samples"
+      },
+      "required_access": "read_write",
+      "required_module": "timeseries",
+      "requires_raw_opt_in": false
+    },
+    {
+      "bundle": "timeseries",
+      "capability_requirements": {
+        "deployment": "standalone",
+        "minimum_module_version": null,
+        "minimum_redis_version": null,
+        "required_commands": [
+          "TS.MGET"
+        ],
+        "required_module": "timeseries"
+      },
+      "family": "timeseries",
+      "name": "redis_ts_mget",
+      "output_policy": "budget_guarded",
+      "protocol": {
+        "annotations": {
+          "destructiveHint": false,
+          "idempotentHint": true,
+          "readOnlyHint": true
+        },
+        "description": "Read the most recent sample from every series matching the label filters. On Redis Cluster this tool is unavailable because it would only observe one node.",
+        "inputSchema": {
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "filters": {
+              "description": "RedisTimeSeries label filter expressions. All expressions must match.",
+              "items": {
+                "type": "string"
+              },
+              "maxItems": 16,
+              "minItems": 1,
+              "type": "array"
+            },
+            "latest": {
+              "default": false,
+              "description": "Report the latest possibly-open compaction bucket per series.\nRequires RedisTimeSeries 1.8 or newer.",
+              "type": "boolean"
+            },
+            "selected_labels": {
+              "default": null,
+              "description": "Return only these labels for each matched series.",
+              "items": {
+                "type": "string"
+              },
+              "maxItems": 16,
+              "type": [
+                "array",
+                "null"
+              ]
+            },
+            "with_labels": {
+              "default": false,
+              "description": "Return every label of each matched series.",
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "filters"
+          ],
+          "title": "TsMGetInput",
+          "type": "object"
+        },
+        "name": "redis_ts_mget",
+        "outputSchema": {
+          "$defs": {
+            "TsLabelOutput": {
+              "additionalProperties": false,
+              "properties": {
+                "name": {
+                  "type": "string"
+                },
+                "value": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "name",
+                "value"
+              ],
+              "type": "object"
+            },
+            "TsMGetSeriesOutput": {
+              "additionalProperties": false,
+              "properties": {
+                "key": {
+                  "type": "string"
+                },
+                "labels": {
+                  "items": {
+                    "$ref": "#/$defs/TsLabelOutput"
+                  },
+                  "type": "array"
+                },
+                "sample": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/$defs/TsSampleOutput"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                }
+              },
+              "required": [
+                "key",
+                "labels"
+              ],
+              "type": "object"
+            },
+            "TsSampleOutput": {
+              "additionalProperties": false,
+              "properties": {
+                "timestamp": {
+                  "description": "Exact Unix millisecond timestamp.",
+                  "format": "int64",
+                  "type": "integer"
+                },
+                "value": {
+                  "description": "Sample value as an IEEE 754 double.",
+                  "format": "double",
+                  "type": "number"
+                }
+              },
+              "required": [
+                "timestamp",
+                "value"
+              ],
+              "type": "object"
+            }
+          },
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "series": {
+              "items": {
+                "$ref": "#/$defs/TsMGetSeriesOutput"
+              },
+              "type": "array"
+            },
+            "series_count": {
+              "format": "uint",
+              "minimum": 0,
+              "type": "integer"
+            }
+          },
+          "required": [
+            "series_count",
+            "series"
+          ],
+          "title": "TsMGetOutput",
+          "type": "object"
+        },
+        "title": "Read Latest Multi-Series Samples"
+      },
+      "required_access": "read_only",
+      "required_module": "timeseries",
+      "requires_raw_opt_in": false
+    },
+    {
+      "bundle": "timeseries",
+      "capability_requirements": {
+        "deployment": "standalone",
+        "minimum_module_version": null,
+        "minimum_redis_version": null,
+        "required_commands": [
+          "TS.MRANGE"
+        ],
+        "required_module": "timeseries"
+      },
+      "family": "timeseries",
+      "name": "redis_ts_mrange",
+      "output_policy": "budget_guarded",
+      "protocol": {
+        "annotations": {
+          "destructiveHint": false,
+          "idempotentHint": true,
+          "readOnlyHint": true
+        },
+        "description": "Read bounded ascending sample pages from every series matching the label filters, optionally aggregated or grouped. On Redis Cluster this tool is unavailable because it would only observe one node.",
+        "inputSchema": {
+          "$defs": {
+            "TsAggregation": {
+              "enum": [
+                "avg",
+                "sum",
+                "min",
+                "max",
+                "range",
+                "count",
+                "first",
+                "last",
+                "std.p",
+                "std.s",
+                "var.p",
+                "var.s",
+                "twa"
+              ],
+              "type": "string"
+            },
+            "TsAggregationInput": {
+              "additionalProperties": false,
+              "properties": {
+                "aggregation": {
+                  "$ref": "#/$defs/TsAggregation",
+                  "description": "Bucket aggregator applied server-side."
+                },
+                "align": {
+                  "default": null,
+                  "description": "Bucket alignment: `start`, `end`, or an exact millisecond timestamp.\nRequires RedisTimeSeries 1.6 or newer.",
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "bucket_duration_ms": {
+                  "description": "Bucket duration in milliseconds.",
+                  "format": "uint64",
+                  "minimum": 1,
+                  "type": "integer"
+                },
+                "bucket_timestamp": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/$defs/TsBucketTimestamp"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ],
+                  "default": null,
+                  "description": "Which bucket timestamp to report. Requires RedisTimeSeries 1.8 or\nnewer."
+                },
+                "empty": {
+                  "default": false,
+                  "description": "Report empty buckets inside the range. Requires RedisTimeSeries 1.8 or\nnewer.",
+                  "type": "boolean"
+                }
+              },
+              "required": [
+                "aggregation",
+                "bucket_duration_ms"
+              ],
+              "type": "object"
+            },
+            "TsBucketTimestamp": {
+              "enum": [
+                "start",
+                "end",
+                "mid"
+              ],
+              "type": "string"
+            },
+            "TsGroupByInput": {
+              "additionalProperties": false,
+              "properties": {
+                "label": {
+                  "description": "Label whose values group the matched series.",
+                  "maxLength": 128,
+                  "minLength": 1,
+                  "type": "string"
+                },
+                "reducer": {
+                  "$ref": "#/$defs/TsReducer",
+                  "description": "Reducer applied across the series of each group."
+                }
+              },
+              "required": [
+                "label",
+                "reducer"
+              ],
+              "type": "object"
+            },
+            "TsReducer": {
+              "enum": [
+                "avg",
+                "sum",
+                "min",
+                "max",
+                "range",
+                "count",
+                "std.p",
+                "std.s",
+                "var.p",
+                "var.s"
+              ],
+              "type": "string"
+            }
+          },
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "aggregation": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/TsAggregationInput"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Optional server-side bucket aggregation."
+            },
+            "count": {
+              "default": null,
+              "description": "Maximum samples or buckets returned per series.",
+              "format": "uint",
+              "maximum": 1000,
+              "minimum": 1,
+              "type": [
+                "integer",
+                "null"
+              ]
+            },
+            "filters": {
+              "description": "RedisTimeSeries label filter expressions, such as `sensor=1` or\n`area=(east,west)`. All expressions must match.",
+              "items": {
+                "type": "string"
+              },
+              "maxItems": 16,
+              "minItems": 1,
+              "type": "array"
+            },
+            "from_timestamp": {
+              "default": null,
+              "description": "Inclusive range start: exact Unix milliseconds or `-`.",
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "group_by": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/TsGroupByInput"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Group matched series by one label and reduce each group to one series.\nRequires RedisTimeSeries 1.6 or newer."
+            },
+            "latest": {
+              "default": false,
+              "description": "Report the latest possibly-open compaction bucket per series.\nRequires RedisTimeSeries 1.8 or newer.",
+              "type": "boolean"
+            },
+            "selected_labels": {
+              "default": null,
+              "description": "Return only these labels for each matched series.",
+              "items": {
+                "type": "string"
+              },
+              "maxItems": 16,
+              "type": [
+                "array",
+                "null"
+              ]
+            },
+            "to_timestamp": {
+              "default": null,
+              "description": "Inclusive range end: exact Unix milliseconds or `+`.",
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "with_labels": {
+              "default": false,
+              "description": "Return every label of each matched series.",
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "filters"
+          ],
+          "title": "TsMRangeInput",
+          "type": "object"
+        },
+        "name": "redis_ts_mrange",
+        "outputSchema": {
+          "$defs": {
+            "TsLabelOutput": {
+              "additionalProperties": false,
+              "properties": {
+                "name": {
+                  "type": "string"
+                },
+                "value": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "name",
+                "value"
+              ],
+              "type": "object"
+            },
+            "TsSampleOutput": {
+              "additionalProperties": false,
+              "properties": {
+                "timestamp": {
+                  "description": "Exact Unix millisecond timestamp.",
+                  "format": "int64",
+                  "type": "integer"
+                },
+                "value": {
+                  "description": "Sample value as an IEEE 754 double.",
+                  "format": "double",
+                  "type": "number"
+                }
+              },
+              "required": [
+                "timestamp",
+                "value"
+              ],
+              "type": "object"
+            },
+            "TsSeriesOutput": {
+              "additionalProperties": false,
+              "properties": {
+                "key": {
+                  "type": "string"
+                },
+                "labels": {
+                  "items": {
+                    "$ref": "#/$defs/TsLabelOutput"
+                  },
+                  "type": "array"
+                },
+                "samples": {
+                  "items": {
+                    "$ref": "#/$defs/TsSampleOutput"
+                  },
+                  "type": "array"
+                }
+              },
+              "required": [
+                "key",
+                "labels",
+                "samples"
+              ],
+              "type": "object"
+            }
+          },
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "series": {
+              "items": {
+                "$ref": "#/$defs/TsSeriesOutput"
+              },
+              "type": "array"
+            },
+            "series_count": {
+              "format": "uint",
+              "minimum": 0,
+              "type": "integer"
+            }
+          },
+          "required": [
+            "series_count",
+            "series"
+          ],
+          "title": "TsMRangeOutput",
+          "type": "object"
+        },
+        "title": "Read Multi-Series Range"
+      },
+      "required_access": "read_only",
+      "required_module": "timeseries",
+      "requires_raw_opt_in": false
+    },
+    {
+      "bundle": "timeseries",
+      "capability_requirements": {
+        "deployment": "standalone",
+        "minimum_module_version": null,
+        "minimum_redis_version": null,
+        "required_commands": [
+          "TS.MREVRANGE"
+        ],
+        "required_module": "timeseries"
+      },
+      "family": "timeseries",
+      "name": "redis_ts_mrevrange",
+      "output_policy": "budget_guarded",
+      "protocol": {
+        "annotations": {
+          "destructiveHint": false,
+          "idempotentHint": true,
+          "readOnlyHint": true
+        },
+        "description": "Read bounded descending sample pages from every series matching the label filters, optionally aggregated or grouped. On Redis Cluster this tool is unavailable because it would only observe one node.",
+        "inputSchema": {
+          "$defs": {
+            "TsAggregation": {
+              "enum": [
+                "avg",
+                "sum",
+                "min",
+                "max",
+                "range",
+                "count",
+                "first",
+                "last",
+                "std.p",
+                "std.s",
+                "var.p",
+                "var.s",
+                "twa"
+              ],
+              "type": "string"
+            },
+            "TsAggregationInput": {
+              "additionalProperties": false,
+              "properties": {
+                "aggregation": {
+                  "$ref": "#/$defs/TsAggregation",
+                  "description": "Bucket aggregator applied server-side."
+                },
+                "align": {
+                  "default": null,
+                  "description": "Bucket alignment: `start`, `end`, or an exact millisecond timestamp.\nRequires RedisTimeSeries 1.6 or newer.",
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "bucket_duration_ms": {
+                  "description": "Bucket duration in milliseconds.",
+                  "format": "uint64",
+                  "minimum": 1,
+                  "type": "integer"
+                },
+                "bucket_timestamp": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/$defs/TsBucketTimestamp"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ],
+                  "default": null,
+                  "description": "Which bucket timestamp to report. Requires RedisTimeSeries 1.8 or\nnewer."
+                },
+                "empty": {
+                  "default": false,
+                  "description": "Report empty buckets inside the range. Requires RedisTimeSeries 1.8 or\nnewer.",
+                  "type": "boolean"
+                }
+              },
+              "required": [
+                "aggregation",
+                "bucket_duration_ms"
+              ],
+              "type": "object"
+            },
+            "TsBucketTimestamp": {
+              "enum": [
+                "start",
+                "end",
+                "mid"
+              ],
+              "type": "string"
+            },
+            "TsGroupByInput": {
+              "additionalProperties": false,
+              "properties": {
+                "label": {
+                  "description": "Label whose values group the matched series.",
+                  "maxLength": 128,
+                  "minLength": 1,
+                  "type": "string"
+                },
+                "reducer": {
+                  "$ref": "#/$defs/TsReducer",
+                  "description": "Reducer applied across the series of each group."
+                }
+              },
+              "required": [
+                "label",
+                "reducer"
+              ],
+              "type": "object"
+            },
+            "TsReducer": {
+              "enum": [
+                "avg",
+                "sum",
+                "min",
+                "max",
+                "range",
+                "count",
+                "std.p",
+                "std.s",
+                "var.p",
+                "var.s"
+              ],
+              "type": "string"
+            }
+          },
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "aggregation": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/TsAggregationInput"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Optional server-side bucket aggregation."
+            },
+            "count": {
+              "default": null,
+              "description": "Maximum samples or buckets returned per series.",
+              "format": "uint",
+              "maximum": 1000,
+              "minimum": 1,
+              "type": [
+                "integer",
+                "null"
+              ]
+            },
+            "filters": {
+              "description": "RedisTimeSeries label filter expressions, such as `sensor=1` or\n`area=(east,west)`. All expressions must match.",
+              "items": {
+                "type": "string"
+              },
+              "maxItems": 16,
+              "minItems": 1,
+              "type": "array"
+            },
+            "from_timestamp": {
+              "default": null,
+              "description": "Inclusive range start: exact Unix milliseconds or `-`.",
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "group_by": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/TsGroupByInput"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Group matched series by one label and reduce each group to one series.\nRequires RedisTimeSeries 1.6 or newer."
+            },
+            "latest": {
+              "default": false,
+              "description": "Report the latest possibly-open compaction bucket per series.\nRequires RedisTimeSeries 1.8 or newer.",
+              "type": "boolean"
+            },
+            "selected_labels": {
+              "default": null,
+              "description": "Return only these labels for each matched series.",
+              "items": {
+                "type": "string"
+              },
+              "maxItems": 16,
+              "type": [
+                "array",
+                "null"
+              ]
+            },
+            "to_timestamp": {
+              "default": null,
+              "description": "Inclusive range end: exact Unix milliseconds or `+`.",
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "with_labels": {
+              "default": false,
+              "description": "Return every label of each matched series.",
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "filters"
+          ],
+          "title": "TsMRangeInput",
+          "type": "object"
+        },
+        "name": "redis_ts_mrevrange",
+        "outputSchema": {
+          "$defs": {
+            "TsLabelOutput": {
+              "additionalProperties": false,
+              "properties": {
+                "name": {
+                  "type": "string"
+                },
+                "value": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "name",
+                "value"
+              ],
+              "type": "object"
+            },
+            "TsSampleOutput": {
+              "additionalProperties": false,
+              "properties": {
+                "timestamp": {
+                  "description": "Exact Unix millisecond timestamp.",
+                  "format": "int64",
+                  "type": "integer"
+                },
+                "value": {
+                  "description": "Sample value as an IEEE 754 double.",
+                  "format": "double",
+                  "type": "number"
+                }
+              },
+              "required": [
+                "timestamp",
+                "value"
+              ],
+              "type": "object"
+            },
+            "TsSeriesOutput": {
+              "additionalProperties": false,
+              "properties": {
+                "key": {
+                  "type": "string"
+                },
+                "labels": {
+                  "items": {
+                    "$ref": "#/$defs/TsLabelOutput"
+                  },
+                  "type": "array"
+                },
+                "samples": {
+                  "items": {
+                    "$ref": "#/$defs/TsSampleOutput"
+                  },
+                  "type": "array"
+                }
+              },
+              "required": [
+                "key",
+                "labels",
+                "samples"
+              ],
+              "type": "object"
+            }
+          },
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "series": {
+              "items": {
+                "$ref": "#/$defs/TsSeriesOutput"
+              },
+              "type": "array"
+            },
+            "series_count": {
+              "format": "uint",
+              "minimum": 0,
+              "type": "integer"
+            }
+          },
+          "required": [
+            "series_count",
+            "series"
+          ],
+          "title": "TsMRangeOutput",
+          "type": "object"
+        },
+        "title": "Read Multi-Series Range Descending"
+      },
+      "required_access": "read_only",
+      "required_module": "timeseries",
+      "requires_raw_opt_in": false
+    },
+    {
+      "bundle": "timeseries",
+      "capability_requirements": {
+        "deployment": "standalone",
+        "minimum_module_version": null,
+        "minimum_redis_version": null,
+        "required_commands": [
+          "TS.QUERYINDEX"
+        ],
+        "required_module": "timeseries"
+      },
+      "family": "timeseries",
+      "name": "redis_ts_queryindex",
+      "output_policy": "budget_guarded",
+      "protocol": {
+        "annotations": {
+          "destructiveHint": false,
+          "idempotentHint": true,
+          "readOnlyHint": true
+        },
+        "description": "List time-series keys whose labels match every filter expression. On Redis Cluster this tool is unavailable because it would only observe one node.",
+        "inputSchema": {
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "filters": {
+              "description": "RedisTimeSeries label filter expressions. All expressions must match.",
+              "items": {
+                "type": "string"
+              },
+              "maxItems": 16,
+              "minItems": 1,
+              "type": "array"
+            }
+          },
+          "required": [
+            "filters"
+          ],
+          "title": "TsQueryIndexInput",
+          "type": "object"
+        },
+        "name": "redis_ts_queryindex",
+        "outputSchema": {
+          "$defs": {
+            "TsKeyOutput": {
+              "additionalProperties": false,
+              "properties": {
+                "encoding": {
+                  "$ref": "#/$defs/ValueEncoding"
+                },
+                "value": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "value",
+                "encoding"
+              ],
+              "type": "object"
+            },
+            "ValueEncoding": {
+              "enum": [
+                "utf8",
+                "base64"
+              ],
+              "type": "string"
+            }
+          },
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "key_count": {
+              "format": "uint",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "keys": {
+              "items": {
+                "$ref": "#/$defs/TsKeyOutput"
+              },
+              "type": "array"
+            }
+          },
+          "required": [
+            "key_count",
+            "keys"
+          ],
+          "title": "TsQueryIndexOutput",
+          "type": "object"
+        },
+        "title": "Query Time-Series Index"
+      },
+      "required_access": "read_only",
+      "required_module": "timeseries",
+      "requires_raw_opt_in": false
+    },
+    {
+      "bundle": "timeseries",
+      "capability_requirements": {
+        "deployment": "any",
+        "minimum_module_version": null,
+        "minimum_redis_version": null,
+        "required_commands": [
+          "TS.RANGE"
+        ],
+        "required_module": "timeseries"
+      },
+      "family": "timeseries",
+      "name": "redis_ts_range",
+      "output_policy": "range_paginated",
+      "protocol": {
+        "annotations": {
+          "destructiveHint": false,
+          "idempotentHint": true,
+          "readOnlyHint": true
+        },
+        "description": "Read a bounded page of samples or aggregation buckets from oldest to newest. Continuation metadata carries the next `from_timestamp` when more samples remain.",
+        "inputSchema": {
+          "$defs": {
+            "TsAggregation": {
+              "enum": [
+                "avg",
+                "sum",
+                "min",
+                "max",
+                "range",
+                "count",
+                "first",
+                "last",
+                "std.p",
+                "std.s",
+                "var.p",
+                "var.s",
+                "twa"
+              ],
+              "type": "string"
+            },
+            "TsAggregationInput": {
+              "additionalProperties": false,
+              "properties": {
+                "aggregation": {
+                  "$ref": "#/$defs/TsAggregation",
+                  "description": "Bucket aggregator applied server-side."
+                },
+                "align": {
+                  "default": null,
+                  "description": "Bucket alignment: `start`, `end`, or an exact millisecond timestamp.\nRequires RedisTimeSeries 1.6 or newer.",
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "bucket_duration_ms": {
+                  "description": "Bucket duration in milliseconds.",
+                  "format": "uint64",
+                  "minimum": 1,
+                  "type": "integer"
+                },
+                "bucket_timestamp": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/$defs/TsBucketTimestamp"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ],
+                  "default": null,
+                  "description": "Which bucket timestamp to report. Requires RedisTimeSeries 1.8 or\nnewer."
+                },
+                "empty": {
+                  "default": false,
+                  "description": "Report empty buckets inside the range. Requires RedisTimeSeries 1.8 or\nnewer.",
+                  "type": "boolean"
+                }
+              },
+              "required": [
+                "aggregation",
+                "bucket_duration_ms"
+              ],
+              "type": "object"
+            },
+            "TsBucketTimestamp": {
+              "enum": [
+                "start",
+                "end",
+                "mid"
+              ],
+              "type": "string"
+            },
+            "TsValueFilterInput": {
+              "additionalProperties": false,
+              "properties": {
+                "maximum": {
+                  "description": "Maximum accepted sample value, inclusive.",
+                  "format": "double",
+                  "type": "number"
+                },
+                "minimum": {
+                  "description": "Minimum accepted sample value, inclusive.",
+                  "format": "double",
+                  "type": "number"
+                }
+              },
+              "required": [
+                "minimum",
+                "maximum"
+              ],
+              "type": "object"
+            }
+          },
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "aggregation": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/TsAggregationInput"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Optional server-side bucket aggregation."
+            },
+            "count": {
+              "default": null,
+              "description": "Maximum samples or buckets returned by this page.",
+              "format": "uint",
+              "maximum": 1000,
+              "minimum": 1,
+              "type": [
+                "integer",
+                "null"
+              ]
+            },
+            "filter_by_timestamps": {
+              "default": null,
+              "description": "Return only samples with these exact timestamps.",
+              "items": {
+                "format": "int64",
+                "type": "integer"
+              },
+              "maxItems": 128,
+              "type": [
+                "array",
+                "null"
+              ]
+            },
+            "filter_by_value": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/TsValueFilterInput"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Return only samples inside this inclusive value range."
+            },
+            "from_timestamp": {
+              "default": null,
+              "description": "Inclusive range start: exact Unix milliseconds or `-`.",
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "key": {
+              "description": "Time-series key.",
+              "type": "string"
+            },
+            "latest": {
+              "default": false,
+              "description": "Report the latest possibly-open compaction bucket. Requires\nRedisTimeSeries 1.8 or newer.",
+              "type": "boolean"
+            },
+            "to_timestamp": {
+              "default": null,
+              "description": "Inclusive range end: exact Unix milliseconds or `+`.",
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          "required": [
+            "key"
+          ],
+          "title": "TsRangeInput",
+          "type": "object"
+        },
+        "name": "redis_ts_range",
+        "outputSchema": {
+          "$defs": {
+            "PageContinuation": {
+              "additionalProperties": false,
+              "properties": {
+                "cursor": {
+                  "format": "uint64",
+                  "minimum": 0,
+                  "type": [
+                    "integer",
+                    "null"
+                  ]
+                },
+                "offset": {
+                  "format": "uint64",
+                  "minimum": 0,
+                  "type": [
+                    "integer",
+                    "null"
+                  ]
+                },
+                "start": {
+                  "format": "int64",
+                  "type": [
+                    "integer",
+                    "null"
+                  ]
+                }
+              },
+              "type": "object"
+            },
+            "PageMetadata": {
+              "additionalProperties": false,
+              "properties": {
+                "complete": {
+                  "type": "boolean"
+                },
+                "continuation": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/$defs/PageContinuation"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "requested": {
+                  "format": "uint",
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                "returned": {
+                  "format": "uint",
+                  "minimum": 0,
+                  "type": "integer"
+                }
+              },
+              "required": [
+                "requested",
+                "returned",
+                "complete"
+              ],
+              "type": "object"
+            },
+            "TsSampleOutput": {
+              "additionalProperties": false,
+              "properties": {
+                "timestamp": {
+                  "description": "Exact Unix millisecond timestamp.",
+                  "format": "int64",
+                  "type": "integer"
+                },
+                "value": {
+                  "description": "Sample value as an IEEE 754 double.",
+                  "format": "double",
+                  "type": "number"
+                }
+              },
+              "required": [
+                "timestamp",
+                "value"
+              ],
+              "type": "object"
+            }
+          },
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "key": {
+              "type": "string"
+            },
+            "page": {
+              "$ref": "#/$defs/PageMetadata"
+            },
+            "samples": {
+              "items": {
+                "$ref": "#/$defs/TsSampleOutput"
+              },
+              "type": "array"
+            }
+          },
+          "required": [
+            "key",
+            "samples",
+            "page"
+          ],
+          "title": "TsRangeOutput",
+          "type": "object"
+        },
+        "title": "Read Time-Series Range"
+      },
+      "required_access": "read_only",
+      "required_module": "timeseries",
+      "requires_raw_opt_in": false
+    },
+    {
+      "bundle": "timeseries",
+      "capability_requirements": {
+        "deployment": "any",
+        "minimum_module_version": null,
+        "minimum_redis_version": null,
+        "required_commands": [
+          "TS.REVRANGE"
+        ],
+        "required_module": "timeseries"
+      },
+      "family": "timeseries",
+      "name": "redis_ts_revrange",
+      "output_policy": "range_paginated",
+      "protocol": {
+        "annotations": {
+          "destructiveHint": false,
+          "idempotentHint": true,
+          "readOnlyHint": true
+        },
+        "description": "Read a bounded page of samples or aggregation buckets from newest to oldest. Continuation metadata carries the next `to_timestamp` when more samples remain.",
+        "inputSchema": {
+          "$defs": {
+            "TsAggregation": {
+              "enum": [
+                "avg",
+                "sum",
+                "min",
+                "max",
+                "range",
+                "count",
+                "first",
+                "last",
+                "std.p",
+                "std.s",
+                "var.p",
+                "var.s",
+                "twa"
+              ],
+              "type": "string"
+            },
+            "TsAggregationInput": {
+              "additionalProperties": false,
+              "properties": {
+                "aggregation": {
+                  "$ref": "#/$defs/TsAggregation",
+                  "description": "Bucket aggregator applied server-side."
+                },
+                "align": {
+                  "default": null,
+                  "description": "Bucket alignment: `start`, `end`, or an exact millisecond timestamp.\nRequires RedisTimeSeries 1.6 or newer.",
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "bucket_duration_ms": {
+                  "description": "Bucket duration in milliseconds.",
+                  "format": "uint64",
+                  "minimum": 1,
+                  "type": "integer"
+                },
+                "bucket_timestamp": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/$defs/TsBucketTimestamp"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ],
+                  "default": null,
+                  "description": "Which bucket timestamp to report. Requires RedisTimeSeries 1.8 or\nnewer."
+                },
+                "empty": {
+                  "default": false,
+                  "description": "Report empty buckets inside the range. Requires RedisTimeSeries 1.8 or\nnewer.",
+                  "type": "boolean"
+                }
+              },
+              "required": [
+                "aggregation",
+                "bucket_duration_ms"
+              ],
+              "type": "object"
+            },
+            "TsBucketTimestamp": {
+              "enum": [
+                "start",
+                "end",
+                "mid"
+              ],
+              "type": "string"
+            },
+            "TsValueFilterInput": {
+              "additionalProperties": false,
+              "properties": {
+                "maximum": {
+                  "description": "Maximum accepted sample value, inclusive.",
+                  "format": "double",
+                  "type": "number"
+                },
+                "minimum": {
+                  "description": "Minimum accepted sample value, inclusive.",
+                  "format": "double",
+                  "type": "number"
+                }
+              },
+              "required": [
+                "minimum",
+                "maximum"
+              ],
+              "type": "object"
+            }
+          },
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "aggregation": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/TsAggregationInput"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Optional server-side bucket aggregation."
+            },
+            "count": {
+              "default": null,
+              "description": "Maximum samples or buckets returned by this page.",
+              "format": "uint",
+              "maximum": 1000,
+              "minimum": 1,
+              "type": [
+                "integer",
+                "null"
+              ]
+            },
+            "filter_by_timestamps": {
+              "default": null,
+              "description": "Return only samples with these exact timestamps.",
+              "items": {
+                "format": "int64",
+                "type": "integer"
+              },
+              "maxItems": 128,
+              "type": [
+                "array",
+                "null"
+              ]
+            },
+            "filter_by_value": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/TsValueFilterInput"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Return only samples inside this inclusive value range."
+            },
+            "from_timestamp": {
+              "default": null,
+              "description": "Inclusive range start: exact Unix milliseconds or `-`.",
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "key": {
+              "description": "Time-series key.",
+              "type": "string"
+            },
+            "latest": {
+              "default": false,
+              "description": "Report the latest possibly-open compaction bucket. Requires\nRedisTimeSeries 1.8 or newer.",
+              "type": "boolean"
+            },
+            "to_timestamp": {
+              "default": null,
+              "description": "Inclusive range end: exact Unix milliseconds or `+`.",
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          "required": [
+            "key"
+          ],
+          "title": "TsRangeInput",
+          "type": "object"
+        },
+        "name": "redis_ts_revrange",
+        "outputSchema": {
+          "$defs": {
+            "PageContinuation": {
+              "additionalProperties": false,
+              "properties": {
+                "cursor": {
+                  "format": "uint64",
+                  "minimum": 0,
+                  "type": [
+                    "integer",
+                    "null"
+                  ]
+                },
+                "offset": {
+                  "format": "uint64",
+                  "minimum": 0,
+                  "type": [
+                    "integer",
+                    "null"
+                  ]
+                },
+                "start": {
+                  "format": "int64",
+                  "type": [
+                    "integer",
+                    "null"
+                  ]
+                }
+              },
+              "type": "object"
+            },
+            "PageMetadata": {
+              "additionalProperties": false,
+              "properties": {
+                "complete": {
+                  "type": "boolean"
+                },
+                "continuation": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/$defs/PageContinuation"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "requested": {
+                  "format": "uint",
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                "returned": {
+                  "format": "uint",
+                  "minimum": 0,
+                  "type": "integer"
+                }
+              },
+              "required": [
+                "requested",
+                "returned",
+                "complete"
+              ],
+              "type": "object"
+            },
+            "TsSampleOutput": {
+              "additionalProperties": false,
+              "properties": {
+                "timestamp": {
+                  "description": "Exact Unix millisecond timestamp.",
+                  "format": "int64",
+                  "type": "integer"
+                },
+                "value": {
+                  "description": "Sample value as an IEEE 754 double.",
+                  "format": "double",
+                  "type": "number"
+                }
+              },
+              "required": [
+                "timestamp",
+                "value"
+              ],
+              "type": "object"
+            }
+          },
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "key": {
+              "type": "string"
+            },
+            "page": {
+              "$ref": "#/$defs/PageMetadata"
+            },
+            "samples": {
+              "items": {
+                "$ref": "#/$defs/TsSampleOutput"
+              },
+              "type": "array"
+            }
+          },
+          "required": [
+            "key",
+            "samples",
+            "page"
+          ],
+          "title": "TsRangeOutput",
+          "type": "object"
+        },
+        "title": "Read Time-Series Range Descending"
+      },
+      "required_access": "read_only",
+      "required_module": "timeseries",
+      "requires_raw_opt_in": false
+    },
+    {
       "bundle": "essentials",
       "capability_requirements": {
         "deployment": "any",

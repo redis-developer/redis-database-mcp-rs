@@ -259,6 +259,14 @@ fn classified_access(command: &str, arguments: &[Vec<u8>]) -> Option<AccessMode>
         };
     }
     let access = match command {
+        // TS.ALTER can shrink retention (trimming stored samples) and
+        // replaces the whole label set, so it is classified as destructive.
+        "TS.ALTER" | "TS.DEL" | "TS.DELETERULE" => AccessMode::Full,
+        "TS.ADD" | "TS.CREATE" | "TS.CREATERULE" | "TS.DECRBY" | "TS.INCRBY" | "TS.MADD" => {
+            AccessMode::ReadWrite
+        }
+        "TS.GET" | "TS.INFO" | "TS.MGET" | "TS.MRANGE" | "TS.MREVRANGE" | "TS.QUERYINDEX"
+        | "TS.RANGE" | "TS.REVRANGE" => AccessMode::ReadOnly,
         "ACL" | "ARDEL" | "ARDELRANGE" | "BITOP" | "DEL" | "DELEX" | "GEOSEARCHSTORE"
         | "GETDEL" | "HDEL" | "HGETDEL" | "JSON.ARRPOP" | "JSON.ARRTRIM" | "JSON.CLEAR"
         | "JSON.DEL" | "LMOVEM" | "LPOP" | "LMOVE" | "LMPOP" | "LREM" | "LSET" | "LTRIM"
@@ -399,6 +407,9 @@ fn minimum_redis_version(command: &str, arguments: &[Vec<u8>]) -> Option<RedisVe
 fn module_requirement(command: &str) -> (Option<RedisModule>, Option<RedisVersion>) {
     if command.starts_with("JSON.") {
         (Some(RedisModule::Json), None)
+    } else if command.starts_with("TS.") {
+        let minimum = (command == "TS.DEL").then(|| RedisVersion::new(1, 6, 0));
+        (Some(RedisModule::TimeSeries), minimum)
     } else {
         (None, None)
     }

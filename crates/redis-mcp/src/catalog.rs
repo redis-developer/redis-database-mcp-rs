@@ -42,6 +42,8 @@ pub enum RedisModule {
     Json,
     /// Redis Query Engine commands such as `FT.SEARCH` and `FT.CREATE`.
     Search,
+    /// RedisTimeSeries commands such as `TS.ADD` and `TS.RANGE`.
+    TimeSeries,
 }
 
 impl RedisModule {
@@ -49,6 +51,7 @@ impl RedisModule {
         match self {
             Self::Json => "redis_json",
             Self::Search => "search",
+            Self::TimeSeries => "timeseries",
         }
     }
 
@@ -56,6 +59,7 @@ impl RedisModule {
         match self {
             Self::Json => "RedisJSON",
             Self::Search => "Redis Query Engine",
+            Self::TimeSeries => "RedisTimeSeries",
         }
     }
 }
@@ -130,6 +134,8 @@ pub enum ToolBundle {
     Json,
     /// Redis Query Engine and search operations.
     Search,
+    /// RedisTimeSeries sample, metadata, and query operations.
+    TimeSeries,
     /// Operational inspection and troubleshooting tools.
     Diagnostics,
     /// Stateful, owner-isolated Redis session operations.
@@ -157,6 +163,7 @@ impl ToolBundle {
         Self::DataStructures,
         Self::Json,
         Self::Search,
+        Self::TimeSeries,
         Self::Diagnostics,
         Self::Sessions,
         Self::Transactions,
@@ -172,6 +179,7 @@ impl ToolBundle {
             Self::DataStructures => "data_structures",
             Self::Json => "json",
             Self::Search => "search",
+            Self::TimeSeries => "timeseries",
             Self::Diagnostics => "diagnostics",
             Self::Sessions => "sessions",
             Self::Transactions => "transactions",
@@ -206,6 +214,7 @@ impl ToolMetadata {
         match self.bundle {
             ToolBundle::Json => Some(ToolFamily::Json),
             ToolBundle::Search => Some(ToolFamily::Search),
+            ToolBundle::TimeSeries => Some(ToolFamily::TimeSeries),
             ToolBundle::Scripting => Some(ToolFamily::Scripting),
             ToolBundle::Essentials => match self.name {
                 "redis_pubsub_channels"
@@ -280,6 +289,7 @@ impl ToolMetadata {
                 | ToolBundle::DataStructures
                 | ToolBundle::Json
                 | ToolBundle::Search
+                | ToolBundle::TimeSeries
                 | ToolBundle::Scripting => false,
             },
             ToolFamily::is_compiled,
@@ -291,6 +301,7 @@ impl ToolMetadata {
         match self.bundle {
             ToolBundle::Json => Some(RedisModule::Json),
             ToolBundle::Search => Some(RedisModule::Search),
+            ToolBundle::TimeSeries => Some(RedisModule::TimeSeries),
             _ => None,
         }
     }
@@ -423,6 +434,7 @@ impl ToolMetadata {
             _ => None,
         };
         let minimum_module_version = match self.name {
+            "redis_ts_del" => Some(RedisVersion::new(1, 6, 0)),
             "redis_json_get"
             | "redis_json_type"
             | "redis_json_mget"
@@ -457,6 +469,23 @@ impl ToolMetadata {
         };
         let required_commands = match self.name {
             "redis_transaction" => &["MULTI", "EXEC", "WATCH"] as &'static [&'static str],
+            "redis_ts_create" => &["TS.CREATE"],
+            "redis_ts_alter" => &["TS.ALTER"],
+            "redis_ts_add" => &["TS.ADD"],
+            "redis_ts_madd" => &["TS.MADD"],
+            "redis_ts_incrby" => &["TS.INCRBY"],
+            "redis_ts_decrby" => &["TS.DECRBY"],
+            "redis_ts_del" => &["TS.DEL"],
+            "redis_ts_createrule" => &["TS.CREATERULE"],
+            "redis_ts_deleterule" => &["TS.DELETERULE"],
+            "redis_ts_range" => &["TS.RANGE"],
+            "redis_ts_revrange" => &["TS.REVRANGE"],
+            "redis_ts_mrange" => &["TS.MRANGE"],
+            "redis_ts_mrevrange" => &["TS.MREVRANGE"],
+            "redis_ts_get" => &["TS.GET"],
+            "redis_ts_mget" => &["TS.MGET"],
+            "redis_ts_info" => &["TS.INFO"],
+            "redis_ts_queryindex" => &["TS.QUERYINDEX"],
             "redis_ping" => &["PING"] as &'static [&'static str],
             "redis_info" => &["INFO"],
             "redis_client_list" | "redis_connection_summary" => &["CLIENT"],
@@ -760,6 +789,11 @@ impl ToolMetadata {
             | "redis_server_state"
             | "redis_client_control"
             | "redis_swapdb" => ToolDeploymentRequirement::Standalone,
+            // RedisTimeSeries multi-series queries only observe the node that
+            // answers them; OSS Cluster has no database-wide TS coordinator.
+            "redis_ts_mget" | "redis_ts_mrange" | "redis_ts_mrevrange" | "redis_ts_queryindex" => {
+                ToolDeploymentRequirement::Standalone
+            }
             _ => ToolDeploymentRequirement::Any,
         };
         ToolCapabilityRequirements {
@@ -779,7 +813,8 @@ impl ToolMetadata {
             }
             "redis_ft_aggregate" | "redis_ft_cursor_read" => ToolOutputPolicy::CursorPaginated,
             "redis_lrange" | "redis_zrange" | "redis_xrange" | "redis_xrevrange"
-            | "redis_argrep" | "redis_arscan" | "redis_vrange" => ToolOutputPolicy::RangePaginated,
+            | "redis_argrep" | "redis_arscan" | "redis_vrange" | "redis_ts_range"
+            | "redis_ts_revrange" => ToolOutputPolicy::RangePaginated,
             "redis_ft_search" | "redis_ft_vector_search" | "redis_ft_hybrid_search" => {
                 ToolOutputPolicy::OffsetPaginated
             }
@@ -872,7 +907,12 @@ impl ToolMetadata {
             | "redis_memory_diagnostics"
             | "redis_hotkeys_get"
             | "redis_command"
-            | "redis_transaction" => ToolOutputPolicy::BudgetGuarded,
+            | "redis_transaction"
+            | "redis_ts_mrange"
+            | "redis_ts_mrevrange"
+            | "redis_ts_mget"
+            | "redis_ts_info"
+            | "redis_ts_queryindex" => ToolOutputPolicy::BudgetGuarded,
             _ => ToolOutputPolicy::IntrinsicallyBounded,
         }
     }
@@ -2638,6 +2678,108 @@ pub(crate) const CATALOG: &[ToolMetadata] = &[
         requires_raw_opt_in: false,
     },
     ToolMetadata {
+        name: "redis_ts_create",
+        bundle: ToolBundle::TimeSeries,
+        required_access: AccessMode::ReadWrite,
+        requires_raw_opt_in: false,
+    },
+    ToolMetadata {
+        name: "redis_ts_alter",
+        bundle: ToolBundle::TimeSeries,
+        required_access: AccessMode::Full,
+        requires_raw_opt_in: false,
+    },
+    ToolMetadata {
+        name: "redis_ts_add",
+        bundle: ToolBundle::TimeSeries,
+        required_access: AccessMode::ReadWrite,
+        requires_raw_opt_in: false,
+    },
+    ToolMetadata {
+        name: "redis_ts_madd",
+        bundle: ToolBundle::TimeSeries,
+        required_access: AccessMode::ReadWrite,
+        requires_raw_opt_in: false,
+    },
+    ToolMetadata {
+        name: "redis_ts_incrby",
+        bundle: ToolBundle::TimeSeries,
+        required_access: AccessMode::ReadWrite,
+        requires_raw_opt_in: false,
+    },
+    ToolMetadata {
+        name: "redis_ts_decrby",
+        bundle: ToolBundle::TimeSeries,
+        required_access: AccessMode::ReadWrite,
+        requires_raw_opt_in: false,
+    },
+    ToolMetadata {
+        name: "redis_ts_del",
+        bundle: ToolBundle::TimeSeries,
+        required_access: AccessMode::Full,
+        requires_raw_opt_in: false,
+    },
+    ToolMetadata {
+        name: "redis_ts_createrule",
+        bundle: ToolBundle::TimeSeries,
+        required_access: AccessMode::ReadWrite,
+        requires_raw_opt_in: false,
+    },
+    ToolMetadata {
+        name: "redis_ts_deleterule",
+        bundle: ToolBundle::TimeSeries,
+        required_access: AccessMode::Full,
+        requires_raw_opt_in: false,
+    },
+    ToolMetadata {
+        name: "redis_ts_range",
+        bundle: ToolBundle::TimeSeries,
+        required_access: AccessMode::ReadOnly,
+        requires_raw_opt_in: false,
+    },
+    ToolMetadata {
+        name: "redis_ts_revrange",
+        bundle: ToolBundle::TimeSeries,
+        required_access: AccessMode::ReadOnly,
+        requires_raw_opt_in: false,
+    },
+    ToolMetadata {
+        name: "redis_ts_mrange",
+        bundle: ToolBundle::TimeSeries,
+        required_access: AccessMode::ReadOnly,
+        requires_raw_opt_in: false,
+    },
+    ToolMetadata {
+        name: "redis_ts_mrevrange",
+        bundle: ToolBundle::TimeSeries,
+        required_access: AccessMode::ReadOnly,
+        requires_raw_opt_in: false,
+    },
+    ToolMetadata {
+        name: "redis_ts_get",
+        bundle: ToolBundle::TimeSeries,
+        required_access: AccessMode::ReadOnly,
+        requires_raw_opt_in: false,
+    },
+    ToolMetadata {
+        name: "redis_ts_mget",
+        bundle: ToolBundle::TimeSeries,
+        required_access: AccessMode::ReadOnly,
+        requires_raw_opt_in: false,
+    },
+    ToolMetadata {
+        name: "redis_ts_info",
+        bundle: ToolBundle::TimeSeries,
+        required_access: AccessMode::ReadOnly,
+        requires_raw_opt_in: false,
+    },
+    ToolMetadata {
+        name: "redis_ts_queryindex",
+        bundle: ToolBundle::TimeSeries,
+        required_access: AccessMode::ReadOnly,
+        requires_raw_opt_in: false,
+    },
+    ToolMetadata {
         name: "redis_transaction",
         bundle: ToolBundle::Transactions,
         required_access: AccessMode::Full,
@@ -2736,11 +2878,15 @@ mod tests {
     fn module_bundles_are_explicit_and_not_defaulted() {
         assert!(!ToolBundle::DEFAULTS.contains(&ToolBundle::Json));
         assert!(!ToolBundle::DEFAULTS.contains(&ToolBundle::Search));
+        assert!(!ToolBundle::DEFAULTS.contains(&ToolBundle::TimeSeries));
         for tool in CATALOG {
             match tool.bundle {
                 ToolBundle::Json => assert_eq!(tool.required_module(), Some(RedisModule::Json)),
                 ToolBundle::Search => {
                     assert_eq!(tool.required_module(), Some(RedisModule::Search));
+                }
+                ToolBundle::TimeSeries => {
+                    assert_eq!(tool.required_module(), Some(RedisModule::TimeSeries));
                 }
                 _ => assert_eq!(tool.required_module(), None),
             }

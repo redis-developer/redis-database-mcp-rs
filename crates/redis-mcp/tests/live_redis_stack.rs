@@ -1,7 +1,8 @@
 use std::time::Duration;
 
 use redis_mcp::{
-    AccessMode, CapabilityStatus, DirectRedis, OutputBudget, RedisMcp, RedisModule, ToolBundle,
+    AccessMode, CapabilityStatus, DirectRedis, OutputBudget, RedisCapabilities, RedisMcp,
+    RedisModule, RedisVersion, ToolBundle,
 };
 use tower_mcp::{
     CallToolResult,
@@ -1638,4 +1639,630 @@ async fn vector_and_hybrid_search_cover_hash_and_json_models() {
         );
         assert_eq!(dropped["dropped"], true);
     }
+}
+
+async fn stack_timeseries_client(
+    url: &str,
+    access: AccessMode,
+    output_budget: Option<OutputBudget>,
+    capabilities: Option<RedisCapabilities>,
+) -> Option<McpClient> {
+    let executor = DirectRedis::connect(url)
+        .await
+        .expect("connect timeseries executor");
+    let capabilities = match capabilities {
+        Some(capabilities) => capabilities,
+        None => {
+            let discovered = executor
+                .discover_capabilities()
+                .await
+                .expect("discover timeseries capabilities");
+            if discovered.module(RedisModule::TimeSeries).status() != CapabilityStatus::Available {
+                eprintln!("skipping timeseries test: the target does not provide RedisTimeSeries");
+                return None;
+            }
+            discovered
+        }
+    };
+    let mut builder = RedisMcp::builder(executor)
+        .access(access)
+        .bundles([ToolBundle::TimeSeries])
+        .capabilities(capabilities);
+    if let Some(output_budget) = output_budget {
+        builder = builder.output_budget(output_budget);
+    }
+    let router = builder.build();
+    let client = McpClient::connect(ChannelTransport::new(router))
+        .await
+        .expect("connect timeseries MCP client");
+    client
+        .initialize("redis-mcp-live-timeseries-test", "0")
+        .await
+        .expect("initialize timeseries MCP client");
+    Some(client)
+}
+
+#[tokio::test]
+async fn complete_timeseries_family_is_exact_bounded_and_version_gated() {
+    let Some(stack) = TestRedisStack::start().await else {
+        return;
+    };
+
+    // The pinned inventory must match what the live module actually
+    // advertises, so drift in either direction fails loudly.
+    let mut inventory_connection = redis::Client::open(stack.url.as_str())
+        .expect("open inventory client")
+        .get_multiplexed_async_connection()
+        .await
+        .expect("connect inventory client");
+    let advertised: Vec<String> = redis::cmd("COMMAND")
+        .arg("LIST")
+        .query_async::<Vec<String>>(&mut inventory_connection)
+        .await
+        .expect("list commands")
+        .into_iter()
+        .filter(|name| name.to_ascii_uppercase().starts_with("TS."))
+        .map(|name| name.to_ascii_uppercase())
+        .collect();
+    if !advertised.is_empty() {
+        let mut advertised = advertised;
+        advertised.sort_unstable();
+        let pinned: serde_json::Value = serde_json::from_str(include_str!(
+            "fixtures/redis-timeseries-commands-1.12.6.json"
+        ))
+        .expect("pinned timeseries inventory");
+        let pinned = pinned["commands"]
+            .as_array()
+            .expect("pinned command array")
+            .iter()
+            .map(|command| command["name"].as_str().expect("command name").to_string())
+            .collect::<Vec<_>>();
+        assert_eq!(
+            advertised, pinned,
+            "live TS command surface drifted from the pinned inventory"
+        );
+    }
+
+    for protocol in ["resp2", "resp3"] {
+        let url = with_protocol(&stack.url, protocol);
+        let Some(client) = stack_timeseries_client(&url, AccessMode::Full, None, None).await else {
+            return;
+        };
+        let prefix = format!("redis-mcp:ts:{protocol}:{}", std::process::id());
+        let sensor = format!("s{protocol}{}", std::process::id());
+        let temperature = format!("{prefix}:temperature");
+        let humidity = format!("{prefix}:humidity");
+        let compacted = format!("{prefix}:temperature:hourly");
+
+        // Creation, metadata, and labels.
+        let created = structured(
+            call(
+                &client,
+                "redis_ts_create",
+                serde_json::json!({
+                    "key": temperature,
+                    "options": {
+                        "retention_ms": 86_400_000_u64,
+                        "duplicate_policy": "BLOCK",
+                        "labels": [
+                            {"name": "sensor", "value": sensor},
+                            {"name": "kind", "value": "temperature"},
+                        ],
+                    },
+                }),
+            )
+            .await,
+        );
+        assert_eq!(created["created"], true);
+        let created_humidity = structured(
+            call(
+                &client,
+                "redis_ts_create",
+                serde_json::json!({
+                    "key": humidity,
+                    "options": {
+                        "labels": [
+                            {"name": "sensor", "value": sensor},
+                            {"name": "kind", "value": "humidity"},
+                        ],
+                    },
+                }),
+            )
+            .await,
+        );
+        assert_eq!(created_humidity["created"], true);
+
+        let info = structured(
+            call(
+                &client,
+                "redis_ts_info",
+                serde_json::json!({"key": temperature}),
+            )
+            .await,
+        );
+        assert_eq!(info["attributes"]["retentionTime"], 86_400_000_u64);
+
+        // Exact timestamps: explicit writes echo the exact integer back.
+        let base = 1_700_000_000_000_i64;
+        let added = structured(
+            call(
+                &client,
+                "redis_ts_add",
+                serde_json::json!({
+                    "key": temperature,
+                    "timestamp": base.to_string(),
+                    "value": 21.5,
+                }),
+            )
+            .await,
+        );
+        assert_eq!(added["timestamp"], base);
+        for offset in 1..10_i64 {
+            let added = structured(
+                call(
+                    &client,
+                    "redis_ts_add",
+                    serde_json::json!({
+                        "key": temperature,
+                        "timestamp": (base + offset * 1_000).to_string(),
+                        "value": 21.5 + offset as f64,
+                    }),
+                )
+                .await,
+            );
+            assert_eq!(added["timestamp"], base + offset * 1_000);
+        }
+
+        // Bulk writes keep per-sample failures aligned while others apply.
+        let madd = structured(
+            call(
+                &client,
+                "redis_ts_madd",
+                serde_json::json!({
+                    "samples": [
+                        {"key": humidity, "timestamp": base.to_string(), "value": 40.0},
+                        {"key": temperature, "timestamp": base.to_string(), "value": 99.0},
+                        {"key": humidity, "timestamp": (base + 1_000).to_string(), "value": 41.5},
+                    ],
+                }),
+            )
+            .await,
+        );
+        assert_eq!(madd["requested"], 3);
+        assert_eq!(madd["accepted"], 2);
+        assert_eq!(madd["results"][0]["timestamp"], base);
+        assert!(
+            madd["results"][1]["error"].is_string(),
+            "duplicate BLOCK policy must fail in-band: {madd:?}"
+        );
+        assert_eq!(madd["results"][2]["timestamp"], base + 1_000);
+
+        // Counter adjustments report the affected timestamp.
+        let counter = format!("{prefix}:counter");
+        let incremented = structured(
+            call(
+                &client,
+                "redis_ts_incrby",
+                serde_json::json!({
+                    "key": counter,
+                    "value": 5.0,
+                    "timestamp": base.to_string(),
+                }),
+            )
+            .await,
+        );
+        assert_eq!(incremented["timestamp"], base);
+        let decremented = structured(
+            call(
+                &client,
+                "redis_ts_decrby",
+                serde_json::json!({
+                    "key": counter,
+                    "value": 2.0,
+                    "timestamp": (base + 1_000).to_string(),
+                }),
+            )
+            .await,
+        );
+        assert_eq!(decremented["timestamp"], base + 1_000);
+        let counter_latest =
+            structured(call(&client, "redis_ts_get", serde_json::json!({"key": counter})).await);
+        assert_eq!(counter_latest["sample"]["value"], 3.0);
+
+        // Bounded pages with exact range continuation.
+        let first_page = structured(
+            call(
+                &client,
+                "redis_ts_range",
+                serde_json::json!({"key": temperature, "count": 4}),
+            )
+            .await,
+        );
+        assert_eq!(first_page["samples"].as_array().expect("samples").len(), 4);
+        assert_eq!(first_page["page"]["complete"], false);
+        assert_eq!(
+            first_page["page"]["continuation"]["start"],
+            base + 3 * 1_000 + 1
+        );
+        let second_page = structured(
+            call(
+                &client,
+                "redis_ts_range",
+                serde_json::json!({
+                    "key": temperature,
+                    "from_timestamp": (base + 3 * 1_000 + 1).to_string(),
+                    "count": 100,
+                }),
+            )
+            .await,
+        );
+        assert_eq!(second_page["page"]["complete"], true);
+        assert_eq!(second_page["samples"].as_array().expect("samples").len(), 6);
+        assert_eq!(second_page["samples"][0]["timestamp"], base + 4_000);
+        assert_eq!(second_page["samples"][0]["value"], 25.5);
+
+        let descending = structured(
+            call(
+                &client,
+                "redis_ts_revrange",
+                serde_json::json!({"key": temperature, "count": 3}),
+            )
+            .await,
+        );
+        assert_eq!(descending["samples"][0]["timestamp"], base + 9_000);
+        assert_eq!(
+            descending["page"]["continuation"]["start"],
+            base + 7 * 1_000 - 1
+        );
+
+        // Server-side aggregation and value filters.
+        let buckets = structured(
+            call(
+                &client,
+                "redis_ts_range",
+                serde_json::json!({
+                    "key": temperature,
+                    "aggregation": {"aggregation": "avg", "bucket_duration_ms": 5_000},
+                }),
+            )
+            .await,
+        );
+        assert!(
+            buckets["samples"].as_array().expect("buckets").len() >= 2,
+            "{buckets:?}"
+        );
+        let filtered = structured(
+            call(
+                &client,
+                "redis_ts_range",
+                serde_json::json!({
+                    "key": temperature,
+                    "filter_by_value": {"minimum": 30.0, "maximum": 100.0},
+                }),
+            )
+            .await,
+        );
+        assert_eq!(filtered["samples"].as_array().expect("samples").len(), 1);
+        assert_eq!(filtered["samples"][0]["value"], 30.5);
+
+        // Multi-series queries with labels, filters, and grouping.
+        let mrange = structured(
+            call(
+                &client,
+                "redis_ts_mrange",
+                serde_json::json!({
+                    "filters": [format!("sensor={sensor}"), format!("kind=temperature")],
+                    "with_labels": true,
+                }),
+            )
+            .await,
+        );
+        assert_eq!(mrange["series_count"], 1);
+        assert_eq!(mrange["series"][0]["key"], temperature);
+        assert!(
+            mrange["series"][0]["labels"]
+                .as_array()
+                .expect("labels")
+                .iter()
+                .any(|label| label["name"] == "kind" && label["value"] == "temperature"),
+            "{mrange:?}"
+        );
+        let grouped = structured(
+            call(
+                &client,
+                "redis_ts_mrevrange",
+                serde_json::json!({
+                    "filters": [format!("sensor={sensor}")],
+                    "count": 1,
+                    "group_by": {"label": "sensor", "reducer": "max"},
+                }),
+            )
+            .await,
+        );
+        assert_eq!(grouped["series_count"], 1, "{grouped:?}");
+
+        let mget = structured(
+            call(
+                &client,
+                "redis_ts_mget",
+                serde_json::json!({"filters": [format!("sensor={sensor}")], "with_labels": true}),
+            )
+            .await,
+        );
+        assert_eq!(mget["series_count"], 2, "{mget:?}");
+        let queried = structured(
+            call(
+                &client,
+                "redis_ts_queryindex",
+                serde_json::json!({"filters": [format!("sensor={sensor}")]}),
+            )
+            .await,
+        );
+        assert_eq!(queried["key_count"], 2, "{queried:?}");
+
+        // Compaction rules appear in metadata and are removable.
+        let rule_destination = structured(
+            call(
+                &client,
+                "redis_ts_create",
+                serde_json::json!({"key": compacted}),
+            )
+            .await,
+        );
+        assert_eq!(rule_destination["created"], true);
+        let rule = structured(
+            call(
+                &client,
+                "redis_ts_createrule",
+                serde_json::json!({
+                    "source_key": temperature,
+                    "destination_key": compacted,
+                    "aggregation": "avg",
+                    "bucket_duration_ms": 3_600_000_u64,
+                }),
+            )
+            .await,
+        );
+        assert_eq!(rule["applied"], true);
+        let info_with_rule = structured(
+            call(
+                &client,
+                "redis_ts_info",
+                serde_json::json!({"key": temperature}),
+            )
+            .await,
+        );
+        assert!(
+            serde_json::to_string(&info_with_rule["attributes"]["rules"])
+                .expect("serialize rules")
+                .contains(&compacted),
+            "{info_with_rule:?}"
+        );
+        let removed_rule = structured(
+            call(
+                &client,
+                "redis_ts_deleterule",
+                serde_json::json!({
+                    "source_key": temperature,
+                    "destination_key": compacted,
+                }),
+            )
+            .await,
+        );
+        assert_eq!(removed_rule["applied"], true);
+
+        // Alteration replaces labels and can trim by retention.
+        let altered = structured(
+            call(
+                &client,
+                "redis_ts_alter",
+                serde_json::json!({
+                    "key": temperature,
+                    "retention_ms": 3_600_000_u64,
+                    "labels": [{"name": "sensor", "value": sensor}],
+                }),
+            )
+            .await,
+        );
+        assert_eq!(altered["altered"], true);
+        let info_after_alter = structured(
+            call(
+                &client,
+                "redis_ts_info",
+                serde_json::json!({"key": temperature}),
+            )
+            .await,
+        );
+        assert_eq!(
+            info_after_alter["attributes"]["retentionTime"],
+            3_600_000_u64
+        );
+        assert!(
+            !serde_json::to_string(&info_after_alter["attributes"]["labels"])
+                .expect("serialize labels")
+                .contains("temperature"),
+            "label replacement must drop the old label set: {info_after_alter:?}"
+        );
+
+        // Destructive sample deletion reports the removed count.
+        let deleted = structured(
+            call(
+                &client,
+                "redis_ts_del",
+                serde_json::json!({
+                    "key": temperature,
+                    "from_timestamp": base.to_string(),
+                    "to_timestamp": (base + 4_000).to_string(),
+                }),
+            )
+            .await,
+        );
+        assert_eq!(deleted["deleted_samples"], 5);
+
+        // Wrong-type failures surface as stable tool errors.
+        let plain = format!("{prefix}:plain");
+        redis::cmd("SET")
+            .arg(&plain)
+            .arg("not-a-series")
+            .query_async::<()>(&mut inventory_connection)
+            .await
+            .expect("seed plain string");
+        let wrong_type = client
+            .call_tool("redis_ts_get", serde_json::json!({"key": plain}))
+            .await
+            .expect("wrong-type TS.GET is a tool result");
+        assert!(wrong_type.is_error, "{wrong_type:?}");
+
+        // Oversized pages fail with the stable output-limit contract.
+        let Some(budget_client) = stack_timeseries_client(
+            &url,
+            AccessMode::ReadOnly,
+            Some(OutputBudget::new(600, 1_000)),
+            None,
+        )
+        .await
+        else {
+            return;
+        };
+        let overflow = budget_client
+            .call_tool(
+                "redis_ts_range",
+                serde_json::json!({"key": humidity, "count": 100}),
+            )
+            .await
+            .expect("oversized TS.RANGE is a tool result");
+        assert!(overflow.is_error, "{overflow:?}");
+        assert_eq!(
+            overflow.meta.as_ref().expect("timeseries output metadata")["io.redis.mcp/outputLimit"]
+                ["code"],
+            "output_limit_exceeded"
+        );
+
+        // Known-old module versions fail closed before execution.
+        let old_capabilities = RedisCapabilities::unknown()
+            .with_module_inventory([(RedisModule::TimeSeries, Some(RedisVersion::new(1, 4, 0)))]);
+        let Some(old_client) =
+            stack_timeseries_client(&url, AccessMode::Full, None, Some(old_capabilities)).await
+        else {
+            return;
+        };
+        let gated_latest = old_client
+            .call_tool(
+                "redis_ts_get",
+                serde_json::json!({"key": temperature, "latest": true}),
+            )
+            .await
+            .expect("gated LATEST is a tool result");
+        assert!(gated_latest.is_error, "{gated_latest:?}");
+        assert!(
+            serde_json::to_string(&gated_latest)
+                .expect("serialize gated LATEST")
+                .contains("RedisTimeSeries 1.8"),
+            "{gated_latest:?}"
+        );
+        let gated_del = old_client
+            .call_tool(
+                "redis_ts_del",
+                serde_json::json!({
+                    "key": temperature,
+                    "from_timestamp": "-",
+                    "to_timestamp": "+",
+                }),
+            )
+            .await
+            .expect("gated TS.DEL is a tool result");
+        assert!(gated_del.is_error, "{gated_del:?}");
+    }
+}
+
+#[tokio::test]
+async fn timeseries_acl_denials_are_classified_without_leaking_credentials() {
+    let Some(stack) = TestRedisStack::start().await else {
+        return;
+    };
+    let mut admin = redis::Client::open(stack.url.as_str())
+        .expect("open timeseries ACL admin client")
+        .get_multiplexed_async_connection()
+        .await
+        .expect("connect timeseries ACL admin client");
+    let probe = DirectRedis::connect(&stack.url)
+        .await
+        .expect("connect timeseries ACL probe");
+    if probe
+        .discover_capabilities()
+        .await
+        .expect("discover timeseries ACL capabilities")
+        .module(RedisModule::TimeSeries)
+        .status()
+        != CapabilityStatus::Available
+    {
+        eprintln!("skipping timeseries ACL test: the target does not provide RedisTimeSeries");
+        return;
+    }
+
+    let key = format!("redis-mcp:ts:acl:{}", std::process::id());
+    redis::cmd("TS.ADD")
+        .arg(&key)
+        .arg("1700000000000")
+        .arg("1.5")
+        .query_async::<i64>(&mut admin)
+        .await
+        .expect("seed ACL time series");
+
+    let username = format!("redis-mcp-ts-acl-{}", std::process::id());
+    let password = "ts-acl-secret";
+    redis::cmd("ACL")
+        .arg("SETUSER")
+        .arg(&username)
+        .arg("reset")
+        .arg("on")
+        .arg(format!(">{password}"))
+        .arg("~*")
+        .arg("+ts.get")
+        .query_async::<()>(&mut admin)
+        .await
+        .expect("create timeseries ACL user");
+
+    let capabilities = probe
+        .discover_capabilities()
+        .await
+        .expect("discover capabilities for the restricted client");
+    let mut restricted_url = redis::parse_redis_url(&stack.url).expect("parse stack URL");
+    restricted_url
+        .set_username(&username)
+        .expect("set timeseries ACL username");
+    restricted_url
+        .set_password(Some(password))
+        .expect("set timeseries ACL password");
+    let Some(client) = stack_timeseries_client(
+        restricted_url.as_str(),
+        AccessMode::Full,
+        None,
+        Some(capabilities),
+    )
+    .await
+    else {
+        return;
+    };
+
+    let allowed = structured(call(&client, "redis_ts_get", serde_json::json!({"key": key})).await);
+    assert_eq!(allowed["sample"]["timestamp"], 1_700_000_000_000_i64);
+
+    let denied = client
+        .call_tool(
+            "redis_ts_add",
+            serde_json::json!({"key": key, "value": 2.0}),
+        )
+        .await
+        .expect("denied TS.ADD is a tool result");
+    assert!(denied.is_error, "{denied:?}");
+    let rendered = serde_json::to_string(&denied).expect("serialize denied TS.ADD");
+    assert!(!rendered.contains(password), "{denied:?}");
+
+    redis::cmd("ACL")
+        .arg("DELUSER")
+        .arg(&username)
+        .query_async::<i64>(&mut admin)
+        .await
+        .expect("remove timeseries ACL user");
 }

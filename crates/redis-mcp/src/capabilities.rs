@@ -274,7 +274,11 @@ impl RedisCapabilities {
     where
         I: IntoIterator<Item = (RedisModule, Option<RedisVersion>)>,
     {
-        for module in [RedisModule::Json, RedisModule::Search] {
+        for module in [
+            RedisModule::Json,
+            RedisModule::Search,
+            RedisModule::TimeSeries,
+        ] {
             self.modules
                 .insert(module, RedisModuleCapability::unavailable());
         }
@@ -443,7 +447,11 @@ async fn discover_capabilities_inner(
     let mut module_command = module_command;
     module_command.arg("LIST");
     if let Ok(modules) = executor.execute(module_command).await {
-        for module in [RedisModule::Json, RedisModule::Search] {
+        for module in [
+            RedisModule::Json,
+            RedisModule::Search,
+            RedisModule::TimeSeries,
+        ] {
             capabilities
                 .modules
                 .insert(module, RedisModuleCapability::unavailable());
@@ -568,6 +576,7 @@ fn parse_modules(value: &RedisValue) -> Vec<(RedisModule, Option<RedisVersion>)>
             let module = match name.to_ascii_lowercase().as_str() {
                 "rejson" | "redisjson" | "json" => RedisModule::Json,
                 "search" | "redisearch" | "ft" => RedisModule::Search,
+                "timeseries" | "redistimeseries" => RedisModule::TimeSeries,
                 _ => return None,
             };
             let version = pairs

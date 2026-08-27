@@ -28,6 +28,7 @@ pub enum ToolFamily {
     Scripting,
     Json,
     Search,
+    TimeSeries,
 }
 
 impl ToolFamily {
@@ -49,6 +50,7 @@ impl ToolFamily {
         Self::Scripting,
         Self::Json,
         Self::Search,
+        Self::TimeSeries,
     ];
 
     /// Data families represented by the legacy curated-default bundles.
@@ -87,6 +89,7 @@ impl ToolFamily {
             Self::Scripting => "scripting",
             Self::Json => "json",
             Self::Search => "search",
+            Self::TimeSeries => "timeseries",
         }
     }
 
@@ -109,6 +112,7 @@ impl ToolFamily {
             Self::Scripting => cfg!(feature = "scripting"),
             Self::Json => cfg!(feature = "json"),
             Self::Search => cfg!(feature = "search"),
+            Self::TimeSeries => cfg!(feature = "timeseries"),
         }
     }
 }
@@ -155,6 +159,7 @@ family_module!(pubsub, PubSub, "pubsub");
 family_module!(scripting, Scripting, "scripting");
 family_module!(json, Json, "json");
 family_module!(search, Search, "search");
+family_module!(timeseries, TimeSeries, "timeseries");
 
 #[cfg(test)]
 mod tests {

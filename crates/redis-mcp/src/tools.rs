@@ -36,6 +36,8 @@ mod search;
 mod specialized_data;
 #[cfg(feature = "streams")]
 mod streams;
+#[cfg(feature = "transactions")]
+mod transactions;
 
 use std::{
     collections::{BTreeMap, BTreeSet},
@@ -71,6 +73,7 @@ pub(crate) struct ToolState {
     output_budget: OutputBudget,
     invocation_engine: RedisInvocationEngine,
     pub(crate) pubsub_sessions: Option<Arc<dyn PubSubSessionManager>>,
+    transactions: Option<crate::RedisTransactionEngine>,
 }
 
 impl ToolState {
@@ -79,13 +82,22 @@ impl ToolState {
         output_budget: OutputBudget,
         invocation_engine: RedisInvocationEngine,
         pubsub_sessions: Option<Arc<dyn PubSubSessionManager>>,
+        transactions: Option<crate::RedisTransactionEngine>,
     ) -> Self {
         Self {
             access,
             output_budget,
             invocation_engine,
             pubsub_sessions,
+            transactions,
         }
+    }
+
+    #[cfg(feature = "transactions")]
+    fn transactions(&self) -> tower_mcp::Result<&crate::RedisTransactionEngine> {
+        self.transactions
+            .as_ref()
+            .ok_or_else(|| tower_mcp::Error::tool("the transaction executor is not configured"))
     }
 
     fn max_collection_entries(&self) -> usize {
@@ -829,6 +841,11 @@ fn family_selected(
 
 pub(crate) fn add_raw_tool(router: McpRouter, state: Arc<ToolState>) -> McpRouter {
     router.tool(raw_tool(state))
+}
+
+#[cfg(feature = "transactions")]
+pub(crate) fn add_transaction_tool(router: McpRouter, state: Arc<ToolState>) -> McpRouter {
+    router.tool(transactions::transaction_tool(state))
 }
 
 fn output_schema<T: JsonSchema>() -> JsonValue {

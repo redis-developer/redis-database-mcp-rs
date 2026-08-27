@@ -134,6 +134,8 @@ pub enum ToolBundle {
     Diagnostics,
     /// Stateful, owner-isolated Redis session operations.
     Sessions,
+    /// Bounded atomic MULTI/EXEC transactions on dedicated connections.
+    Transactions,
     /// Bounded Lua scripting and Redis Functions operations.
     Scripting,
     /// Server configuration and administrative operations.
@@ -157,6 +159,7 @@ impl ToolBundle {
         Self::Search,
         Self::Diagnostics,
         Self::Sessions,
+        Self::Transactions,
         Self::Scripting,
         Self::Admin,
         Self::Bulk,
@@ -171,6 +174,7 @@ impl ToolBundle {
             Self::Search => "search",
             Self::Diagnostics => "diagnostics",
             Self::Sessions => "sessions",
+            Self::Transactions => "transactions",
             Self::Scripting => "scripting",
             Self::Admin => "admin",
             Self::Bulk => "bulk",
@@ -268,6 +272,7 @@ impl ToolMetadata {
             || match self.bundle {
                 ToolBundle::Diagnostics => cfg!(feature = "diagnostics"),
                 ToolBundle::Sessions => cfg!(feature = "sessions"),
+                ToolBundle::Transactions => cfg!(feature = "transactions"),
                 ToolBundle::Admin => cfg!(feature = "admin"),
                 ToolBundle::Raw => true,
                 ToolBundle::Bulk => true,
@@ -294,7 +299,7 @@ impl ToolMetadata {
     /// catalog filtering and stable preflight errors.
     pub fn capability_requirements(self) -> ToolCapabilityRequirements {
         let minimum_redis_version = match self.name {
-            "redis_slowlog" => Some(RedisVersion::new(2, 2, 0)),
+            "redis_slowlog" | "redis_transaction" => Some(RedisVersion::new(2, 2, 0)),
             "redis_latency_history" => Some(RedisVersion::new(2, 8, 0)),
             "redis_cluster_info" => Some(RedisVersion::new(3, 0, 0)),
             "redis_memory_stats"
@@ -451,6 +456,7 @@ impl ToolMetadata {
             _ => None,
         };
         let required_commands = match self.name {
+            "redis_transaction" => &["MULTI", "EXEC", "WATCH"] as &'static [&'static str],
             "redis_ping" => &["PING"] as &'static [&'static str],
             "redis_info" => &["INFO"],
             "redis_client_list" | "redis_connection_summary" => &["CLIENT"],
@@ -865,7 +871,8 @@ impl ToolMetadata {
             | "redis_latency_overview"
             | "redis_memory_diagnostics"
             | "redis_hotkeys_get"
-            | "redis_command" => ToolOutputPolicy::BudgetGuarded,
+            | "redis_command"
+            | "redis_transaction" => ToolOutputPolicy::BudgetGuarded,
             _ => ToolOutputPolicy::IntrinsicallyBounded,
         }
     }
@@ -2631,6 +2638,12 @@ pub(crate) const CATALOG: &[ToolMetadata] = &[
         requires_raw_opt_in: false,
     },
     ToolMetadata {
+        name: "redis_transaction",
+        bundle: ToolBundle::Transactions,
+        required_access: AccessMode::Full,
+        requires_raw_opt_in: true,
+    },
+    ToolMetadata {
         name: "redis_command",
         bundle: ToolBundle::Raw,
         required_access: AccessMode::Full,
@@ -2661,7 +2674,9 @@ pub(crate) fn selected_tool_names(
         .filter(|tool| access.permits(tool.required_access))
         .filter(|tool| {
             if tool.requires_raw_opt_in {
-                raw_enabled
+                // The redis_command escape hatch is selected by the raw policy
+                // alone; other raw-gated tools also require their bundle.
+                raw_enabled && (tool.bundle == ToolBundle::Raw || bundles.contains(&tool.bundle))
             } else {
                 bundles.contains(&tool.bundle)
             }

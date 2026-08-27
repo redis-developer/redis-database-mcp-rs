@@ -328,7 +328,11 @@ impl RedisInvocationEngine {
         self.execute(command, false).await
     }
 
-    fn require_access(&self, required: AccessMode, command: &str) -> Result<(), RedisError> {
+    pub(crate) fn require_access(
+        &self,
+        required: AccessMode,
+        command: &str,
+    ) -> Result<(), RedisError> {
         if self.access.permits(required) {
             Ok(())
         } else {
@@ -343,7 +347,10 @@ impl RedisInvocationEngine {
         }
     }
 
-    fn require_capabilities(&self, metadata: &NativeCommandMetadata) -> Result<(), RedisError> {
+    pub(crate) fn require_capabilities(
+        &self,
+        metadata: &NativeCommandMetadata,
+    ) -> Result<(), RedisError> {
         if self.capabilities.command(metadata.name()) == CapabilityStatus::Unavailable {
             return Err(RedisError::new(
                 RedisErrorKind::CapabilityUnavailable,
@@ -422,7 +429,7 @@ impl RedisInvocationEngine {
         }
     }
 
-    fn require_output_budget(&self, value: &RedisValue) -> Result<(), RedisError> {
+    pub(crate) fn require_output_budget(&self, value: &RedisValue) -> Result<(), RedisError> {
         let entries = redis_value_collection_entries(value);
         let entry_limit = self.output_budget.max_collection_entries();
         if entries > entry_limit {

@@ -1310,9 +1310,9 @@
       "disposition": "session",
       "access": "read_only",
       "cluster_behavior": "node_local",
-      "tools": [],
+      "tools": ["redis_transaction"],
       "tracking_issue": 61,
-      "rationale": "Transaction state requires one bounded dedicated connection and is tracked as a structured workflow."
+      "rationale": "Atomic transactions run through the bounded redis_transaction tool on one dedicated per-call connection instead of connection-stateful MCP calls."
     },
     {
       "name": "DUMP",
@@ -1386,9 +1386,9 @@
       "disposition": "session",
       "access": "full",
       "cluster_behavior": "node_local",
-      "tools": [],
+      "tools": ["redis_transaction"],
       "tracking_issue": 61,
-      "rationale": "Transaction state requires one bounded dedicated connection and is tracked as a structured workflow."
+      "rationale": "Atomic transactions run through the bounded redis_transaction tool on one dedicated per-call connection instead of connection-stateful MCP calls."
     },
     {
       "name": "EXISTS",
@@ -2708,9 +2708,9 @@
       "disposition": "session",
       "access": "full",
       "cluster_behavior": "node_local",
-      "tools": [],
+      "tools": ["redis_transaction"],
       "tracking_issue": 61,
-      "rationale": "Transaction state requires one bounded dedicated connection and is tracked as a structured workflow."
+      "rationale": "Atomic transactions run through the bounded redis_transaction tool on one dedicated per-call connection instead of connection-stateful MCP calls."
     },
     {
       "name": "OBJECT",
@@ -3802,9 +3802,9 @@
       "disposition": "session",
       "access": "read_only",
       "cluster_behavior": "node_local",
-      "tools": [],
+      "tools": ["redis_transaction"],
       "tracking_issue": 61,
-      "rationale": "Transaction state requires one bounded dedicated connection and is tracked as a structured workflow."
+      "rationale": "Atomic transactions run through the bounded redis_transaction tool on one dedicated per-call connection instead of connection-stateful MCP calls."
     },
     {
       "name": "VADD",
@@ -3946,9 +3946,9 @@
       "disposition": "session",
       "access": "read_only",
       "cluster_behavior": "key_routed",
-      "tools": [],
+      "tools": ["redis_transaction"],
       "tracking_issue": 61,
-      "rationale": "Transaction state requires one bounded dedicated connection and is tracked as a structured workflow."
+      "rationale": "Atomic transactions run through the bounded redis_transaction tool on one dedicated per-call connection instead of connection-stateful MCP calls."
     },
     {
       "name": "XACK",

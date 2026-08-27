@@ -35604,6 +35604,208 @@
       "requires_raw_opt_in": false
     },
     {
+      "bundle": "transactions",
+      "capability_requirements": {
+        "deployment": "any",
+        "minimum_module_version": null,
+        "minimum_redis_version": "2.2.0",
+        "required_commands": [
+          "MULTI",
+          "EXEC",
+          "WATCH"
+        ],
+        "required_module": null
+      },
+      "family": null,
+      "name": "redis_transaction",
+      "output_policy": "budget_guarded",
+      "protocol": {
+        "annotations": {},
+        "description": "Run one bounded command list atomically inside MULTI/EXEC on a dedicated connection, optionally watching keys for conflicting writes. Nested commands pass the same classification policy as redis_command; transaction, session, blocking, script, and admin forms stay rejected. The outcome is explicit: committed with aligned per-command results, aborted by a watched-key conflict, or rejected at queue time with nothing executed.",
+        "inputSchema": {
+          "$defs": {
+            "InputEncoding": {
+              "enum": [
+                "utf8",
+                "base64"
+              ],
+              "type": "string"
+            },
+            "TransactionArgumentInput": {
+              "additionalProperties": false,
+              "properties": {
+                "encoding": {
+                  "$ref": "#/$defs/InputEncoding",
+                  "default": "utf8",
+                  "description": "Encoding of `value`."
+                },
+                "value": {
+                  "description": "UTF-8 text or standard base64, according to `encoding`.",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "value"
+              ],
+              "type": "object"
+            },
+            "TransactionCommandInput": {
+              "additionalProperties": false,
+              "properties": {
+                "arguments": {
+                  "description": "Binary-safe command arguments in wire order.",
+                  "items": {
+                    "$ref": "#/$defs/TransactionArgumentInput"
+                  },
+                  "type": "array"
+                },
+                "command": {
+                  "description": "Redis command name, without arguments.",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "command"
+              ],
+              "type": "object"
+            }
+          },
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "commands": {
+              "description": "Commands queued between MULTI and EXEC, in execution order. Every\ncommand passes the same classification policy as redis_command.",
+              "items": {
+                "$ref": "#/$defs/TransactionCommandInput"
+              },
+              "maxItems": 64,
+              "minItems": 1,
+              "type": "array"
+            },
+            "watch": {
+              "description": "Optional binary-safe keys to WATCH before the transaction. If any\nwatched key changes before EXEC, the transaction aborts.",
+              "items": {
+                "$ref": "#/$defs/TransactionArgumentInput"
+              },
+              "maxItems": 16,
+              "type": "array"
+            }
+          },
+          "required": [
+            "commands"
+          ],
+          "title": "TransactionInput",
+          "type": "object"
+        },
+        "name": "redis_transaction",
+        "outputSchema": {
+          "$defs": {
+            "TransactionCommandResult": {
+              "additionalProperties": false,
+              "properties": {
+                "command": {
+                  "type": "string"
+                },
+                "index": {
+                  "format": "uint",
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                "value": true
+              },
+              "required": [
+                "index",
+                "command",
+                "value"
+              ],
+              "type": "object"
+            },
+            "TransactionFailure": {
+              "additionalProperties": false,
+              "properties": {
+                "code": {
+                  "type": "string"
+                },
+                "command": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "index": {
+                  "format": "uint",
+                  "minimum": 0,
+                  "type": [
+                    "integer",
+                    "null"
+                  ]
+                },
+                "message": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                }
+              },
+              "required": [
+                "code"
+              ],
+              "type": "object"
+            }
+          },
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "command_count": {
+              "format": "uint",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "failures": {
+              "description": "Queue-time rejections when the transaction was rejected.",
+              "items": {
+                "$ref": "#/$defs/TransactionFailure"
+              },
+              "type": [
+                "array",
+                "null"
+              ]
+            },
+            "results": {
+              "description": "Per-command results aligned with the request when committed. An entry\nmay carry a server_error object when that command failed at runtime.",
+              "items": {
+                "$ref": "#/$defs/TransactionCommandResult"
+              },
+              "type": [
+                "array",
+                "null"
+              ]
+            },
+            "status": {
+              "description": "`committed`, `aborted` (a watched key changed), or `rejected` (the\nserver refused queued commands and nothing executed).",
+              "type": "string"
+            },
+            "watched": {
+              "format": "uint",
+              "minimum": 0,
+              "type": "integer"
+            }
+          },
+          "required": [
+            "status",
+            "watched",
+            "command_count"
+          ],
+          "title": "TransactionOutput",
+          "type": "object"
+        },
+        "title": "Run Atomic Redis Transaction"
+      },
+      "required_access": "full",
+      "required_module": null,
+      "requires_raw_opt_in": true
+    },
+    {
       "bundle": "essentials",
       "capability_requirements": {
         "deployment": "any",
@@ -48754,6 +48956,24 @@
     "redis_touch": {
       "requested": 1,
       "touched": 1
+    },
+    "redis_transaction": {
+      "command_count": 2,
+      "failures": null,
+      "results": [
+        {
+          "command": "GET",
+          "index": 0,
+          "value": "OK"
+        },
+        {
+          "command": "SET",
+          "index": 1,
+          "value": "OK"
+        }
+      ],
+      "status": "committed",
+      "watched": 1
     },
     "redis_ttl": {
       "exists": true,

@@ -18,6 +18,7 @@ mod output;
 mod pubsub_sessions;
 mod raw;
 mod tools;
+mod transactions;
 
 use std::{collections::BTreeSet, sync::Arc, time::Duration};
 
@@ -52,6 +53,13 @@ pub use pubsub_sessions::{
 };
 pub use raw::RawCommandPolicy;
 use tower_mcp::{CapabilityFilter, Filterable, McpRouter, Tool};
+pub use transactions::{
+    DEFAULT_MAX_CONCURRENT_TRANSACTIONS, DEFAULT_MAX_TRANSACTION_COMMANDS,
+    DEFAULT_MAX_TRANSACTION_DURATION, DEFAULT_MAX_TRANSACTION_REQUEST_BYTES,
+    DEFAULT_MAX_TRANSACTION_WATCH_KEYS, DirectRedisTransactions, RedisPreparedTransaction,
+    RedisTransactionCommandFailure, RedisTransactionEngine, RedisTransactionExecutor,
+    RedisTransactionLimits, RedisTransactionOutcome, RedisTransactionRequest,
+};
 
 struct PubSubOwnerCleanup {
     manager: Arc<dyn PubSubSessionManager>,
@@ -88,6 +96,8 @@ impl RedisMcp {
             command_timeout: DEFAULT_COMMAND_TIMEOUT,
             output_budget: OutputBudget::default(),
             pubsub_sessions: None,
+            transactions: None,
+            transaction_limits: RedisTransactionLimits::default(),
             capabilities: RedisCapabilities::unknown(),
             unavailable_tool_policy: UnavailableToolPolicy::Advertise,
             server_name: "redis-mcp".to_string(),
@@ -106,6 +116,8 @@ pub struct RedisMcpBuilder {
     command_timeout: Duration,
     output_budget: OutputBudget,
     pubsub_sessions: Option<Arc<dyn PubSubSessionManager>>,
+    transactions: Option<Arc<dyn RedisTransactionExecutor>>,
+    transaction_limits: RedisTransactionLimits,
     capabilities: RedisCapabilities,
     unavailable_tool_policy: UnavailableToolPolicy,
     server_name: String,
@@ -226,6 +238,34 @@ impl RedisMcpBuilder {
         self
     }
 
+    /// Enable the bounded atomic transaction tool with a host-supplied
+    /// transaction executor.
+    ///
+    /// The executor is independent of [`RedisExecutor`], because MULTI, WATCH,
+    /// and EXEC require one dedicated connection per call rather than a pooled
+    /// request/response command. Transactions execute argv-shaped nested
+    /// commands, so they additionally require the raw command policy and full
+    /// access, exactly like the `redis_command` escape hatch. This method also
+    /// enables [`ToolBundle::Transactions`].
+    pub fn transactions(mut self, executor: impl RedisTransactionExecutor) -> Self {
+        self.transactions = Some(Arc::new(executor));
+        self.bundles.insert(ToolBundle::Transactions);
+        self
+    }
+
+    /// Enable transactions with a shared executor trait object.
+    pub fn shared_transactions(mut self, executor: Arc<dyn RedisTransactionExecutor>) -> Self {
+        self.transactions = Some(executor);
+        self.bundles.insert(ToolBundle::Transactions);
+        self
+    }
+
+    /// Replace the default transaction bounds.
+    pub fn transaction_limits(mut self, limits: RedisTransactionLimits) -> Self {
+        self.transaction_limits = limits;
+        self
+    }
+
     /// Supply a precomputed Redis capability snapshot.
     ///
     /// Custom executors can construct this snapshot without depending on
@@ -275,6 +315,19 @@ impl RedisMcpBuilder {
         if sessions_enabled && self.pubsub_sessions.is_none() {
             return Err(RedisMcpBuildError::SessionsRequireManager);
         }
+        let transactions_enabled =
+            cfg!(feature = "transactions") && self.bundles.contains(&ToolBundle::Transactions);
+        if transactions_enabled {
+            if self.transactions.is_none() {
+                return Err(RedisMcpBuildError::TransactionsRequireExecutor);
+            }
+            if !self.raw_command_policy.is_enabled() {
+                return Err(RedisMcpBuildError::TransactionsRequireRawCommands);
+            }
+            if self.transaction_limits.validate().is_err() {
+                return Err(RedisMcpBuildError::InvalidTransactionLimits);
+            }
+        }
         if let Some(family) = self
             .families
             .as_ref()
@@ -293,11 +346,19 @@ impl RedisMcpBuilder {
         );
         let pubsub_owner =
             (sessions_enabled && self.pubsub_sessions.is_some()).then(PubSubSessionOwner::random);
+        let transaction_engine = transactions_enabled
+            .then_some(self.transactions)
+            .flatten()
+            .map(|executor| {
+                RedisTransactionEngine::from_shared(invocation_engine.clone(), executor)
+                    .with_limits(self.transaction_limits)
+            });
         let state = Arc::new(tools::ToolState::new(
             self.access,
             self.output_budget,
             invocation_engine,
             self.pubsub_sessions,
+            transaction_engine,
         ));
         let mut router = McpRouter::new().server_info(self.server_name, self.server_version);
         if let (Some(manager), Some(owner)) = (&state.pubsub_sessions, pubsub_owner) {
@@ -329,6 +390,10 @@ impl RedisMcpBuilder {
                 &self.bundles,
                 self.families.as_ref(),
             );
+            #[cfg(feature = "transactions")]
+            if transactions_enabled {
+                router = tools::add_transaction_tool(router, state.clone());
+            }
             if self.raw_command_policy.is_enabled() {
                 router = tools::add_raw_tool(router, state);
             }
@@ -362,6 +427,13 @@ pub enum RedisMcpBuildError {
     RawCommandsRequireFullAccess,
     /// Stateful Pub/Sub tools require an explicit lifecycle manager.
     SessionsRequireManager,
+    /// Atomic transactions require an explicit dedicated-connection executor.
+    TransactionsRequireExecutor,
+    /// Transactions execute argv-shaped nested commands and therefore require
+    /// the raw command policy in addition to their executor.
+    TransactionsRequireRawCommands,
+    /// Transaction command, byte, and duration bounds must be non-zero.
+    InvalidTransactionLimits,
     /// A precise runtime family selection referenced a handler family omitted
     /// from this crate's Cargo feature set.
     FamilyNotCompiled(ToolFamily),
@@ -384,6 +456,15 @@ impl std::fmt::Display for RedisMcpBuildError {
             }
             Self::SessionsRequireManager => {
                 formatter.write_str("the sessions bundle requires a Pub/Sub session manager")
+            }
+            Self::TransactionsRequireExecutor => {
+                formatter.write_str("the transactions bundle requires a transaction executor")
+            }
+            Self::TransactionsRequireRawCommands => formatter.write_str(
+                "the transactions bundle requires an enabled raw command policy and full access",
+            ),
+            Self::InvalidTransactionLimits => {
+                formatter.write_str("transaction limits must all be greater than zero")
             }
             Self::FamilyNotCompiled(family) => write!(
                 formatter,

@@ -690,7 +690,7 @@ fn declared_script_keys(command: &RedisCommand) -> Result<&[Vec<u8>], RedisError
         })
 }
 
-fn validate_same_cluster_slot<'a>(
+pub(crate) fn validate_same_cluster_slot<'a>(
     keys: impl IntoIterator<Item = &'a [u8]>,
     context: &str,
 ) -> Result<(), RedisError> {
@@ -713,7 +713,7 @@ fn validate_same_cluster_slot<'a>(
     }
 }
 
-fn validate_cluster_command_slots(command: &RedisCommand) -> Result<(), RedisError> {
+pub(crate) fn validate_cluster_command_slots(command: &RedisCommand) -> Result<(), RedisError> {
     let route = |key: &[u8]| {
         redis::cluster_routing::Route::with_key(key, redis::cluster_routing::SlotAddr::Master)
     };

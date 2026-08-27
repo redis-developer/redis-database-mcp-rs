@@ -1,0 +1,132 @@
+{
+  "source": {
+    "repository": "https://github.com/RedisTimeSeries/RedisTimeSeries",
+    "release": "1.12.6",
+    "module": "timeseries",
+    "module_version": 11206,
+    "extracted_from": ["MODULE LIST", "COMMAND LIST", "COMMAND INFO"],
+    "generator": "redis-server 8.10.1 --loadmodule redistimeseries.so, COMMAND INFO capture"
+  },
+  "command_count": 17,
+  "commands": [
+    {
+      "name": "TS.ADD",
+      "flags": ["write", "denyoom", "module"],
+      "first_key": 1,
+      "last_key": 1,
+      "key_step": 1
+    },
+    {
+      "name": "TS.ALTER",
+      "flags": ["write", "denyoom", "module"],
+      "first_key": 1,
+      "last_key": 1,
+      "key_step": 1
+    },
+    {
+      "name": "TS.CREATE",
+      "flags": ["write", "denyoom", "module"],
+      "first_key": 1,
+      "last_key": 1,
+      "key_step": 1
+    },
+    {
+      "name": "TS.CREATERULE",
+      "flags": ["write", "denyoom", "module"],
+      "first_key": 1,
+      "last_key": 1,
+      "key_step": 1
+    },
+    {
+      "name": "TS.DECRBY",
+      "flags": ["write", "denyoom", "module"],
+      "first_key": 1,
+      "last_key": 1,
+      "key_step": 1
+    },
+    {
+      "name": "TS.DEL",
+      "flags": ["write", "module"],
+      "first_key": 1,
+      "last_key": 1,
+      "key_step": 1
+    },
+    {
+      "name": "TS.DELETERULE",
+      "flags": ["write", "module"],
+      "first_key": 1,
+      "last_key": 1,
+      "key_step": 1
+    },
+    {
+      "name": "TS.GET",
+      "flags": ["readonly", "module"],
+      "first_key": 1,
+      "last_key": 1,
+      "key_step": 1
+    },
+    {
+      "name": "TS.INCRBY",
+      "flags": ["write", "denyoom", "module"],
+      "first_key": 1,
+      "last_key": 1,
+      "key_step": 1
+    },
+    {
+      "name": "TS.INFO",
+      "flags": ["readonly", "module"],
+      "first_key": 1,
+      "last_key": 1,
+      "key_step": 1
+    },
+    {
+      "name": "TS.MADD",
+      "flags": ["write", "denyoom", "module"],
+      "first_key": 1,
+      "last_key": -1,
+      "key_step": 3
+    },
+    {
+      "name": "TS.MGET",
+      "flags": ["readonly", "module"],
+      "first_key": 0,
+      "last_key": 0,
+      "key_step": 0
+    },
+    {
+      "name": "TS.MRANGE",
+      "flags": ["readonly", "module"],
+      "first_key": 0,
+      "last_key": 0,
+      "key_step": 0
+    },
+    {
+      "name": "TS.MREVRANGE",
+      "flags": ["readonly", "module"],
+      "first_key": 0,
+      "last_key": 0,
+      "key_step": 0
+    },
+    {
+      "name": "TS.QUERYINDEX",
+      "flags": ["readonly", "module"],
+      "first_key": 0,
+      "last_key": 0,
+      "key_step": 0
+    },
+    {
+      "name": "TS.RANGE",
+      "flags": ["readonly", "module"],
+      "first_key": 1,
+      "last_key": 1,
+      "key_step": 1
+    },
+    {
+      "name": "TS.REVRANGE",
+      "flags": ["readonly", "module"],
+      "first_key": 1,
+      "last_key": 1,
+      "key_step": 1
+    }
+  ]
+}

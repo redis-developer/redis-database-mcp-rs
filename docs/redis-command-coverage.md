@@ -50,6 +50,15 @@ reference for the bounded `redis_transaction` tool, which runs one classified
 command list atomically on a dedicated per-call connection with explicit
 committed, aborted, and rejected outcomes.
 
+RedisTimeSeries has its own pinned inventory and disposition ledger because
+module commands are not part of the core `COMMAND` output on a bare server.
+[`redis-timeseries-commands-1.12.6.json`](../crates/redis-mcp/tests/fixtures/redis-timeseries-commands-1.12.6.json)
+pins the 17 commands advertised by RedisTimeSeries 1.12.6, and
+[`redis-timeseries-coverage.json`](../crates/redis-mcp/tests/fixtures/redis-timeseries-coverage.json)
+gives each one a typed disposition, access tier, Cluster behavior, tool
+mapping, and rationale. The live Redis Stack suite asserts that the connected
+module's advertised `TS.*` surface matches the pinned inventory exactly.
+
 Lua scripting and Redis Functions coverage is fully typed through the opt-in
 `scripting` family. EVAL, EVALSHA, FCALL, and their Redis 7+ read-only forms
 declare every binary-safe key and argument, enforce same-slot Cluster routing,

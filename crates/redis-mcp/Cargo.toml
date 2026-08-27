@@ -37,6 +37,7 @@ all-families = [
     "scripting",
     "json",
     "search",
+    "timeseries",
 ]
 keyspace = []
 strings = []
@@ -54,6 +55,7 @@ pubsub = []
 scripting = []
 json = []
 search = []
+timeseries = []
 diagnostics = []
 sessions = []
 transactions = []

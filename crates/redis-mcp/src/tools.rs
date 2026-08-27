@@ -36,6 +36,8 @@ mod search;
 mod specialized_data;
 #[cfg(feature = "streams")]
 mod streams;
+#[cfg(feature = "timeseries")]
+mod timeseries;
 #[cfg(feature = "transactions")]
 mod transactions;
 
@@ -507,6 +509,15 @@ pub(crate) fn add_read_only_tools(
     if family_selected(families, bundles, ToolFamily::Search, ToolBundle::Search) {
         router = search::add_read_tools(router, state.clone());
     }
+    #[cfg(feature = "timeseries")]
+    if family_selected(
+        families,
+        bundles,
+        ToolFamily::TimeSeries,
+        ToolBundle::TimeSeries,
+    ) {
+        router = timeseries::add_read_tools(router, state.clone());
+    }
     #[cfg(feature = "scripting")]
     if family_selected(
         families,
@@ -672,7 +683,16 @@ pub(crate) fn add_write_tools(
     }
     #[cfg(feature = "search")]
     if family_selected(families, bundles, ToolFamily::Search, ToolBundle::Search) {
-        router = search::add_write_tools(router, state);
+        router = search::add_write_tools(router, state.clone());
+    }
+    #[cfg(feature = "timeseries")]
+    if family_selected(
+        families,
+        bundles,
+        ToolFamily::TimeSeries,
+        ToolBundle::TimeSeries,
+    ) {
+        router = timeseries::add_write_tools(router, state);
     }
     router
 }
@@ -813,6 +833,15 @@ pub(crate) fn add_destructive_tools(
     #[cfg(feature = "search")]
     if family_selected(families, bundles, ToolFamily::Search, ToolBundle::Search) {
         router = search::add_destructive_tools(router, state.clone());
+    }
+    #[cfg(feature = "timeseries")]
+    if family_selected(
+        families,
+        bundles,
+        ToolFamily::TimeSeries,
+        ToolBundle::TimeSeries,
+    ) {
+        router = timeseries::add_destructive_tools(router, state.clone());
     }
     #[cfg(feature = "scripting")]
     if family_selected(

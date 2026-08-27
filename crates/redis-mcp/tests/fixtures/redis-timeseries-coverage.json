@@ -1,0 +1,143 @@
+{
+  "module": "timeseries",
+  "release": "1.12.6",
+  "command_count": 17,
+  "commands": [
+    {
+      "name": "TS.ADD",
+      "disposition": "typed",
+      "access": "read_write",
+      "cluster_behavior": "key_routed",
+      "tools": ["redis_ts_add"],
+      "rationale": "The typed tool preserves exact millisecond timestamps and finite double values, and exposes on-demand creation options explicitly."
+    },
+    {
+      "name": "TS.ALTER",
+      "disposition": "typed",
+      "access": "full",
+      "cluster_behavior": "key_routed",
+      "tools": ["redis_ts_alter"],
+      "rationale": "Retention shrinks trim stored samples and the label set is replaced rather than merged, so alteration is full-access."
+    },
+    {
+      "name": "TS.CREATE",
+      "disposition": "typed",
+      "access": "read_write",
+      "cluster_behavior": "key_routed",
+      "tools": ["redis_ts_create"],
+      "rationale": "The typed tool exposes retention, encoding, chunk, duplicate-policy, label, and ignore configuration with bounded label counts."
+    },
+    {
+      "name": "TS.CREATERULE",
+      "disposition": "typed",
+      "access": "read_write",
+      "cluster_behavior": "key_routed",
+      "tools": ["redis_ts_createrule"],
+      "rationale": "The typed tool validates aggregator versions and requires same-slot source and destination series on Redis Cluster."
+    },
+    {
+      "name": "TS.DECRBY",
+      "disposition": "typed",
+      "access": "read_write",
+      "cluster_behavior": "key_routed",
+      "tools": ["redis_ts_decrby"],
+      "rationale": "Counter adjustment is an ordinary bounded write with explicit on-demand creation options."
+    },
+    {
+      "name": "TS.DEL",
+      "disposition": "typed",
+      "access": "full",
+      "cluster_behavior": "key_routed",
+      "tools": ["redis_ts_del"],
+      "rationale": "Range deletion permanently removes samples and therefore requires full access and an explicit inclusive range."
+    },
+    {
+      "name": "TS.DELETERULE",
+      "disposition": "typed",
+      "access": "full",
+      "cluster_behavior": "key_routed",
+      "tools": ["redis_ts_deleterule"],
+      "rationale": "Removing a compaction rule discards a configured downsampling pipeline and is classified as destructive."
+    },
+    {
+      "name": "TS.GET",
+      "disposition": "typed",
+      "access": "read_only",
+      "cluster_behavior": "key_routed",
+      "tools": ["redis_ts_get"],
+      "rationale": "The typed tool distinguishes an empty series from a missing sample and normalizes RESP2 and RESP3 shapes."
+    },
+    {
+      "name": "TS.INCRBY",
+      "disposition": "typed",
+      "access": "read_write",
+      "cluster_behavior": "key_routed",
+      "tools": ["redis_ts_incrby"],
+      "rationale": "Counter adjustment is an ordinary bounded write with explicit on-demand creation options."
+    },
+    {
+      "name": "TS.INFO",
+      "disposition": "typed",
+      "access": "read_only",
+      "cluster_behavior": "key_routed",
+      "tools": ["redis_ts_info"],
+      "rationale": "Series metadata, labels, and compaction rules return as one bounded structured attribute map."
+    },
+    {
+      "name": "TS.MADD",
+      "disposition": "typed",
+      "access": "read_write",
+      "cluster_behavior": "key_routed",
+      "tools": ["redis_ts_madd"],
+      "rationale": "Bulk appends are bounded per call, keep per-sample failures aligned in-band, and require same-slot keys on Redis Cluster."
+    },
+    {
+      "name": "TS.MGET",
+      "disposition": "typed",
+      "access": "read_only",
+      "cluster_behavior": "node_local",
+      "tools": ["redis_ts_mget"],
+      "rationale": "Label-filtered reads only observe one node, so the tool is standalone-only instead of claiming database-wide aggregation on Cluster."
+    },
+    {
+      "name": "TS.MRANGE",
+      "disposition": "typed",
+      "access": "read_only",
+      "cluster_behavior": "node_local",
+      "tools": ["redis_ts_mrange"],
+      "rationale": "Label-filtered reads only observe one node, so the tool is standalone-only instead of claiming database-wide aggregation on Cluster."
+    },
+    {
+      "name": "TS.MREVRANGE",
+      "disposition": "typed",
+      "access": "read_only",
+      "cluster_behavior": "node_local",
+      "tools": ["redis_ts_mrevrange"],
+      "rationale": "Label-filtered reads only observe one node, so the tool is standalone-only instead of claiming database-wide aggregation on Cluster."
+    },
+    {
+      "name": "TS.QUERYINDEX",
+      "disposition": "typed",
+      "access": "read_only",
+      "cluster_behavior": "node_local",
+      "tools": ["redis_ts_queryindex"],
+      "rationale": "Label-filtered key listing only observes one node, so the tool is standalone-only instead of claiming database-wide aggregation on Cluster."
+    },
+    {
+      "name": "TS.RANGE",
+      "disposition": "typed",
+      "access": "read_only",
+      "cluster_behavior": "key_routed",
+      "tools": ["redis_ts_range"],
+      "rationale": "Single-series pages are count-bounded with range continuation metadata and share the encoded output budgets."
+    },
+    {
+      "name": "TS.REVRANGE",
+      "disposition": "typed",
+      "access": "read_only",
+      "cluster_behavior": "key_routed",
+      "tools": ["redis_ts_revrange"],
+      "rationale": "Single-series pages are count-bounded with range continuation metadata and share the encoded output budgets."
+    }
+  ]
+}

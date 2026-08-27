@@ -138,10 +138,10 @@ orthogonal.
 
 The public family taxonomy is `keyspace`, `strings`, `hashes`, `lists`, `sets`,
 `sorted-sets`, `streams`, `bitmaps`, `arrays`, `hyperloglog`, `geospatial`,
-`vector-sets`, `pubsub`, `scripting`, `json`, and `search`. Each is an additive
-Cargo feature and a `ToolFamily` runtime marker. `all-families` is the
-command-family aggregate;
-`full` adds the cross-cutting `diagnostics`, `sessions`, and `admin` features.
+`vector-sets`, `pubsub`, `scripting`, `json`, `search`, and `timeseries`. Each
+is an additive Cargo feature and a `ToolFamily` runtime marker. `all-families`
+is the command-family aggregate; `full` adds the cross-cutting `diagnostics`,
+`sessions`, `transactions`, and `admin` features.
 Default features select `full` to preserve the complete library build; runtime
 bundle selection still keeps administration out of the default server catalog.
 A size-sensitive host can use `default-features = false` and name only the
@@ -161,10 +161,11 @@ They answer which broad capabilities a host wants while preserving the
 standalone server's existing contract.
 
 The public taxonomy is `essentials`, `data_structures`, `json`, `search`,
-`diagnostics`, `sessions`, `scripting`, `admin`, `bulk`, and `raw`. The curated
-default enables `essentials`, `data_structures`, and `diagnostics`, totaling 201
-tools. The module-backed `json` and `search` bundles are explicitly selected so
-a default router never advertises capabilities that its Redis target may not
+`timeseries`, `diagnostics`, `sessions`, `transactions`, `scripting`, `admin`,
+`bulk`, and `raw`. The curated default enables `essentials`,
+`data_structures`, and `diagnostics`, totaling 201 tools. The module-backed
+`json`, `search`, and `timeseries` bundles are explicitly selected so a
+default router never advertises capabilities that its Redis target may not
 provide.
 The stateful `sessions` bundle is enabled only by supplying a lifecycle manager.
 The `scripting` family/bundle is also opt-in at runtime because even its
@@ -179,6 +180,20 @@ typed policy. Empty bundles are reserved for coherent catalog growth and do
 not expose placeholder tools. The bundled stdio executable installs the
 DirectRedis session manager itself and therefore exposes 207 tools before
 admin, module, scripting, or raw additions.
+
+The `timeseries` family follows the same module pattern as `json` and
+`search`, against its own pinned RedisTimeSeries 1.12.6 inventory and
+disposition ledger. Timestamps stay exact integer milliseconds or the explicit
+`*`, `-`, and `+` tokens, values stay finite IEEE 754 doubles, and RESP2 and
+RESP3 reply shapes normalize to one structured contract. Alteration is
+classified as destructive because retention shrinks trim stored samples and
+`TS.ALTER LABELS` replaces the label set. Options newer than the discovered
+module version (LATEST, EMPTY, ALIGN, GROUPBY, IGNORE, the TWA aggregator, and
+the newer group reducers) fail closed before execution. On Cluster, keyed
+tools route by their first key, `TS.MADD` and `TS.CREATERULE` require
+same-slot keys, and the keyless multi-series queries are standalone-only
+because OSS Cluster provides no database-wide TimeSeries coordinator and a
+node-local answer would misrepresent the database.
 
 The Data Structures bundle includes the current Redis 8 core data model rather
 than freezing the contract at older Redis releases. Redis 8.0 introduces typed

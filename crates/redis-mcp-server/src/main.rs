@@ -35,6 +35,7 @@ enum CliOptionalBundle {
     Json,
     Search,
     Scripting,
+    Timeseries,
 }
 
 impl From<CliOptionalBundle> for ToolBundle {
@@ -44,6 +45,7 @@ impl From<CliOptionalBundle> for ToolBundle {
             CliOptionalBundle::Json => Self::Json,
             CliOptionalBundle::Search => Self::Search,
             CliOptionalBundle::Scripting => Self::Scripting,
+            CliOptionalBundle::Timeseries => Self::TimeSeries,
         }
     }
 }
@@ -224,6 +226,23 @@ mod tests {
         assert!(matches!(
             ToolBundle::from(args.optional_bundles[0]),
             ToolBundle::Scripting
+        ));
+    }
+
+    #[test]
+    fn timeseries_bundle_is_selectable_from_the_server_cli() {
+        let args = Args::try_parse_from([
+            "redis-mcp-server",
+            "--enable-bundle",
+            "timeseries",
+            "--stdio",
+        ])
+        .expect("parse timeseries server arguments");
+
+        assert_eq!(args.optional_bundles.len(), 1);
+        assert!(matches!(
+            ToolBundle::from(args.optional_bundles[0]),
+            ToolBundle::TimeSeries
         ));
     }
 

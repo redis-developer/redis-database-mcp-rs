@@ -510,13 +510,21 @@ async fn execute_redis_command(
     for argument in command.arguments() {
         redis_command.arg(argument);
     }
-    let value: redis::Value = redis_command
-        .query_async(&mut connection)
+    // Fetch the raw RESP value so replies that align entry-level errors with
+    // requested entries (for example TS.MADD) keep those errors in-band.
+    // Only a top-level error fails the command itself, which matches the
+    // cluster adapter; typed conversions still reject nested server errors.
+    let value = connection
+        .req_packed_command(&redis_command)
         .await
         .map_err(RedisError::from)
         .map_err(|error| {
             error.classify_module_requirement(required_module, command_name.as_str())
         })?;
+    if let redis::Value::ServerError(error) = value {
+        return Err(RedisError::from(redis::RedisError::from(error))
+            .classify_module_requirement(required_module, command_name.as_str()));
+    }
     Ok(RedisValue::from(value))
 }
 
@@ -742,6 +750,16 @@ pub(crate) fn validate_cluster_command_slots(command: &RedisCommand) -> Result<(
             command.arguments().iter().map(Vec::as_slice),
             "destination and source keys must hash to the same Redis Cluster slot",
         )?,
+        "TS.CREATERULE" | "TS.DELETERULE" if command.arguments().len() >= 2 => {
+            validate_same_cluster_slot(
+                command.arguments()[..2].iter().map(Vec::as_slice),
+                "source and destination series must hash to the same Redis Cluster slot",
+            )?
+        }
+        "TS.MADD" => validate_same_cluster_slot(
+            command.arguments().iter().step_by(3).map(Vec::as_slice),
+            "TS.MADD keys must hash to the same Redis Cluster slot",
+        )?,
         "ZDIFFSTORE" | "ZINTERSTORE" | "ZUNIONSTORE" => {
             let sources = counted_cluster_keys(command, 1, 2)?;
             let destination = command.arguments().first().ok_or_else(|| {
@@ -955,6 +973,14 @@ fn cluster_routing_key(command: &RedisCommand) -> Option<&[u8]> {
     }
     if command.required_module() == Some(RedisModule::Search)
         && !command.name().eq_ignore_ascii_case("FT._LIST")
+    {
+        return command.arguments().first().map(Vec::as_slice);
+    }
+    if command.required_module() == Some(RedisModule::TimeSeries)
+        && !matches!(
+            command.name().to_ascii_uppercase().as_str(),
+            "TS.MGET" | "TS.MRANGE" | "TS.MREVRANGE" | "TS.QUERYINDEX"
+        )
     {
         return command.arguments().first().map(Vec::as_slice);
     }
@@ -1494,6 +1520,69 @@ mod tests {
         assert_eq!(
             cluster_routing_key(&cursor),
             Some(b"idx:{tenant}".as_slice())
+        );
+    }
+
+    #[test]
+    fn timeseries_cluster_commands_route_by_key_and_enforce_same_slot_rules() {
+        let mut range = RedisCommand::new("redis_ts_range", AccessMode::ReadOnly, "TS.RANGE");
+        range
+            .require_module(RedisModule::TimeSeries)
+            .arg("ts:{tenant}:temperature")
+            .arg("-")
+            .arg("+");
+        assert!(validate_cluster_command_slots(&range).is_ok());
+        assert_eq!(
+            cluster_routing_key(&range),
+            Some(b"ts:{tenant}:temperature".as_slice())
+        );
+
+        // Keyless multi-series queries observe one node and must not pretend
+        // to have a key route.
+        let mut mrange = RedisCommand::new("redis_ts_mrange", AccessMode::ReadOnly, "TS.MRANGE");
+        mrange
+            .require_module(RedisModule::TimeSeries)
+            .arg("-")
+            .arg("+")
+            .arg("FILTER")
+            .arg("sensor=1");
+        assert_eq!(cluster_routing_key(&mrange), None);
+
+        let mut madd = RedisCommand::new("redis_ts_madd", AccessMode::ReadWrite, "TS.MADD");
+        madd.require_module(RedisModule::TimeSeries)
+            .arg("ts:{tenant}:a")
+            .arg("1")
+            .arg("1.5")
+            .arg("ts:{tenant}:b")
+            .arg("2")
+            .arg("2.5");
+        assert!(validate_cluster_command_slots(&madd).is_ok());
+        assert_eq!(
+            cluster_routing_key(&madd),
+            Some(b"ts:{tenant}:a".as_slice())
+        );
+        madd.arguments[3] = b"ts:{other}:b".to_vec();
+        assert_eq!(
+            validate_cluster_command_slots(&madd).unwrap_err().code(),
+            Some("CROSSSLOT")
+        );
+
+        let mut rule = RedisCommand::new(
+            "redis_ts_createrule",
+            AccessMode::ReadWrite,
+            "TS.CREATERULE",
+        );
+        rule.require_module(RedisModule::TimeSeries)
+            .arg("ts:{tenant}:source")
+            .arg("ts:{tenant}:hourly")
+            .arg("AGGREGATION")
+            .arg("avg")
+            .arg("3600000");
+        assert!(validate_cluster_command_slots(&rule).is_ok());
+        rule.arguments[1] = b"ts:{other}:hourly".to_vec();
+        assert_eq!(
+            validate_cluster_command_slots(&rule).unwrap_err().code(),
+            Some("CROSSSLOT")
         );
     }
 

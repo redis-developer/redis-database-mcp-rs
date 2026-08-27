@@ -1086,6 +1086,32 @@
       "reason": "The opt-in scripting family covers bounded binary-safe Lua and Redis Functions execution plus guarded cache/library lifecycle. Keys are declared and same-slot validated, dynamic results share global budgets, Redis 7+ read-only forms have distinct access annotations, all-node versus primary fan-out is explicit, partial node failures redact server messages, and timeout behavior does not claim server-side cancellation."
     },
     {
+      "id": "timeseries.family",
+      "redis_mcp_tools": [],
+      "redisctl_tools": [],
+      "library_tools": [
+        "redis_ts_add",
+        "redis_ts_alter",
+        "redis_ts_create",
+        "redis_ts_createrule",
+        "redis_ts_decrby",
+        "redis_ts_del",
+        "redis_ts_deleterule",
+        "redis_ts_get",
+        "redis_ts_incrby",
+        "redis_ts_info",
+        "redis_ts_madd",
+        "redis_ts_mget",
+        "redis_ts_mrange",
+        "redis_ts_mrevrange",
+        "redis_ts_queryindex",
+        "redis_ts_range",
+        "redis_ts_revrange"
+      ],
+      "disposition": "implemented",
+      "reason": "The opt-in timeseries family covers the complete pinned RedisTimeSeries 1.12.6 surface with exact millisecond timestamps, finite double values, bounded label/filter/sample/page ceilings, explicit destructive classification for alteration, sample deletion, and rule removal, dynamic module-version gating for newer options, and standalone-only multi-series queries instead of claiming database-wide Cluster aggregation."
+    },
+    {
       "id": "transactions.atomic",
       "redis_mcp_tools": [],
       "redisctl_tools": [],

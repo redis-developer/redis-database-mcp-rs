@@ -29,9 +29,9 @@ features and enable only the Redis families they embed:
 
 The additive family features are `keyspace`, `strings`, `hashes`, `lists`,
 `sets`, `sorted-sets`, `streams`, `bitmaps`, `arrays`, `hyperloglog`,
-`geospatial`, `vector-sets`, `pubsub`, `scripting`, `json`, and `search`. The
-`diagnostics`, `sessions`, `transactions`, and `admin` features compile their
-corresponding cross-cutting bundles. `all-families` enables every command
+`geospatial`, `vector-sets`, `pubsub`, `scripting`, `json`, `search`, and
+`timeseries`. The `diagnostics`, `sessions`, `transactions`, and `admin`
+features compile their corresponding cross-cutting bundles. `all-families` enables every command
 family, while `full` also enables diagnostics, sessions, transactions, and
 guarded administration.
 
@@ -134,6 +134,12 @@ The standalone default exposes 201 broadly useful tools:
   `redis_ft_search`, `redis_ft_create`, `redis_ft_dropindex`,
   `redis_vector_get_hash`, `redis_vector_set_hash`,
   `redis_ft_vector_search`, `redis_ft_hybrid_search`
+- optional RedisTimeSeries family: `redis_ts_create`, `redis_ts_alter`,
+  `redis_ts_add`, `redis_ts_madd`, `redis_ts_incrby`, `redis_ts_decrby`,
+  `redis_ts_del`, `redis_ts_createrule`, `redis_ts_deleterule`,
+  `redis_ts_range`, `redis_ts_revrange`, `redis_ts_mrange`,
+  `redis_ts_mrevrange`, `redis_ts_get`, `redis_ts_mget`, `redis_ts_info`,
+  `redis_ts_queryindex`
 - optional owner-isolated Pub/Sub sessions: `redis_subscribe`,
   `redis_psubscribe`, `redis_ssubscribe`, `redis_pubsub_read`,
   `redis_pubsub_unsubscribe`, `redis_pubsub_close`
@@ -176,6 +182,23 @@ read-only execution from arbitrary-code and lifecycle operations. Script and
 function results share the global output budgets. A request timeout bounds how
 long the MCP call waits, but cannot promise that Redis stopped server-side
 execution; explicit kill tools retain Redis's own write-safety limitations.
+
+The non-default `timeseries` family covers the complete pinned
+RedisTimeSeries 1.12.6 command surface with typed contracts. Timestamps stay
+exact integer milliseconds (or the explicit `*`, `-`, and `+` tokens) and
+values stay IEEE 754 doubles, so nothing is coerced lossily. Labels, filters,
+bulk samples, and page counts are bounded; single-series ranges return typed
+continuation metadata; multi-series queries share the encoded output budgets.
+`TS.MADD` keeps per-sample failures aligned in-band while the remaining
+samples apply. Alteration, sample deletion, and rule removal are classified as
+destructive because retention shrinks trim samples and the label set is
+replaced rather than merged. Options newer than the connected module version
+(LATEST, EMPTY, ALIGN, GROUPBY, IGNORE, and the newer aggregators) fail closed
+before execution when capabilities are known. On Redis Cluster, keyed tools
+route by key and `TS.MADD`/`TS.CREATERULE` require same-slot keys, while
+`TS.MGET`, `TS.MRANGE`, `TS.MREVRANGE`, and `TS.QUERYINDEX` are
+standalone-only because OSS Cluster offers no database-wide TimeSeries
+coordinator.
 
 The non-default `transactions` bundle provides one-shot atomic MULTI/EXEC
 execution without exposing connection-stateful transaction commands as
@@ -271,8 +294,8 @@ policy and therefore requires one of the raw flags:
 
     redis-mcp-server --access full --raw --transactions --stdio
 
-Administration, Scripting, RedisJSON, and Search are explicit additions to the
-curated defaults. The `admin` bundle remains off even under Full access; it
+Administration, Scripting, RedisJSON, Search, and TimeSeries are explicit
+additions to the curated defaults. The `admin` bundle remains off even under Full access; it
 uses fixed non-secret configuration allowlists, confirmation fields, bounded
 Cluster fan-out, pseudonymous nodes, and redacted partial failures. The JSON
 bundle exposes 17 structured tools spanning reads, typed
@@ -286,6 +309,7 @@ provide the corresponding capability:
       --enable-bundle scripting \
       --enable-bundle json \
       --enable-bundle search \
+      --enable-bundle timeseries \
       --stdio
 
 ## Embed the router

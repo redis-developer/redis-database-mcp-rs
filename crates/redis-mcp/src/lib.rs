@@ -307,8 +307,14 @@ impl RedisMcpBuilder {
         if self.output_budget.max_collection_entries() == 0 {
             return Err(RedisMcpBuildError::ZeroOutputEntries);
         }
-        if self.raw_command_policy.is_enabled() && self.access != AccessMode::Full {
+        if self.raw_command_policy == RawCommandPolicy::Unrestricted
+            && self.access != AccessMode::Full
+        {
             return Err(RedisMcpBuildError::RawCommandsRequireFullAccess);
+        }
+        let invocation_enabled = self.bundles.contains(&ToolBundle::Invocation);
+        if invocation_enabled && !self.raw_command_policy.is_enabled() {
+            return Err(RedisMcpBuildError::InvocationRequiresRawCommands);
         }
         let sessions_enabled =
             cfg!(feature = "sessions") && self.bundles.contains(&ToolBundle::Sessions);
@@ -321,7 +327,7 @@ impl RedisMcpBuilder {
             if self.transactions.is_none() {
                 return Err(RedisMcpBuildError::TransactionsRequireExecutor);
             }
-            if !self.raw_command_policy.is_enabled() {
+            if !self.raw_command_policy.is_enabled() || !self.access.permits(AccessMode::Full) {
                 return Err(RedisMcpBuildError::TransactionsRequireRawCommands);
             }
             if self.transaction_limits.validate().is_err() {
@@ -375,6 +381,9 @@ impl RedisMcpBuilder {
             &self.bundles,
             self.families.as_ref(),
         );
+        if invocation_enabled {
+            router = tools::add_invocation_read_tools(router, state.clone());
+        }
         if self.access.permits(AccessMode::ReadWrite) {
             router = tools::add_write_tools(
                 router,
@@ -382,6 +391,9 @@ impl RedisMcpBuilder {
                 &self.bundles,
                 self.families.as_ref(),
             );
+            if invocation_enabled {
+                router = tools::add_invocation_write_tools(router, state.clone());
+            }
         }
         if self.access.permits(AccessMode::Full) {
             router = tools::add_destructive_tools(
@@ -422,9 +434,12 @@ pub enum RedisMcpBuildError {
     ZeroOutputBytes,
     /// A zero entry budget cannot represent a collection page.
     ZeroOutputEntries,
-    /// Raw commands are an escape hatch and require full access in addition to
-    /// their separate policy opt-in.
+    /// Unrestricted raw command execution permits unknown Full-tier commands
+    /// and therefore requires full access in addition to its policy opt-in.
     RawCommandsRequireFullAccess,
+    /// Governed argv invocation tools classify through the raw command policy
+    /// and require it to be enabled.
+    InvocationRequiresRawCommands,
     /// Stateful Pub/Sub tools require an explicit lifecycle manager.
     SessionsRequireManager,
     /// Atomic transactions require an explicit dedicated-connection executor.
@@ -452,7 +467,10 @@ impl std::fmt::Display for RedisMcpBuildError {
                 formatter.write_str("maximum output collection entries must be greater than zero")
             }
             Self::RawCommandsRequireFullAccess => {
-                formatter.write_str("raw command execution requires full access")
+                formatter.write_str("unrestricted raw command execution requires full access")
+            }
+            Self::InvocationRequiresRawCommands => {
+                formatter.write_str("the invocation bundle requires an enabled raw command policy")
             }
             Self::SessionsRequireManager => {
                 formatter.write_str("the sessions bundle requires a Pub/Sub session manager")

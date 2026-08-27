@@ -42,6 +42,13 @@ The counts describe official Redis command definitions, not MCP tool count.
 One structured tool can compose multiple commands, and one Redis command can
 support multiple tools.
 
+`native` entries execute through the governed invocation engine. Over MCP,
+the opt-in `invocation` bundle serves the same classified surface as tiered
+tools: read-only commands through `redis_command_readonly`, ordinary writes
+through `redis_command_write`, and destructive or unclassified forms only
+through the full-access `redis_command` escape hatch, with metadata and
+inventory tools for preview and completion.
+
 Planned and session work is tied to issues #61 and #66. The six
 already-implemented Pub/Sub connection commands retain their
 closed implementation reference, #30, and the five transaction commands

@@ -148,6 +148,8 @@ pub enum ToolBundle {
     Admin,
     /// Deliberately bounded bulk workflows.
     Bulk,
+    /// Governed Redis argv invocation tiers for Redis-syntax MCP clients.
+    Invocation,
     /// Generic Redis command execution, gated by a separate policy.
     Raw,
 }
@@ -170,6 +172,7 @@ impl ToolBundle {
         Self::Scripting,
         Self::Admin,
         Self::Bulk,
+        Self::Invocation,
         Self::Raw,
     ];
 
@@ -186,6 +189,7 @@ impl ToolBundle {
             Self::Scripting => "scripting",
             Self::Admin => "admin",
             Self::Bulk => "bulk",
+            Self::Invocation => "invocation",
             Self::Raw => "raw",
         }
     }
@@ -285,6 +289,7 @@ impl ToolMetadata {
                 ToolBundle::Admin => cfg!(feature = "admin"),
                 ToolBundle::Raw => true,
                 ToolBundle::Bulk => true,
+                ToolBundle::Invocation => true,
                 ToolBundle::Essentials
                 | ToolBundle::DataStructures
                 | ToolBundle::Json
@@ -907,6 +912,9 @@ impl ToolMetadata {
             | "redis_memory_diagnostics"
             | "redis_hotkeys_get"
             | "redis_command"
+            | "redis_command_readonly"
+            | "redis_command_write"
+            | "redis_command_inventory"
             | "redis_transaction"
             | "redis_ts_mrange"
             | "redis_ts_mrevrange"
@@ -2783,6 +2791,30 @@ pub(crate) const CATALOG: &[ToolMetadata] = &[
         name: "redis_transaction",
         bundle: ToolBundle::Transactions,
         required_access: AccessMode::Full,
+        requires_raw_opt_in: true,
+    },
+    ToolMetadata {
+        name: "redis_command_readonly",
+        bundle: ToolBundle::Invocation,
+        required_access: AccessMode::ReadOnly,
+        requires_raw_opt_in: true,
+    },
+    ToolMetadata {
+        name: "redis_command_write",
+        bundle: ToolBundle::Invocation,
+        required_access: AccessMode::ReadWrite,
+        requires_raw_opt_in: true,
+    },
+    ToolMetadata {
+        name: "redis_command_metadata",
+        bundle: ToolBundle::Invocation,
+        required_access: AccessMode::ReadOnly,
+        requires_raw_opt_in: true,
+    },
+    ToolMetadata {
+        name: "redis_command_inventory",
+        bundle: ToolBundle::Invocation,
+        required_access: AccessMode::ReadOnly,
         requires_raw_opt_in: true,
     },
     ToolMetadata {

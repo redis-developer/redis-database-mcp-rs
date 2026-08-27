@@ -1112,6 +1112,19 @@
       "reason": "The opt-in timeseries family covers the complete pinned RedisTimeSeries 1.12.6 surface with exact millisecond timestamps, finite double values, bounded label/filter/sample/page ceilings, explicit destructive classification for alteration, sample deletion, and rule removal, dynamic module-version gating for newer options, and standalone-only multi-series queries instead of claiming database-wide Cluster aggregation."
     },
     {
+      "id": "command.governed_argv",
+      "redis_mcp_tools": [],
+      "redisctl_tools": [],
+      "library_tools": [
+        "redis_command_inventory",
+        "redis_command_metadata",
+        "redis_command_readonly",
+        "redis_command_write"
+      ],
+      "disposition": "implemented",
+      "reason": "The opt-in invocation bundle exposes the governed native argv boundary over MCP with honest per-tier annotations: classified read-only and ordinary-write commands execute at their matching configured access levels without the full-access escape hatch, unknown and hard-blocked forms fail closed with stable codes, and metadata plus inventory tools give Redis-syntax clients access/effect previews and completion data from the single shared policy table."
+    },
+    {
       "id": "transactions.atomic",
       "redis_mcp_tools": [],
       "redisctl_tools": [],

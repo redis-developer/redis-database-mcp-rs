@@ -373,6 +373,21 @@ authorized per classified command. Both use one of two enabled policies:
   administration stay behind their dedicated typed surfaces even when
   unrestricted native invocation is enabled.
 
+The opt-in `invocation` bundle exposes the same classified policy to
+Redis-syntax MCP clients as graduated tiers instead of one full-access hatch.
+`redis_command_readonly` executes only commands classified read-only and
+therefore keeps honest read-only MCP annotations; `redis_command_write` adds
+ordinary classified writes at read-write access; destructive and unclassified
+commands remain exclusive to the full-access `redis_command` tool. A tier
+mismatch fails before execution with a stable reason naming the correct tool.
+`redis_command_metadata` classifies one argv without executing it — including
+stable blocked and unclassified reason codes — and `redis_command_inventory`
+lists the argument-independent classified surface with base tiers, escalation
+flags, and capability requirements so a CLI can complete and preview commands
+from the single shared policy table. Because the classified policy now serves
+sub-full tiers, only the unrestricted policy requires full access at build
+time; every request is still authorized per classified command.
+
 Atomic transactions extend that policy rather than bypassing it. The
 `transactions` bundle exposes one `redis_transaction` tool that executes a
 bounded command list inside MULTI/EXEC with optional WATCH keys, and the

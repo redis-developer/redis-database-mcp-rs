@@ -30,9 +30,10 @@ features and enable only the Redis families they embed:
 The additive family features are `keyspace`, `strings`, `hashes`, `lists`,
 `sets`, `sorted-sets`, `streams`, `bitmaps`, `arrays`, `hyperloglog`,
 `geospatial`, `vector-sets`, `pubsub`, `scripting`, `json`, and `search`. The
-`diagnostics`, `sessions`, and `admin` features compile their corresponding
-cross-cutting bundles. `all-families` enables every command family, while
-`full` also enables diagnostics, sessions, and guarded administration.
+`diagnostics`, `sessions`, `transactions`, and `admin` features compile their
+corresponding cross-cutting bundles. `all-families` enables every command
+family, while `full` also enables diagnostics, sessions, transactions, and
+guarded administration.
 
 Compile-time inclusion and runtime exposure are separate. `families(...)`
 replaces the compatibility bundle defaults with a precise family selection;
@@ -146,6 +147,7 @@ The standalone default exposes 201 broadly useful tools:
   configuration, server-state, latency, memory, slow-log, and hot-key
   inspection plus separately Full-gated client, configuration, flush, reset,
   purge, hot-key, and database controls
+- optional bounded atomic transactions: `redis_transaction`
 - explicit full-access escape hatch: `redis_command`
 
 The reusable router keeps the stateful `sessions` bundle opt-in because its
@@ -174,6 +176,25 @@ read-only execution from arbitrary-code and lifecycle operations. Script and
 function results share the global output budgets. A request timeout bounds how
 long the MCP call waits, but cannot promise that Redis stopped server-side
 execution; explicit kill tools retain Redis's own write-safety limitations.
+
+The non-default `transactions` bundle provides one-shot atomic MULTI/EXEC
+execution without exposing connection-stateful transaction commands as
+unrelated MCP calls. One bounded command list, with optional WATCH keys, runs
+on one freshly dialed dedicated connection that is dropped afterwards, so
+transaction state can never leak across MCP calls or pooled connections. Every
+nested command passes the same classification policy as `redis_command`
+(transactions therefore require the raw opt-in and full access), the whole
+transaction requires the maximum access of any nested command, and command
+count, watch keys, request bytes, total duration, and result budgets are all
+bounded. Outcomes are explicit: `committed` with per-command result alignment
+(runtime failures stay in-band per entry), `aborted` when a watched key
+changed, or `rejected` with per-command queue-time failures when the server
+refused the transaction and nothing executed. Connection loss or timeout after
+EXEC may leave the outcome unknown; the library reports that explicitly and
+never replays a possibly committed transaction. On Redis Cluster all keys must
+hash to one slot: watched keys are validated client-side and pin the pipeline
+to their slot's node, while cross-slot command lists return the stable
+`CROSSSLOT` error.
 
 See [the spike decision record](docs/spike.md) for the tested architecture,
 REPL findings, and redisctl migration sequence.
@@ -244,6 +265,11 @@ while retaining hard blocks for session, streaming, transaction, replication,
 script/function, and indefinite-blocking forms:
 
     redis-mcp-server --access full --raw-unrestricted --stdio
+
+Bounded atomic `redis_transaction` execution builds on the same classification
+policy and therefore requires one of the raw flags:
+
+    redis-mcp-server --access full --raw --transactions --stdio
 
 Administration, Scripting, RedisJSON, and Search are explicit additions to the
 curated defaults. The `admin` bundle remains off even under Full access; it
@@ -326,6 +352,17 @@ inject a stable `PubSubSessionOwner` request extension for each authenticated
 client or principal, and call `close_owner` when that host session ends. The
 builder supplies and cleans up a random owner automatically for one-client
 routers such as stdio.
+
+Atomic transactions use the analogous `RedisTransactionExecutor` boundary,
+because MULTI, WATCH, and EXEC require one dedicated connection per call
+rather than a pooled request/response command. `DirectRedisTransactions`
+supports fixed standalone and Cluster targets, dials a fresh connection per
+transaction, and never replays a possibly committed EXEC. Enable the bundle
+with `.transactions(...)` alongside an enabled raw command policy, and tune
+bounds with `.transaction_limits(...)`. Library consumers outside MCP pair the
+same policy with `RedisTransactionEngine`, which classifies every nested
+command, enforces the transaction bounds, and returns the explicit
+committed/aborted/rejected outcome.
 
 ## Embed Redis-style argv
 

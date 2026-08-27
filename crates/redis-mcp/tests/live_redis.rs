@@ -3,10 +3,11 @@ use std::time::Duration;
 use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64};
 use redis_mcp::{
     AccessMode, CapabilityStatus, DirectRedis, DirectRedisPubSubSessionManager,
-    NativeRedisInvocation, OutputBudget, PubSubReadRequest, PubSubSessionLimits,
-    PubSubSessionManager, PubSubSessionOwner, PubSubSubscriptionKind, RawCommandPolicy,
-    RedisDeployment, RedisInvocationEngine, RedisMcp, RedisModule, RedisValue, RedisVersion,
-    ToolBundle, UnavailableToolPolicy,
+    DirectRedisTransactions, NativeRedisInvocation, OutputBudget, PubSubReadRequest,
+    PubSubSessionLimits, PubSubSessionManager, PubSubSessionOwner, PubSubSubscriptionKind,
+    RawCommandPolicy, RedisDeployment, RedisInvocationEngine, RedisMcp, RedisModule,
+    RedisTransactionEngine, RedisTransactionOutcome, RedisTransactionRequest, RedisValue,
+    RedisVersion, ToolBundle, UnavailableToolPolicy,
 };
 use tower_mcp::client::{ChannelTransport, McpClient};
 
@@ -14,7 +15,7 @@ use tower_mcp::client::{ChannelTransport, McpClient};
 use redis_mcp::RedisErrorKind;
 #[cfg(unix)]
 use redis_server_wrapper::{
-    Direction, Error as RedisServerError, FaultProxy, RedisServer, RedisServerHandle,
+    Delay, Direction, Error as RedisServerError, FaultProxy, RedisServer, RedisServerHandle,
 };
 
 struct TestRedis {
@@ -6568,4 +6569,439 @@ async fn live_connection_loss_is_bounded_and_direct_redis_recovers() {
         .await
         .expect("fresh DirectRedis PING");
     assert!(!fresh_ping.is_error);
+}
+
+async fn transaction_router_client(url: &str, output_budget: Option<OutputBudget>) -> McpClient {
+    let executor = DirectRedis::connect(url)
+        .await
+        .expect("connect transaction executor");
+    let transactions =
+        DirectRedisTransactions::standalone(url).expect("prepare transaction adapter");
+    let mut builder = RedisMcp::builder(executor)
+        .access(AccessMode::Full)
+        .raw_command_policy(RawCommandPolicy::Classified)
+        .transactions(transactions);
+    if let Some(output_budget) = output_budget {
+        builder = builder.output_budget(output_budget);
+    }
+    let router = builder.build();
+    let client = McpClient::connect(ChannelTransport::new(router))
+        .await
+        .expect("connect transaction MCP client");
+    client
+        .initialize("redis-mcp-live-transaction-test", "0")
+        .await
+        .expect("initialize transaction MCP client");
+    client
+}
+
+#[tokio::test]
+async fn live_transactions_commit_reject_and_align_per_command_results() {
+    let Some(redis) = TestRedis::start().await else {
+        return;
+    };
+    let client = transaction_router_client(&redis.url, None).await;
+    let mut connection = redis::Client::open(redis.url.as_str())
+        .expect("open verification client")
+        .get_multiplexed_async_connection()
+        .await
+        .expect("connect verification client");
+
+    let counter = test_key("txn:counter");
+    redis::cmd("SET")
+        .arg(&counter)
+        .arg("5")
+        .query_async::<()>(&mut connection)
+        .await
+        .expect("seed transaction counter");
+
+    let committed = call_structured(
+        &client,
+        "redis_transaction",
+        serde_json::json!({
+            "watch": [{"value": counter}],
+            "commands": [
+                {"command": "INCR", "arguments": [{"value": counter}]},
+                {"command": "GET", "arguments": [{"value": counter}]},
+            ],
+        }),
+    )
+    .await;
+    assert_eq!(committed["status"], "committed");
+    assert_eq!(committed["watched"], 1);
+    assert_eq!(committed["command_count"], 2);
+    let results = committed["results"].as_array().expect("aligned results");
+    assert_eq!(results.len(), 2);
+    assert_eq!(results[0]["index"], 0);
+    assert_eq!(results[0]["command"], "INCR");
+    assert_eq!(results[0]["value"], 6);
+    assert_eq!(results[1]["command"], "GET");
+    assert_eq!(results[1]["value"]["value"], "6");
+    let stored: String = redis::cmd("GET")
+        .arg(&counter)
+        .query_async(&mut connection)
+        .await
+        .expect("read committed counter");
+    assert_eq!(stored, "6");
+
+    let wrong_type = test_key("txn:wrong-type");
+    redis::cmd("SET")
+        .arg(&wrong_type)
+        .arg("abc")
+        .query_async::<()>(&mut connection)
+        .await
+        .expect("seed non-numeric string");
+    let mixed = call_structured(
+        &client,
+        "redis_transaction",
+        serde_json::json!({
+            "commands": [
+                {"command": "INCR", "arguments": [{"value": wrong_type}]},
+                {"command": "APPEND", "arguments": [{"value": wrong_type}, {"value": "!"}]},
+            ],
+        }),
+    )
+    .await;
+    assert_eq!(mixed["status"], "committed");
+    let mixed_results = mixed["results"].as_array().expect("mixed results");
+    assert!(
+        mixed_results[0]["value"]["server_error"]["code"].is_string(),
+        "runtime INCR failure must stay in-band: {mixed:?}"
+    );
+    assert_eq!(mixed_results[1]["value"], 4);
+    let appended: String = redis::cmd("GET")
+        .arg(&wrong_type)
+        .query_async(&mut connection)
+        .await
+        .expect("read appended value");
+    assert_eq!(appended, "abc!");
+
+    let rejected_key = test_key("txn:rejected");
+    let rejected = call_structured(
+        &client,
+        "redis_transaction",
+        serde_json::json!({
+            "commands": [
+                {"command": "SET", "arguments": [{"value": rejected_key}, {"value": "first"}]},
+                {"command": "SET", "arguments": [{"value": rejected_key}]},
+            ],
+        }),
+    )
+    .await;
+    assert_eq!(rejected["status"], "rejected");
+    let failures = rejected["failures"].as_array().expect("queue failures");
+    assert!(!failures.is_empty(), "{rejected:?}");
+    assert_eq!(failures[0]["index"], 1);
+    assert_eq!(failures[0]["command"], "SET");
+    assert_eq!(failures[0]["code"], "ERR");
+    let rejected_exists: i64 = redis::cmd("EXISTS")
+        .arg(&rejected_key)
+        .query_async(&mut connection)
+        .await
+        .expect("verify rejected transaction executed nothing");
+    assert_eq!(rejected_exists, 0);
+
+    let binary_key = test_key("txn:binary");
+    let binary_value = BASE64.encode([0xff, 0x00, 0x01]);
+    let binary = call_structured(
+        &client,
+        "redis_transaction",
+        serde_json::json!({
+            "commands": [
+                {
+                    "command": "SET",
+                    "arguments": [
+                        {"value": binary_key},
+                        {"value": binary_value, "encoding": "base64"},
+                    ],
+                },
+                {"command": "GET", "arguments": [{"value": binary_key}]},
+            ],
+        }),
+    )
+    .await;
+    assert_eq!(binary["status"], "committed");
+    assert_eq!(binary["results"][1]["value"]["encoding"], "base64");
+    assert_eq!(binary["results"][1]["value"]["value"], binary_value);
+
+    for (command, code) in [
+        ("SUBSCRIBE", "SUBSCRIPTION_COMMAND_UNSUPPORTED"),
+        ("MULTI", "TRANSACTION_COMMAND_UNSUPPORTED"),
+        ("EVAL", "SCRIPT_COMMAND_UNSUPPORTED"),
+        ("BLPOP", "BLOCKING_COMMAND_UNSUPPORTED"),
+        ("FLUSHALL", "ADMIN_COMMAND_UNSUPPORTED"),
+    ] {
+        let blocked = client
+            .call_tool(
+                "redis_transaction",
+                serde_json::json!({
+                    "commands": [
+                        {"command": "GET", "arguments": [{"value": counter}]},
+                        {"command": command, "arguments": [{"value": "argument"}]},
+                    ],
+                }),
+            )
+            .await
+            .expect("blocked transaction is a tool result");
+        assert!(blocked.is_error, "{command}: {blocked:?}");
+        assert!(
+            serde_json::to_string(&blocked)
+                .expect("serialize blocked transaction")
+                .contains(code),
+            "{command}: {blocked:?}"
+        );
+    }
+
+    let big_key = test_key("txn:big");
+    redis::cmd("SET")
+        .arg(&big_key)
+        .arg("x".repeat(64 * 1024))
+        .query_async::<()>(&mut connection)
+        .await
+        .expect("seed oversized value");
+    let budget_client =
+        transaction_router_client(&redis.url, Some(OutputBudget::new(4_096, 1_000))).await;
+    let overflow = budget_client
+        .call_tool(
+            "redis_transaction",
+            serde_json::json!({
+                "commands": [{"command": "GET", "arguments": [{"value": big_key}]}],
+            }),
+        )
+        .await
+        .expect("oversized transaction is a tool result");
+    assert!(overflow.is_error, "{overflow:?}");
+    assert_eq!(
+        overflow.meta.as_ref().expect("transaction output metadata")["io.redis.mcp/outputLimit"]["code"],
+        "output_limit_exceeded"
+    );
+}
+
+#[cfg(unix)]
+#[tokio::test]
+async fn live_watched_transactions_abort_on_conflicting_writes() {
+    let Some(redis) = TestRedis::start().await else {
+        return;
+    };
+    let target_url = redis::parse_redis_url(&redis.url).expect("parse Redis test URL");
+    let Some(target_host) = target_url.host_str() else {
+        eprintln!("skipping watched transaction test: Redis URL does not use a TCP host");
+        return;
+    };
+    let target_port = target_url.port().unwrap_or(6379);
+    let proxy = FaultProxy::spawn((target_host, target_port))
+        .await
+        .expect("start transaction fault proxy");
+    let mut proxy_url = target_url.clone();
+    proxy_url
+        .set_host(Some(&proxy.addr().ip().to_string()))
+        .expect("set transaction fault-proxy host");
+    proxy_url
+        .set_port(Some(proxy.addr().port()))
+        .expect("set transaction fault-proxy port");
+
+    let watched_key = test_key("txn:watched");
+    let mut connection = redis::Client::open(redis.url.as_str())
+        .expect("open watched-key client")
+        .get_multiplexed_async_connection()
+        .await
+        .expect("connect watched-key client");
+    redis::cmd("SET")
+        .arg(&watched_key)
+        .arg("initial")
+        .query_async::<()>(&mut connection)
+        .await
+        .expect("seed watched key");
+
+    let invocation = RedisInvocationEngine::builder(
+        DirectRedis::connect(&redis.url)
+            .await
+            .expect("connect invocation executor"),
+    )
+    .access(AccessMode::Full)
+    .raw_command_policy(RawCommandPolicy::Classified)
+    .build();
+    let engine = RedisTransactionEngine::new(
+        invocation,
+        DirectRedisTransactions::standalone(proxy_url.as_str())
+            .expect("prepare proxied transaction adapter"),
+    );
+    let request = || {
+        RedisTransactionRequest::new()
+            .watch(watched_key.clone())
+            .command(NativeRedisInvocation::new("GET").arg(watched_key.clone()))
+    };
+
+    // Widen the WATCH-to-EXEC window so a concurrent writer always conflicts.
+    proxy.set_delay(
+        Direction::ClientToUpstream,
+        Delay::Fixed(Duration::from_millis(120)),
+    );
+    let writer_url = redis.url.clone();
+    let writer_key = watched_key.clone();
+    let writer = tokio::spawn(async move {
+        let mut connection = redis::Client::open(writer_url.as_str())
+            .expect("open conflicting writer")
+            .get_multiplexed_async_connection()
+            .await
+            .expect("connect conflicting writer");
+        for iteration in 0_u32.. {
+            redis::cmd("SET")
+                .arg(&writer_key)
+                .arg(iteration)
+                .query_async::<()>(&mut connection)
+                .await
+                .expect("conflicting write");
+            tokio::time::sleep(Duration::from_millis(5)).await;
+        }
+    });
+    let aborted = engine
+        .invoke(request())
+        .await
+        .expect("watched transaction under contention");
+    writer.abort();
+    assert_eq!(aborted, RedisTransactionOutcome::Aborted);
+    let unchanged: String = redis::cmd("TYPE")
+        .arg(&watched_key)
+        .query_async(&mut connection)
+        .await
+        .expect("watched key still exists");
+    assert_eq!(unchanged, "string");
+
+    proxy.clear_delay(Direction::ClientToUpstream);
+    let committed = engine
+        .invoke(request())
+        .await
+        .expect("watched transaction without contention");
+    match committed {
+        RedisTransactionOutcome::Committed { results } => assert_eq!(results.len(), 1),
+        other => panic!("uncontended watched transaction must commit: {other:?}"),
+    }
+}
+
+#[tokio::test]
+async fn live_acl_restricted_transactions_reject_at_queue_time() {
+    let Some(redis) = TestRedis::start().await else {
+        return;
+    };
+    let mut admin = redis::Client::open(redis.url.as_str())
+        .expect("open ACL admin client")
+        .get_multiplexed_async_connection()
+        .await
+        .expect("connect ACL admin client");
+    let username = format!("redis-mcp-txn-acl-{}", std::process::id());
+    let watchless_username = format!("redis-mcp-txn-watchless-{}", std::process::id());
+    let password = "txn-acl-secret";
+    redis::cmd("ACL")
+        .arg("SETUSER")
+        .arg(&username)
+        .arg("reset")
+        .arg("on")
+        .arg(format!(">{password}"))
+        .arg("~*")
+        .arg("+multi")
+        .arg("+exec")
+        .arg("+watch")
+        .arg("+get")
+        .query_async::<()>(&mut admin)
+        .await
+        .expect("create transaction ACL user");
+    redis::cmd("ACL")
+        .arg("SETUSER")
+        .arg(&watchless_username)
+        .arg("reset")
+        .arg("on")
+        .arg(format!(">{password}"))
+        .arg("~*")
+        .arg("+multi")
+        .arg("+exec")
+        .arg("+get")
+        .query_async::<()>(&mut admin)
+        .await
+        .expect("create watchless ACL user");
+
+    let key = test_key("txn:acl");
+    let base_url = redis.url.clone();
+    let engine_for = move |url: String| {
+        let base_url = base_url.clone();
+        async move {
+            let invocation = RedisInvocationEngine::builder(
+                DirectRedis::connect(&base_url)
+                    .await
+                    .expect("connect ACL invocation executor"),
+            )
+            .access(AccessMode::Full)
+            .raw_command_policy(RawCommandPolicy::Classified)
+            .build();
+            RedisTransactionEngine::new(
+                invocation,
+                DirectRedisTransactions::standalone(&url).expect("prepare ACL transaction adapter"),
+            )
+        }
+    };
+
+    let mut restricted_url = redis::parse_redis_url(&redis.url).expect("parse Redis test URL");
+    restricted_url
+        .set_username(&username)
+        .expect("set restricted transaction username");
+    restricted_url
+        .set_password(Some(password))
+        .expect("set restricted transaction password");
+    let engine = engine_for(restricted_url.to_string()).await;
+    let outcome = engine
+        .invoke(
+            RedisTransactionRequest::new()
+                .watch(key.clone())
+                .command(NativeRedisInvocation::new("GET").arg(key.clone()))
+                .command(
+                    NativeRedisInvocation::new("SET")
+                        .arg(key.clone())
+                        .arg("denied"),
+                ),
+        )
+        .await
+        .expect("ACL-limited transaction returns a structured outcome");
+    match outcome {
+        RedisTransactionOutcome::Rejected { failures } => {
+            let failure = failures
+                .iter()
+                .find(|failure| failure.index() == Some(1))
+                .expect("SET rejection carries its command index");
+            assert_eq!(failure.code(), "NOPERM");
+        }
+        other => panic!("ACL denial must reject the transaction: {other:?}"),
+    }
+    let denied_exists: i64 = redis::cmd("EXISTS")
+        .arg(&key)
+        .query_async(&mut admin)
+        .await
+        .expect("verify denied transaction executed nothing");
+    assert_eq!(denied_exists, 0);
+
+    let mut watchless_url = redis::parse_redis_url(&redis.url).expect("parse Redis test URL");
+    watchless_url
+        .set_username(&watchless_username)
+        .expect("set watchless transaction username");
+    watchless_url
+        .set_password(Some(password))
+        .expect("set watchless transaction password");
+    let watchless_engine = engine_for(watchless_url.to_string()).await;
+    let watch_denied = watchless_engine
+        .invoke(
+            RedisTransactionRequest::new()
+                .watch(key.clone())
+                .command(NativeRedisInvocation::new("GET").arg(key.clone())),
+        )
+        .await
+        .expect_err("WATCH permission failures must fail closed before MULTI");
+    assert_eq!(watch_denied.code(), Some("TRANSACTION_WATCH_FAILED"));
+
+    for user in [&username, &watchless_username] {
+        redis::cmd("ACL")
+            .arg("DELUSER")
+            .arg(user)
+            .query_async::<i64>(&mut admin)
+            .await
+            .expect("remove transaction ACL user");
+    }
 }

@@ -228,9 +228,300 @@ fn parse_i64(value: &[u8]) -> Option<i64> {
     std::str::from_utf8(value).ok()?.parse().ok()
 }
 
-// This is intentionally an explicit allowlist rather than an attempted copy
+// These are intentionally explicit allowlists rather than an attempted copy
 // of Redis' full command table. There is no default read-only branch: every
 // addition must choose an access tier alongside its semantics.
+const FULL_NATIVE_COMMANDS: &[&str] = &[
+    "ACL",
+    "ARDEL",
+    "ARDELRANGE",
+    "BITOP",
+    "DEL",
+    "DELEX",
+    "GEOSEARCHSTORE",
+    "GETDEL",
+    "HDEL",
+    "HGETDEL",
+    "JSON.ARRPOP",
+    "JSON.ARRTRIM",
+    "JSON.CLEAR",
+    "JSON.DEL",
+    "LMOVE",
+    "LMOVEM",
+    "LMPOP",
+    "LPOP",
+    "LREM",
+    "LSET",
+    "LTRIM",
+    "MODULE",
+    "PFMERGE",
+    "RENAME",
+    "RENAMENX",
+    "RPOP",
+    "RPOPLPUSH",
+    "SDIFFSTORE",
+    "SINTERSTORE",
+    "SMOVE",
+    "SPOP",
+    "SREM",
+    "SUNIONSTORE",
+    // TS.ALTER can shrink retention (trimming stored samples) and replaces
+    // the whole label set, so it is classified as destructive.
+    "TS.ALTER",
+    "TS.DEL",
+    "TS.DELETERULE",
+    "UNLINK",
+    "VREM",
+    "XACKDEL",
+    "XDEL",
+    "XDELEX",
+    "XNACK",
+    "XTRIM",
+    "ZDIFFSTORE",
+    "ZINTERSTORE",
+    "ZMPOP",
+    "ZPOPMAX",
+    "ZPOPMIN",
+    "ZRANGESTORE",
+    "ZREM",
+    "ZREMRANGEBYLEX",
+    "ZREMRANGEBYRANK",
+    "ZREMRANGEBYSCORE",
+    "ZUNIONSTORE",
+];
+
+const READ_WRITE_NATIVE_COMMANDS: &[&str] = &[
+    "APPEND",
+    "ARINSERT",
+    "ARMSET",
+    "ARRING",
+    "ARSEEK",
+    "ARSET",
+    "BITFIELD",
+    "COPY",
+    "DECR",
+    "DECRBY",
+    "EXPIRE",
+    "EXPIREAT",
+    "GEOADD",
+    "GETEX",
+    "GETSET",
+    "HEXPIRE",
+    "HGETEX",
+    "HINCRBY",
+    "HINCRBYFLOAT",
+    "HMSET",
+    "HPERSIST",
+    "HSET",
+    "HSETEX",
+    "HSETNX",
+    "INCR",
+    "INCRBY",
+    "INCRBYFLOAT",
+    "INCREX",
+    "JSON.ARRAPPEND",
+    "JSON.ARRINSERT",
+    "JSON.NUMINCRBY",
+    "JSON.SET",
+    "JSON.TOGGLE",
+    "LINSERT",
+    "LPUSH",
+    "LPUSHX",
+    "MSET",
+    "MSETEX",
+    "MSETNX",
+    "PERSIST",
+    "PEXPIRE",
+    "PEXPIREAT",
+    "PFADD",
+    "PSETEX",
+    "RESTORE",
+    "RPUSH",
+    "RPUSHX",
+    "SADD",
+    "SET",
+    "SETBIT",
+    "SETEX",
+    "TOUCH",
+    "TS.ADD",
+    "TS.CREATE",
+    "TS.CREATERULE",
+    "TS.DECRBY",
+    "TS.INCRBY",
+    "TS.MADD",
+    "VADD",
+    "VSETATTR",
+    "XACK",
+    "XADD",
+    "XAUTOCLAIM",
+    "XCLAIM",
+    "XREADGROUP",
+    "ZADD",
+    "ZINCRBY",
+];
+
+const READ_ONLY_NATIVE_COMMANDS: &[&str] = &[
+    "ARCOUNT",
+    "ARGET",
+    "ARGETRANGE",
+    "ARGREP",
+    "ARINFO",
+    "ARLASTITEMS",
+    "ARLEN",
+    "ARMGET",
+    "ARNEXT",
+    "AROP",
+    "ARSCAN",
+    "BITCOUNT",
+    "BITFIELD_RO",
+    "BITPOS",
+    "COMMAND",
+    "DBSIZE",
+    "DIGEST",
+    "DUMP",
+    "ECHO",
+    "EXISTS",
+    "EXPIRETIME",
+    "GEODIST",
+    "GEOHASH",
+    "GEOPOS",
+    "GEOSEARCH",
+    "GET",
+    "GETBIT",
+    "GETRANGE",
+    "HEXISTS",
+    "HGET",
+    "HGETALL",
+    "HKEYS",
+    "HLEN",
+    "HMGET",
+    "HSCAN",
+    "HSTRLEN",
+    "HTTL",
+    "HVALS",
+    "INFO",
+    "JSON.ARRLEN",
+    "JSON.GET",
+    "JSON.MGET",
+    "JSON.OBJKEYS",
+    "JSON.OBJLEN",
+    "JSON.STRLEN",
+    "JSON.TYPE",
+    "LCS",
+    "LINDEX",
+    "LLEN",
+    "LPOS",
+    "LRANGE",
+    "MEMORY",
+    "MGET",
+    "OBJECT",
+    "PEXPIRETIME",
+    "PFCOUNT",
+    "PING",
+    "PTTL",
+    "RANDOMKEY",
+    "SCAN",
+    "SCARD",
+    "SDIFF",
+    "SDIFFCARD",
+    "SINTER",
+    "SINTERCARD",
+    "SISMEMBER",
+    "SMEMBERS",
+    "SMISMEMBER",
+    "SRANDMEMBER",
+    "SSCAN",
+    "STRLEN",
+    "SUNION",
+    "SUNIONCARD",
+    "TS.GET",
+    "TS.INFO",
+    "TS.MGET",
+    "TS.MRANGE",
+    "TS.MREVRANGE",
+    "TS.QUERYINDEX",
+    "TS.RANGE",
+    "TS.REVRANGE",
+    "TTL",
+    "TYPE",
+    "VCARD",
+    "VDIM",
+    "VEMB",
+    "VGETATTR",
+    "VINFO",
+    "VISMEMBER",
+    "VLINKS",
+    "VRANDMEMBER",
+    "VRANGE",
+    "VSIM",
+    "XINFO",
+    "XLEN",
+    "XPENDING",
+    "XRANGE",
+    "XREAD",
+    "XREVRANGE",
+    "ZCARD",
+    "ZCOUNT",
+    "ZDIFF",
+    "ZINTER",
+    "ZINTERCARD",
+    "ZLEXCOUNT",
+    "ZMSCORE",
+    "ZRANDMEMBER",
+    "ZRANGE",
+    "ZRANK",
+    "ZREVRANK",
+    "ZSCAN",
+    "ZSCORE",
+    "ZUNION",
+];
+
+/// Commands whose base tier escalates with specific arguments: REPLACE forms
+/// of COPY and RESTORE, MEMORY PURGE, and non-positive HEXPIRE.
+const ACCESS_ESCALATING_NATIVE_COMMANDS: &[&str] = &["COPY", "HEXPIRE", "MEMORY", "RESTORE"];
+
+/// One argument-independent entry of the classified native command surface.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct NativeCommandInventoryEntry {
+    pub(crate) name: &'static str,
+    pub(crate) access: AccessMode,
+    pub(crate) access_may_escalate: bool,
+    pub(crate) minimum_redis_version: Option<RedisVersion>,
+    pub(crate) required_module: Option<RedisModule>,
+    pub(crate) minimum_module_version: Option<RedisVersion>,
+}
+
+/// The classified, currently invocable native command surface in sorted
+/// order, for host completion and preview. Hard-blocked names (for example
+/// `ACL`) are excluded; argument-dependent forms such as `XGROUP` subcommands
+/// classify only with their arguments and therefore do not appear.
+pub(crate) fn native_command_inventory() -> Vec<NativeCommandInventoryEntry> {
+    let mut entries = [
+        (FULL_NATIVE_COMMANDS, AccessMode::Full),
+        (READ_WRITE_NATIVE_COMMANDS, AccessMode::ReadWrite),
+        (READ_ONLY_NATIVE_COMMANDS, AccessMode::ReadOnly),
+    ]
+    .into_iter()
+    .flat_map(|(commands, access)| commands.iter().map(move |command| (*command, access)))
+    .filter(|(command, _)| {
+        classify_command(command.as_bytes(), &[], RawCommandPolicy::Classified).is_ok()
+    })
+    .map(|(name, access)| {
+        let (required_module, minimum_module_version) = module_requirement(name);
+        NativeCommandInventoryEntry {
+            name,
+            access,
+            access_may_escalate: ACCESS_ESCALATING_NATIVE_COMMANDS.contains(&name),
+            minimum_redis_version: minimum_redis_version(name, &[]),
+            required_module,
+            minimum_module_version,
+        }
+    })
+    .collect::<Vec<_>>();
+    entries.sort_unstable_by_key(|entry| entry.name);
+    entries
+}
+
 fn classified_access(command: &str, arguments: &[Vec<u8>]) -> Option<AccessMode> {
     if command == "HEXPIRE"
         && arguments
@@ -258,65 +549,29 @@ fn classified_access(command: &str, arguments: &[Vec<u8>]) -> Option<AccessMode>
             _ => None,
         };
     }
-    let access = match command {
-        // TS.ALTER can shrink retention (trimming stored samples) and
-        // replaces the whole label set, so it is classified as destructive.
-        "TS.ALTER" | "TS.DEL" | "TS.DELETERULE" => AccessMode::Full,
-        "TS.ADD" | "TS.CREATE" | "TS.CREATERULE" | "TS.DECRBY" | "TS.INCRBY" | "TS.MADD" => {
-            AccessMode::ReadWrite
-        }
-        "TS.GET" | "TS.INFO" | "TS.MGET" | "TS.MRANGE" | "TS.MREVRANGE" | "TS.QUERYINDEX"
-        | "TS.RANGE" | "TS.REVRANGE" => AccessMode::ReadOnly,
-        "ACL" | "ARDEL" | "ARDELRANGE" | "BITOP" | "DEL" | "DELEX" | "GEOSEARCHSTORE"
-        | "GETDEL" | "HDEL" | "HGETDEL" | "JSON.ARRPOP" | "JSON.ARRTRIM" | "JSON.CLEAR"
-        | "JSON.DEL" | "LMOVEM" | "LPOP" | "LMOVE" | "LMPOP" | "LREM" | "LSET" | "LTRIM"
-        | "PFMERGE" | "RENAME" | "RENAMENX" | "RPOP" | "RPOPLPUSH" | "SMOVE" | "SPOP" | "SREM"
-        | "SDIFFSTORE" | "SINTERSTORE" | "SUNIONSTORE" | "UNLINK" | "VREM" | "XACKDEL" | "XDEL"
-        | "XDELEX" | "XNACK" | "XTRIM" | "ZDIFFSTORE" | "ZINTERSTORE" | "ZMPOP" | "ZPOPMAX"
-        | "ZPOPMIN" | "ZRANGESTORE" | "ZREM" | "ZREMRANGEBYLEX" | "ZREMRANGEBYRANK"
-        | "ZREMRANGEBYSCORE" | "ZUNIONSTORE" => AccessMode::Full,
-        "COPY" | "RESTORE"
-            if arguments
-                .iter()
-                .any(|argument| eq_ascii_case(argument, b"REPLACE")) =>
-        {
-            AccessMode::Full
-        }
-        "MEMORY"
-            if arguments
-                .first()
-                .is_some_and(|argument| eq_ascii_case(argument, b"PURGE")) =>
-        {
-            AccessMode::Full
-        }
-        "APPEND" | "ARINSERT" | "ARMSET" | "ARRING" | "ARSEEK" | "ARSET" | "BITFIELD" | "COPY"
-        | "DECR" | "DECRBY" | "EXPIRE" | "EXPIREAT" | "GEOADD" | "GETEX" | "GETSET" | "HEXPIRE"
-        | "HGETEX" | "HINCRBY" | "HINCRBYFLOAT" | "HMSET" | "HPERSIST" | "HSET" | "HSETEX"
-        | "HSETNX" | "INCR" | "INCRBY" | "INCRBYFLOAT" | "INCREX" | "JSON.ARRAPPEND"
-        | "JSON.ARRINSERT" | "JSON.NUMINCRBY" | "JSON.SET" | "JSON.TOGGLE" | "LINSERT"
-        | "LPUSH" | "LPUSHX" | "MSET" | "MSETEX" | "MSETNX" | "PERSIST" | "PEXPIRE"
-        | "PEXPIREAT" | "PFADD" | "PSETEX" | "RESTORE" | "RPUSH" | "RPUSHX" | "SADD" | "SET"
-        | "SETBIT" | "SETEX" | "TOUCH" | "VADD" | "VSETATTR" | "XACK" | "XADD" | "XAUTOCLAIM"
-        | "XCLAIM" | "XREADGROUP" | "ZADD" | "ZINCRBY" => AccessMode::ReadWrite,
-        "MODULE" => AccessMode::Full,
-        "ARCOUNT" | "ARGET" | "ARGETRANGE" | "ARGREP" | "ARINFO" | "ARLASTITEMS" | "ARLEN"
-        | "ARMGET" | "ARNEXT" | "AROP" | "ARSCAN" | "BITCOUNT" | "BITFIELD_RO" | "BITPOS"
-        | "COMMAND" | "DBSIZE" | "DIGEST" | "DUMP" | "ECHO" | "EXISTS" | "EXPIRETIME"
-        | "GEODIST" | "GEOHASH" | "GEOPOS" | "GEOSEARCH" | "GET" | "GETBIT" | "GETRANGE"
-        | "HEXISTS" | "HGET" | "HGETALL" | "HKEYS" | "HLEN" | "HMGET" | "HSCAN" | "HSTRLEN"
-        | "HTTL" | "HVALS" | "INFO" | "JSON.ARRLEN" | "JSON.GET" | "JSON.MGET" | "JSON.OBJKEYS"
-        | "JSON.OBJLEN" | "JSON.STRLEN" | "JSON.TYPE" | "LCS" | "LINDEX" | "LLEN" | "LPOS"
-        | "LRANGE" | "MEMORY" | "MGET" | "OBJECT" | "PEXPIRETIME" | "PFCOUNT" | "PING" | "PTTL"
-        | "RANDOMKEY" | "SCAN" | "SCARD" | "SDIFF" | "SDIFFCARD" | "SINTER" | "SINTERCARD"
-        | "SISMEMBER" | "SMEMBERS" | "SMISMEMBER" | "SRANDMEMBER" | "SSCAN" | "STRLEN"
-        | "SUNION" | "SUNIONCARD" | "TTL" | "TYPE" | "VCARD" | "VDIM" | "VEMB" | "VGETATTR"
-        | "VINFO" | "VISMEMBER" | "VLINKS" | "VRANDMEMBER" | "VRANGE" | "VSIM" | "XINFO"
-        | "XLEN" | "XPENDING" | "XRANGE" | "XREAD" | "XREVRANGE" | "ZCARD" | "ZCOUNT" | "ZDIFF"
-        | "ZINTER" | "ZINTERCARD" | "ZLEXCOUNT" | "ZMSCORE" | "ZRANDMEMBER" | "ZRANGE"
-        | "ZRANK" | "ZREVRANK" | "ZSCAN" | "ZSCORE" | "ZUNION" => AccessMode::ReadOnly,
-        _ => return None,
-    };
-    Some(access)
+    if matches!(command, "COPY" | "RESTORE")
+        && arguments
+            .iter()
+            .any(|argument| eq_ascii_case(argument, b"REPLACE"))
+    {
+        return Some(AccessMode::Full);
+    }
+    if command == "MEMORY"
+        && arguments
+            .first()
+            .is_some_and(|argument| eq_ascii_case(argument, b"PURGE"))
+    {
+        return Some(AccessMode::Full);
+    }
+    if FULL_NATIVE_COMMANDS.contains(&command) {
+        Some(AccessMode::Full)
+    } else if READ_WRITE_NATIVE_COMMANDS.contains(&command) {
+        Some(AccessMode::ReadWrite)
+    } else if READ_ONLY_NATIVE_COMMANDS.contains(&command) {
+        Some(AccessMode::ReadOnly)
+    } else {
+        None
+    }
 }
 
 fn minimum_redis_version(command: &str, arguments: &[Vec<u8>]) -> Option<RedisVersion> {
@@ -476,6 +731,61 @@ mod tests {
                 "{}",
                 covered.name
             );
+        }
+    }
+
+    #[test]
+    fn native_tables_are_disjoint_and_the_inventory_is_invocable() {
+        let mut names = std::collections::BTreeSet::new();
+        for command in FULL_NATIVE_COMMANDS
+            .iter()
+            .chain(READ_WRITE_NATIVE_COMMANDS)
+            .chain(READ_ONLY_NATIVE_COMMANDS)
+        {
+            assert!(names.insert(*command), "{command} appears in two tiers");
+        }
+        for command in ACCESS_ESCALATING_NATIVE_COMMANDS {
+            assert!(
+                names.contains(command),
+                "{command} escalates without a base tier"
+            );
+        }
+
+        let inventory = native_command_inventory();
+        assert!(
+            inventory.windows(2).all(|pair| pair[0].name < pair[1].name),
+            "inventory must be sorted and unique"
+        );
+        // Hard-blocked names never appear even though ACL retains a
+        // historical tier entry.
+        assert!(inventory.iter().all(|entry| entry.name != "ACL"));
+        let entry = |name: &str| {
+            inventory
+                .iter()
+                .find(|entry| entry.name == name)
+                .unwrap_or_else(|| panic!("{name} missing from the inventory"))
+        };
+        assert_eq!(entry("GET").access, AccessMode::ReadOnly);
+        assert_eq!(entry("SET").access, AccessMode::ReadWrite);
+        assert_eq!(entry("DEL").access, AccessMode::Full);
+        assert!(entry("COPY").access_may_escalate);
+        assert!(entry("MEMORY").access_may_escalate);
+        assert!(!entry("GET").access_may_escalate);
+        assert_eq!(
+            entry("TS.RANGE").required_module,
+            Some(RedisModule::TimeSeries)
+        );
+        assert_eq!(entry("JSON.GET").required_module, Some(RedisModule::Json));
+        assert_eq!(
+            entry("HTTL").minimum_redis_version,
+            Some(RedisVersion::new(7, 4, 0))
+        );
+        // Every inventory entry classifies bare and agrees with its tier.
+        for entry in &inventory {
+            let metadata =
+                classify_command(entry.name.as_bytes(), &[], RawCommandPolicy::Classified)
+                    .unwrap_or_else(|error| panic!("{}: {error}", entry.name));
+            assert_eq!(metadata.required_access(), entry.access, "{}", entry.name);
         }
     }
 

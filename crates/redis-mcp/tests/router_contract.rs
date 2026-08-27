@@ -869,12 +869,17 @@ async fn client_for_bundles(
     bundles: impl IntoIterator<Item = ToolBundle>,
     raw_policy: RawCommandPolicy,
 ) -> McpClient {
-    // Transactions additionally require the raw policy, so drop the bundle
-    // from selections that keep raw commands disabled.
+    // Transactions and governed invocation additionally require the raw
+    // policy (transactions also full access), so drop those bundles from
+    // selections that do not satisfy their prerequisites.
     let bundles = bundles
         .into_iter()
-        .filter(|bundle| {
-            *bundle != ToolBundle::Transactions || raw_policy != RawCommandPolicy::Disabled
+        .filter(|bundle| match bundle {
+            ToolBundle::Transactions => {
+                raw_policy != RawCommandPolicy::Disabled && access == AccessMode::Full
+            }
+            ToolBundle::Invocation => raw_policy != RawCommandPolicy::Disabled,
+            _ => true,
         })
         .collect::<Vec<_>>();
     let mut builder = RedisMcp::builder(StubRedis)
@@ -2402,20 +2407,18 @@ async fn capability_client(
     capabilities: RedisCapabilities,
     policy: UnavailableToolPolicy,
 ) -> McpClient {
-    let router = RedisMcp::builder(StubRedis)
-        .access(AccessMode::Full)
-        // Transactions are excluded because this client keeps the raw
-        // command policy disabled.
-        .bundles(
-            ToolBundle::ALL
-                .iter()
-                .copied()
-                .filter(|bundle| *bundle != ToolBundle::Transactions),
-        )
-        .capabilities(capabilities)
-        .unavailable_tool_policy(policy)
-        .pubsub_sessions(StubPubSubSessions)
-        .build();
+    let router =
+        RedisMcp::builder(StubRedis)
+            .access(AccessMode::Full)
+            // Transactions and governed invocation are excluded because this
+            // client keeps the raw command policy disabled.
+            .bundles(ToolBundle::ALL.iter().copied().filter(|bundle| {
+                !matches!(bundle, ToolBundle::Transactions | ToolBundle::Invocation)
+            }))
+            .capabilities(capabilities)
+            .unavailable_tool_policy(policy)
+            .pubsub_sessions(StubPubSubSessions)
+            .build();
     let client = McpClient::connect(ChannelTransport::new(router))
         .await
         .expect("connect capability-aware client");
@@ -5084,8 +5087,25 @@ async fn acl_user_summary_never_returns_credentials_or_rules() {
 #[test]
 fn invalid_builder_safety_configuration_is_rejected() {
     assert!(matches!(
-        RedisMcp::builder(StubRedis).raw_commands(true).try_build(),
+        RedisMcp::builder(StubRedis)
+            .raw_command_policy(RawCommandPolicy::Unrestricted)
+            .try_build(),
         Err(RedisMcpBuildError::RawCommandsRequireFullAccess)
+    ));
+    // The classified policy no longer requires full access: it powers the
+    // tiered governed-invocation tools at read-only and read-write levels.
+    assert!(
+        RedisMcp::builder(StubRedis)
+            .raw_commands(true)
+            .bundle(ToolBundle::Invocation)
+            .try_build()
+            .is_ok()
+    );
+    assert!(matches!(
+        RedisMcp::builder(StubRedis)
+            .bundle(ToolBundle::Invocation)
+            .try_build(),
+        Err(RedisMcpBuildError::InvocationRequiresRawCommands)
     ));
     assert!(matches!(
         RedisMcp::builder(StubRedis)
@@ -8933,5 +8953,208 @@ async fn curated_catalog_matches_checked_in_contract_snapshot() {
     assert_eq!(
         actual,
         include_str!("snapshots/curated_catalog.json").trim_end()
+    );
+}
+
+async fn structured_call(
+    client: &McpClient,
+    tool: &'static str,
+    input: serde_json::Value,
+) -> serde_json::Value {
+    let result = client
+        .call_tool(tool, input)
+        .await
+        .unwrap_or_else(|error| panic!("{tool}: {error}"));
+    assert!(!result.is_error, "{tool}: {result:?}");
+    result
+        .structured_content
+        .unwrap_or_else(|| panic!("{tool}: missing structured content"))
+}
+
+#[tokio::test]
+async fn governed_argv_invocation_enforces_honest_access_tiers() {
+    // A read-only router exposes exactly the read tier plus preview tools.
+    let read_client = client_for_bundles(
+        AccessMode::ReadOnly,
+        [ToolBundle::Essentials, ToolBundle::Invocation],
+        RawCommandPolicy::Classified,
+    )
+    .await;
+    let read_names = read_client
+        .list_tools()
+        .await
+        .expect("list read-only invocation tools")
+        .tools
+        .into_iter()
+        .map(|tool| tool.name)
+        .collect::<Vec<_>>();
+    for name in [
+        "redis_command_readonly",
+        "redis_command_metadata",
+        "redis_command_inventory",
+    ] {
+        assert!(
+            read_names.iter().any(|candidate| candidate == name),
+            "{name}"
+        );
+    }
+    for name in ["redis_command_write", "redis_command"] {
+        assert!(
+            !read_names.iter().any(|candidate| candidate == name),
+            "{name} must not appear on a read-only router"
+        );
+    }
+    assert_eq!(
+        read_names,
+        tool_names_for(
+            AccessMode::ReadOnly,
+            [ToolBundle::Essentials, ToolBundle::Invocation],
+            true
+        )
+    );
+
+    let value = structured_call(
+        &read_client,
+        "redis_command_readonly",
+        serde_json::json!({"command": "get", "arguments": [{"value": "stub-key"}]}),
+    )
+    .await;
+    assert_eq!(value["command"], "GET");
+    assert_eq!(value["required_access"], "read_only");
+    assert_eq!(value["classified"], true);
+    assert_eq!(
+        value["value"],
+        serde_json::json!({"value": "hello", "encoding": "utf8"})
+    );
+
+    let exceeded = read_client
+        .call_tool(
+            "redis_command_readonly",
+            serde_json::json!({
+                "command": "SET",
+                "arguments": [{"value": "key"}, {"value": "value"}],
+            }),
+        )
+        .await
+        .expect("write through the read tier is a tool result");
+    assert!(exceeded.is_error, "{exceeded:?}");
+    let rendered = serde_json::to_string(&exceeded).expect("serialize tier rejection");
+    assert!(
+        rendered.contains("COMMAND_EXCEEDS_TOOL_ACCESS"),
+        "{rendered}"
+    );
+    assert!(rendered.contains("redis_command_write"), "{rendered}");
+
+    // Metadata previews report tiers, hard blocks, and unclassified names
+    // without executing anything.
+    let preview = structured_call(
+        &read_client,
+        "redis_command_metadata",
+        serde_json::json!({"command": "SET", "arguments": [{"value": "k"}, {"value": "v"}]}),
+    )
+    .await;
+    assert_eq!(preview["supported"], true);
+    assert_eq!(preview["required_access"], "read_write");
+    assert_eq!(preview["invocation_tool"], "redis_command_write");
+    assert_eq!(preview["permitted_here"], false);
+
+    let blocked = structured_call(
+        &read_client,
+        "redis_command_metadata",
+        serde_json::json!({"command": "MULTI"}),
+    )
+    .await;
+    assert_eq!(blocked["supported"], false);
+    assert_eq!(blocked["blocked_code"], "TRANSACTION_COMMAND_UNSUPPORTED");
+
+    let unclassified = structured_call(
+        &read_client,
+        "redis_command_metadata",
+        serde_json::json!({"command": "FUTURE.COMMAND"}),
+    )
+    .await;
+    assert_eq!(unclassified["supported"], false);
+    assert_eq!(unclassified["blocked_code"], "COMMAND_UNCLASSIFIED");
+
+    let inventory = structured_call(
+        &read_client,
+        "redis_command_inventory",
+        serde_json::json!({}),
+    )
+    .await;
+    let commands = inventory["commands"].as_array().expect("inventory list");
+    assert_eq!(inventory["command_count"], commands.len());
+    let entry = |name: &str| {
+        commands
+            .iter()
+            .find(|entry| entry["command"] == name)
+            .unwrap_or_else(|| panic!("{name} missing from inventory"))
+    };
+    assert_eq!(entry("GET")["required_access"], "read_only");
+    assert_eq!(entry("SET")["required_access"], "read_write");
+    assert_eq!(entry("DEL")["required_access"], "full");
+    assert_eq!(entry("COPY")["access_may_escalate"], true);
+    for absent in ["ACL", "MULTI", "SUBSCRIBE", "XGROUP"] {
+        assert!(
+            !commands.iter().any(|entry| entry["command"] == absent),
+            "{absent} must not be advertised as invocable"
+        );
+    }
+
+    // A read-write router adds exactly the write tier.
+    let write_client = client_for_bundles(
+        AccessMode::ReadWrite,
+        [ToolBundle::Invocation],
+        RawCommandPolicy::Classified,
+    )
+    .await;
+    let write_names = write_client
+        .list_tools()
+        .await
+        .expect("list read-write invocation tools")
+        .tools
+        .into_iter()
+        .map(|tool| tool.name)
+        .collect::<Vec<_>>();
+    assert!(write_names.iter().any(|name| name == "redis_command_write"));
+    assert!(!write_names.iter().any(|name| name == "redis_command"));
+
+    let written = structured_call(
+        &write_client,
+        "redis_command_write",
+        serde_json::json!({
+            "command": "SET",
+            "arguments": [{"value": "key"}, {"value": "value"}],
+        }),
+    )
+    .await;
+    assert_eq!(written["required_access"], "read_write");
+
+    let destructive = write_client
+        .call_tool(
+            "redis_command_write",
+            serde_json::json!({"command": "DEL", "arguments": [{"value": "key"}]}),
+        )
+        .await
+        .expect("destructive through the write tier is a tool result");
+    assert!(destructive.is_error, "{destructive:?}");
+    assert!(
+        serde_json::to_string(&destructive)
+            .expect("serialize destructive rejection")
+            .contains("redis_command"),
+    );
+
+    let unknown = write_client
+        .call_tool(
+            "redis_command_write",
+            serde_json::json!({"command": "FUTURE.COMMAND"}),
+        )
+        .await
+        .expect("unknown command is a tool result");
+    assert!(unknown.is_error, "{unknown:?}");
+    assert!(
+        serde_json::to_string(&unknown)
+            .expect("serialize unknown rejection")
+            .contains("COMMAND_UNCLASSIFIED"),
     );
 }

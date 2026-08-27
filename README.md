@@ -154,6 +154,8 @@ The standalone default exposes 201 broadly useful tools:
   inspection plus separately Full-gated client, configuration, flush, reset,
   purge, hot-key, and database controls
 - optional bounded atomic transactions: `redis_transaction`
+- optional governed argv invocation tiers: `redis_command_readonly`,
+  `redis_command_write`, `redis_command_metadata`, `redis_command_inventory`
 - explicit full-access escape hatch: `redis_command`
 
 The reusable router keeps the stateful `sessions` bundle opt-in because its
@@ -278,8 +280,8 @@ Cluster routing. Multi-key union/intersection tools are deliberately deferred
 until their same-slot or explicit fan-out contract can be defined without
 implying transparent cluster-wide aggregation.
 
-Classified raw commands require full access plus their own opt-in. Unknown
-commands fail closed:
+The full-access `redis_command` escape hatch requires full access plus the
+classified raw opt-in. Unknown commands fail closed:
 
     redis-mcp-server --access full --raw --stdio
 
@@ -288,6 +290,17 @@ while retaining hard blocks for session, streaming, transaction, replication,
 script/function, and indefinite-blocking forms:
 
     redis-mcp-server --access full --raw-unrestricted --stdio
+
+Redis-syntax clients can enable the governed argv invocation tiers instead.
+The same classified policy then executes read-only commands at read-only
+access and ordinary writes at read-write access, with honest per-tier MCP
+annotations, while destructive and unknown forms still require the full-access
+escape hatch. The metadata and inventory tools give CLIs access/effect
+previews and completion data from the same policy table:
+
+    redis-mcp-server --access read-only --raw \
+      --enable-bundle invocation \
+      --stdio
 
 Bounded atomic `redis_transaction` execution builds on the same classification
 policy and therefore requires one of the raw flags:
@@ -420,6 +433,17 @@ capability checks, timeout, redaction, error categories, and result budgets
 with `redis_command`. Tokenization, quoting, history, completion, rendering,
 and session-oriented commands remain frontend concerns. See the complete
 [pre-tokenized argv example](crates/redis-mcp/examples/native_argv.rs).
+
+Out-of-process MCP clients get the same boundary through the opt-in
+`invocation` bundle. `redis_command_readonly` and `redis_command_write`
+execute classified commands at their matching access tiers from binary-safe
+argv, so `GET foo` traverses exactly the policies of `redis_get key=foo`
+without enabling the full-access escape hatch. `redis_command_metadata`
+previews one command's tier, capability requirements, and matching tool — or
+its stable blocked/unclassified reason — without executing it, and
+`redis_command_inventory` lists the classified command surface for completion.
+Connection-stateful forms stay mapped to their dedicated session, transaction,
+and workflow tools.
 
 `RedisCapabilities` is crate-owned too. A host can supply an authoritative or
 partial snapshot containing Redis and module versions, deployment mode, and

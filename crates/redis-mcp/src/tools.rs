@@ -13,6 +13,7 @@ mod data_structures;
 mod diagnostics;
 #[cfg(any(feature = "keyspace", feature = "strings"))]
 mod essentials;
+mod invocation;
 #[cfg(feature = "json")]
 mod json_tools;
 #[cfg(any(
@@ -875,6 +876,14 @@ pub(crate) fn add_raw_tool(router: McpRouter, state: Arc<ToolState>) -> McpRoute
 #[cfg(feature = "transactions")]
 pub(crate) fn add_transaction_tool(router: McpRouter, state: Arc<ToolState>) -> McpRouter {
     router.tool(transactions::transaction_tool(state))
+}
+
+pub(crate) fn add_invocation_read_tools(router: McpRouter, state: Arc<ToolState>) -> McpRouter {
+    invocation::add_read_tools(router, state)
+}
+
+pub(crate) fn add_invocation_write_tools(router: McpRouter, state: Arc<ToolState>) -> McpRouter {
+    invocation::add_write_tools(router, state)
 }
 
 fn output_schema<T: JsonSchema>() -> JsonValue {

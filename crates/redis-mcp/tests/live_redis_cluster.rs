@@ -2754,3 +2754,51 @@ async fn transactions_commit_and_enforce_same_slot_semantics_in_cluster() {
         .expect_err("cross-slot store commands must fail closed in classification");
     assert_eq!(cross_slot_store.code(), Some("CROSSSLOT"));
 }
+
+#[tokio::test]
+async fn governed_argv_routes_by_key_in_cluster() {
+    let _cluster_guard = CLUSTER_TEST_LOCK.lock().await;
+    let Some(cluster) = TestCluster::start().await else {
+        return;
+    };
+    let executor = DirectRedisCluster::connect(&cluster.seed_urls)
+        .await
+        .expect("connect cluster argv executor");
+    let router = RedisMcp::builder(executor)
+        .access(AccessMode::ReadWrite)
+        .bundles([ToolBundle::Invocation])
+        .raw_command_policy(RawCommandPolicy::Classified)
+        .build();
+    let client = McpClient::connect(ChannelTransport::new(router))
+        .await
+        .expect("connect cluster argv MCP client");
+    client
+        .initialize("redis-mcp-cluster-argv-test", "0")
+        .await
+        .expect("initialize cluster argv MCP client");
+
+    let key = format!("argv:{{tenant}}:greeting:{}", std::process::id());
+    let written = client
+        .call_tool(
+            "redis_command_write",
+            serde_json::json!({
+                "command": "SET",
+                "arguments": [{"value": key}, {"value": "clustered"}],
+            }),
+        )
+        .await
+        .expect("cluster argv SET");
+    assert!(!written.is_error, "{written:?}");
+    let read = client
+        .call_tool(
+            "redis_command_readonly",
+            serde_json::json!({"command": "GET", "arguments": [{"value": key}]}),
+        )
+        .await
+        .expect("cluster argv GET");
+    assert!(!read.is_error, "{read:?}");
+    let value = read
+        .structured_content
+        .expect("cluster argv GET structured content");
+    assert_eq!(value["value"]["value"], "clustered");
+}

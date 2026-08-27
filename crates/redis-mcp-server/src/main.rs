@@ -32,6 +32,7 @@ impl From<CliAccessMode> for AccessMode {
 #[derive(Debug, Clone, Copy, ValueEnum)]
 enum CliOptionalBundle {
     Admin,
+    Invocation,
     Json,
     Search,
     Scripting,
@@ -42,6 +43,7 @@ impl From<CliOptionalBundle> for ToolBundle {
     fn from(value: CliOptionalBundle) -> Self {
         match value {
             CliOptionalBundle::Admin => Self::Admin,
+            CliOptionalBundle::Invocation => Self::Invocation,
             CliOptionalBundle::Json => Self::Json,
             CliOptionalBundle::Search => Self::Search,
             CliOptionalBundle::Scripting => Self::Scripting,
@@ -70,7 +72,9 @@ struct Args {
     #[arg(long, value_enum, default_value = "read-only")]
     access: CliAccessMode,
 
-    /// Expose classified redis_command operations. Requires --access full.
+    /// Enable classified native command execution: the full-access
+    /// redis_command tool and, with --enable-bundle invocation, the tiered
+    /// governed argv tools at the configured access level.
     #[arg(long)]
     raw: bool,
 
@@ -125,8 +129,8 @@ async fn main() -> Result<(), tower_mcp::BoxError> {
     } else {
         RawCommandPolicy::Disabled
     };
-    if raw_command_policy != RawCommandPolicy::Disabled && access != AccessMode::Full {
-        return Err("--raw and --raw-unrestricted require --access full".into());
+    if raw_command_policy == RawCommandPolicy::Unrestricted && access != AccessMode::Full {
+        return Err("--raw-unrestricted requires --access full".into());
     }
     if args.transactions && raw_command_policy == RawCommandPolicy::Disabled {
         return Err("--transactions requires --raw or --raw-unrestricted".into());
@@ -243,6 +247,27 @@ mod tests {
         assert!(matches!(
             ToolBundle::from(args.optional_bundles[0]),
             ToolBundle::TimeSeries
+        ));
+    }
+
+    #[test]
+    fn invocation_bundle_is_selectable_from_the_server_cli() {
+        let args = Args::try_parse_from([
+            "redis-mcp-server",
+            "--access",
+            "read-only",
+            "--raw",
+            "--enable-bundle",
+            "invocation",
+            "--stdio",
+        ])
+        .expect("parse invocation server arguments");
+
+        assert!(args.raw);
+        assert_eq!(args.optional_bundles.len(), 1);
+        assert!(matches!(
+            ToolBundle::from(args.optional_bundles[0]),
+            ToolBundle::Invocation
         ));
     }
 

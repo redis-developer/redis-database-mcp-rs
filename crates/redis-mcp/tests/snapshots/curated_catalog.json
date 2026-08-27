@@ -5649,6 +5649,468 @@
       "requires_raw_opt_in": true
     },
     {
+      "bundle": "invocation",
+      "capability_requirements": {
+        "deployment": "any",
+        "minimum_module_version": null,
+        "minimum_redis_version": null,
+        "required_commands": [],
+        "required_module": null
+      },
+      "family": null,
+      "name": "redis_command_inventory",
+      "output_policy": "budget_guarded",
+      "protocol": {
+        "annotations": {
+          "destructiveHint": false,
+          "idempotentHint": true,
+          "readOnlyHint": true
+        },
+        "description": "List every Redis command this library version classifies for governed argv invocation, with base access tiers and capability requirements, for host completion and preview.",
+        "inputSchema": {
+          "additionalProperties": false,
+          "type": "object"
+        },
+        "name": "redis_command_inventory",
+        "outputSchema": {
+          "$defs": {
+            "InventoryCommandOutput": {
+              "additionalProperties": false,
+              "properties": {
+                "access_may_escalate": {
+                  "description": "Whether specific arguments escalate the base tier, such as COPY\nREPLACE or non-positive HEXPIRE.",
+                  "type": "boolean"
+                },
+                "command": {
+                  "type": "string"
+                },
+                "minimum_module_version": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "minimum_redis_version": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "required_access": {
+                  "description": "Base access tier for the argument-independent command form.",
+                  "type": "string"
+                },
+                "required_module": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                }
+              },
+              "required": [
+                "command",
+                "required_access",
+                "access_may_escalate"
+              ],
+              "type": "object"
+            }
+          },
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "command_count": {
+              "format": "uint",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "commands": {
+              "description": "Classified native commands in sorted order. Argument-dependent forms\nsuch as XGROUP subcommands classify only with their arguments and are\npreviewed through redis_command_metadata instead.",
+              "items": {
+                "$ref": "#/$defs/InventoryCommandOutput"
+              },
+              "type": "array"
+            }
+          },
+          "required": [
+            "command_count",
+            "commands"
+          ],
+          "title": "InventoryOutput",
+          "type": "object"
+        },
+        "title": "List Classified Redis Commands"
+      },
+      "required_access": "read_only",
+      "required_module": null,
+      "requires_raw_opt_in": true
+    },
+    {
+      "bundle": "invocation",
+      "capability_requirements": {
+        "deployment": "any",
+        "minimum_module_version": null,
+        "minimum_redis_version": null,
+        "required_commands": [],
+        "required_module": null
+      },
+      "family": null,
+      "name": "redis_command_metadata",
+      "output_policy": "intrinsically_bounded",
+      "protocol": {
+        "annotations": {
+          "destructiveHint": false,
+          "idempotentHint": true,
+          "readOnlyHint": true
+        },
+        "description": "Classify one pre-tokenized Redis command without executing it: the required access tier, matching invocation tool, capability requirements, and whether this router would permit it. Hard-blocked and unclassified commands report stable reason codes instead of failing.",
+        "inputSchema": {
+          "$defs": {
+            "ArgvArgumentInput": {
+              "additionalProperties": false,
+              "properties": {
+                "encoding": {
+                  "$ref": "#/$defs/InputEncoding",
+                  "default": "utf8",
+                  "description": "Encoding of `value`."
+                },
+                "value": {
+                  "description": "UTF-8 text or standard base64, according to `encoding`.",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "value"
+              ],
+              "type": "object"
+            },
+            "InputEncoding": {
+              "enum": [
+                "utf8",
+                "base64"
+              ],
+              "type": "string"
+            }
+          },
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "arguments": {
+              "description": "Binary-safe command arguments in wire order.",
+              "items": {
+                "$ref": "#/$defs/ArgvArgumentInput"
+              },
+              "maxItems": 1024,
+              "type": "array"
+            },
+            "command": {
+              "description": "Redis command name, without arguments.",
+              "maxLength": 128,
+              "minLength": 1,
+              "type": "string"
+            }
+          },
+          "required": [
+            "command"
+          ],
+          "title": "ArgvCommandInput",
+          "type": "object"
+        },
+        "name": "redis_command_metadata",
+        "outputSchema": {
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "blocked_code": {
+              "description": "Stable reason code when the command is unsupported.",
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "blocked_reason": {
+              "description": "Human-readable reason when the command is unsupported.",
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "classified": {
+              "description": "Whether this library version explicitly classified the command.",
+              "type": [
+                "boolean",
+                "null"
+              ]
+            },
+            "command": {
+              "description": "Normalized uppercase Redis command name.",
+              "type": "string"
+            },
+            "invocation_tool": {
+              "description": "Invocation tool that serves the required access tier.",
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "minimum_module_version": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "minimum_redis_version": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "permitted_here": {
+              "description": "Whether this router's configured access level permits the command.",
+              "type": [
+                "boolean",
+                "null"
+              ]
+            },
+            "required_access": {
+              "description": "Access tier required by the classified command form.",
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "required_module": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "supported": {
+              "description": "Whether this argv can execute through the governed invocation surface.",
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "command",
+            "supported"
+          ],
+          "title": "CommandMetadataOutput",
+          "type": "object"
+        },
+        "title": "Preview Redis Command Policy"
+      },
+      "required_access": "read_only",
+      "required_module": null,
+      "requires_raw_opt_in": true
+    },
+    {
+      "bundle": "invocation",
+      "capability_requirements": {
+        "deployment": "any",
+        "minimum_module_version": null,
+        "minimum_redis_version": null,
+        "required_commands": [],
+        "required_module": null
+      },
+      "family": null,
+      "name": "redis_command_readonly",
+      "output_policy": "budget_guarded",
+      "protocol": {
+        "annotations": {
+          "destructiveHint": false,
+          "idempotentHint": true,
+          "readOnlyHint": true
+        },
+        "description": "Run one classified read-only Redis request/response command from pre-tokenized binary-safe argv. Commands classified as writes or destructive operations are rejected here so this tool's read-only contract stays honest.",
+        "inputSchema": {
+          "$defs": {
+            "ArgvArgumentInput": {
+              "additionalProperties": false,
+              "properties": {
+                "encoding": {
+                  "$ref": "#/$defs/InputEncoding",
+                  "default": "utf8",
+                  "description": "Encoding of `value`."
+                },
+                "value": {
+                  "description": "UTF-8 text or standard base64, according to `encoding`.",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "value"
+              ],
+              "type": "object"
+            },
+            "InputEncoding": {
+              "enum": [
+                "utf8",
+                "base64"
+              ],
+              "type": "string"
+            }
+          },
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "arguments": {
+              "description": "Binary-safe command arguments in wire order.",
+              "items": {
+                "$ref": "#/$defs/ArgvArgumentInput"
+              },
+              "maxItems": 1024,
+              "type": "array"
+            },
+            "command": {
+              "description": "Redis command name, without arguments.",
+              "maxLength": 128,
+              "minLength": 1,
+              "type": "string"
+            }
+          },
+          "required": [
+            "command"
+          ],
+          "title": "ArgvCommandInput",
+          "type": "object"
+        },
+        "name": "redis_command_readonly",
+        "outputSchema": {
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "classified": {
+              "description": "Whether this library version explicitly classified the command.",
+              "type": "boolean"
+            },
+            "command": {
+              "description": "Normalized uppercase Redis command name.",
+              "type": "string"
+            },
+            "required_access": {
+              "description": "Access tier the classified command required.",
+              "type": "string"
+            },
+            "value": true
+          },
+          "required": [
+            "command",
+            "required_access",
+            "classified",
+            "value"
+          ],
+          "title": "ArgvCommandOutput",
+          "type": "object"
+        },
+        "title": "Run Read-Only Redis Command"
+      },
+      "required_access": "read_only",
+      "required_module": null,
+      "requires_raw_opt_in": true
+    },
+    {
+      "bundle": "invocation",
+      "capability_requirements": {
+        "deployment": "any",
+        "minimum_module_version": null,
+        "minimum_redis_version": null,
+        "required_commands": [],
+        "required_module": null
+      },
+      "family": null,
+      "name": "redis_command_write",
+      "output_policy": "budget_guarded",
+      "protocol": {
+        "annotations": {
+          "destructiveHint": false
+        },
+        "description": "Run one classified read-only or ordinary-write Redis request/response command from pre-tokenized binary-safe argv. Destructive and unclassified commands are rejected here; they require the full-access redis_command escape hatch.",
+        "inputSchema": {
+          "$defs": {
+            "ArgvArgumentInput": {
+              "additionalProperties": false,
+              "properties": {
+                "encoding": {
+                  "$ref": "#/$defs/InputEncoding",
+                  "default": "utf8",
+                  "description": "Encoding of `value`."
+                },
+                "value": {
+                  "description": "UTF-8 text or standard base64, according to `encoding`.",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "value"
+              ],
+              "type": "object"
+            },
+            "InputEncoding": {
+              "enum": [
+                "utf8",
+                "base64"
+              ],
+              "type": "string"
+            }
+          },
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "arguments": {
+              "description": "Binary-safe command arguments in wire order.",
+              "items": {
+                "$ref": "#/$defs/ArgvArgumentInput"
+              },
+              "maxItems": 1024,
+              "type": "array"
+            },
+            "command": {
+              "description": "Redis command name, without arguments.",
+              "maxLength": 128,
+              "minLength": 1,
+              "type": "string"
+            }
+          },
+          "required": [
+            "command"
+          ],
+          "title": "ArgvCommandInput",
+          "type": "object"
+        },
+        "name": "redis_command_write",
+        "outputSchema": {
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "classified": {
+              "description": "Whether this library version explicitly classified the command.",
+              "type": "boolean"
+            },
+            "command": {
+              "description": "Normalized uppercase Redis command name.",
+              "type": "string"
+            },
+            "required_access": {
+              "description": "Access tier the classified command required.",
+              "type": "string"
+            },
+            "value": true
+          },
+          "required": [
+            "command",
+            "required_access",
+            "classified",
+            "value"
+          ],
+          "title": "ArgvCommandOutput",
+          "type": "object"
+        },
+        "title": "Run Read-Write Redis Command"
+      },
+      "required_access": "read_write",
+      "required_module": null,
+      "requires_raw_opt_in": true
+    },
+    {
       "bundle": "admin",
       "capability_requirements": {
         "deployment": "standalone",

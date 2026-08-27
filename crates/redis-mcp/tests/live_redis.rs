@@ -7005,3 +7005,211 @@ async fn live_acl_restricted_transactions_reject_at_queue_time() {
             .expect("remove transaction ACL user");
     }
 }
+
+async fn invocation_router_client(
+    url: &str,
+    access: AccessMode,
+    output_budget: Option<OutputBudget>,
+) -> McpClient {
+    let executor = DirectRedis::connect(url)
+        .await
+        .expect("connect invocation executor");
+    let mut builder = RedisMcp::builder(executor)
+        .access(access)
+        .bundles([ToolBundle::Essentials, ToolBundle::Invocation])
+        .raw_command_policy(RawCommandPolicy::Classified);
+    if let Some(output_budget) = output_budget {
+        builder = builder.output_budget(output_budget);
+    }
+    let router = builder.build();
+    let client = McpClient::connect(ChannelTransport::new(router))
+        .await
+        .expect("connect invocation MCP client");
+    client
+        .initialize("redis-mcp-live-invocation-test", "0")
+        .await
+        .expect("initialize invocation MCP client");
+    client
+}
+
+#[tokio::test]
+async fn live_governed_argv_execution_matches_curated_tools() {
+    let Some(redis) = TestRedis::start().await else {
+        return;
+    };
+    let mut connection = redis::Client::open(redis.url.as_str())
+        .expect("open argv verification client")
+        .get_multiplexed_async_connection()
+        .await
+        .expect("connect argv verification client");
+    let key = test_key("argv:greeting");
+    let missing = test_key("argv:missing");
+    redis::cmd("SET")
+        .arg(&key)
+        .arg("hello")
+        .query_async::<()>(&mut connection)
+        .await
+        .expect("seed argv key");
+
+    let read_client = invocation_router_client(&redis.url, AccessMode::ReadOnly, None).await;
+
+    // `GET foo` agrees with `redis_get key=foo` on stored and missing keys.
+    let curated = call_structured(&read_client, "redis_get", serde_json::json!({"key": key})).await;
+    let argv = call_structured(
+        &read_client,
+        "redis_command_readonly",
+        serde_json::json!({"command": "GET", "arguments": [{"value": key}]}),
+    )
+    .await;
+    assert_eq!(curated["value"], "hello");
+    assert_eq!(argv["value"]["value"], "hello");
+    assert_eq!(argv["value"]["encoding"], "utf8");
+    assert_eq!(argv["required_access"], "read_only");
+
+    let curated_missing = call_structured(
+        &read_client,
+        "redis_get",
+        serde_json::json!({"key": missing}),
+    )
+    .await;
+    let argv_missing = call_structured(
+        &read_client,
+        "redis_command_readonly",
+        serde_json::json!({"command": "GET", "arguments": [{"value": missing}]}),
+    )
+    .await;
+    assert_eq!(curated_missing["exists"], false);
+    assert_eq!(argv_missing["value"], serde_json::Value::Null);
+
+    // Writes stay rejected at the read tier, before execution.
+    let rejected = read_client
+        .call_tool(
+            "redis_command_readonly",
+            serde_json::json!({
+                "command": "SET",
+                "arguments": [{"value": key}, {"value": "changed"}],
+            }),
+        )
+        .await
+        .expect("read-tier SET is a tool result");
+    assert!(rejected.is_error, "{rejected:?}");
+    let unchanged: String = redis::cmd("GET")
+        .arg(&key)
+        .query_async(&mut connection)
+        .await
+        .expect("verify read tier executed nothing");
+    assert_eq!(unchanged, "hello");
+
+    // The write tier executes ordinary writes without unrestricted raw
+    // commands and still rejects destructive forms.
+    let write_client = invocation_router_client(&redis.url, AccessMode::ReadWrite, None).await;
+    let binary = BASE64.encode([0xff, 0x00, 0x42]);
+    let written = call_structured(
+        &write_client,
+        "redis_command_write",
+        serde_json::json!({
+            "command": "SET",
+            "arguments": [
+                {"value": key},
+                {"value": binary, "encoding": "base64"},
+            ],
+        }),
+    )
+    .await;
+    assert_eq!(written["value"], "OK");
+    let round_trip = call_structured(
+        &write_client,
+        "redis_command_readonly",
+        serde_json::json!({"command": "GET", "arguments": [{"value": key}]}),
+    )
+    .await;
+    assert_eq!(round_trip["value"]["encoding"], "base64");
+    assert_eq!(round_trip["value"]["value"], binary);
+
+    let destructive = write_client
+        .call_tool(
+            "redis_command_write",
+            serde_json::json!({"command": "DEL", "arguments": [{"value": key}]}),
+        )
+        .await
+        .expect("write-tier DEL is a tool result");
+    assert!(destructive.is_error, "{destructive:?}");
+
+    // Output budgets bound argv results exactly like curated tools.
+    let big = test_key("argv:big");
+    redis::cmd("SET")
+        .arg(&big)
+        .arg("x".repeat(64 * 1024))
+        .query_async::<()>(&mut connection)
+        .await
+        .expect("seed oversized argv value");
+    let budget_client = invocation_router_client(
+        &redis.url,
+        AccessMode::ReadOnly,
+        Some(OutputBudget::new(4_096, 1_000)),
+    )
+    .await;
+    let overflow = budget_client
+        .call_tool(
+            "redis_command_readonly",
+            serde_json::json!({"command": "GET", "arguments": [{"value": big}]}),
+        )
+        .await
+        .expect("oversized argv result is a tool result");
+    assert!(overflow.is_error, "{overflow:?}");
+    assert_eq!(
+        overflow.meta.as_ref().expect("argv output metadata")["io.redis.mcp/outputLimit"]["code"],
+        "output_limit_exceeded"
+    );
+
+    // ACL denials classify identically through argv and curated paths.
+    let username = format!("redis-mcp-argv-acl-{}", std::process::id());
+    let password = "argv-acl-secret";
+    redis::cmd("ACL")
+        .arg("SETUSER")
+        .arg(&username)
+        .arg("reset")
+        .arg("on")
+        .arg(format!(">{password}"))
+        .arg("~*")
+        .arg("+get")
+        .query_async::<()>(&mut connection)
+        .await
+        .expect("create argv ACL user");
+    let mut restricted_url = redis::parse_redis_url(&redis.url).expect("parse Redis test URL");
+    restricted_url
+        .set_username(&username)
+        .expect("set argv ACL username");
+    restricted_url
+        .set_password(Some(password))
+        .expect("set argv ACL password");
+    let restricted_client =
+        invocation_router_client(restricted_url.as_str(), AccessMode::ReadWrite, None).await;
+    let allowed = call_structured(
+        &restricted_client,
+        "redis_command_readonly",
+        serde_json::json!({"command": "GET", "arguments": [{"value": key}]}),
+    )
+    .await;
+    assert_eq!(allowed["value"]["value"], binary);
+    let denied = restricted_client
+        .call_tool(
+            "redis_command_write",
+            serde_json::json!({
+                "command": "SET",
+                "arguments": [{"value": key}, {"value": "denied"}],
+            }),
+        )
+        .await
+        .expect("ACL-denied argv write is a tool result");
+    assert!(denied.is_error, "{denied:?}");
+    let rendered = serde_json::to_string(&denied).expect("serialize ACL denial");
+    assert!(rendered.contains("Authorization"), "{rendered}");
+    assert!(!rendered.contains(password), "{denied:?}");
+    redis::cmd("ACL")
+        .arg("DELUSER")
+        .arg(&username)
+        .query_async::<i64>(&mut connection)
+        .await
+        .expect("remove argv ACL user");
+}

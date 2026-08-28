@@ -291,7 +291,12 @@ impl ToolMetadata {
         }
     }
 
-    fn is_compiled(self) -> bool {
+    /// Whether this crate's Cargo feature set compiled the tool's handler.
+    ///
+    /// Hosts use this to fail loudly when a runtime selection requests a
+    /// bundle or family the binary was built without, instead of silently
+    /// serving a smaller surface.
+    pub fn is_compiled(self) -> bool {
         self.family().map_or_else(
             || match self.bundle {
                 ToolBundle::Diagnostics => cfg!(feature = "diagnostics"),

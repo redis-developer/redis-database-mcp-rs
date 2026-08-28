@@ -13,6 +13,7 @@ mod blocking;
 mod bulk;
 mod capabilities;
 mod catalog;
+mod docs;
 mod executor;
 pub mod families;
 #[cfg(feature = "guidance")]
@@ -51,6 +52,10 @@ pub use capabilities::{
 pub use catalog::{
     RedisModule, ToolBundle, ToolCapabilityRequirements, ToolDeploymentRequirement, ToolMetadata,
     ToolOutputPolicy, tool_catalog,
+};
+pub use docs::{
+    DEFAULT_DOC_CACHE_ENTRIES, DEFAULT_DOC_FETCH_TIMEOUT, DEFAULT_MAX_DOC_BYTES,
+    DEFAULT_REDIS_DOCS_PIN, REDIS_DOCS_URI_TEMPLATE, RedisDocsFetcher, RedisDocsOptions,
 };
 pub use executor::{
     DirectRedis, DirectRedisCluster, RedisClusterFanout, RedisCommand, RedisError, RedisErrorKind,
@@ -152,6 +157,8 @@ impl RedisMcp {
             blocking: None,
             blocking_limits: RedisBlockingLimits::default(),
             monitor_sessions: None,
+            docs_fetcher: None,
+            docs_options: RedisDocsOptions::default(),
             capabilities: RedisCapabilities::unknown(),
             unavailable_tool_policy: UnavailableToolPolicy::Advertise,
             server_name: "redis-mcp".to_string(),
@@ -176,6 +183,8 @@ pub struct RedisMcpBuilder {
     blocking: Option<Arc<dyn RedisBlockingExecutor>>,
     blocking_limits: RedisBlockingLimits,
     monitor_sessions: Option<Arc<dyn MonitorSessionManager>>,
+    docs_fetcher: Option<Arc<dyn RedisDocsFetcher>>,
+    docs_options: RedisDocsOptions,
     capabilities: RedisCapabilities,
     unavailable_tool_policy: UnavailableToolPolicy,
     server_name: String,
@@ -369,6 +378,30 @@ impl RedisMcpBuilder {
         self
     }
 
+    /// Serve official Redis command documentation as passthrough resources
+    /// through a host-supplied fetcher.
+    ///
+    /// Documentation reads introduce network egress the base surface never
+    /// performs, so they are enabled only by configuring a fetcher. The
+    /// library owns the URI template, pinned-inventory validation, bounds,
+    /// caching, and attribution; the fetcher owns the transport.
+    pub fn docs_fetcher(mut self, fetcher: impl RedisDocsFetcher) -> Self {
+        self.docs_fetcher = Some(Arc::new(fetcher));
+        self
+    }
+
+    /// Serve documentation through a shared fetcher trait object.
+    pub fn shared_docs_fetcher(mut self, fetcher: Arc<dyn RedisDocsFetcher>) -> Self {
+        self.docs_fetcher = Some(fetcher);
+        self
+    }
+
+    /// Replace the default documentation pin and bounds.
+    pub fn docs_options(mut self, options: RedisDocsOptions) -> Self {
+        self.docs_options = options;
+        self
+    }
+
     /// Replace the default bulk workflow bounds.
     pub fn bulk_limits(mut self, limits: RedisBulkLimits) -> Self {
         self.bulk_limits = limits;
@@ -436,6 +469,9 @@ impl RedisMcpBuilder {
         }
         if sessions_enabled && self.blocking.is_some() && self.blocking_limits.validate().is_err() {
             return Err(RedisMcpBuildError::InvalidBlockingLimits);
+        }
+        if self.docs_fetcher.is_some() && self.docs_options.validate().is_err() {
+            return Err(RedisMcpBuildError::InvalidDocsOptions);
         }
         let transactions_enabled =
             cfg!(feature = "transactions") && self.bundles.contains(&ToolBundle::Transactions);
@@ -550,6 +586,9 @@ impl RedisMcpBuilder {
         if self.bundles.contains(&ToolBundle::Guidance) {
             router = guidance::add_guidance(router, &capabilities);
         }
+        if let Some(fetcher) = self.docs_fetcher {
+            router = docs::add_docs(router, fetcher, self.docs_options);
+        }
         if self.unavailable_tool_policy == UnavailableToolPolicy::Hide {
             router = router.tool_filter(CapabilityFilter::new(move |_session, tool: &Tool| {
                 tool_catalog()
@@ -586,6 +625,8 @@ pub enum RedisMcpBuildError {
     SessionsRequireManager,
     /// Blocking timeout, key, and count bounds must be non-zero.
     InvalidBlockingLimits,
+    /// Documentation reads require a well-formed pin and non-zero bounds.
+    InvalidDocsOptions,
     /// Atomic transactions require an explicit dedicated-connection executor.
     TransactionsRequireExecutor,
     /// Transactions execute argv-shaped nested commands and therefore require
@@ -622,6 +663,9 @@ impl std::fmt::Display for RedisMcpBuildError {
             Self::InvalidBlockingLimits => {
                 formatter.write_str("blocking limits must all be greater than zero")
             }
+            Self::InvalidDocsOptions => formatter.write_str(
+                "documentation options require a well-formed pin and non-zero bounds",
+            ),
             Self::TransactionsRequireExecutor => {
                 formatter.write_str("the transactions bundle requires a transaction executor")
             }

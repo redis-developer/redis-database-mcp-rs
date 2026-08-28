@@ -274,6 +274,19 @@ reference exact tool names. Content is compiled in, bounded, snapshot-tested,
 and every referenced tool name is validated against the catalog, so guidance
 can never drift from the surface it describes.
 
+Hosts can additionally serve the official Redis command documentation as
+passthrough resources: configuring a `RedisDocsFetcher` on the builder
+registers the `redis-mcp://docs/commands/{command}` template, which conveys
+`content/commands/*.md` from a pinned redis/docs revision at read time with
+front matter rendered into a typed header, per-page byte ceilings, a bounded
+cache, fetch timeouts, and CC BY-NC-SA attribution appended. Unknown
+commands fail closed against the classified command inventory without
+fetching, and the same inventory drives offline `completion/complete`
+suggestions for the template's `{command}` variable. Because documentation
+reads introduce network egress the base surface never performs, nothing is
+fetched — and no template is advertised — unless a host explicitly supplies
+the fetcher.
+
 See [the spike decision record](docs/spike.md) for the tested architecture,
 REPL findings, and redisctl migration sequence.
 

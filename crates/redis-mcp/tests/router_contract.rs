@@ -9084,6 +9084,97 @@ async fn guidance_catalog_matches_checked_in_contract_snapshot() {
     );
 }
 
+#[derive(Clone, Copy)]
+struct StubDocsFetcher;
+
+#[async_trait]
+impl redis_mcp::RedisDocsFetcher for StubDocsFetcher {
+    async fn fetch_command_doc(
+        &self,
+        pin: &str,
+        slug: &str,
+        _max_bytes: usize,
+    ) -> Result<String, RedisError> {
+        Ok(format!(
+            "---\ntitle: {}\nsince: 1.0.0\ncomplexity: O(1)\n---\nStub documentation for {slug} at {pin}.\n",
+            slug.to_ascii_uppercase()
+        ))
+    }
+}
+
+#[tokio::test]
+async fn command_docs_template_reads_completes_and_fails_closed() {
+    let router = RedisMcp::builder(StubRedis)
+        .access(AccessMode::ReadOnly)
+        .docs_fetcher(StubDocsFetcher)
+        .build();
+    let client = McpClient::connect(ChannelTransport::new(router))
+        .await
+        .expect("connect docs client");
+    client
+        .initialize("redis-mcp-docs-test", "0")
+        .await
+        .expect("initialize docs client");
+
+    let templates = client
+        .list_resource_templates()
+        .await
+        .expect("list resource templates");
+    assert!(
+        templates
+            .resource_templates
+            .iter()
+            .any(|template| template.uri_template == redis_mcp::REDIS_DOCS_URI_TEMPLATE),
+        "{templates:?}"
+    );
+
+    let page = client
+        .read_resource("redis-mcp://docs/commands/get")
+        .await
+        .expect("read GET documentation");
+    let content = serde_json::to_value(page.contents.first().expect("doc content"))
+        .expect("serialize doc content");
+    let text = content["text"].as_str().expect("doc text");
+    assert!(text.starts_with("# GET"), "{text}");
+    assert!(text.contains("Stub documentation for get"));
+    assert!(text.contains("CC BY-NC-SA 4.0"));
+    assert!(text.contains(redis_mcp::DEFAULT_REDIS_DOCS_PIN));
+
+    let unknown = client
+        .read_resource("redis-mcp://docs/commands/not-a-command")
+        .await
+        .expect_err("unknown commands fail closed");
+    assert!(
+        unknown.to_string().contains("UNKNOWN_DOC_COMMAND"),
+        "{unknown}"
+    );
+
+    let completions = client
+        .complete(
+            tower_mcp::protocol::CompletionReference::Resource {
+                uri: redis_mcp::REDIS_DOCS_URI_TEMPLATE.to_string(),
+            },
+            "command",
+            "za",
+        )
+        .await
+        .expect("complete command names");
+    assert!(
+        completions.completion.values.contains(&"zadd".to_string()),
+        "{completions:?}"
+    );
+
+    // Without a fetcher, no docs template or completion capability exists.
+    let bare = full_catalog_client().await;
+    assert!(
+        bare.list_resource_templates()
+            .await
+            .expect("list bare templates")
+            .resource_templates
+            .is_empty()
+    );
+}
+
 #[tokio::test]
 async fn guidance_resources_and_prompts_are_readable_and_bundle_gated() {
     let client = full_catalog_client().await;

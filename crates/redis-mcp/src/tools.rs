@@ -4,6 +4,7 @@
 mod admin;
 #[cfg(feature = "sessions")]
 mod blocking;
+#[cfg(feature = "bulk")]
 mod bulk;
 #[cfg(any(
     feature = "hashes",
@@ -111,6 +112,7 @@ impl ToolState {
         }
     }
 
+    #[cfg(feature = "bulk")]
     fn bulk_engine(&self) -> crate::RedisBulkEngine {
         crate::RedisBulkEngine::new(self.invocation_engine.clone()).with_limits(self.bulk_limits)
     }
@@ -728,6 +730,7 @@ pub(crate) fn add_write_tools(
     ) {
         router = timeseries::add_write_tools(router, state.clone());
     }
+    #[cfg(feature = "bulk")]
     if bundles.contains(&ToolBundle::Bulk) {
         router = bulk::add_write_tools(router, state);
     }

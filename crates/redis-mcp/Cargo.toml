@@ -19,7 +19,14 @@ path = "src/lib.rs"
 
 [features]
 default = ["full"]
-full = ["all-families", "diagnostics", "sessions", "transactions", "admin"]
+full = [
+    "all-families",
+    "diagnostics",
+    "sessions",
+    "transactions",
+    "admin",
+    "guidance",
+]
 all-families = [
     "keyspace",
     "strings",
@@ -60,6 +67,7 @@ diagnostics = []
 sessions = []
 transactions = []
 admin = []
+guidance = []
 
 [dependencies]
 async-trait.workspace = true

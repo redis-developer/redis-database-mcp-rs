@@ -1,0 +1,141 @@
+{
+  "prompts": [
+    {
+      "arguments": [
+        {
+          "description": "The queries the index must serve, in plain language or query syntax.",
+          "name": "queries",
+          "required": true
+        },
+        {
+          "description": "What the documents look like (hash or JSON, fields, cardinalities, vector dimensions).",
+          "name": "data_description",
+          "required": false
+        }
+      ],
+      "description": "Design a Query Engine index from the queries it must serve: field types, document shape, vector parameters, and validation.",
+      "name": "redis_design_search_index",
+      "title": "Design a Redis Search index"
+    },
+    {
+      "arguments": [
+        {
+          "description": "What was observed (for example: p99 spikes every 5 minutes, one endpoint slow).",
+          "name": "symptom",
+          "required": false
+        }
+      ],
+      "description": "Guided latency investigation: establish a baseline, read the server's own evidence, match findings to causes, and propose bounded fixes.",
+      "name": "redis_diagnose_latency",
+      "title": "Diagnose Redis latency"
+    },
+    {
+      "arguments": [
+        {
+          "description": "What is being loaded (record shape, approximate count, target structures, expirations).",
+          "name": "dataset",
+          "required": true
+        }
+      ],
+      "description": "Plan and execute a bounded dataset load: record mapping, dry-run validation, batching, error policy, and verification.",
+      "name": "redis_plan_bulk_load",
+      "title": "Plan a bounded Redis bulk load"
+    },
+    {
+      "arguments": [
+        {
+          "description": "The data and access patterns to model (entities, cardinalities, reads, writes, retention).",
+          "name": "workload",
+          "required": true
+        }
+      ],
+      "description": "Design keys and structures for a described workload, then verify the design empirically with seeded data.",
+      "name": "redis_plan_data_model",
+      "title": "Plan a Redis data model"
+    },
+    {
+      "arguments": [
+        {
+          "description": "Optional area to prioritize (for example: fragmentation, eviction policy, one keyspace prefix).",
+          "name": "focus",
+          "required": false
+        }
+      ],
+      "description": "Guided memory review: usage, fragmentation, eviction posture, biggest costs, and dataset-reduction options.",
+      "name": "redis_review_memory",
+      "title": "Review Redis memory"
+    }
+  ],
+  "resources": [
+    {
+      "description": "The Redis version, deployment topology, and module versions this router was configured with. Tools preflight against this snapshot.",
+      "mimeType": "application/json",
+      "name": "target-capabilities",
+      "title": "Redis target capability snapshot",
+      "uri": "redis-mcp://capabilities"
+    },
+    {
+      "description": "Every curated tool this library version knows, with bundle, access tier, raw opt-in, and capability requirements. Runtime selection and access mode decide which subset a given router advertises.",
+      "mimeType": "application/json",
+      "name": "tool-catalog",
+      "title": "Redis MCP tool catalog",
+      "uri": "redis-mcp://catalog"
+    },
+    {
+      "description": "Index of the compiled-in Redis guides and live server-description resources.",
+      "mimeType": "text/markdown",
+      "name": "guidance-index",
+      "title": "Redis guidance index",
+      "uri": "redis-mcp://guidance"
+    },
+    {
+      "description": "Hash tags, slots, what same-slot enables, anti-patterns, and how cluster changes the meaning of keyspace operations.",
+      "mimeType": "text/markdown",
+      "name": "guidance-cluster-key-design",
+      "title": "Redis Cluster key design",
+      "uri": "redis-mcp://guidance/cluster-key-design"
+    },
+    {
+      "description": "Choose keys and structures for a workload: key design, structure selection, bounded reads, and empirical verification.",
+      "mimeType": "text/markdown",
+      "name": "guidance-data-modeling",
+      "title": "Redis data modeling",
+      "uri": "redis-mcp://guidance/data-modeling"
+    },
+    {
+      "description": "TTL mechanics, hash-field expiration, cache/session/lock patterns, and the pitfalls checklist.",
+      "mimeType": "text/markdown",
+      "name": "guidance-expiration-strategies",
+      "title": "Redis expiration strategies",
+      "uri": "redis-mcp://guidance/expiration-strategies"
+    },
+    {
+      "description": "A working order for latency incidents: slowlog and latency events, cause matching, bounded MONITOR, and structural fixes.",
+      "mimeType": "text/markdown",
+      "name": "guidance-latency-diagnosis",
+      "title": "Redis latency diagnosis",
+      "uri": "redis-mcp://guidance/latency-diagnosis"
+    },
+    {
+      "description": "Measure memory pressure, interpret fragmentation and eviction, choose an eviction policy, and shrink the dataset.",
+      "mimeType": "text/markdown",
+      "name": "guidance-memory-tuning",
+      "title": "Redis memory tuning",
+      "uri": "redis-mcp://guidance/memory-tuning"
+    },
+    {
+      "description": "Multi-key commands, bulk workflows, MULTI/EXEC, and scripts: decision rules, costs, and durability boundaries.",
+      "mimeType": "text/markdown",
+      "name": "guidance-pipeline-vs-transaction",
+      "title": "Batching, transactions, and scripts",
+      "uri": "redis-mcp://guidance/pipeline-vs-transaction"
+    },
+    {
+      "description": "Design Search indexes from the queries: field types, HASH versus JSON, vector fields, querying, and index operations.",
+      "mimeType": "text/markdown",
+      "name": "guidance-search-index-design",
+      "title": "Redis Query Engine index design",
+      "uri": "redis-mcp://guidance/search-index-design"
+    }
+  ]
+}

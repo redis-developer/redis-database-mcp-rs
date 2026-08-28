@@ -260,6 +260,20 @@ are reaped. The Redis 8.10 backup lifecycle joins the admin bundle as guarded
 existing status and file-count inspections; abort and cleanup require
 explicit confirmation, and results never contain filesystem paths.
 
+The MCP surface is more than tools. The default `guidance` bundle ships
+curated Redis expertise as MCP resources and prompts: seven versioned guides
+(`redis-mcp://guidance/…`) covering data modeling, memory tuning, latency
+diagnosis, Search index design, Cluster key design, expiration strategies,
+and batching-versus-transactions; live descriptions of the running server
+(`redis-mcp://catalog` for every tool with its access tier and capability
+requirements, `redis-mcp://capabilities` for the configured Redis version,
+deployment, and modules); and five guided workflow prompts
+(`redis_diagnose_latency`, `redis_review_memory`, `redis_plan_data_model`,
+`redis_design_search_index`, `redis_plan_bulk_load`) whose instructions
+reference exact tool names. Content is compiled in, bounded, snapshot-tested,
+and every referenced tool name is validated against the catalog, so guidance
+can never drift from the surface it describes.
+
 See [the spike decision record](docs/spike.md) for the tested architecture,
 REPL findings, and redisctl migration sequence.
 

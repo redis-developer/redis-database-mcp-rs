@@ -9040,6 +9040,148 @@ async fn curated_catalog_matches_checked_in_contract_snapshot() {
     );
 }
 
+#[tokio::test]
+async fn guidance_catalog_matches_checked_in_contract_snapshot() {
+    let client = full_catalog_client().await;
+    let mut resources = client
+        .list_resources()
+        .await
+        .expect("list resources for snapshot")
+        .resources
+        .into_iter()
+        .map(|resource| serde_json::to_value(resource).expect("serialize resource definition"))
+        .collect::<Vec<_>>();
+    resources.sort_by(|left, right| left["uri"].as_str().cmp(&right["uri"].as_str()));
+    let mut prompts = client
+        .list_prompts()
+        .await
+        .expect("list prompts for snapshot")
+        .prompts
+        .into_iter()
+        .map(|prompt| serde_json::to_value(prompt).expect("serialize prompt definition"))
+        .collect::<Vec<_>>();
+    prompts.sort_by(|left, right| left["name"].as_str().cmp(&right["name"].as_str()));
+
+    let actual = serde_json::to_string_pretty(&canonical_json(serde_json::json!({
+        "resources": resources,
+        "prompts": prompts,
+    })))
+    .expect("serialize guidance snapshot");
+    if std::env::var_os("REDIS_MCP_UPDATE_SNAPSHOTS").is_some() {
+        std::fs::write(
+            concat!(
+                env!("CARGO_MANIFEST_DIR"),
+                "/tests/snapshots/guidance_catalog.json"
+            ),
+            format!("{actual}\n"),
+        )
+        .expect("update guidance snapshot");
+        return;
+    }
+    assert_eq!(
+        actual,
+        include_str!("snapshots/guidance_catalog.json").trim_end()
+    );
+}
+
+#[tokio::test]
+async fn guidance_resources_and_prompts_are_readable_and_bundle_gated() {
+    let client = full_catalog_client().await;
+
+    // Every advertised resource is readable and self-consistent.
+    let listed = client
+        .list_resources()
+        .await
+        .expect("list guidance resources");
+    assert!(!listed.resources.is_empty());
+    for definition in &listed.resources {
+        let read = client
+            .read_resource(&definition.uri)
+            .await
+            .unwrap_or_else(|error| panic!("{}: {error}", definition.uri));
+        let content = read.contents.first().expect("resource content");
+        let rendered = serde_json::to_value(content).expect("serialize resource content");
+        assert_eq!(rendered["uri"], definition.uri.as_str());
+        assert!(
+            !rendered["text"].as_str().expect("text content").is_empty(),
+            "{} returned empty content",
+            definition.uri
+        );
+    }
+
+    // The live capability snapshot reflects the builder's configuration.
+    let capabilities = client
+        .read_resource("redis-mcp://capabilities")
+        .await
+        .expect("read capability snapshot");
+    let content = serde_json::to_value(capabilities.contents.first().expect("capability content"))
+        .expect("serialize capability content");
+    let snapshot: serde_json::Value =
+        serde_json::from_str(content["text"].as_str().expect("capability text"))
+            .expect("capability snapshot is JSON");
+    assert_eq!(snapshot["deployment"], "unknown");
+
+    // The catalog resource lists every curated tool exactly once.
+    let catalog = client
+        .read_resource("redis-mcp://catalog")
+        .await
+        .expect("read catalog resource");
+    let content = serde_json::to_value(catalog.contents.first().expect("catalog content"))
+        .expect("serialize catalog content");
+    let rendered: serde_json::Value =
+        serde_json::from_str(content["text"].as_str().expect("catalog text"))
+            .expect("catalog resource is JSON");
+    assert_eq!(
+        rendered["tools"].as_array().expect("catalog tools").len(),
+        tool_catalog().len()
+    );
+
+    // Prompts render referencing real arguments.
+    let latency = client
+        .get_prompt(
+            "redis_diagnose_latency",
+            Some(std::collections::HashMap::from([(
+                "symptom".to_string(),
+                "p99 spikes".to_string(),
+            )])),
+        )
+        .await
+        .expect("render latency prompt");
+    let text = latency
+        .messages
+        .first()
+        .and_then(|message| serde_json::to_value(message).ok())
+        .expect("latency prompt message");
+    assert!(
+        text["content"]["text"]
+            .as_str()
+            .expect("prompt text")
+            .contains("p99 spikes")
+    );
+
+    // Without the guidance bundle, no prompts or resources are advertised.
+    let bare = client_for_bundles(
+        AccessMode::ReadOnly,
+        [ToolBundle::Essentials],
+        RawCommandPolicy::Disabled,
+    )
+    .await;
+    assert!(
+        bare.list_resources()
+            .await
+            .expect("list bare resources")
+            .resources
+            .is_empty()
+    );
+    assert!(
+        bare.list_prompts()
+            .await
+            .expect("list bare prompts")
+            .prompts
+            .is_empty()
+    );
+}
+
 async fn structured_call(
     client: &McpClient,
     tool: &'static str,

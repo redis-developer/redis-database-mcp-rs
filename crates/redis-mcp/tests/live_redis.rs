@@ -5575,28 +5575,47 @@ async fn live_diagnostics_are_structured_bounded_redacted_and_binary_safe() {
         assert_eq!(key_summary["key"]["encoding"], "base64");
         assert_eq!(key_summary["key"]["value"], binary_key_base64);
 
-        let hotkeys = client
-            .call_tool(
-                "redis_hotkeys",
-                serde_json::json!({
-                    "pattern": key,
-                    "count": 10,
-                    "max_keys": 10,
-                    "top": 5
-                }),
-            )
-            .await
-            .expect("one-page hotkey sample")
-            .structured_content
-            .expect("structured hotkey sample");
-        assert_eq!(hotkeys["sampled_keys"], 1);
-        assert_eq!(hotkeys["candidates"][0]["key"]["value"], key);
-        let complete = hotkeys["page"]["complete"]
-            .as_bool()
-            .expect("hotkey page completion flag");
-        if !complete {
-            assert!(hotkeys["page"]["continuation"]["cursor"].is_number());
+        // The suite shares one keyspace when REDIS_URL is set, so a single
+        // SCAN page is not guaranteed to visit this key; follow the
+        // continuation cursor until the key appears or the scan completes.
+        let mut cursor = 0u64;
+        let mut found = false;
+        loop {
+            let hotkeys = client
+                .call_tool(
+                    "redis_hotkeys",
+                    serde_json::json!({
+                        "pattern": key,
+                        "count": 100,
+                        "max_keys": 256,
+                        "top": 5,
+                        "cursor": cursor,
+                    }),
+                )
+                .await
+                .expect("one-page hotkey sample")
+                .structured_content
+                .expect("structured hotkey sample");
+            if hotkeys["candidates"]
+                .as_array()
+                .expect("hotkey candidates")
+                .iter()
+                .any(|candidate| candidate["key"]["value"] == key)
+            {
+                found = true;
+                break;
+            }
+            if hotkeys["page"]["complete"]
+                .as_bool()
+                .expect("hotkey page completion flag")
+            {
+                break;
+            }
+            cursor = hotkeys["page"]["continuation"]["cursor"]
+                .as_u64()
+                .expect("hotkey continuation cursor");
         }
+        assert!(found, "hotkey scan pages must eventually surface {key}");
     }
 
     let limited = router_client_with_budget(
@@ -7499,6 +7518,22 @@ async fn live_bulk_load_and_seed_are_bounded_deterministic_and_explicit() {
             .any(|name| name.starts_with("redis_bulk")),
         "bulk tools are write-gated"
     );
+
+    // The suite shares one keyspace when REDIS_URL is set; remove this
+    // test's keys so keyspace-sensitive diagnostics stay stable.
+    let mut cleanup = redis::cmd("UNLINK");
+    for suffix in [
+        "string", "hash", "list", "set", "zset", "binary", "conflict", "ok-1", "ok-2", "never",
+    ] {
+        cleanup.arg(format!("{prefix}:{suffix}"));
+    }
+    for index in 0..20 {
+        cleanup.arg(format!("{prefix}:seed:{index}"));
+    }
+    cleanup
+        .query_async::<i64>(&mut connection)
+        .await
+        .expect("remove bulk test keys");
 }
 
 #[tokio::test]
@@ -7585,4 +7620,10 @@ async fn live_bulk_acl_denials_keep_record_identity_without_leaking_credentials(
         .query_async::<i64>(&mut admin)
         .await
         .expect("remove bulk ACL user");
+    redis::cmd("UNLINK")
+        .arg(format!("{key}:string"))
+        .arg(format!("{key}:hash"))
+        .query_async::<i64>(&mut admin)
+        .await
+        .expect("remove bulk ACL test keys");
 }

@@ -309,6 +309,30 @@ Inside the REPL:
     call redis_publish {"channel":{"value":"events"},"message":{"value":"hello"}}
     redis_pubsub_read session_id=ps_<opaque-handle> wait_ms=1000
 
+### Configuration sources and precedence
+
+Every server setting is reachable from three sources with one precedence:
+CLI arguments override environment variables override an explicit TOML file
+override built-in defaults. The file is only read when selected with
+`--config <path>` or `REDIS_MCP_CONFIG`, and unknown keys in it fail startup
+rather than silently applying defaults.
+
+[`redis-mcp.example.toml`](crates/redis-mcp-server/redis-mcp.example.toml)
+documents every key at its default value, and a test keeps it complete and
+correct. Environment variables follow the flag names (`REDIS_MCP_ACCESS`,
+`REDIS_MCP_RAW`, `REDIS_MCP_MAX_OUTPUT_BYTES`,
+`REDIS_MCP_PUBSUB_MAX_SESSIONS`, …); the target keeps its historical
+`REDIS_URL` / `REDIS_CLUSTER_URLS` names. Beyond the target and policy
+flags, the configurable surface covers output budgets, the per-command
+timeout, capability discovery (`--no-discovery` to skip), the
+unavailable-tool policy, and every Pub/Sub, MONITOR, blocking, transaction,
+and bulk limit.
+
+The server discovers the target's version, deployment, and modules at
+startup so version- and module-gated tools preflight accurately; discovery
+failures (for example an ACL that blocks introspection) log a warning and
+fall back to advertising the selected catalog without version awareness.
+
 For Redis Cluster, provide one or more seed URLs instead of `--url`. Multiple
 seeds improve initial discovery when a node is unavailable:
 

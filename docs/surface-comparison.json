@@ -1171,6 +1171,59 @@
       "reason": "The explicitly selected admin bundle now provides bounded, redacted inspection and separately Full-gated controls. Configuration reads use a fixed non-secret allowlist; destructive calls require confirmation; Cluster fan-out has node and result ceilings with pseudonymous partial failures; credential generation, filesystem persistence, and uncoordinated topology mutation remain outside ordinary request/response tools."
     },
     {
+      "id": "sessions.blocking_finite",
+      "redis_mcp_tools": [],
+      "redisctl_tools": [],
+      "library_tools": [
+        "redis_blpop",
+        "redis_brpop",
+        "redis_blmove",
+        "redis_blmovem",
+        "redis_blmpop",
+        "redis_bzpopmin",
+        "redis_bzpopmax",
+        "redis_bzmpop"
+      ],
+      "disposition": "implemented",
+      "reason": "Finite blocking pops and moves run on dedicated per-call connections with required server-capped timeouts, bounded key and count inputs, explicit distinguishable timeout results, binary-safe values, exact score strings, no replay after a delivered element, and Redis 6.0/6.2/7.0/8.10 version gates. Indefinite blocking remains impossible through every surface."
+    },
+    {
+      "id": "replication.acknowledgement",
+      "redis_mcp_tools": [],
+      "redisctl_tools": [],
+      "library_tools": [
+        "redis_wait",
+        "redis_waitaof"
+      ],
+      "disposition": "implemented",
+      "reason": "WAIT and WAITAOF run on dedicated per-call connections with capped finite timeouts and report achieved counts against the request without implying durability for writes issued on other connections. Standalone-only: the library does not claim cross-shard Cluster aggregation."
+    },
+    {
+      "id": "sessions.monitor",
+      "redis_mcp_tools": [],
+      "redisctl_tools": [],
+      "library_tools": [
+        "redis_monitor_start",
+        "redis_monitor_read",
+        "redis_monitor_close"
+      ],
+      "disposition": "implemented",
+      "reason": "MONITOR streams become owner-isolated quota-bound sessions on dedicated connections: client addresses are pseudonymized, argument values are omitted unless explicitly requested, unparseable lines are dropped rather than partially exposed, buffers drop oldest with counters, reads are finite and cancellable, and idle sessions are reaped."
+    },
+    {
+      "id": "admin.backup_lifecycle",
+      "redis_mcp_tools": [],
+      "redisctl_tools": [],
+      "library_tools": [
+        "redis_backup_start",
+        "redis_backup_seal",
+        "redis_backup_abort",
+        "redis_backup_cleanup"
+      ],
+      "disposition": "implemented",
+      "reason": "The Redis 8.10 backup state machine is driven through guarded transitions that pair with the finite redis_backup_status and redis_backup_files inspections: destructive abort and cleanup require explicit confirmation, results acknowledge transitions without filesystem paths, and the server-global nature of the lifecycle is stated rather than hidden."
+    },
+    {
       "id": "bulk.workflows",
       "redis_mcp_tools": [],
       "redisctl_tools": ["redis_bulk_load", "redis_seed"],

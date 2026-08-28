@@ -4,8 +4,9 @@ use clap::{Parser, ValueEnum};
 use std::sync::Arc;
 
 use redis_mcp::{
-    AccessMode, DirectRedis, DirectRedisCluster, DirectRedisPubSubSessionManager,
-    DirectRedisTransactions, PubSubSessionLimits, PubSubSessionManager, RawCommandPolicy,
+    AccessMode, DirectRedis, DirectRedisBlocking, DirectRedisCluster, DirectRedisMonitorSessions,
+    DirectRedisPubSubSessionManager, DirectRedisTransactions, MonitorSessionLimits,
+    MonitorSessionManager, PubSubSessionLimits, PubSubSessionManager, RawCommandPolicy,
     RedisExecutor, RedisMcp, ToolBundle,
 };
 use tower_mcp::{McpRouter, ProtocolSupport, StdioTransport};
@@ -98,19 +99,26 @@ struct Args {
     stdio: bool,
 }
 
+#[allow(clippy::too_many_arguments)]
 fn build_router(
     executor: impl RedisExecutor,
     access: AccessMode,
     raw_command_policy: RawCommandPolicy,
     optional_bundles: &[CliOptionalBundle],
     pubsub_sessions: Arc<dyn PubSubSessionManager>,
+    blocking: DirectRedisBlocking,
+    monitor_sessions: Option<Arc<dyn MonitorSessionManager>>,
     transactions: Option<DirectRedisTransactions>,
 ) -> McpRouter {
     let mut builder = RedisMcp::builder(executor)
         .access(access)
         .raw_command_policy(raw_command_policy)
         .shared_pubsub_sessions(pubsub_sessions)
+        .blocking(blocking)
         .server_info("redis-mcp-server", env!("CARGO_PKG_VERSION"));
+    if let Some(monitor_sessions) = monitor_sessions {
+        builder = builder.shared_monitor_sessions(monitor_sessions);
+    }
     if let Some(transactions) = transactions {
         builder = builder.transactions(transactions);
     }
@@ -145,12 +153,17 @@ async fn main() -> Result<(), tower_mcp::BoxError> {
         .try_init();
 
     let cluster_mode = !args.cluster_urls.is_empty();
-    let (router, pubsub_sessions): (McpRouter, Arc<dyn PubSubSessionManager>) = if cluster_mode {
+    let (router, pubsub_sessions, monitor_sessions): (
+        McpRouter,
+        Arc<dyn PubSubSessionManager>,
+        Option<Arc<dyn MonitorSessionManager>>,
+    ) = if cluster_mode {
         let executor = DirectRedisCluster::connect(&args.cluster_urls).await?;
         let sessions = Arc::new(DirectRedisPubSubSessionManager::cluster(
             &args.cluster_urls,
             PubSubSessionLimits::default(),
         )?);
+        let blocking = DirectRedisBlocking::cluster(&args.cluster_urls)?;
         let transactions = args
             .transactions
             .then(|| DirectRedisTransactions::cluster(&args.cluster_urls))
@@ -162,9 +175,14 @@ async fn main() -> Result<(), tower_mcp::BoxError> {
                 raw_command_policy,
                 &args.optional_bundles,
                 sessions.clone(),
+                blocking,
+                // MONITOR streams are node-local; the standalone server does
+                // not select a Cluster node to observe.
+                None,
                 transactions,
             ),
             sessions,
+            None,
         )
     } else {
         let url = args.url.as_deref().unwrap_or("redis://127.0.0.1:6379");
@@ -173,6 +191,10 @@ async fn main() -> Result<(), tower_mcp::BoxError> {
             url,
             PubSubSessionLimits::default(),
         )?);
+        let blocking = DirectRedisBlocking::standalone(url)?;
+        let monitor_sessions: Arc<dyn MonitorSessionManager> = Arc::new(
+            DirectRedisMonitorSessions::standalone(url, MonitorSessionLimits::default())?,
+        );
         let transactions = args
             .transactions
             .then(|| DirectRedisTransactions::standalone(url))
@@ -184,9 +206,12 @@ async fn main() -> Result<(), tower_mcp::BoxError> {
                 raw_command_policy,
                 &args.optional_bundles,
                 sessions.clone(),
+                blocking,
+                Some(monitor_sessions.clone()),
                 transactions,
             ),
             sessions,
+            Some(monitor_sessions),
         )
     };
 
@@ -207,6 +232,9 @@ async fn main() -> Result<(), tower_mcp::BoxError> {
     tokio::spawn(async move {
         handle.stopping().await;
         pubsub_sessions.shutdown().await;
+        if let Some(monitor_sessions) = monitor_sessions {
+            monitor_sessions.shutdown().await;
+        }
     });
     transport.run().await?;
     Ok(())

@@ -331,7 +331,22 @@ impl ToolMetadata {
             | "redis_acl_log"
             | "redis_acl_log_reset" => Some(RedisVersion::new(6, 0, 0)),
             "redis_acl_dryrun" => Some(RedisVersion::new(7, 0, 0)),
-            "redis_backup_status" | "redis_backup_files" => Some(RedisVersion::new(8, 10, 0)),
+            "redis_backup_status"
+            | "redis_backup_files"
+            | "redis_backup_start"
+            | "redis_backup_seal"
+            | "redis_backup_abort"
+            | "redis_backup_cleanup" => Some(RedisVersion::new(8, 10, 0)),
+            // Fractional second timeouts require Redis 6.0; the millisecond
+            // MCP contract therefore gates the whole blocking pop family.
+            "redis_blpop" | "redis_brpop" | "redis_bzpopmin" | "redis_bzpopmax" => {
+                Some(RedisVersion::new(6, 0, 0))
+            }
+            "redis_blmove" => Some(RedisVersion::new(6, 2, 0)),
+            "redis_blmpop" | "redis_bzmpop" => Some(RedisVersion::new(7, 0, 0)),
+            "redis_blmovem" => Some(RedisVersion::new(8, 10, 0)),
+            "redis_wait" => Some(RedisVersion::new(3, 0, 0)),
+            "redis_waitaof" => Some(RedisVersion::new(7, 2, 0)),
             "redis_cluster_inspect" => Some(RedisVersion::new(8, 4, 0)),
             "redis_cluster_slot_stats" => Some(RedisVersion::new(8, 2, 0)),
             "redis_cluster_slot" => Some(RedisVersion::new(5, 0, 0)),
@@ -507,7 +522,23 @@ impl ToolMetadata {
             | "redis_acl_dryrun"
             | "redis_acl_log"
             | "redis_acl_log_reset" => &["ACL"],
-            "redis_backup_status" | "redis_backup_files" => &["BACKUP"],
+            "redis_backup_status"
+            | "redis_backup_files"
+            | "redis_backup_start"
+            | "redis_backup_seal"
+            | "redis_backup_abort"
+            | "redis_backup_cleanup" => &["BACKUP"],
+            "redis_blpop" => &["BLPOP"],
+            "redis_brpop" => &["BRPOP"],
+            "redis_blmove" => &["BLMOVE"],
+            "redis_blmovem" => &["BLMOVEM"],
+            "redis_blmpop" => &["BLMPOP"],
+            "redis_bzpopmin" => &["BZPOPMIN"],
+            "redis_bzpopmax" => &["BZPOPMAX"],
+            "redis_bzmpop" => &["BZMPOP"],
+            "redis_wait" => &["WAIT"],
+            "redis_waitaof" => &["WAITAOF"],
+            "redis_monitor_start" | "redis_monitor_read" | "redis_monitor_close" => &["MONITOR"],
             "redis_cluster_inspect" | "redis_cluster_slot" | "redis_cluster_slot_stats" => {
                 &["CLUSTER"]
             }
@@ -790,10 +821,22 @@ impl ToolMetadata {
             | "redis_acl_log_reset"
             | "redis_backup_status"
             | "redis_backup_files"
+            | "redis_backup_start"
+            | "redis_backup_seal"
+            | "redis_backup_abort"
+            | "redis_backup_cleanup"
             | "redis_config_get"
             | "redis_server_state"
             | "redis_client_control"
             | "redis_swapdb" => ToolDeploymentRequirement::Standalone,
+            // WAIT and WAITAOF report the answering node's replication state;
+            // the library does not aggregate them across Cluster shards.
+            // MONITOR streams are node-local by definition.
+            "redis_wait"
+            | "redis_waitaof"
+            | "redis_monitor_start"
+            | "redis_monitor_read"
+            | "redis_monitor_close" => ToolDeploymentRequirement::Standalone,
             // RedisTimeSeries multi-series queries only observe the node that
             // answers them; OSS Cluster has no database-wide TS coordinator.
             "redis_ts_mget" | "redis_ts_mrange" | "redis_ts_mrevrange" | "redis_ts_queryindex" => {
@@ -887,6 +930,15 @@ impl ToolMetadata {
             | "redis_pubsub_channels"
             | "redis_pubsub_shardchannels"
             | "redis_pubsub_read"
+            | "redis_blpop"
+            | "redis_brpop"
+            | "redis_blmove"
+            | "redis_blmovem"
+            | "redis_blmpop"
+            | "redis_bzpopmin"
+            | "redis_bzpopmax"
+            | "redis_bzmpop"
+            | "redis_monitor_read"
             | "redis_hrandfield"
             | "redis_sort"
             | "redis_eval"
@@ -1071,6 +1123,30 @@ pub(crate) const CATALOG: &[ToolMetadata] = &[
         name: "redis_backup_files",
         bundle: ToolBundle::Admin,
         required_access: AccessMode::ReadOnly,
+        requires_raw_opt_in: false,
+    },
+    ToolMetadata {
+        name: "redis_backup_start",
+        bundle: ToolBundle::Admin,
+        required_access: AccessMode::Full,
+        requires_raw_opt_in: false,
+    },
+    ToolMetadata {
+        name: "redis_backup_seal",
+        bundle: ToolBundle::Admin,
+        required_access: AccessMode::Full,
+        requires_raw_opt_in: false,
+    },
+    ToolMetadata {
+        name: "redis_backup_abort",
+        bundle: ToolBundle::Admin,
+        required_access: AccessMode::Full,
+        requires_raw_opt_in: false,
+    },
+    ToolMetadata {
+        name: "redis_backup_cleanup",
+        bundle: ToolBundle::Admin,
+        required_access: AccessMode::Full,
         requires_raw_opt_in: false,
     },
     ToolMetadata {
@@ -1329,6 +1405,84 @@ pub(crate) const CATALOG: &[ToolMetadata] = &[
         name: "redis_pubsub_close",
         bundle: ToolBundle::Sessions,
         required_access: AccessMode::ReadOnly,
+        requires_raw_opt_in: false,
+    },
+    ToolMetadata {
+        name: "redis_blpop",
+        bundle: ToolBundle::Sessions,
+        required_access: AccessMode::Full,
+        requires_raw_opt_in: false,
+    },
+    ToolMetadata {
+        name: "redis_brpop",
+        bundle: ToolBundle::Sessions,
+        required_access: AccessMode::Full,
+        requires_raw_opt_in: false,
+    },
+    ToolMetadata {
+        name: "redis_blmove",
+        bundle: ToolBundle::Sessions,
+        required_access: AccessMode::Full,
+        requires_raw_opt_in: false,
+    },
+    ToolMetadata {
+        name: "redis_blmovem",
+        bundle: ToolBundle::Sessions,
+        required_access: AccessMode::Full,
+        requires_raw_opt_in: false,
+    },
+    ToolMetadata {
+        name: "redis_blmpop",
+        bundle: ToolBundle::Sessions,
+        required_access: AccessMode::Full,
+        requires_raw_opt_in: false,
+    },
+    ToolMetadata {
+        name: "redis_bzpopmin",
+        bundle: ToolBundle::Sessions,
+        required_access: AccessMode::Full,
+        requires_raw_opt_in: false,
+    },
+    ToolMetadata {
+        name: "redis_bzpopmax",
+        bundle: ToolBundle::Sessions,
+        required_access: AccessMode::Full,
+        requires_raw_opt_in: false,
+    },
+    ToolMetadata {
+        name: "redis_bzmpop",
+        bundle: ToolBundle::Sessions,
+        required_access: AccessMode::Full,
+        requires_raw_opt_in: false,
+    },
+    ToolMetadata {
+        name: "redis_wait",
+        bundle: ToolBundle::Sessions,
+        required_access: AccessMode::Full,
+        requires_raw_opt_in: false,
+    },
+    ToolMetadata {
+        name: "redis_waitaof",
+        bundle: ToolBundle::Sessions,
+        required_access: AccessMode::Full,
+        requires_raw_opt_in: false,
+    },
+    ToolMetadata {
+        name: "redis_monitor_start",
+        bundle: ToolBundle::Sessions,
+        required_access: AccessMode::Full,
+        requires_raw_opt_in: false,
+    },
+    ToolMetadata {
+        name: "redis_monitor_read",
+        bundle: ToolBundle::Sessions,
+        required_access: AccessMode::Full,
+        requires_raw_opt_in: false,
+    },
+    ToolMetadata {
+        name: "redis_monitor_close",
+        bundle: ToolBundle::Sessions,
+        required_access: AccessMode::Full,
         requires_raw_opt_in: false,
     },
     ToolMetadata {

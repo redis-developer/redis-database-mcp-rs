@@ -2,6 +2,8 @@
 
 #[cfg(feature = "admin")]
 mod admin;
+#[cfg(feature = "sessions")]
+mod blocking;
 mod bulk;
 #[cfg(any(
     feature = "hashes",
@@ -26,6 +28,8 @@ mod json_tools;
     feature = "streams"
 ))]
 mod modern_data;
+#[cfg(feature = "sessions")]
+mod monitor;
 #[cfg(feature = "pubsub")]
 mod pubsub;
 #[cfg(feature = "sessions")]
@@ -79,9 +83,12 @@ pub(crate) struct ToolState {
     pub(crate) pubsub_sessions: Option<Arc<dyn PubSubSessionManager>>,
     transactions: Option<crate::RedisTransactionEngine>,
     bulk_limits: crate::RedisBulkLimits,
+    blocking: Option<crate::RedisBlockingEngine>,
+    pub(crate) monitor_sessions: Option<Arc<dyn crate::MonitorSessionManager>>,
 }
 
 impl ToolState {
+    #[allow(clippy::too_many_arguments)]
     pub(crate) fn new(
         access: AccessMode,
         output_budget: OutputBudget,
@@ -89,6 +96,8 @@ impl ToolState {
         pubsub_sessions: Option<Arc<dyn PubSubSessionManager>>,
         transactions: Option<crate::RedisTransactionEngine>,
         bulk_limits: crate::RedisBulkLimits,
+        blocking: Option<crate::RedisBlockingEngine>,
+        monitor_sessions: Option<Arc<dyn crate::MonitorSessionManager>>,
     ) -> Self {
         Self {
             access,
@@ -97,6 +106,8 @@ impl ToolState {
             pubsub_sessions,
             transactions,
             bulk_limits,
+            blocking,
+            monitor_sessions,
         }
     }
 
@@ -131,6 +142,20 @@ impl ToolState {
         self.pubsub_sessions
             .clone()
             .ok_or_else(|| tower_mcp::Error::tool("Pub/Sub session manager is not configured"))
+    }
+
+    #[cfg(feature = "sessions")]
+    fn blocking(&self) -> tower_mcp::Result<&crate::RedisBlockingEngine> {
+        self.blocking
+            .as_ref()
+            .ok_or_else(|| tower_mcp::Error::tool("the blocking executor is not configured"))
+    }
+
+    #[cfg(feature = "sessions")]
+    fn monitor_sessions(&self) -> tower_mcp::Result<Arc<dyn crate::MonitorSessionManager>> {
+        self.monitor_sessions
+            .clone()
+            .ok_or_else(|| tower_mcp::Error::tool("MONITOR session manager is not configured"))
     }
 
     fn require_tool_capabilities(&self, tool_name: &str) -> tower_mcp::Result<()> {
@@ -542,7 +567,7 @@ pub(crate) fn add_read_only_tools(
         router = diagnostics::add_read_tools(router, state.clone());
     }
     #[cfg(feature = "sessions")]
-    if bundles.contains(&ToolBundle::Sessions) {
+    if bundles.contains(&ToolBundle::Sessions) && state.pubsub_sessions.is_some() {
         router = pubsub_sessions::add_tools(router, state.clone());
     }
     #[cfg(feature = "admin")]
@@ -863,6 +888,15 @@ pub(crate) fn add_destructive_tools(
         ToolBundle::Scripting,
     ) {
         router = scripting::add_full_tools(router, state.clone());
+    }
+    #[cfg(feature = "sessions")]
+    if bundles.contains(&ToolBundle::Sessions) {
+        if state.blocking.is_some() {
+            router = blocking::add_tools(router, state.clone());
+        }
+        if state.monitor_sessions.is_some() {
+            router = monitor::add_tools(router, state.clone());
+        }
     }
     #[cfg(feature = "admin")]
     if bundles.contains(&ToolBundle::Admin) {

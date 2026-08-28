@@ -16,6 +16,7 @@ readme = "README.md"
 async-trait = "0.1"
 base64 = "0.23"
 clap = { version = "4", features = ["derive", "env"] }
+futures-util = { version = "0.3", default-features = false }
 pretty_assertions = "1.4"
 rand = "0.10"
 redis = { version = "1.5", default-features = false, features = ["cluster-async", "connection-manager", "tokio-rustls-comp"] }

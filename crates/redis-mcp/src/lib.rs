@@ -9,12 +9,14 @@
 #![cfg_attr(not(feature = "full"), allow(dead_code, unused_mut, unused_variables))]
 
 mod access;
+mod blocking;
 mod bulk;
 mod capabilities;
 mod catalog;
 mod executor;
 pub mod families;
 mod invocation;
+mod monitor;
 mod output;
 mod pubsub_sessions;
 mod raw;
@@ -24,6 +26,14 @@ mod transactions;
 use std::{collections::BTreeSet, sync::Arc, time::Duration};
 
 pub use access::AccessMode;
+pub use blocking::{
+    DEFAULT_MAX_BLOCKING_COUNT, DEFAULT_MAX_BLOCKING_KEYS, DEFAULT_MAX_BLOCKING_TIMEOUT,
+    DEFAULT_MAX_CONCURRENT_BLOCKING_CALLS, DirectRedisBlocking, RedisBlockingEngine,
+    RedisBlockingExecutor, RedisBlockingLimits, RedisBlockingListMultiPop, RedisBlockingListPop,
+    RedisBlockingMoveAmount, RedisBlockingMoveOrdering, RedisBlockingScoredMultiPop,
+    RedisBlockingScoredPop, RedisListEnd, RedisPreparedBlockingCall, RedisSortedSetEnd,
+    RedisWaitAofAcknowledged,
+};
 pub use bulk::{
     BulkBatchSummary, BulkErrorHandling, BulkLoadOptions, BulkLoadReport, BulkLoadRequest,
     BulkRecord, BulkRecordFailure, BulkRecordValue, BulkSeedField, BulkSeedRequest,
@@ -49,6 +59,16 @@ pub use invocation::{
     NativeCommandMetadata, NativeRedisInvocation, NativeRedisResponse, RedisInvocationEngine,
     RedisInvocationEngineBuildError, RedisInvocationEngineBuilder, RedisOutputLimit,
     RedisOutputLimitDimension,
+};
+pub use monitor::{
+    DEFAULT_MAX_MONITOR_BUFFERED_EVENTS, DEFAULT_MAX_MONITOR_EVENT_BYTES,
+    DEFAULT_MAX_MONITOR_READ_BYTES, DEFAULT_MAX_MONITOR_READ_DURATION,
+    DEFAULT_MAX_MONITOR_SESSIONS, DEFAULT_MAX_MONITOR_SESSIONS_PER_OWNER,
+    DEFAULT_MONITOR_CLEANUP_INTERVAL, DEFAULT_MONITOR_IDLE_TIMEOUT,
+    DEFAULT_MONITOR_OPERATION_TIMEOUT, DirectRedisMonitorSessions, MonitorEvent,
+    MonitorReadRequest, MonitorReadResult, MonitorSessionLimits, MonitorSessionManager,
+    MonitorSessionOptions, MonitorSessionSnapshot, RedisSessionError, RedisSessionErrorKind,
+    RedisSessionOwner,
 };
 pub use output::{DEFAULT_MAX_OUTPUT_BYTES, DEFAULT_MAX_OUTPUT_ENTRIES, OutputBudget};
 pub use pubsub_sessions::{
@@ -87,6 +107,23 @@ impl Drop for PubSubOwnerCleanup {
     }
 }
 
+struct MonitorOwnerCleanup {
+    manager: Arc<dyn MonitorSessionManager>,
+    owner: PubSubSessionOwner,
+}
+
+impl Drop for MonitorOwnerCleanup {
+    fn drop(&mut self) {
+        let manager = self.manager.clone();
+        let owner = self.owner.clone();
+        if let Ok(runtime) = tokio::runtime::Handle::try_current() {
+            runtime.spawn(async move {
+                manager.close_owner(&owner).await;
+            });
+        }
+    }
+}
+
 /// Default upper bound for one Redis command executed by a tool.
 pub const DEFAULT_COMMAND_TIMEOUT: Duration = Duration::from_secs(30);
 
@@ -108,6 +145,9 @@ impl RedisMcp {
             transactions: None,
             transaction_limits: RedisTransactionLimits::default(),
             bulk_limits: RedisBulkLimits::default(),
+            blocking: None,
+            blocking_limits: RedisBlockingLimits::default(),
+            monitor_sessions: None,
             capabilities: RedisCapabilities::unknown(),
             unavailable_tool_policy: UnavailableToolPolicy::Advertise,
             server_name: "redis-mcp".to_string(),
@@ -129,6 +169,9 @@ pub struct RedisMcpBuilder {
     transactions: Option<Arc<dyn RedisTransactionExecutor>>,
     transaction_limits: RedisTransactionLimits,
     bulk_limits: RedisBulkLimits,
+    blocking: Option<Arc<dyn RedisBlockingExecutor>>,
+    blocking_limits: RedisBlockingLimits,
+    monitor_sessions: Option<Arc<dyn MonitorSessionManager>>,
     capabilities: RedisCapabilities,
     unavailable_tool_policy: UnavailableToolPolicy,
     server_name: String,
@@ -249,6 +292,51 @@ impl RedisMcpBuilder {
         self
     }
 
+    /// Enable finite blocking operations with a host-supplied dedicated
+    /// connection executor.
+    ///
+    /// The executor is independent of [`RedisExecutor`], because a blocking
+    /// wait must hold one dedicated connection per call rather than a pooled
+    /// request/response command. This method also enables
+    /// [`ToolBundle::Sessions`].
+    pub fn blocking(mut self, executor: impl RedisBlockingExecutor) -> Self {
+        self.blocking = Some(Arc::new(executor));
+        self.bundles.insert(ToolBundle::Sessions);
+        self
+    }
+
+    /// Enable finite blocking operations with a shared executor trait object.
+    pub fn shared_blocking(mut self, executor: Arc<dyn RedisBlockingExecutor>) -> Self {
+        self.blocking = Some(executor);
+        self.bundles.insert(ToolBundle::Sessions);
+        self
+    }
+
+    /// Replace the default blocking-call bounds.
+    pub fn blocking_limits(mut self, limits: RedisBlockingLimits) -> Self {
+        self.blocking_limits = limits;
+        self
+    }
+
+    /// Enable owner-isolated MONITOR sessions with a host-supplied lifecycle
+    /// manager.
+    ///
+    /// The manager is independent of [`RedisExecutor`], because MONITOR
+    /// converts a dedicated connection into an indefinite server-push stream.
+    /// This method also enables [`ToolBundle::Sessions`].
+    pub fn monitor_sessions(mut self, manager: impl MonitorSessionManager) -> Self {
+        self.monitor_sessions = Some(Arc::new(manager));
+        self.bundles.insert(ToolBundle::Sessions);
+        self
+    }
+
+    /// Enable MONITOR sessions with a shared manager trait object.
+    pub fn shared_monitor_sessions(mut self, manager: Arc<dyn MonitorSessionManager>) -> Self {
+        self.monitor_sessions = Some(manager);
+        self.bundles.insert(ToolBundle::Sessions);
+        self
+    }
+
     /// Enable the bounded atomic transaction tool with a host-supplied
     /// transaction executor.
     ///
@@ -335,8 +423,15 @@ impl RedisMcpBuilder {
         }
         let sessions_enabled =
             cfg!(feature = "sessions") && self.bundles.contains(&ToolBundle::Sessions);
-        if sessions_enabled && self.pubsub_sessions.is_none() {
+        if sessions_enabled
+            && self.pubsub_sessions.is_none()
+            && self.blocking.is_none()
+            && self.monitor_sessions.is_none()
+        {
             return Err(RedisMcpBuildError::SessionsRequireManager);
+        }
+        if sessions_enabled && self.blocking.is_some() && self.blocking_limits.validate().is_err() {
+            return Err(RedisMcpBuildError::InvalidBlockingLimits);
         }
         let transactions_enabled =
             cfg!(feature = "transactions") && self.bundles.contains(&ToolBundle::Transactions);
@@ -367,8 +462,11 @@ impl RedisMcpBuilder {
             self.output_budget,
             capabilities.clone(),
         );
-        let pubsub_owner =
-            (sessions_enabled && self.pubsub_sessions.is_some()).then(PubSubSessionOwner::random);
+        let session_owner = (sessions_enabled
+            && (self.pubsub_sessions.is_some()
+                || self.blocking.is_some()
+                || self.monitor_sessions.is_some()))
+        .then(PubSubSessionOwner::random);
         let transaction_engine = transactions_enabled
             .then_some(self.transactions)
             .flatten()
@@ -376,6 +474,13 @@ impl RedisMcpBuilder {
                 RedisTransactionEngine::from_shared(invocation_engine.clone(), executor)
                     .with_limits(self.transaction_limits)
             });
+        let blocking_engine = sessions_enabled
+            .then_some(self.blocking)
+            .flatten()
+            .map(|executor| {
+                RedisBlockingEngine::from_shared(executor).with_limits(self.blocking_limits)
+            });
+        let monitor_sessions = sessions_enabled.then_some(self.monitor_sessions).flatten();
         let state = Arc::new(tools::ToolState::new(
             self.access,
             self.output_budget,
@@ -383,15 +488,24 @@ impl RedisMcpBuilder {
             self.pubsub_sessions,
             transaction_engine,
             self.bulk_limits,
+            blocking_engine,
+            monitor_sessions,
         ));
         let mut router = McpRouter::new().server_info(self.server_name, self.server_version);
-        if let (Some(manager), Some(owner)) = (&state.pubsub_sessions, pubsub_owner) {
-            router = router
-                .with_extension(owner.clone())
-                .with_extension(Arc::new(PubSubOwnerCleanup {
+        if let Some(owner) = session_owner {
+            router = router.with_extension(owner.clone());
+            if let Some(manager) = &state.pubsub_sessions {
+                router = router.with_extension(Arc::new(PubSubOwnerCleanup {
+                    manager: manager.clone(),
+                    owner: owner.clone(),
+                }));
+            }
+            if let Some(manager) = &state.monitor_sessions {
+                router = router.with_extension(Arc::new(MonitorOwnerCleanup {
                     manager: manager.clone(),
                     owner,
                 }));
+            }
         }
         router = tools::add_read_only_tools(
             router,
@@ -458,8 +572,12 @@ pub enum RedisMcpBuildError {
     /// Governed argv invocation tools classify through the raw command policy
     /// and require it to be enabled.
     InvocationRequiresRawCommands,
-    /// Stateful Pub/Sub tools require an explicit lifecycle manager.
+    /// Stateful session tools require at least one explicit lifecycle
+    /// backend: a Pub/Sub session manager, a blocking executor, or a MONITOR
+    /// session manager.
     SessionsRequireManager,
+    /// Blocking timeout, key, and count bounds must be non-zero.
+    InvalidBlockingLimits,
     /// Atomic transactions require an explicit dedicated-connection executor.
     TransactionsRequireExecutor,
     /// Transactions execute argv-shaped nested commands and therefore require
@@ -490,8 +608,11 @@ impl std::fmt::Display for RedisMcpBuildError {
             Self::InvocationRequiresRawCommands => {
                 formatter.write_str("the invocation bundle requires an enabled raw command policy")
             }
-            Self::SessionsRequireManager => {
-                formatter.write_str("the sessions bundle requires a Pub/Sub session manager")
+            Self::SessionsRequireManager => formatter.write_str(
+                "the sessions bundle requires a Pub/Sub session manager, a blocking executor, or a MONITOR session manager",
+            ),
+            Self::InvalidBlockingLimits => {
+                formatter.write_str("blocking limits must all be greater than zero")
             }
             Self::TransactionsRequireExecutor => {
                 formatter.write_str("the transactions bundle requires a transaction executor")

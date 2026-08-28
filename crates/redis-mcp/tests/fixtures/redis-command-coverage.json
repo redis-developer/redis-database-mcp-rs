@@ -368,18 +368,22 @@
       "disposition": "session",
       "access": "full",
       "cluster_behavior": "node_local",
-      "tools": [],
+      "tools": [
+        "redis_backup_abort"
+      ],
       "tracking_issue": 66,
-      "rationale": "The server-global backup lifecycle requires owned state, sequencing, cleanup, and recovery rather than unrelated request/response calls; the workflow remains tracked by issue #66."
+      "rationale": "The destructive server-global backup lifecycle transition runs through the guarded redis_backup_abort tool with explicit confirmation and no filesystem paths."
     },
     {
       "name": "BACKUP CLEANUP",
       "disposition": "session",
       "access": "full",
       "cluster_behavior": "node_local",
-      "tools": [],
+      "tools": [
+        "redis_backup_cleanup"
+      ],
       "tracking_issue": 66,
-      "rationale": "The server-global backup lifecycle requires owned state, sequencing, cleanup, and recovery rather than unrelated request/response calls; the workflow remains tracked by issue #66."
+      "rationale": "The destructive server-global backup lifecycle transition runs through the guarded redis_backup_cleanup tool with explicit confirmation and no filesystem paths."
     },
     {
       "name": "BACKUP HELP",
@@ -406,18 +410,22 @@
       "disposition": "session",
       "access": "full",
       "cluster_behavior": "node_local",
-      "tools": [],
+      "tools": [
+        "redis_backup_seal"
+      ],
       "tracking_issue": 66,
-      "rationale": "The server-global backup lifecycle requires owned state, sequencing, cleanup, and recovery rather than unrelated request/response calls; the workflow remains tracked by issue #66."
+      "rationale": "The server-global backup lifecycle transition runs through the guarded redis_backup_seal tool with explicit state reporting and no filesystem paths."
     },
     {
       "name": "BACKUP START",
       "disposition": "session",
       "access": "full",
       "cluster_behavior": "node_local",
-      "tools": [],
+      "tools": [
+        "redis_backup_start"
+      ],
       "tracking_issue": 66,
-      "rationale": "The server-global backup lifecycle requires owned state, sequencing, cleanup, and recovery rather than unrelated request/response calls; the workflow remains tracked by issue #66."
+      "rationale": "The server-global backup lifecycle transition runs through the guarded redis_backup_start tool with explicit state reporting and no filesystem paths."
     },
     {
       "name": "BACKUP STATUS",
@@ -498,45 +506,55 @@
       "disposition": "session",
       "access": "full",
       "cluster_behavior": "key_routed",
-      "tools": [],
+      "tools": [
+        "redis_blmove"
+      ],
       "tracking_issue": 66,
-      "rationale": "Blocking or streaming behavior requires a finite owner-isolated lifecycle rather than an ordinary tool call."
+      "rationale": "Finite blocking moves run through the bounded redis_blmove tool on one dedicated per-call connection with a server-capped timeout and an explicit timeout result."
     },
     {
       "name": "BLMOVEM",
       "disposition": "session",
       "access": "full",
       "cluster_behavior": "key_routed",
-      "tools": [],
+      "tools": [
+        "redis_blmovem"
+      ],
       "tracking_issue": 66,
-      "rationale": "Blocking or streaming behavior requires a finite owner-isolated lifecycle rather than an ordinary tool call."
+      "rationale": "Finite blocking multi-moves run through the bounded redis_blmovem tool on one dedicated per-call connection with a server-capped timeout, a bounded element count, and an explicit timeout result."
     },
     {
       "name": "BLMPOP",
       "disposition": "session",
       "access": "full",
       "cluster_behavior": "key_routed",
-      "tools": [],
+      "tools": [
+        "redis_blmpop"
+      ],
       "tracking_issue": 66,
-      "rationale": "Blocking or streaming behavior requires a finite owner-isolated lifecycle rather than an ordinary tool call."
+      "rationale": "Finite blocking counted pops run through the bounded redis_blmpop tool on one dedicated per-call connection with a server-capped timeout, a bounded element count, and an explicit timeout result."
     },
     {
       "name": "BLPOP",
       "disposition": "session",
       "access": "full",
       "cluster_behavior": "key_routed",
-      "tools": [],
+      "tools": [
+        "redis_blpop"
+      ],
       "tracking_issue": 66,
-      "rationale": "Blocking or streaming behavior requires a finite owner-isolated lifecycle rather than an ordinary tool call."
+      "rationale": "Finite blocking pops run through the bounded redis_blpop tool on one dedicated per-call connection with a server-capped timeout and an explicit timeout result."
     },
     {
       "name": "BRPOP",
       "disposition": "session",
       "access": "full",
       "cluster_behavior": "key_routed",
-      "tools": [],
+      "tools": [
+        "redis_brpop"
+      ],
       "tracking_issue": 66,
-      "rationale": "Blocking or streaming behavior requires a finite owner-isolated lifecycle rather than an ordinary tool call."
+      "rationale": "Finite blocking pops run through the bounded redis_brpop tool on one dedicated per-call connection with a server-capped timeout and an explicit timeout result."
     },
     {
       "name": "BRPOPLPUSH",
@@ -554,27 +572,33 @@
       "disposition": "session",
       "access": "full",
       "cluster_behavior": "key_routed",
-      "tools": [],
+      "tools": [
+        "redis_bzmpop"
+      ],
       "tracking_issue": 66,
-      "rationale": "Blocking or streaming behavior requires a finite owner-isolated lifecycle rather than an ordinary tool call."
+      "rationale": "Finite blocking counted scored pops run through the bounded redis_bzmpop tool on one dedicated per-call connection with a server-capped timeout, a bounded member count, and an explicit timeout result."
     },
     {
       "name": "BZPOPMAX",
       "disposition": "session",
       "access": "full",
       "cluster_behavior": "key_routed",
-      "tools": [],
+      "tools": [
+        "redis_bzpopmax"
+      ],
       "tracking_issue": 66,
-      "rationale": "Blocking or streaming behavior requires a finite owner-isolated lifecycle rather than an ordinary tool call."
+      "rationale": "Finite blocking scored pops run through the bounded redis_bzpopmax tool on one dedicated per-call connection with a server-capped timeout and an explicit timeout result."
     },
     {
       "name": "BZPOPMIN",
       "disposition": "session",
       "access": "full",
       "cluster_behavior": "key_routed",
-      "tools": [],
+      "tools": [
+        "redis_bzpopmin"
+      ],
       "tracking_issue": 66,
-      "rationale": "Blocking or streaming behavior requires a finite owner-isolated lifecycle rather than an ordinary tool call."
+      "rationale": "Finite blocking scored pops run through the bounded redis_bzpopmin tool on one dedicated per-call connection with a server-capped timeout and an explicit timeout result."
     },
     {
       "name": "CLIENT",
@@ -2658,9 +2682,13 @@
       "disposition": "session",
       "access": "full",
       "cluster_behavior": "node_local",
-      "tools": [],
+      "tools": [
+        "redis_monitor_start",
+        "redis_monitor_read",
+        "redis_monitor_close"
+      ],
       "tracking_issue": 66,
-      "rationale": "Blocking or streaming behavior requires a finite owner-isolated lifecycle rather than an ordinary tool call."
+      "rationale": "Streaming inspection is implemented through owner-isolated bounded MONITOR session tools with pseudonymous clients, argument redaction by default, drop-oldest buffers, finite reads, idle reaping, and explicit close."
     },
     {
       "name": "MOVE",
@@ -3928,18 +3956,22 @@
       "disposition": "session",
       "access": "full",
       "cluster_behavior": "all_shards",
-      "tools": [],
+      "tools": [
+        "redis_wait"
+      ],
       "tracking_issue": 66,
-      "rationale": "Blocking or streaming behavior requires a finite owner-isolated lifecycle rather than an ordinary tool call."
+      "rationale": "Replication acknowledgement runs through the bounded redis_wait tool on one dedicated per-call connection, reporting achieved counts against the request without implying durability beyond Redis semantics."
     },
     {
       "name": "WAITAOF",
       "disposition": "session",
       "access": "full",
       "cluster_behavior": "all_shards",
-      "tools": [],
+      "tools": [
+        "redis_waitaof"
+      ],
       "tracking_issue": 66,
-      "rationale": "Blocking or streaming behavior requires a finite owner-isolated lifecycle rather than an ordinary tool call."
+      "rationale": "AOF acknowledgement runs through the bounded redis_waitaof tool on one dedicated per-call connection, reporting achieved local and replica counts without implying durability beyond Redis semantics."
     },
     {
       "name": "WATCH",

@@ -433,6 +433,36 @@ while executing nothing. Connection loss or timeout after EXEC left the client
 reports `TRANSACTION_OUTCOME_UNKNOWN` semantics; the library never replays a
 possibly committed transaction.
 
+Blocking and streaming commands get the same dedicated-connection treatment
+instead of being forced into ordinary request/response calls. The `sessions`
+bundle's finite blocking tools (`BLPOP`/`BRPOP`, `BLMOVE`, the Redis 8.10
+`BLMOVEM`, `BLMPOP`/`BZMPOP`, `BZPOPMIN`/`BZPOPMAX`, `WAIT`, and `WAITAOF`)
+run through `RedisBlockingEngine` over the public `RedisBlockingExecutor`
+boundary: every call requires a positive, engine-capped timeout, dials one
+fresh connection under a client deadline that always exceeds the server
+timeout, and never replays a command after it may have been delivered,
+because a replayed blocking pop could consume a second element.
+`DirectRedisBlocking` bounds concurrent dedicated connections with a
+semaphore and disables Cluster request retries; multi-key routing follows the
+first key while the server rejects cross-slot lists. A server-side timeout is
+a typed result, not an error, and WAIT/WAITAOF report achieved counts on a
+fresh connection without implying durability for writes issued elsewhere.
+
+MONITOR reuses the owner-isolated session shape through the
+`MonitorSessionManager` boundary and `DirectRedisMonitorSessions`: an opaque
+handle owns one dedicated monitoring connection whose events are parsed and
+redacted at capture time — client addresses become stable per-session
+pseudonyms, argument values are omitted unless the session opted in at start,
+and lines that do not parse are counted and dropped rather than partially
+exposed. Buffers drop oldest with explicit counters, reads are finite and
+cancellable, per-owner and global quotas are far below the Pub/Sub ceilings
+because MONITOR reduces server throughput, and idle or disconnected sessions
+are reaped. The Redis 8.10 backup lifecycle lands in the admin bundle as four
+guarded transitions built on the shared executor: `redis_backup_start`,
+`redis_backup_seal`, and the confirmation-gated `redis_backup_abort` and
+`redis_backup_cleanup` acknowledge server-global state changes, pair with the
+finite status and file-count inspections, and never return filesystem paths.
+
 ## Output budgets and continuation contracts
 
 `OutputBudget` is host policy applied after each typed tool has built its

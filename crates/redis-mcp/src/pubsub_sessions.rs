@@ -1345,7 +1345,7 @@ fn redis_value_bytes(value: &redis::Value) -> Option<Vec<u8>> {
     }
 }
 
-fn random_identifier(prefix: &str) -> String {
+pub(crate) fn random_identifier(prefix: &str) -> String {
     let value: [u8; 16] = rand::random();
     let mut result = String::with_capacity(prefix.len() + 1 + value.len() * 2);
     result.push_str(prefix);

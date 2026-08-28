@@ -2,6 +2,7 @@
 
 #[cfg(feature = "admin")]
 mod admin;
+mod bulk;
 #[cfg(any(
     feature = "hashes",
     feature = "lists",
@@ -77,6 +78,7 @@ pub(crate) struct ToolState {
     invocation_engine: RedisInvocationEngine,
     pub(crate) pubsub_sessions: Option<Arc<dyn PubSubSessionManager>>,
     transactions: Option<crate::RedisTransactionEngine>,
+    bulk_limits: crate::RedisBulkLimits,
 }
 
 impl ToolState {
@@ -86,6 +88,7 @@ impl ToolState {
         invocation_engine: RedisInvocationEngine,
         pubsub_sessions: Option<Arc<dyn PubSubSessionManager>>,
         transactions: Option<crate::RedisTransactionEngine>,
+        bulk_limits: crate::RedisBulkLimits,
     ) -> Self {
         Self {
             access,
@@ -93,7 +96,12 @@ impl ToolState {
             invocation_engine,
             pubsub_sessions,
             transactions,
+            bulk_limits,
         }
+    }
+
+    fn bulk_engine(&self) -> crate::RedisBulkEngine {
+        crate::RedisBulkEngine::new(self.invocation_engine.clone()).with_limits(self.bulk_limits)
     }
 
     #[cfg(feature = "transactions")]
@@ -693,7 +701,10 @@ pub(crate) fn add_write_tools(
         ToolFamily::TimeSeries,
         ToolBundle::TimeSeries,
     ) {
-        router = timeseries::add_write_tools(router, state);
+        router = timeseries::add_write_tools(router, state.clone());
+    }
+    if bundles.contains(&ToolBundle::Bulk) {
+        router = bulk::add_write_tools(router, state);
     }
     router
 }

@@ -156,6 +156,7 @@ The standalone default exposes 201 broadly useful tools:
 - optional bounded atomic transactions: `redis_transaction`
 - optional governed argv invocation tiers: `redis_command_readonly`,
   `redis_command_write`, `redis_command_metadata`, `redis_command_inventory`
+- optional bounded bulk workflows: `redis_bulk_load`, `redis_bulk_seed`
 - explicit full-access escape hatch: `redis_command`
 
 The reusable router keeps the stateful `sessions` bundle opt-in because its
@@ -201,6 +202,22 @@ route by key and `TS.MADD`/`TS.CREATERULE` require same-slot keys, while
 `TS.MGET`, `TS.MRANGE`, `TS.MREVRANGE`, and `TS.QUERYINDEX` are
 standalone-only because OSS Cluster offers no database-wide TimeSeries
 coordinator.
+
+The non-default `bulk` bundle loads bounded structured records — strings,
+hashes, lists, sets, sorted sets, JSON documents, and vector sets, with
+optional expirations — and deterministic seed datasets generated from an
+explicit seed and schema. Every record is validated before anything executes;
+records then load through sequential batches of bounded concurrent commands
+that never bypass the executor, access policy, timeouts, or Cluster routing.
+Batch size, record count, input bytes, concurrency, wall-clock duration, and
+result summaries are all bounded; stop-on-error and continue-on-error are
+explicit; reports return compact per-batch counts plus bounded representative
+failures that keep record identity, instead of echoing every record. Dry runs
+write nothing. Multi-command records (collections with expirations, multiple
+vector elements) are not atomic and report partial application explicitly.
+The same seed, schema, and library version always regenerate the same
+dataset. File and URL ingestion deliberately stay host concerns outside the
+library boundary.
 
 The non-default `transactions` bundle provides one-shot atomic MULTI/EXEC
 execution without exposing connection-stateful transaction commands as

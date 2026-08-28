@@ -7213,3 +7213,376 @@ async fn live_governed_argv_execution_matches_curated_tools() {
         .await
         .expect("remove argv ACL user");
 }
+
+async fn bulk_router_client(url: &str, access: AccessMode) -> McpClient {
+    let executor = DirectRedis::connect(url)
+        .await
+        .expect("connect bulk executor");
+    let capabilities = executor
+        .discover_capabilities()
+        .await
+        .expect("discover bulk capabilities");
+    let router = RedisMcp::builder(executor)
+        .access(access)
+        .bundles([ToolBundle::Essentials, ToolBundle::Bulk])
+        .capabilities(capabilities)
+        .build();
+    let client = McpClient::connect(ChannelTransport::new(router))
+        .await
+        .expect("connect bulk MCP client");
+    client
+        .initialize("redis-mcp-live-bulk-test", "0")
+        .await
+        .expect("initialize bulk MCP client");
+    client
+}
+
+#[tokio::test]
+async fn live_bulk_load_and_seed_are_bounded_deterministic_and_explicit() {
+    let Some(redis) = TestRedis::start().await else {
+        return;
+    };
+    let mut connection = redis::Client::open(redis.url.as_str())
+        .expect("open bulk verification client")
+        .get_multiplexed_async_connection()
+        .await
+        .expect("connect bulk verification client");
+    let client = bulk_router_client(&redis.url, AccessMode::ReadWrite).await;
+    let prefix = test_key("bulk");
+
+    // Every core record type loads, with expirations applied.
+    let loaded = call_structured(
+        &client,
+        "redis_bulk_load",
+        serde_json::json!({
+            "records": [
+                {
+                    "key": {"value": format!("{prefix}:string")},
+                    "value": {"string": {"value": {"value": "hello"}}},
+                    "expire_ms": 60_000,
+                },
+                {
+                    "key": {"value": format!("{prefix}:hash")},
+                    "value": {"hash": {"fields": [
+                        {"name": {"value": "name"}, "value": {"value": "ada"}},
+                        {"name": {"value": "age"}, "value": {"value": "36"}},
+                    ]}},
+                },
+                {
+                    "key": {"value": format!("{prefix}:list")},
+                    "value": {"list": {"elements": [
+                        {"value": "one"}, {"value": "two"},
+                    ]}},
+                    "expire_ms": 60_000,
+                },
+                {
+                    "key": {"value": format!("{prefix}:set")},
+                    "value": {"set": {"members": [{"value": "alpha"}, {"value": "beta"}]}},
+                },
+                {
+                    "key": {"value": format!("{prefix}:zset")},
+                    "value": {"sorted_set": {"members": [
+                        {"member": {"value": "first"}, "score": 1.5},
+                        {"member": {"value": "second"}, "score": 2.5},
+                    ]}},
+                },
+                {
+                    "key": {"value": format!("{prefix}:binary")},
+                    "value": {"string": {"value": {"value": BASE64.encode([0xff, 0x00, 0x01]), "encoding": "base64"}}},
+                },
+            ],
+            "batch_size": 3,
+            "concurrency": 2,
+        }),
+    )
+    .await;
+    assert_eq!(loaded["requested"], 6);
+    assert_eq!(loaded["applied"], 6);
+    assert_eq!(loaded["failed"], 0);
+    assert_eq!(loaded["complete"], true);
+    assert_eq!(loaded["batches"].as_array().expect("batches").len(), 2);
+    let stored: String = redis::cmd("GET")
+        .arg(format!("{prefix}:string"))
+        .query_async(&mut connection)
+        .await
+        .expect("read bulk string");
+    assert_eq!(stored, "hello");
+    let string_ttl: i64 = redis::cmd("PTTL")
+        .arg(format!("{prefix}:string"))
+        .query_async(&mut connection)
+        .await
+        .expect("read bulk string TTL");
+    assert!(string_ttl > 0, "string expiration rides SET PX");
+    let list_ttl: i64 = redis::cmd("PTTL")
+        .arg(format!("{prefix}:list"))
+        .query_async(&mut connection)
+        .await
+        .expect("read bulk list TTL");
+    assert!(list_ttl > 0, "list expiration follows as PEXPIRE");
+    let age: String = redis::cmd("HGET")
+        .arg(format!("{prefix}:hash"))
+        .arg("age")
+        .query_async(&mut connection)
+        .await
+        .expect("read bulk hash field");
+    assert_eq!(age, "36");
+    let score: f64 = redis::cmd("ZSCORE")
+        .arg(format!("{prefix}:zset"))
+        .arg("second")
+        .query_async(&mut connection)
+        .await
+        .expect("read bulk zset score");
+    assert_eq!(score, 2.5);
+    let binary: Vec<u8> = redis::cmd("GET")
+        .arg(format!("{prefix}:binary"))
+        .query_async(&mut connection)
+        .await
+        .expect("read bulk binary value");
+    assert_eq!(binary, vec![0xff, 0x00, 0x01]);
+
+    // Dry runs validate and plan without touching Redis.
+    let dry = call_structured(
+        &client,
+        "redis_bulk_load",
+        serde_json::json!({
+            "records": [{
+                "key": {"value": format!("{prefix}:dry")},
+                "value": {"string": {"value": {"value": "never"}}},
+            }],
+            "dry_run": true,
+        }),
+    )
+    .await;
+    assert_eq!(dry["dry_run"], true);
+    assert_eq!(dry["attempted"], 0);
+    assert_eq!(dry["total_commands"], 1);
+    let dry_exists: i64 = redis::cmd("EXISTS")
+        .arg(format!("{prefix}:dry"))
+        .query_async(&mut connection)
+        .await
+        .expect("verify dry run wrote nothing");
+    assert_eq!(dry_exists, 0);
+
+    // Continue-on-error keeps identity for the failed record and applies the
+    // rest; stop-on-error skips the remainder instead.
+    let conflict = format!("{prefix}:conflict");
+    redis::cmd("SET")
+        .arg(&conflict)
+        .arg("plain-string")
+        .query_async::<()>(&mut connection)
+        .await
+        .expect("seed conflicting string");
+    let mixed = call_structured(
+        &client,
+        "redis_bulk_load",
+        serde_json::json!({
+            "records": [
+                {
+                    "key": {"value": format!("{prefix}:ok-1")},
+                    "value": {"string": {"value": {"value": "fine"}}},
+                },
+                {
+                    "key": {"value": conflict},
+                    "value": {"hash": {"fields": [
+                        {"name": {"value": "field"}, "value": {"value": "value"}},
+                    ]}},
+                },
+                {
+                    "key": {"value": format!("{prefix}:ok-2")},
+                    "value": {"string": {"value": {"value": "fine"}}},
+                },
+            ],
+            "batch_size": 1,
+            "on_error": "continue",
+        }),
+    )
+    .await;
+    assert_eq!(mixed["applied"], 2);
+    assert_eq!(mixed["failed"], 1);
+    assert_eq!(mixed["complete"], true);
+    let failure = &mixed["failures"][0];
+    assert_eq!(failure["index"], 1);
+    assert_eq!(failure["key"]["value"], conflict);
+    assert_eq!(failure["partially_applied"], false);
+    assert!(
+        serde_json::to_string(failure)
+            .expect("serialize bulk failure")
+            .contains("WRONGTYPE"),
+        "{failure:?}"
+    );
+
+    let stopped = call_structured(
+        &client,
+        "redis_bulk_load",
+        serde_json::json!({
+            "records": [
+                {
+                    "key": {"value": conflict},
+                    "value": {"hash": {"fields": [
+                        {"name": {"value": "field"}, "value": {"value": "value"}},
+                    ]}},
+                },
+                {
+                    "key": {"value": format!("{prefix}:never")},
+                    "value": {"string": {"value": {"value": "never"}}},
+                },
+            ],
+            "batch_size": 1,
+            "on_error": "stop",
+        }),
+    )
+    .await;
+    assert_eq!(stopped["failed"], 1);
+    assert_eq!(stopped["skipped"], 1);
+    assert_eq!(stopped["complete"], false);
+    let never_exists: i64 = redis::cmd("EXISTS")
+        .arg(format!("{prefix}:never"))
+        .query_async(&mut connection)
+        .await
+        .expect("verify stop-on-error skipped the rest");
+    assert_eq!(never_exists, 0);
+
+    // Deterministic seeding: identical requests generate identical datasets.
+    let seed_input = serde_json::json!({
+        "seed": 42,
+        "count": 20,
+        "key_prefix": format!("{prefix}:seed:"),
+        "template": {"hash": {"fields": [
+            {"name": "name", "value": {"token": {"length": 8}}},
+            {"name": "tier", "value": {"choice": {"values": ["free", "pro"]}}},
+            {"name": "id", "value": {"sequence": {"start": 100}}},
+        ]}},
+        "batch_size": 10,
+    });
+    let seeded = call_structured(&client, "redis_bulk_seed", seed_input.clone()).await;
+    assert_eq!(seeded["applied"], 20);
+    assert_eq!(seeded["sample_keys"][0], format!("{prefix}:seed:0"));
+    let first_name: String = redis::cmd("HGET")
+        .arg(format!("{prefix}:seed:7"))
+        .arg("name")
+        .query_async(&mut connection)
+        .await
+        .expect("read seeded name");
+    let first_id: String = redis::cmd("HGET")
+        .arg(format!("{prefix}:seed:7"))
+        .arg("id")
+        .query_async(&mut connection)
+        .await
+        .expect("read seeded id");
+    assert_eq!(first_id, "107");
+    let reseeded = call_structured(&client, "redis_bulk_seed", seed_input).await;
+    assert_eq!(reseeded["applied"], 20);
+    let second_name: String = redis::cmd("HGET")
+        .arg(format!("{prefix}:seed:7"))
+        .arg("name")
+        .query_async(&mut connection)
+        .await
+        .expect("re-read seeded name");
+    assert_eq!(
+        first_name, second_name,
+        "identical seed requests must regenerate identical values"
+    );
+
+    // Read-only routers never expose the bulk surface.
+    let read_only = bulk_router_client(&redis.url, AccessMode::ReadOnly).await;
+    let read_only_tools = read_only
+        .list_tools()
+        .await
+        .expect("list read-only bulk tools")
+        .tools
+        .into_iter()
+        .map(|tool| tool.name)
+        .collect::<Vec<_>>();
+    assert!(
+        !read_only_tools
+            .iter()
+            .any(|name| name.starts_with("redis_bulk")),
+        "bulk tools are write-gated"
+    );
+}
+
+#[tokio::test]
+async fn live_bulk_acl_denials_keep_record_identity_without_leaking_credentials() {
+    let Some(redis) = TestRedis::start().await else {
+        return;
+    };
+    let mut admin = redis::Client::open(redis.url.as_str())
+        .expect("open bulk ACL admin client")
+        .get_multiplexed_async_connection()
+        .await
+        .expect("connect bulk ACL admin client");
+    let username = format!("redis-mcp-bulk-acl-{}", std::process::id());
+    let password = "bulk-acl-secret";
+    redis::cmd("ACL")
+        .arg("SETUSER")
+        .arg(&username)
+        .arg("reset")
+        .arg("on")
+        .arg(format!(">{password}"))
+        .arg("~*")
+        .arg("+set")
+        .arg("+info")
+        .arg("+hello")
+        .query_async::<()>(&mut admin)
+        .await
+        .expect("create bulk ACL user");
+    let mut restricted_url = redis::parse_redis_url(&redis.url).expect("parse Redis test URL");
+    restricted_url
+        .set_username(&username)
+        .expect("set bulk ACL username");
+    restricted_url
+        .set_password(Some(password))
+        .expect("set bulk ACL password");
+
+    let executor = DirectRedis::connect(restricted_url.as_str())
+        .await
+        .expect("connect restricted bulk executor");
+    let router = RedisMcp::builder(executor)
+        .access(AccessMode::ReadWrite)
+        .bundles([ToolBundle::Bulk])
+        .build();
+    let client = McpClient::connect(ChannelTransport::new(router))
+        .await
+        .expect("connect restricted bulk MCP client");
+    client
+        .initialize("redis-mcp-live-bulk-acl-test", "0")
+        .await
+        .expect("initialize restricted bulk MCP client");
+
+    let key = test_key("bulk:acl");
+    let report = call_structured(
+        &client,
+        "redis_bulk_load",
+        serde_json::json!({
+            "records": [
+                {
+                    "key": {"value": format!("{key}:string")},
+                    "value": {"string": {"value": {"value": "allowed"}}},
+                },
+                {
+                    "key": {"value": format!("{key}:hash")},
+                    "value": {"hash": {"fields": [
+                        {"name": {"value": "field"}, "value": {"value": "denied"}},
+                    ]}},
+                },
+            ],
+            "on_error": "continue",
+        }),
+    )
+    .await;
+    assert_eq!(report["applied"], 1);
+    assert_eq!(report["failed"], 1);
+    let failure = &report["failures"][0];
+    assert_eq!(failure["index"], 1);
+    assert_eq!(failure["key"]["value"], format!("{key}:hash"));
+    let rendered = serde_json::to_string(&report).expect("serialize bulk ACL report");
+    assert!(rendered.contains("Authorization"), "{rendered}");
+    assert!(!rendered.contains(password), "{report:?}");
+
+    redis::cmd("ACL")
+        .arg("DELUSER")
+        .arg(&username)
+        .query_async::<i64>(&mut admin)
+        .await
+        .expect("remove bulk ACL user");
+}

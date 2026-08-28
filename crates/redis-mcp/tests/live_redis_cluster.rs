@@ -2802,3 +2802,99 @@ async fn governed_argv_routes_by_key_in_cluster() {
         .expect("cluster argv GET structured content");
     assert_eq!(value["value"]["value"], "clustered");
 }
+
+#[tokio::test]
+async fn bulk_load_routes_records_and_keeps_identity_in_cluster() {
+    let _cluster_guard = CLUSTER_TEST_LOCK.lock().await;
+    let Some(cluster) = TestCluster::start().await else {
+        return;
+    };
+    let executor = DirectRedisCluster::connect(&cluster.seed_urls)
+        .await
+        .expect("connect cluster bulk executor");
+    let mut verification = DirectRedisCluster::connect(&cluster.seed_urls)
+        .await
+        .expect("connect cluster bulk verification executor");
+    let _ = &mut verification;
+    let router = RedisMcp::builder(executor)
+        .access(AccessMode::ReadWrite)
+        .bundles([ToolBundle::Essentials, ToolBundle::Bulk])
+        .build();
+    let client = McpClient::connect(ChannelTransport::new(router))
+        .await
+        .expect("connect cluster bulk MCP client");
+    client
+        .initialize("redis-mcp-cluster-bulk-test", "0")
+        .await
+        .expect("initialize cluster bulk MCP client");
+
+    let prefix = format!("bulk:cluster:{}", std::process::id());
+    // Keys intentionally hash to different slots: each record routes
+    // independently through the cluster adapter.
+    let report = client
+        .call_tool(
+            "redis_bulk_load",
+            serde_json::json!({
+                "records": [
+                    {
+                        "key": {"value": format!("{prefix}:{{a}}:string")},
+                        "value": {"string": {"value": {"value": "east"}}},
+                    },
+                    {
+                        "key": {"value": format!("{prefix}:{{b}}:hash")},
+                        "value": {"hash": {"fields": [
+                            {"name": {"value": "region"}, "value": {"value": "west"}},
+                        ]}},
+                    },
+                    {
+                        "key": {"value": format!("{prefix}:{{c}}:zset")},
+                        "value": {"sorted_set": {"members": [
+                            {"member": {"value": "one"}, "score": 1.0},
+                        ]}},
+                    },
+                ],
+                "concurrency": 2,
+            }),
+        )
+        .await
+        .expect("cluster bulk load");
+    assert!(!report.is_error, "{report:?}");
+    let report = report
+        .structured_content
+        .expect("cluster bulk structured content");
+    assert_eq!(report["applied"], 3);
+    assert_eq!(report["complete"], true);
+
+    // A conflicting record fails with its own identity while others apply.
+    let conflicted = client
+        .call_tool(
+            "redis_bulk_load",
+            serde_json::json!({
+                "records": [
+                    {
+                        "key": {"value": format!("{prefix}:{{a}}:string")},
+                        "value": {"hash": {"fields": [
+                            {"name": {"value": "field"}, "value": {"value": "value"}},
+                        ]}},
+                    },
+                    {
+                        "key": {"value": format!("{prefix}:{{d}}:string")},
+                        "value": {"string": {"value": {"value": "fine"}}},
+                    },
+                ],
+                "on_error": "continue",
+            }),
+        )
+        .await
+        .expect("cluster bulk conflict load");
+    assert!(!conflicted.is_error, "{conflicted:?}");
+    let conflicted = conflicted
+        .structured_content
+        .expect("cluster bulk conflict structured content");
+    assert_eq!(conflicted["applied"], 1);
+    assert_eq!(conflicted["failed"], 1);
+    assert_eq!(
+        conflicted["failures"][0]["key"]["value"],
+        format!("{prefix}:{{a}}:string")
+    );
+}

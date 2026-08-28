@@ -388,6 +388,20 @@ from the single shared policy table. Because the classified policy now serves
 sub-full tiers, only the unrestricted policy requires full access at build
 time; every request is still authorized per classified command.
 
+The opt-in `bulk` bundle activates two write-gated workflows built on the
+same execution boundary: `redis_bulk_load` for bounded structured records and
+`redis_bulk_seed` for deterministic datasets generated from an explicit seed
+and schema by a fixed SplitMix64 stream. Both validate and plan every record
+before anything executes, then run sequential batches of bounded concurrent
+`RedisExecutor` commands, so access policy, timeouts, telemetry metadata, and
+Cluster routing hold per command and no Redis pipeline or background work is
+created. Reports stay compact: totals, per-batch counts, and bounded
+representative failures that preserve record identity, with explicit
+stop/continue-on-error, partial-application flags for non-atomic
+multi-command records, and unknown-outcome accounting when the configured
+deadline elapses mid-flight. Dry runs perform no writes, and file or URL
+ingestion remains a host concern outside the library contract.
+
 Atomic transactions extend that policy rather than bypassing it. The
 `transactions` bundle exposes one `redis_transaction` tool that executes a
 bounded command list inside MULTI/EXEC with optional WATCH keys, and the

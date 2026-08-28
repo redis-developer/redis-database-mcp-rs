@@ -299,7 +299,7 @@ impl ToolMetadata {
                 ToolBundle::Transactions => cfg!(feature = "transactions"),
                 ToolBundle::Admin => cfg!(feature = "admin"),
                 ToolBundle::Raw => true,
-                ToolBundle::Bulk => true,
+                ToolBundle::Bulk => cfg!(feature = "bulk"),
                 ToolBundle::Guidance => cfg!(feature = "guidance"),
                 ToolBundle::Invocation => true,
                 ToolBundle::Essentials

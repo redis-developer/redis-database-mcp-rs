@@ -25,6 +25,7 @@ full = [
     "sessions",
     "transactions",
     "admin",
+    "bulk",
     "guidance",
 ]
 all-families = [
@@ -67,6 +68,7 @@ diagnostics = []
 sessions = []
 transactions = []
 admin = []
+bulk = []
 guidance = []
 
 [dependencies]

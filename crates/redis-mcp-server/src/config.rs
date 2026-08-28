@@ -371,7 +371,7 @@ pub(crate) enum ServerTarget {
 }
 
 /// Fully resolved, validated server configuration.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub(crate) struct ServerConfig {
     pub(crate) target: ServerTarget,
     pub(crate) access: AccessMode,
@@ -1161,5 +1161,96 @@ mod tests {
         let lookup = |name: &str| env.get(name).cloned();
         let via_env = resolve(&args(&["--stdio"]), None, &lookup).expect("resolve env discovery");
         assert!(!via_env.discover_capabilities);
+    }
+
+    #[test]
+    fn example_config_file_is_complete_and_matches_the_defaults() {
+        let example: FileConfig = toml::from_str(include_str!("../redis-mcp.example.toml"))
+            .expect("the shipped example config must parse");
+
+        // Every documented key resolves to exactly the built-in defaults, so
+        // the example never teaches wrong numbers.
+        let from_example =
+            resolve(&args(&["--stdio"]), Some(&example), &no_env).expect("resolve example");
+        let from_defaults = resolve(&args(&["--stdio"]), None, &no_env).expect("resolve defaults");
+        assert_eq!(from_example, from_defaults);
+
+        // Every setting is present, so the example is a complete reference.
+        // cluster_urls stays commented out because it conflicts with url.
+        let presence = [
+            ("target.url", example.target.url.is_some()),
+            ("server.access", example.server.access.is_some()),
+            ("server.raw", example.server.raw.is_some()),
+            ("server.transactions", example.server.transactions.is_some()),
+            ("server.bundles", example.server.bundles.is_some()),
+            (
+                "server.unavailable_tools",
+                example.server.unavailable_tools.is_some(),
+            ),
+            (
+                "server.discover_capabilities",
+                example.server.discover_capabilities.is_some(),
+            ),
+            ("output.max_bytes", example.output.max_bytes.is_some()),
+            ("output.max_entries", example.output.max_entries.is_some()),
+            ("timeouts.command_ms", example.timeouts.command_ms.is_some()),
+            (
+                "limits.pubsub.*",
+                example.limits.pubsub.max_sessions.is_some()
+                    && example.limits.pubsub.max_sessions_per_owner.is_some()
+                    && example
+                        .limits
+                        .pubsub
+                        .max_subscriptions_per_session
+                        .is_some()
+                    && example.limits.pubsub.max_buffered_messages.is_some()
+                    && example.limits.pubsub.max_message_bytes.is_some()
+                    && example.limits.pubsub.max_read_bytes.is_some()
+                    && example.limits.pubsub.max_read_duration_ms.is_some()
+                    && example.limits.pubsub.idle_timeout_ms.is_some()
+                    && example.limits.pubsub.cleanup_interval_ms.is_some()
+                    && example.limits.pubsub.operation_timeout_ms.is_some(),
+            ),
+            (
+                "limits.monitor.*",
+                example.limits.monitor.max_sessions.is_some()
+                    && example.limits.monitor.max_sessions_per_owner.is_some()
+                    && example.limits.monitor.max_buffered_events.is_some()
+                    && example.limits.monitor.max_event_bytes.is_some()
+                    && example.limits.monitor.max_read_bytes.is_some()
+                    && example.limits.monitor.max_read_duration_ms.is_some()
+                    && example.limits.monitor.idle_timeout_ms.is_some()
+                    && example.limits.monitor.cleanup_interval_ms.is_some()
+                    && example.limits.monitor.operation_timeout_ms.is_some(),
+            ),
+            (
+                "limits.blocking.*",
+                example.limits.blocking.max_timeout_ms.is_some()
+                    && example.limits.blocking.max_keys.is_some()
+                    && example.limits.blocking.max_count.is_some()
+                    && example.limits.blocking.max_concurrent_calls.is_some(),
+            ),
+            (
+                "limits.transactions.*",
+                example.limits.transactions.max_commands.is_some()
+                    && example.limits.transactions.max_watch_keys.is_some()
+                    && example.limits.transactions.max_request_bytes.is_some()
+                    && example.limits.transactions.max_duration_ms.is_some()
+                    && example.limits.transactions.max_concurrent.is_some(),
+            ),
+            (
+                "limits.bulk.*",
+                example.limits.bulk.max_records.is_some()
+                    && example.limits.bulk.max_batch_size.is_some()
+                    && example.limits.bulk.max_concurrency.is_some()
+                    && example.limits.bulk.max_input_bytes.is_some()
+                    && example.limits.bulk.max_duration_ms.is_some()
+                    && example.limits.bulk.max_reported_failures.is_some()
+                    && example.limits.bulk.max_batch_summaries.is_some(),
+            ),
+        ];
+        for (name, present) in presence {
+            assert!(present, "example config is missing {name}");
+        }
     }
 }

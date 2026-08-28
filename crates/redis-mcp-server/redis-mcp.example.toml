@@ -1,0 +1,99 @@
+# Example redis-mcp-server configuration.
+#
+# Load it explicitly: `redis-mcp-server --config redis-mcp.toml` or
+# `REDIS_MCP_CONFIG=redis-mcp.toml`. Nothing is read implicitly.
+#
+# Precedence: CLI arguments override environment variables override this
+# file override built-in defaults. Every key below is optional and shown at
+# its built-in default; unknown keys are rejected at startup.
+#
+# Environment variable names follow the CLI flags: REDIS_MCP_ACCESS,
+# REDIS_MCP_RAW, REDIS_MCP_TRANSACTIONS, REDIS_MCP_BUNDLES,
+# REDIS_MCP_UNAVAILABLE_TOOLS, REDIS_MCP_DISCOVER_CAPABILITIES,
+# REDIS_MCP_MAX_OUTPUT_BYTES, REDIS_MCP_MAX_OUTPUT_ENTRIES,
+# REDIS_MCP_COMMAND_TIMEOUT_MS, and REDIS_MCP_<FAMILY>_<LIMIT> for every
+# limit key in the [limits.*] tables (for example
+# REDIS_MCP_PUBSUB_MAX_SESSIONS). The target keeps its historical names:
+# REDIS_URL and REDIS_CLUSTER_URLS.
+
+[target]
+# Exactly one of url or cluster_urls. URLs may embed credentials and TLS
+# (rediss://); they never appear in logs or error messages.
+url = "redis://127.0.0.1:6379"
+# cluster_urls = ["redis://127.0.0.1:7000", "redis://127.0.0.1:7001"]
+
+[server]
+# Maximum side-effect level: "read-only", "read-write", or "full".
+access = "read-only"
+# Native command policy: "disabled", "classified" (known commands at their
+# classified tiers), or "unrestricted" (requires full access).
+raw = "disabled"
+# Bounded atomic MULTI/EXEC execution; requires an enabled raw policy.
+transactions = false
+# Optional bundles added to the curated defaults: "admin", "bulk",
+# "invocation", "json", "search", "scripting", "timeseries".
+bundles = []
+# Tools the discovered target cannot serve: "advertise" (with preflight
+# errors) or "hide".
+unavailable_tools = "advertise"
+# Discover the target's version, deployment, and modules at startup.
+discover_capabilities = true
+
+[output]
+# Ceiling for one encoded MCP tool result.
+max_bytes = 262144
+# Ceiling for collection entries in one result.
+max_entries = 1000
+
+[timeouts]
+# Upper bound for one Redis command.
+command_ms = 30000
+
+[limits.pubsub]
+max_sessions = 64
+max_sessions_per_owner = 8
+max_subscriptions_per_session = 100
+max_buffered_messages = 1000
+max_message_bytes = 1048576
+max_read_bytes = 262144
+max_read_duration_ms = 30000
+idle_timeout_ms = 300000
+cleanup_interval_ms = 15000
+operation_timeout_ms = 30000
+
+[limits.monitor]
+# MONITOR reduces server throughput; ceilings are deliberately low.
+max_sessions = 4
+max_sessions_per_owner = 1
+max_buffered_events = 1000
+max_event_bytes = 8192
+max_read_bytes = 262144
+max_read_duration_ms = 30000
+idle_timeout_ms = 60000
+cleanup_interval_ms = 5000
+operation_timeout_ms = 30000
+
+[limits.blocking]
+# Server-side wait ceiling for one finite blocking call.
+max_timeout_ms = 30000
+max_keys = 16
+max_count = 100
+# Dedicated connections held by concurrent blocking calls.
+max_concurrent_calls = 16
+
+[limits.transactions]
+max_commands = 64
+max_watch_keys = 16
+max_request_bytes = 1048576
+max_duration_ms = 30000
+# Dedicated connections held by concurrent transactions.
+max_concurrent = 8
+
+[limits.bulk]
+max_records = 1000
+max_batch_size = 100
+max_concurrency = 8
+max_input_bytes = 4194304
+max_duration_ms = 60000
+max_reported_failures = 10
+max_batch_summaries = 200

@@ -3104,6 +3104,124 @@
         "required_module": null
       },
       "family": null,
+      "name": "redis_backup_abort",
+      "output_policy": "intrinsically_bounded",
+      "protocol": {
+        "annotations": {},
+        "description": "Cancel the in-progress, unsealed Redis 8.10 backup, discarding its files. The backup state machine is server-global, so this aborts whichever backup is running regardless of which client started it; requires confirm=true, Redis @admin +backup|abort, full access, and is node-local.",
+        "inputSchema": {
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "confirm": {
+              "default": null,
+              "description": "Must be true for destructive transitions (abort, cleanup); rejected\nfor non-destructive transitions.",
+              "type": [
+                "boolean",
+                "null"
+              ]
+            }
+          },
+          "title": "BackupTransitionInput",
+          "type": "object"
+        },
+        "name": "redis_backup_abort",
+        "outputSchema": {
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "acknowledged": {
+              "type": "boolean"
+            },
+            "transition": {
+              "description": "The BACKUP subcommand the server acknowledged.",
+              "type": "string"
+            }
+          },
+          "required": [
+            "transition",
+            "acknowledged"
+          ],
+          "title": "BackupTransitionOutput",
+          "type": "object"
+        },
+        "title": "Abort Redis Backup"
+      },
+      "required_access": "full",
+      "required_module": null,
+      "requires_raw_opt_in": false
+    },
+    {
+      "bundle": "admin",
+      "capability_requirements": {
+        "deployment": "standalone",
+        "minimum_module_version": null,
+        "minimum_redis_version": "8.10.0",
+        "required_commands": [
+          "BACKUP"
+        ],
+        "required_module": null
+      },
+      "family": null,
+      "name": "redis_backup_cleanup",
+      "output_policy": "intrinsically_bounded",
+      "protocol": {
+        "annotations": {},
+        "description": "Remove the sealed Redis 8.10 backup's files and return the server to idle. The backup state machine is server-global, so this removes the sealed backup regardless of which client produced it; requires confirm=true, Redis @admin +backup|cleanup, full access, and is node-local.",
+        "inputSchema": {
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "confirm": {
+              "default": null,
+              "description": "Must be true for destructive transitions (abort, cleanup); rejected\nfor non-destructive transitions.",
+              "type": [
+                "boolean",
+                "null"
+              ]
+            }
+          },
+          "title": "BackupTransitionInput",
+          "type": "object"
+        },
+        "name": "redis_backup_cleanup",
+        "outputSchema": {
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "acknowledged": {
+              "type": "boolean"
+            },
+            "transition": {
+              "description": "The BACKUP subcommand the server acknowledged.",
+              "type": "string"
+            }
+          },
+          "required": [
+            "transition",
+            "acknowledged"
+          ],
+          "title": "BackupTransitionOutput",
+          "type": "object"
+        },
+        "title": "Clean Up Redis Backup"
+      },
+      "required_access": "full",
+      "required_module": null,
+      "requires_raw_opt_in": false
+    },
+    {
+      "bundle": "admin",
+      "capability_requirements": {
+        "deployment": "standalone",
+        "minimum_module_version": null,
+        "minimum_redis_version": "8.10.0",
+        "required_commands": [
+          "BACKUP"
+        ],
+        "required_module": null
+      },
+      "family": null,
       "name": "redis_backup_files",
       "output_policy": "intrinsically_bounded",
       "protocol": {
@@ -3141,6 +3259,128 @@
         "title": "Count Redis Backup Files"
       },
       "required_access": "read_only",
+      "required_module": null,
+      "requires_raw_opt_in": false
+    },
+    {
+      "bundle": "admin",
+      "capability_requirements": {
+        "deployment": "standalone",
+        "minimum_module_version": null,
+        "minimum_redis_version": "8.10.0",
+        "required_commands": [
+          "BACKUP"
+        ],
+        "required_module": null
+      },
+      "family": null,
+      "name": "redis_backup_seal",
+      "output_policy": "intrinsically_bounded",
+      "protocol": {
+        "annotations": {
+          "destructiveHint": false
+        },
+        "description": "Freeze the in-progress Redis 8.10 backup into an immutable base, increment, and manifest set. The backup state machine is server-global; check redis_backup_status before transitioning. Requires Redis @admin +backup|seal; full access and node-local.",
+        "inputSchema": {
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "confirm": {
+              "default": null,
+              "description": "Must be true for destructive transitions (abort, cleanup); rejected\nfor non-destructive transitions.",
+              "type": [
+                "boolean",
+                "null"
+              ]
+            }
+          },
+          "title": "BackupTransitionInput",
+          "type": "object"
+        },
+        "name": "redis_backup_seal",
+        "outputSchema": {
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "acknowledged": {
+              "type": "boolean"
+            },
+            "transition": {
+              "description": "The BACKUP subcommand the server acknowledged.",
+              "type": "string"
+            }
+          },
+          "required": [
+            "transition",
+            "acknowledged"
+          ],
+          "title": "BackupTransitionOutput",
+          "type": "object"
+        },
+        "title": "Seal Redis Backup"
+      },
+      "required_access": "full",
+      "required_module": null,
+      "requires_raw_opt_in": false
+    },
+    {
+      "bundle": "admin",
+      "capability_requirements": {
+        "deployment": "standalone",
+        "minimum_module_version": null,
+        "minimum_redis_version": "8.10.0",
+        "required_commands": [
+          "BACKUP"
+        ],
+        "required_module": null
+      },
+      "family": null,
+      "name": "redis_backup_start",
+      "output_policy": "intrinsically_bounded",
+      "protocol": {
+        "annotations": {
+          "destructiveHint": false
+        },
+        "description": "Start a new Redis 8.10 backup into the server-configured backup directory. The backup state machine is server-global; check redis_backup_status before transitioning and never expect filesystem paths in results. Requires Redis @admin +backup|start; full access and node-local.",
+        "inputSchema": {
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "confirm": {
+              "default": null,
+              "description": "Must be true for destructive transitions (abort, cleanup); rejected\nfor non-destructive transitions.",
+              "type": [
+                "boolean",
+                "null"
+              ]
+            }
+          },
+          "title": "BackupTransitionInput",
+          "type": "object"
+        },
+        "name": "redis_backup_start",
+        "outputSchema": {
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "acknowledged": {
+              "type": "boolean"
+            },
+            "transition": {
+              "description": "The BACKUP subcommand the server acknowledged.",
+              "type": "string"
+            }
+          },
+          "required": [
+            "transition",
+            "acknowledged"
+          ],
+          "title": "BackupTransitionOutput",
+          "type": "object"
+        },
+        "title": "Start Redis Backup"
+      },
+      "required_access": "full",
       "required_module": null,
       "requires_raw_opt_in": false
     },
@@ -4216,6 +4456,825 @@
         "title": "Locate Redis Bitmap Bit"
       },
       "required_access": "read_only",
+      "required_module": null,
+      "requires_raw_opt_in": false
+    },
+    {
+      "bundle": "sessions",
+      "capability_requirements": {
+        "deployment": "any",
+        "minimum_module_version": null,
+        "minimum_redis_version": "6.2.0",
+        "required_commands": [
+          "BLMOVE"
+        ],
+        "required_module": null
+      },
+      "family": null,
+      "name": "redis_blmove",
+      "output_policy": "budget_guarded",
+      "protocol": {
+        "annotations": {},
+        "description": "Atomically move one element between same-slot lists on a dedicated connection, waiting a finite, server-capped time for the source to fill. A timeout is an explicit result; requires full access and Redis 6.2.",
+        "inputSchema": {
+          "$defs": {
+            "EncodedInput": {
+              "additionalProperties": false,
+              "properties": {
+                "encoding": {
+                  "$ref": "#/$defs/InputEncoding",
+                  "default": "utf8",
+                  "description": "Encoding of `value`."
+                },
+                "value": {
+                  "description": "UTF-8 text or standard base64, according to `encoding`.",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "value"
+              ],
+              "type": "object"
+            },
+            "InputEncoding": {
+              "enum": [
+                "utf8",
+                "base64"
+              ],
+              "type": "string"
+            },
+            "ListEnd": {
+              "enum": [
+                "left",
+                "right"
+              ],
+              "type": "string"
+            }
+          },
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "destination": {
+              "$ref": "#/$defs/EncodedInput"
+            },
+            "from": {
+              "$ref": "#/$defs/ListEnd"
+            },
+            "source": {
+              "$ref": "#/$defs/EncodedInput"
+            },
+            "timeout_ms": {
+              "description": "Finite server-side wait in milliseconds. Indefinite blocking is not\nsupported; the configured engine maximum also applies.",
+              "format": "uint64",
+              "maximum": 30000,
+              "minimum": 1,
+              "type": "integer"
+            },
+            "to": {
+              "$ref": "#/$defs/ListEnd"
+            }
+          },
+          "required": [
+            "source",
+            "destination",
+            "from",
+            "to",
+            "timeout_ms"
+          ],
+          "title": "BlmoveInput",
+          "type": "object"
+        },
+        "name": "redis_blmove",
+        "outputSchema": {
+          "$defs": {
+            "EncodedOutput": {
+              "additionalProperties": false,
+              "properties": {
+                "encoding": {
+                  "$ref": "#/$defs/ValueEncoding"
+                },
+                "value": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "value",
+                "encoding"
+              ],
+              "type": "object"
+            },
+            "ValueEncoding": {
+              "enum": [
+                "utf8",
+                "base64"
+              ],
+              "type": "string"
+            }
+          },
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "element": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/EncodedOutput"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "The moved element, absent when the wait timed out."
+            },
+            "timed_out": {
+              "description": "Whether the finite server-side wait elapsed without an element.",
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "timed_out"
+          ],
+          "title": "BlmoveOutput",
+          "type": "object"
+        },
+        "title": "Blocking Move Between Redis Lists"
+      },
+      "required_access": "full",
+      "required_module": null,
+      "requires_raw_opt_in": false
+    },
+    {
+      "bundle": "sessions",
+      "capability_requirements": {
+        "deployment": "any",
+        "minimum_module_version": null,
+        "minimum_redis_version": "8.10.0",
+        "required_commands": [
+          "BLMOVEM"
+        ],
+        "required_module": null
+      },
+      "family": null,
+      "name": "redis_blmovem",
+      "output_policy": "budget_guarded",
+      "protocol": {
+        "annotations": {},
+        "description": "Move up to or exactly a bounded number of elements between same-slot lists on a dedicated connection, waiting a finite, server-capped time. A timeout is an explicit result; requires full access and Redis 8.10.",
+        "inputSchema": {
+          "$defs": {
+            "EncodedInput": {
+              "additionalProperties": false,
+              "properties": {
+                "encoding": {
+                  "$ref": "#/$defs/InputEncoding",
+                  "default": "utf8",
+                  "description": "Encoding of `value`."
+                },
+                "value": {
+                  "description": "UTF-8 text or standard base64, according to `encoding`.",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "value"
+              ],
+              "type": "object"
+            },
+            "InputEncoding": {
+              "enum": [
+                "utf8",
+                "base64"
+              ],
+              "type": "string"
+            },
+            "ListEnd": {
+              "enum": [
+                "left",
+                "right"
+              ],
+              "type": "string"
+            },
+            "MoveAmount": {
+              "oneOf": [
+                {
+                  "additionalProperties": false,
+                  "properties": {
+                    "count": {
+                      "format": "uint",
+                      "minimum": 0,
+                      "type": "integer"
+                    },
+                    "ordering": {
+                      "$ref": "#/$defs/MoveOrdering"
+                    },
+                    "type": {
+                      "const": "up_to",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "type",
+                    "count",
+                    "ordering"
+                  ],
+                  "type": "object"
+                },
+                {
+                  "additionalProperties": false,
+                  "properties": {
+                    "count": {
+                      "format": "uint",
+                      "minimum": 0,
+                      "type": "integer"
+                    },
+                    "ordering": {
+                      "$ref": "#/$defs/MoveOrdering"
+                    },
+                    "type": {
+                      "const": "exactly",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "type",
+                    "count",
+                    "ordering"
+                  ],
+                  "type": "object"
+                }
+              ]
+            },
+            "MoveOrdering": {
+              "enum": [
+                "one_by_one",
+                "bulk"
+              ],
+              "type": "string"
+            }
+          },
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "amount": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/MoveAmount"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Bounded element count; omitted moves exactly one element."
+            },
+            "destination": {
+              "$ref": "#/$defs/EncodedInput"
+            },
+            "from": {
+              "$ref": "#/$defs/ListEnd"
+            },
+            "source": {
+              "$ref": "#/$defs/EncodedInput"
+            },
+            "timeout_ms": {
+              "description": "Finite server-side wait in milliseconds. Indefinite blocking is not\nsupported; the configured engine maximum also applies.",
+              "format": "uint64",
+              "maximum": 30000,
+              "minimum": 1,
+              "type": "integer"
+            },
+            "to": {
+              "$ref": "#/$defs/ListEnd"
+            }
+          },
+          "required": [
+            "source",
+            "destination",
+            "from",
+            "to",
+            "timeout_ms"
+          ],
+          "title": "BlmovemInput",
+          "type": "object"
+        },
+        "name": "redis_blmovem",
+        "outputSchema": {
+          "$defs": {
+            "EncodedOutput": {
+              "additionalProperties": false,
+              "properties": {
+                "encoding": {
+                  "$ref": "#/$defs/ValueEncoding"
+                },
+                "value": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "value",
+                "encoding"
+              ],
+              "type": "object"
+            },
+            "ValueEncoding": {
+              "enum": [
+                "utf8",
+                "base64"
+              ],
+              "type": "string"
+            }
+          },
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "elements": {
+              "description": "Moved elements in transfer order, absent when the wait timed out.",
+              "items": {
+                "$ref": "#/$defs/EncodedOutput"
+              },
+              "type": [
+                "array",
+                "null"
+              ]
+            },
+            "moved": {
+              "description": "Number of moved elements, zero when the wait timed out.",
+              "format": "uint",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "timed_out": {
+              "description": "Whether the finite server-side wait elapsed without any element.",
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "moved",
+            "timed_out"
+          ],
+          "title": "BlmovemOutput",
+          "type": "object"
+        },
+        "title": "Blocking Multi-Move Between Redis Lists"
+      },
+      "required_access": "full",
+      "required_module": null,
+      "requires_raw_opt_in": false
+    },
+    {
+      "bundle": "sessions",
+      "capability_requirements": {
+        "deployment": "any",
+        "minimum_module_version": null,
+        "minimum_redis_version": "7.0.0",
+        "required_commands": [
+          "BLMPOP"
+        ],
+        "required_module": null
+      },
+      "family": null,
+      "name": "redis_blmpop",
+      "output_policy": "budget_guarded",
+      "protocol": {
+        "annotations": {},
+        "description": "Pop a bounded batch from the first ready list on a dedicated connection, waiting a finite, server-capped time. A timeout is an explicit result; requires full access and Redis 7.0.",
+        "inputSchema": {
+          "$defs": {
+            "EncodedInput": {
+              "additionalProperties": false,
+              "properties": {
+                "encoding": {
+                  "$ref": "#/$defs/InputEncoding",
+                  "default": "utf8",
+                  "description": "Encoding of `value`."
+                },
+                "value": {
+                  "description": "UTF-8 text or standard base64, according to `encoding`.",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "value"
+              ],
+              "type": "object"
+            },
+            "InputEncoding": {
+              "enum": [
+                "utf8",
+                "base64"
+              ],
+              "type": "string"
+            },
+            "ListEnd": {
+              "enum": [
+                "left",
+                "right"
+              ],
+              "type": "string"
+            }
+          },
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "count": {
+              "description": "Maximum elements popped from the answering key.",
+              "format": "uint",
+              "maximum": 100,
+              "minimum": 1,
+              "type": "integer"
+            },
+            "end": {
+              "$ref": "#/$defs/ListEnd",
+              "description": "Which list end to pop from."
+            },
+            "keys": {
+              "description": "Binary-safe keys checked in order; the first non-empty list answers.",
+              "items": {
+                "$ref": "#/$defs/EncodedInput"
+              },
+              "maxItems": 16,
+              "minItems": 1,
+              "type": "array"
+            },
+            "timeout_ms": {
+              "description": "Finite server-side wait in milliseconds. Indefinite blocking is not\nsupported; the configured engine maximum also applies.",
+              "format": "uint64",
+              "maximum": 30000,
+              "minimum": 1,
+              "type": "integer"
+            }
+          },
+          "required": [
+            "keys",
+            "end",
+            "count",
+            "timeout_ms"
+          ],
+          "title": "BlmpopInput",
+          "type": "object"
+        },
+        "name": "redis_blmpop",
+        "outputSchema": {
+          "$defs": {
+            "EncodedOutput": {
+              "additionalProperties": false,
+              "properties": {
+                "encoding": {
+                  "$ref": "#/$defs/ValueEncoding"
+                },
+                "value": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "value",
+                "encoding"
+              ],
+              "type": "object"
+            },
+            "ValueEncoding": {
+              "enum": [
+                "utf8",
+                "base64"
+              ],
+              "type": "string"
+            }
+          },
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "elements": {
+              "description": "Popped elements in pop order, absent when the wait timed out.",
+              "items": {
+                "$ref": "#/$defs/EncodedOutput"
+              },
+              "type": [
+                "array",
+                "null"
+              ]
+            },
+            "key": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/EncodedOutput"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "The answering key, absent when the wait timed out."
+            },
+            "popped": {
+              "description": "Number of popped elements, zero when the wait timed out.",
+              "format": "uint",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "timed_out": {
+              "description": "Whether the finite server-side wait elapsed without an element.",
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "popped",
+            "timed_out"
+          ],
+          "title": "BlmpopOutput",
+          "type": "object"
+        },
+        "title": "Blocking Counted Pop From Redis Lists"
+      },
+      "required_access": "full",
+      "required_module": null,
+      "requires_raw_opt_in": false
+    },
+    {
+      "bundle": "sessions",
+      "capability_requirements": {
+        "deployment": "any",
+        "minimum_module_version": null,
+        "minimum_redis_version": "6.0.0",
+        "required_commands": [
+          "BLPOP"
+        ],
+        "required_module": null
+      },
+      "family": null,
+      "name": "redis_blpop",
+      "output_policy": "budget_guarded",
+      "protocol": {
+        "annotations": {},
+        "description": "Pop the head element from the first ready list on a dedicated connection, waiting a finite, server-capped time. A timeout is an explicit result; the popped element is removed and requires full access.",
+        "inputSchema": {
+          "$defs": {
+            "EncodedInput": {
+              "additionalProperties": false,
+              "properties": {
+                "encoding": {
+                  "$ref": "#/$defs/InputEncoding",
+                  "default": "utf8",
+                  "description": "Encoding of `value`."
+                },
+                "value": {
+                  "description": "UTF-8 text or standard base64, according to `encoding`.",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "value"
+              ],
+              "type": "object"
+            },
+            "InputEncoding": {
+              "enum": [
+                "utf8",
+                "base64"
+              ],
+              "type": "string"
+            }
+          },
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "keys": {
+              "description": "Binary-safe keys checked in order; the first non-empty list answers.",
+              "items": {
+                "$ref": "#/$defs/EncodedInput"
+              },
+              "maxItems": 16,
+              "minItems": 1,
+              "type": "array"
+            },
+            "timeout_ms": {
+              "description": "Finite server-side wait in milliseconds. Indefinite blocking is not\nsupported; the configured engine maximum also applies.",
+              "format": "uint64",
+              "maximum": 30000,
+              "minimum": 1,
+              "type": "integer"
+            }
+          },
+          "required": [
+            "keys",
+            "timeout_ms"
+          ],
+          "title": "PopListInput",
+          "type": "object"
+        },
+        "name": "redis_blpop",
+        "outputSchema": {
+          "$defs": {
+            "EncodedOutput": {
+              "additionalProperties": false,
+              "properties": {
+                "encoding": {
+                  "$ref": "#/$defs/ValueEncoding"
+                },
+                "value": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "value",
+                "encoding"
+              ],
+              "type": "object"
+            },
+            "PoppedElementOutput": {
+              "additionalProperties": false,
+              "properties": {
+                "element": {
+                  "$ref": "#/$defs/EncodedOutput"
+                },
+                "key": {
+                  "$ref": "#/$defs/EncodedOutput"
+                }
+              },
+              "required": [
+                "key",
+                "element"
+              ],
+              "type": "object"
+            },
+            "ValueEncoding": {
+              "enum": [
+                "utf8",
+                "base64"
+              ],
+              "type": "string"
+            }
+          },
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "popped": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/PoppedElementOutput"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "The popped key and element, absent when the wait timed out."
+            },
+            "timed_out": {
+              "description": "Whether the finite server-side wait elapsed without an element.",
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "timed_out"
+          ],
+          "title": "PopListOutput",
+          "type": "object"
+        },
+        "title": "Blocking Left Pop From Redis Lists"
+      },
+      "required_access": "full",
+      "required_module": null,
+      "requires_raw_opt_in": false
+    },
+    {
+      "bundle": "sessions",
+      "capability_requirements": {
+        "deployment": "any",
+        "minimum_module_version": null,
+        "minimum_redis_version": "6.0.0",
+        "required_commands": [
+          "BRPOP"
+        ],
+        "required_module": null
+      },
+      "family": null,
+      "name": "redis_brpop",
+      "output_policy": "budget_guarded",
+      "protocol": {
+        "annotations": {},
+        "description": "Pop the tail element from the first ready list on a dedicated connection, waiting a finite, server-capped time. A timeout is an explicit result; the popped element is removed and requires full access.",
+        "inputSchema": {
+          "$defs": {
+            "EncodedInput": {
+              "additionalProperties": false,
+              "properties": {
+                "encoding": {
+                  "$ref": "#/$defs/InputEncoding",
+                  "default": "utf8",
+                  "description": "Encoding of `value`."
+                },
+                "value": {
+                  "description": "UTF-8 text or standard base64, according to `encoding`.",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "value"
+              ],
+              "type": "object"
+            },
+            "InputEncoding": {
+              "enum": [
+                "utf8",
+                "base64"
+              ],
+              "type": "string"
+            }
+          },
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "keys": {
+              "description": "Binary-safe keys checked in order; the first non-empty list answers.",
+              "items": {
+                "$ref": "#/$defs/EncodedInput"
+              },
+              "maxItems": 16,
+              "minItems": 1,
+              "type": "array"
+            },
+            "timeout_ms": {
+              "description": "Finite server-side wait in milliseconds. Indefinite blocking is not\nsupported; the configured engine maximum also applies.",
+              "format": "uint64",
+              "maximum": 30000,
+              "minimum": 1,
+              "type": "integer"
+            }
+          },
+          "required": [
+            "keys",
+            "timeout_ms"
+          ],
+          "title": "PopListInput",
+          "type": "object"
+        },
+        "name": "redis_brpop",
+        "outputSchema": {
+          "$defs": {
+            "EncodedOutput": {
+              "additionalProperties": false,
+              "properties": {
+                "encoding": {
+                  "$ref": "#/$defs/ValueEncoding"
+                },
+                "value": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "value",
+                "encoding"
+              ],
+              "type": "object"
+            },
+            "PoppedElementOutput": {
+              "additionalProperties": false,
+              "properties": {
+                "element": {
+                  "$ref": "#/$defs/EncodedOutput"
+                },
+                "key": {
+                  "$ref": "#/$defs/EncodedOutput"
+                }
+              },
+              "required": [
+                "key",
+                "element"
+              ],
+              "type": "object"
+            },
+            "ValueEncoding": {
+              "enum": [
+                "utf8",
+                "base64"
+              ],
+              "type": "string"
+            }
+          },
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "popped": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/PoppedElementOutput"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "The popped key and element, absent when the wait timed out."
+            },
+            "timed_out": {
+              "description": "Whether the finite server-side wait elapsed without an element.",
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "timed_out"
+          ],
+          "title": "PopListOutput",
+          "type": "object"
+        },
+        "title": "Blocking Right Pop From Redis Lists"
+      },
+      "required_access": "full",
       "required_module": null,
       "requires_raw_opt_in": false
     },
@@ -5423,6 +6482,492 @@
         "title": "Seed Deterministic Redis Records"
       },
       "required_access": "read_write",
+      "required_module": null,
+      "requires_raw_opt_in": false
+    },
+    {
+      "bundle": "sessions",
+      "capability_requirements": {
+        "deployment": "any",
+        "minimum_module_version": null,
+        "minimum_redis_version": "7.0.0",
+        "required_commands": [
+          "BZMPOP"
+        ],
+        "required_module": null
+      },
+      "family": null,
+      "name": "redis_bzmpop",
+      "output_policy": "budget_guarded",
+      "protocol": {
+        "annotations": {},
+        "description": "Pop a bounded scored batch from the first ready sorted set on a dedicated connection, waiting a finite, server-capped time. A timeout is an explicit result; requires full access and Redis 7.0.",
+        "inputSchema": {
+          "$defs": {
+            "EncodedInput": {
+              "additionalProperties": false,
+              "properties": {
+                "encoding": {
+                  "$ref": "#/$defs/InputEncoding",
+                  "default": "utf8",
+                  "description": "Encoding of `value`."
+                },
+                "value": {
+                  "description": "UTF-8 text or standard base64, according to `encoding`.",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "value"
+              ],
+              "type": "object"
+            },
+            "InputEncoding": {
+              "enum": [
+                "utf8",
+                "base64"
+              ],
+              "type": "string"
+            },
+            "SortedSetEnd": {
+              "enum": [
+                "min",
+                "max"
+              ],
+              "type": "string"
+            }
+          },
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "count": {
+              "description": "Maximum members popped from the answering key.",
+              "format": "uint",
+              "maximum": 100,
+              "minimum": 1,
+              "type": "integer"
+            },
+            "end": {
+              "$ref": "#/$defs/SortedSetEnd",
+              "description": "Which score end to pop from."
+            },
+            "keys": {
+              "description": "Binary-safe keys checked in order; the first non-empty set answers.",
+              "items": {
+                "$ref": "#/$defs/EncodedInput"
+              },
+              "maxItems": 16,
+              "minItems": 1,
+              "type": "array"
+            },
+            "timeout_ms": {
+              "description": "Finite server-side wait in milliseconds. Indefinite blocking is not\nsupported; the configured engine maximum also applies.",
+              "format": "uint64",
+              "maximum": 30000,
+              "minimum": 1,
+              "type": "integer"
+            }
+          },
+          "required": [
+            "keys",
+            "end",
+            "count",
+            "timeout_ms"
+          ],
+          "title": "BzmpopInput",
+          "type": "object"
+        },
+        "name": "redis_bzmpop",
+        "outputSchema": {
+          "$defs": {
+            "EncodedOutput": {
+              "additionalProperties": false,
+              "properties": {
+                "encoding": {
+                  "$ref": "#/$defs/ValueEncoding"
+                },
+                "value": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "value",
+                "encoding"
+              ],
+              "type": "object"
+            },
+            "ScoredMemberOutput": {
+              "additionalProperties": false,
+              "properties": {
+                "member": {
+                  "$ref": "#/$defs/EncodedOutput"
+                },
+                "score": {
+                  "description": "Exact decimal score string as returned by Redis.",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "member",
+                "score"
+              ],
+              "type": "object"
+            },
+            "ValueEncoding": {
+              "enum": [
+                "utf8",
+                "base64"
+              ],
+              "type": "string"
+            }
+          },
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "key": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/EncodedOutput"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "The answering key, absent when the wait timed out."
+            },
+            "members": {
+              "description": "Popped members in pop order, absent when the wait timed out.",
+              "items": {
+                "$ref": "#/$defs/ScoredMemberOutput"
+              },
+              "type": [
+                "array",
+                "null"
+              ]
+            },
+            "popped": {
+              "description": "Number of popped members, zero when the wait timed out.",
+              "format": "uint",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "timed_out": {
+              "description": "Whether the finite server-side wait elapsed without a member.",
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "popped",
+            "timed_out"
+          ],
+          "title": "BzmpopOutput",
+          "type": "object"
+        },
+        "title": "Blocking Counted Pop From Redis Sorted Sets"
+      },
+      "required_access": "full",
+      "required_module": null,
+      "requires_raw_opt_in": false
+    },
+    {
+      "bundle": "sessions",
+      "capability_requirements": {
+        "deployment": "any",
+        "minimum_module_version": null,
+        "minimum_redis_version": "6.0.0",
+        "required_commands": [
+          "BZPOPMAX"
+        ],
+        "required_module": null
+      },
+      "family": null,
+      "name": "redis_bzpopmax",
+      "output_policy": "budget_guarded",
+      "protocol": {
+        "annotations": {},
+        "description": "Pop the highest-scored member from the first ready sorted set on a dedicated connection, waiting a finite, server-capped time. A timeout is an explicit result; requires full access.",
+        "inputSchema": {
+          "$defs": {
+            "EncodedInput": {
+              "additionalProperties": false,
+              "properties": {
+                "encoding": {
+                  "$ref": "#/$defs/InputEncoding",
+                  "default": "utf8",
+                  "description": "Encoding of `value`."
+                },
+                "value": {
+                  "description": "UTF-8 text or standard base64, according to `encoding`.",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "value"
+              ],
+              "type": "object"
+            },
+            "InputEncoding": {
+              "enum": [
+                "utf8",
+                "base64"
+              ],
+              "type": "string"
+            }
+          },
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "keys": {
+              "description": "Binary-safe keys checked in order; the first non-empty set answers.",
+              "items": {
+                "$ref": "#/$defs/EncodedInput"
+              },
+              "maxItems": 16,
+              "minItems": 1,
+              "type": "array"
+            },
+            "timeout_ms": {
+              "description": "Finite server-side wait in milliseconds. Indefinite blocking is not\nsupported; the configured engine maximum also applies.",
+              "format": "uint64",
+              "maximum": 30000,
+              "minimum": 1,
+              "type": "integer"
+            }
+          },
+          "required": [
+            "keys",
+            "timeout_ms"
+          ],
+          "title": "PopSortedSetInput",
+          "type": "object"
+        },
+        "name": "redis_bzpopmax",
+        "outputSchema": {
+          "$defs": {
+            "EncodedOutput": {
+              "additionalProperties": false,
+              "properties": {
+                "encoding": {
+                  "$ref": "#/$defs/ValueEncoding"
+                },
+                "value": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "value",
+                "encoding"
+              ],
+              "type": "object"
+            },
+            "ScoredPopOutput": {
+              "additionalProperties": false,
+              "properties": {
+                "key": {
+                  "$ref": "#/$defs/EncodedOutput"
+                },
+                "member": {
+                  "$ref": "#/$defs/EncodedOutput"
+                },
+                "score": {
+                  "description": "Exact decimal score string as returned by Redis.",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "key",
+                "member",
+                "score"
+              ],
+              "type": "object"
+            },
+            "ValueEncoding": {
+              "enum": [
+                "utf8",
+                "base64"
+              ],
+              "type": "string"
+            }
+          },
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "popped": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/ScoredPopOutput"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "The popped member, absent when the wait timed out."
+            },
+            "timed_out": {
+              "description": "Whether the finite server-side wait elapsed without a member.",
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "timed_out"
+          ],
+          "title": "PopSortedSetOutput",
+          "type": "object"
+        },
+        "title": "Blocking Maximum Pop From Redis Sorted Sets"
+      },
+      "required_access": "full",
+      "required_module": null,
+      "requires_raw_opt_in": false
+    },
+    {
+      "bundle": "sessions",
+      "capability_requirements": {
+        "deployment": "any",
+        "minimum_module_version": null,
+        "minimum_redis_version": "6.0.0",
+        "required_commands": [
+          "BZPOPMIN"
+        ],
+        "required_module": null
+      },
+      "family": null,
+      "name": "redis_bzpopmin",
+      "output_policy": "budget_guarded",
+      "protocol": {
+        "annotations": {},
+        "description": "Pop the lowest-scored member from the first ready sorted set on a dedicated connection, waiting a finite, server-capped time. A timeout is an explicit result; requires full access.",
+        "inputSchema": {
+          "$defs": {
+            "EncodedInput": {
+              "additionalProperties": false,
+              "properties": {
+                "encoding": {
+                  "$ref": "#/$defs/InputEncoding",
+                  "default": "utf8",
+                  "description": "Encoding of `value`."
+                },
+                "value": {
+                  "description": "UTF-8 text or standard base64, according to `encoding`.",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "value"
+              ],
+              "type": "object"
+            },
+            "InputEncoding": {
+              "enum": [
+                "utf8",
+                "base64"
+              ],
+              "type": "string"
+            }
+          },
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "keys": {
+              "description": "Binary-safe keys checked in order; the first non-empty set answers.",
+              "items": {
+                "$ref": "#/$defs/EncodedInput"
+              },
+              "maxItems": 16,
+              "minItems": 1,
+              "type": "array"
+            },
+            "timeout_ms": {
+              "description": "Finite server-side wait in milliseconds. Indefinite blocking is not\nsupported; the configured engine maximum also applies.",
+              "format": "uint64",
+              "maximum": 30000,
+              "minimum": 1,
+              "type": "integer"
+            }
+          },
+          "required": [
+            "keys",
+            "timeout_ms"
+          ],
+          "title": "PopSortedSetInput",
+          "type": "object"
+        },
+        "name": "redis_bzpopmin",
+        "outputSchema": {
+          "$defs": {
+            "EncodedOutput": {
+              "additionalProperties": false,
+              "properties": {
+                "encoding": {
+                  "$ref": "#/$defs/ValueEncoding"
+                },
+                "value": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "value",
+                "encoding"
+              ],
+              "type": "object"
+            },
+            "ScoredPopOutput": {
+              "additionalProperties": false,
+              "properties": {
+                "key": {
+                  "$ref": "#/$defs/EncodedOutput"
+                },
+                "member": {
+                  "$ref": "#/$defs/EncodedOutput"
+                },
+                "score": {
+                  "description": "Exact decimal score string as returned by Redis.",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "key",
+                "member",
+                "score"
+              ],
+              "type": "object"
+            },
+            "ValueEncoding": {
+              "enum": [
+                "utf8",
+                "base64"
+              ],
+              "type": "string"
+            }
+          },
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "popped": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/ScoredPopOutput"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "The popped member, absent when the wait timed out."
+            },
+            "timed_out": {
+              "description": "Whether the finite server-side wait elapsed without a member.",
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "timed_out"
+          ],
+          "title": "PopSortedSetOutput",
+          "type": "object"
+        },
+        "title": "Blocking Minimum Pop From Redis Sorted Sets"
+      },
+      "required_access": "full",
       "required_module": null,
       "requires_raw_opt_in": false
     },
@@ -28249,6 +29794,355 @@
       "requires_raw_opt_in": false
     },
     {
+      "bundle": "sessions",
+      "capability_requirements": {
+        "deployment": "standalone",
+        "minimum_module_version": null,
+        "minimum_redis_version": null,
+        "required_commands": [
+          "MONITOR"
+        ],
+        "required_module": null
+      },
+      "family": null,
+      "name": "redis_monitor_close",
+      "output_policy": "intrinsically_bounded",
+      "protocol": {
+        "annotations": {
+          "destructiveHint": false,
+          "idempotentHint": true,
+          "readOnlyHint": true
+        },
+        "description": "Close an owner-isolated MONITOR session, ending its dedicated connection and discarding buffered events.",
+        "inputSchema": {
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "session_id": {
+              "description": "Opaque session handle returned by redis_monitor_start.",
+              "type": "string"
+            }
+          },
+          "required": [
+            "session_id"
+          ],
+          "title": "CloseInput",
+          "type": "object"
+        },
+        "name": "redis_monitor_close",
+        "outputSchema": {
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "closed": {
+              "type": "boolean"
+            },
+            "session_id": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "session_id",
+            "closed"
+          ],
+          "title": "CloseOutput",
+          "type": "object"
+        },
+        "title": "Close Redis MONITOR Session"
+      },
+      "required_access": "full",
+      "required_module": null,
+      "requires_raw_opt_in": false
+    },
+    {
+      "bundle": "sessions",
+      "capability_requirements": {
+        "deployment": "standalone",
+        "minimum_module_version": null,
+        "minimum_redis_version": null,
+        "required_commands": [
+          "MONITOR"
+        ],
+        "required_module": null
+      },
+      "family": null,
+      "name": "redis_monitor_read",
+      "output_policy": "budget_guarded",
+      "protocol": {
+        "annotations": {
+          "destructiveHint": false,
+          "readOnlyHint": true
+        },
+        "description": "Read and consume a bounded page of redacted command observations from an owner-isolated MONITOR session. The wait is finite and request cancellation stops the read without consuming an event.",
+        "inputSchema": {
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "max_bytes": {
+              "default": 65536,
+              "description": "Maximum raw command and argument bytes removed in this read.",
+              "format": "uint",
+              "maximum": 1048576,
+              "minimum": 1,
+              "type": "integer"
+            },
+            "max_events": {
+              "default": 100,
+              "description": "Maximum events removed from the session buffer.",
+              "format": "uint",
+              "maximum": 1000,
+              "minimum": 1,
+              "type": "integer"
+            },
+            "session_id": {
+              "description": "Opaque session handle returned by redis_monitor_start.",
+              "type": "string"
+            },
+            "wait_ms": {
+              "default": 0,
+              "description": "Finite wait for the first available event, in milliseconds.",
+              "format": "uint64",
+              "maximum": 30000,
+              "minimum": 0,
+              "type": "integer"
+            }
+          },
+          "required": [
+            "session_id"
+          ],
+          "title": "ReadInput",
+          "type": "object"
+        },
+        "name": "redis_monitor_read",
+        "outputSchema": {
+          "$defs": {
+            "EncodedOutput": {
+              "additionalProperties": false,
+              "properties": {
+                "encoding": {
+                  "$ref": "#/$defs/ValueEncoding"
+                },
+                "value": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "value",
+                "encoding"
+              ],
+              "type": "object"
+            },
+            "EventOutput": {
+              "additionalProperties": false,
+              "properties": {
+                "age_ms": {
+                  "format": "uint64",
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                "argument_count": {
+                  "format": "uint",
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                "arguments": {
+                  "description": "Present only when the session captured argument values.",
+                  "items": {
+                    "$ref": "#/$defs/EncodedOutput"
+                  },
+                  "type": [
+                    "array",
+                    "null"
+                  ]
+                },
+                "client": {
+                  "description": "Stable per-session client pseudonym; real addresses are never exposed.",
+                  "type": "string"
+                },
+                "command": {
+                  "$ref": "#/$defs/EncodedOutput"
+                },
+                "database": {
+                  "format": "int64",
+                  "type": "integer"
+                },
+                "sequence": {
+                  "format": "uint64",
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                "timestamp": {
+                  "description": "Server-reported unix timestamp with microseconds, verbatim.",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "sequence",
+                "timestamp",
+                "database",
+                "client",
+                "command",
+                "argument_count",
+                "age_ms"
+              ],
+              "type": "object"
+            },
+            "ValueEncoding": {
+              "enum": [
+                "utf8",
+                "base64"
+              ],
+              "type": "string"
+            }
+          },
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "disconnected": {
+              "description": "Whether the dedicated MONITOR connection has ended; buffered events\nremain readable until the session is closed or expires.",
+              "type": "boolean"
+            },
+            "dropped_buffer_full_total": {
+              "format": "uint64",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "dropped_oversized_total": {
+              "format": "uint64",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "dropped_unparsed_total": {
+              "format": "uint64",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "events": {
+              "items": {
+                "$ref": "#/$defs/EventOutput"
+              },
+              "type": "array"
+            },
+            "remaining_buffered": {
+              "format": "uint",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "returned": {
+              "format": "uint",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "session_id": {
+              "type": "string"
+            },
+            "timed_out": {
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "session_id",
+            "events",
+            "returned",
+            "remaining_buffered",
+            "timed_out",
+            "dropped_buffer_full_total",
+            "dropped_oversized_total",
+            "dropped_unparsed_total",
+            "disconnected"
+          ],
+          "title": "ReadOutput",
+          "type": "object"
+        },
+        "title": "Read Redis MONITOR Events"
+      },
+      "required_access": "full",
+      "required_module": null,
+      "requires_raw_opt_in": false
+    },
+    {
+      "bundle": "sessions",
+      "capability_requirements": {
+        "deployment": "standalone",
+        "minimum_module_version": null,
+        "minimum_redis_version": null,
+        "required_commands": [
+          "MONITOR"
+        ],
+        "required_module": null
+      },
+      "family": null,
+      "name": "redis_monitor_start",
+      "output_policy": "intrinsically_bounded",
+      "protocol": {
+        "annotations": {
+          "destructiveHint": false,
+          "readOnlyHint": true
+        },
+        "description": "Open an owner-isolated MONITOR stream on a dedicated connection. Events are captured into a bounded drop-oldest buffer with client addresses pseudonymized and argument values omitted unless explicitly requested. MONITOR measurably reduces server throughput; sessions are quota-bound, expire when idle, and must be closed explicitly. Standalone targets only.",
+        "inputSchema": {
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "include_arguments": {
+              "default": false,
+              "description": "Capture binary-safe argument values instead of omitting them.\nArguments routinely contain application data and credentials, so the\ndefault reports only command names and argument counts.",
+              "type": "boolean"
+            }
+          },
+          "title": "StartInput",
+          "type": "object"
+        },
+        "name": "redis_monitor_start",
+        "outputSchema": {
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "buffered_events": {
+              "format": "uint",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "idle_timeout_ms": {
+              "format": "uint64",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "include_arguments": {
+              "type": "boolean"
+            },
+            "max_buffered_events": {
+              "format": "uint",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "max_event_bytes": {
+              "format": "uint",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "session_id": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "session_id",
+            "include_arguments",
+            "buffered_events",
+            "max_buffered_events",
+            "max_event_bytes",
+            "idle_timeout_ms"
+          ],
+          "title": "SessionOutput",
+          "type": "object"
+        },
+        "title": "Open Redis MONITOR Session"
+      },
+      "required_access": "full",
+      "required_module": null,
+      "requires_raw_opt_in": false
+    },
+    {
       "bundle": "essentials",
       "capability_requirements": {
         "deployment": "any",
@@ -42597,6 +44491,194 @@
         "title": "Search Redis Vector Set"
       },
       "required_access": "read_only",
+      "required_module": null,
+      "requires_raw_opt_in": false
+    },
+    {
+      "bundle": "sessions",
+      "capability_requirements": {
+        "deployment": "standalone",
+        "minimum_module_version": null,
+        "minimum_redis_version": "3.0.0",
+        "required_commands": [
+          "WAIT"
+        ],
+        "required_module": null
+      },
+      "family": null,
+      "name": "redis_wait",
+      "output_policy": "intrinsically_bounded",
+      "protocol": {
+        "annotations": {
+          "destructiveHint": false,
+          "idempotentHint": true,
+          "readOnlyHint": true
+        },
+        "description": "Report how many replicas currently acknowledge this dedicated connection's write position, waiting a finite, server-capped time for the requested count. The call runs on a fresh connection with no prior writes, so it measures replica acknowledgement without implying durability for writes issued elsewhere.",
+        "inputSchema": {
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "replicas": {
+              "description": "Replica acknowledgements to wait for.",
+              "format": "uint",
+              "maximum": 1024,
+              "minimum": 0,
+              "type": "integer"
+            },
+            "timeout_ms": {
+              "description": "Finite server-side wait in milliseconds. Indefinite blocking is not\nsupported; the configured engine maximum also applies.",
+              "format": "uint64",
+              "maximum": 30000,
+              "minimum": 1,
+              "type": "integer"
+            }
+          },
+          "required": [
+            "replicas",
+            "timeout_ms"
+          ],
+          "title": "WaitInput",
+          "type": "object"
+        },
+        "name": "redis_wait",
+        "outputSchema": {
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "acknowledged_replicas": {
+              "description": "Replicas that acknowledged, as reported by Redis.",
+              "format": "uint64",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "requested_replicas": {
+              "description": "The requested replica count.",
+              "format": "uint",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "requirement_met": {
+              "description": "Whether the requested count was reached before the timeout.",
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "acknowledged_replicas",
+            "requested_replicas",
+            "requirement_met"
+          ],
+          "title": "WaitOutput",
+          "type": "object"
+        },
+        "title": "Wait For Redis Replica Acknowledgement"
+      },
+      "required_access": "full",
+      "required_module": null,
+      "requires_raw_opt_in": false
+    },
+    {
+      "bundle": "sessions",
+      "capability_requirements": {
+        "deployment": "standalone",
+        "minimum_module_version": null,
+        "minimum_redis_version": "7.2.0",
+        "required_commands": [
+          "WAITAOF"
+        ],
+        "required_module": null
+      },
+      "family": null,
+      "name": "redis_waitaof",
+      "output_policy": "intrinsically_bounded",
+      "protocol": {
+        "annotations": {
+          "destructiveHint": false,
+          "idempotentHint": true,
+          "readOnlyHint": true
+        },
+        "description": "Report how many local and replica append-only files cover this dedicated connection's write position, waiting a finite, server-capped time for the requested counts. The call runs on a fresh connection with no prior writes, so it measures AOF acknowledgement without implying durability for writes issued elsewhere. Requires Redis 7.2 with AOF enabled.",
+        "inputSchema": {
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "local": {
+              "description": "Local AOF fsync acknowledgements to wait for (0 or 1).",
+              "format": "uint",
+              "maximum": 1,
+              "minimum": 0,
+              "type": "integer"
+            },
+            "replicas": {
+              "description": "Replica AOF fsync acknowledgements to wait for.",
+              "format": "uint",
+              "maximum": 1024,
+              "minimum": 0,
+              "type": "integer"
+            },
+            "timeout_ms": {
+              "description": "Finite server-side wait in milliseconds. Indefinite blocking is not\nsupported; the configured engine maximum also applies.",
+              "format": "uint64",
+              "maximum": 30000,
+              "minimum": 1,
+              "type": "integer"
+            }
+          },
+          "required": [
+            "local",
+            "replicas",
+            "timeout_ms"
+          ],
+          "title": "WaitAofInput",
+          "type": "object"
+        },
+        "name": "redis_waitaof",
+        "outputSchema": {
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "acknowledged_local": {
+              "description": "Local instances that fsynced the AOF, as reported by Redis.",
+              "format": "uint64",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "acknowledged_replicas": {
+              "description": "Replicas that fsynced the AOF, as reported by Redis.",
+              "format": "uint64",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "requested_local": {
+              "description": "The requested local count.",
+              "format": "uint",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "requested_replicas": {
+              "description": "The requested replica count.",
+              "format": "uint",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "requirement_met": {
+              "description": "Whether both requested counts were reached before the timeout.",
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "acknowledged_local",
+            "acknowledged_replicas",
+            "requested_local",
+            "requested_replicas",
+            "requirement_met"
+          ],
+          "title": "WaitAofOutput",
+          "type": "object"
+        },
+        "title": "Wait For Redis AOF Fsync Acknowledgement"
+      },
+      "required_access": "full",
       "required_module": null,
       "requires_raw_opt_in": false
     },

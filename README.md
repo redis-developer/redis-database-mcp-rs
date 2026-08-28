@@ -143,6 +143,12 @@ The standalone default exposes 201 broadly useful tools:
 - optional owner-isolated Pub/Sub sessions: `redis_subscribe`,
   `redis_psubscribe`, `redis_ssubscribe`, `redis_pubsub_read`,
   `redis_pubsub_unsubscribe`, `redis_pubsub_close`
+- optional finite blocking calls and replication waits: `redis_blpop`,
+  `redis_brpop`, `redis_blmove`, `redis_blmovem`, `redis_blmpop`,
+  `redis_bzpopmin`, `redis_bzpopmax`, `redis_bzmpop`, `redis_wait`,
+  `redis_waitaof`
+- optional owner-isolated MONITOR sessions: `redis_monitor_start`,
+  `redis_monitor_read`, `redis_monitor_close`
 - optional scripting family: `redis_eval`, `redis_eval_ro`, `redis_evalsha`,
   `redis_evalsha_ro`, `redis_fcall`, `redis_fcall_ro`, `redis_script_exists`,
   `redis_script_load`, `redis_script_flush`, `redis_script_kill`,
@@ -152,7 +158,7 @@ The standalone default exposes 201 broadly useful tools:
 - optional guarded administration: redacted ACL, backup, Cluster,
   configuration, server-state, latency, memory, slow-log, and hot-key
   inspection plus separately Full-gated client, configuration, flush, reset,
-  purge, hot-key, and database controls
+  purge, hot-key, database, and Redis 8.10 backup lifecycle controls
 - optional bounded atomic transactions: `redis_transaction`
 - optional governed argv invocation tiers: `redis_command_readonly`,
   `redis_command_write`, `redis_command_metadata`, `redis_command_inventory`
@@ -161,8 +167,9 @@ The standalone default exposes 201 broadly useful tools:
 
 The reusable router keeps the stateful `sessions` bundle opt-in because its
 lifecycle belongs to the embedding host. The included `redis-mcp-server`
-provides the built-in DirectRedis manager automatically, so its ordinary
-stdio surface contains the 201 curated defaults plus these six session tools.
+provides the built-in DirectRedis Pub/Sub, blocking, and MONITOR backends
+automatically, so its ordinary stdio surface contains the 201 curated defaults
+plus these session and lifecycle tools.
 
 Every successful tool result includes MCP structuredContent and an output
 schema. Results are limited by default to 256 KiB for the complete encoded MCP
@@ -237,6 +244,21 @@ never replays a possibly committed transaction. On Redis Cluster all keys must
 hash to one slot: watched keys are validated client-side and pin the pipeline
 to their slot's node, while cross-slot command lists return the stable
 `CROSSSLOT` error.
+
+The `sessions` bundle also covers Redis operations that block or stream.
+Finite blocking pops, moves, and replication waits each run on one freshly
+dialed dedicated connection with a required, server-capped timeout, so a wait
+can never stall the shared executor and indefinite blocking is impossible; a
+server-side timeout is an explicit, distinguishable result, and a delivered
+element is never replayed after a connection failure. MONITOR becomes an
+owner-isolated session over a dedicated connection with a bounded drop-oldest
+event buffer: client addresses are pseudonymized, argument values are omitted
+unless the session explicitly opts in, unparseable lines are dropped rather
+than partially exposed, reads are finite and cancellable, and idle sessions
+are reaped. The Redis 8.10 backup lifecycle joins the admin bundle as guarded
+`start`, `seal`, `abort`, and `cleanup` transitions that pair with the
+existing status and file-count inspections; abort and cleanup require
+explicit confirmation, and results never contain filesystem paths.
 
 See [the spike decision record](docs/spike.md) for the tested architecture,
 REPL findings, and redisctl migration sequence.

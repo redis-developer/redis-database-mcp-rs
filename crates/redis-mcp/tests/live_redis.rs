@@ -2,12 +2,13 @@ use std::time::Duration;
 
 use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64};
 use redis_mcp::{
-    AccessMode, CapabilityStatus, DirectRedis, DirectRedisPubSubSessionManager,
-    DirectRedisTransactions, NativeRedisInvocation, OutputBudget, PubSubReadRequest,
-    PubSubSessionLimits, PubSubSessionManager, PubSubSessionOwner, PubSubSubscriptionKind,
-    RawCommandPolicy, RedisDeployment, RedisInvocationEngine, RedisMcp, RedisModule,
-    RedisTransactionEngine, RedisTransactionOutcome, RedisTransactionRequest, RedisValue,
-    RedisVersion, ToolBundle, UnavailableToolPolicy,
+    AccessMode, CapabilityStatus, DirectRedis, DirectRedisBlocking, DirectRedisMonitorSessions,
+    DirectRedisPubSubSessionManager, DirectRedisTransactions, MonitorSessionLimits,
+    NativeRedisInvocation, OutputBudget, PubSubReadRequest, PubSubSessionLimits,
+    PubSubSessionManager, PubSubSessionOwner, PubSubSubscriptionKind, RawCommandPolicy,
+    RedisDeployment, RedisInvocationEngine, RedisMcp, RedisModule, RedisTransactionEngine,
+    RedisTransactionOutcome, RedisTransactionRequest, RedisValue, RedisVersion, ToolBundle,
+    UnavailableToolPolicy,
 };
 use tower_mcp::client::{ChannelTransport, McpClient};
 
@@ -7626,4 +7627,556 @@ async fn live_bulk_acl_denials_keep_record_identity_without_leaking_credentials(
         .query_async::<i64>(&mut admin)
         .await
         .expect("remove bulk ACL test keys");
+}
+
+async fn blocking_router_client(url: &str) -> (McpClient, redis_mcp::RedisCapabilities) {
+    let executor = DirectRedis::connect(url).await.expect("connect to Redis");
+    let capabilities = executor
+        .discover_capabilities()
+        .await
+        .expect("discover Redis capabilities");
+    let router = RedisMcp::builder(executor)
+        .access(AccessMode::Full)
+        .capabilities(capabilities.clone())
+        .blocking(DirectRedisBlocking::standalone(url).expect("blocking executor"))
+        .build();
+    let client = McpClient::connect(ChannelTransport::new(router))
+        .await
+        .expect("connect blocking MCP client");
+    client
+        .initialize("redis-mcp-live-blocking-test", "0")
+        .await
+        .expect("initialize blocking MCP client");
+    (client, capabilities)
+}
+
+#[tokio::test]
+async fn live_blocking_calls_are_finite_bounded_and_binary_safe() {
+    let Some(redis) = TestRedis::start().await else {
+        return;
+    };
+    let mut connection = redis::Client::open(redis.url.as_str())
+        .expect("open blocking verification client")
+        .get_multiplexed_async_connection()
+        .await
+        .expect("connect blocking verification client");
+    let (client, capabilities) = blocking_router_client(&redis.url).await;
+    let prefix = test_key("blocking");
+    let version = capabilities.redis_version().expect("discovered version");
+
+    // An already-ready key answers immediately, in key priority order, with
+    // binary-safe values.
+    let binary_value = vec![0xff_u8, 0x00, 0x01];
+    redis::cmd("RPUSH")
+        .arg(format!("{prefix}:queue"))
+        .arg(&binary_value)
+        .query_async::<i64>(&mut connection)
+        .await
+        .expect("seed blocking list");
+    let popped = call_structured(
+        &client,
+        "redis_blpop",
+        serde_json::json!({
+            "keys": [
+                {"value": format!("{prefix}:empty")},
+                {"value": format!("{prefix}:queue")},
+            ],
+            "timeout_ms": 2_000,
+        }),
+    )
+    .await;
+    assert_eq!(popped["timed_out"], false);
+    assert_eq!(popped["popped"]["key"]["value"], format!("{prefix}:queue"));
+    assert_eq!(popped["popped"]["element"]["encoding"], "base64");
+    assert_eq!(
+        popped["popped"]["element"]["value"],
+        BASE64.encode(&binary_value)
+    );
+
+    // A server-side timeout is an explicit result, not an error.
+    let timed_out = call_structured(
+        &client,
+        "redis_brpop",
+        serde_json::json!({
+            "keys": [{"value": format!("{prefix}:empty")}],
+            "timeout_ms": 200,
+        }),
+    )
+    .await;
+    assert_eq!(timed_out["timed_out"], true);
+    assert!(timed_out["popped"].is_null());
+
+    // The call genuinely blocks: an element pushed after the call starts is
+    // still delivered.
+    let mut pusher = connection.clone();
+    let deferred_key = format!("{prefix}:deferred");
+    let push_key = deferred_key.clone();
+    let pushed_later = tokio::spawn(async move {
+        tokio::time::sleep(Duration::from_millis(300)).await;
+        redis::cmd("LPUSH")
+            .arg(&push_key)
+            .arg("late-arrival")
+            .query_async::<i64>(&mut pusher)
+            .await
+            .expect("push after blocking call started");
+    });
+    let awaited = call_structured(
+        &client,
+        "redis_blpop",
+        serde_json::json!({
+            "keys": [{"value": deferred_key}],
+            "timeout_ms": 5_000,
+        }),
+    )
+    .await;
+    pushed_later.await.expect("deferred push completes");
+    assert_eq!(awaited["timed_out"], false);
+    assert_eq!(awaited["popped"]["element"]["value"], "late-arrival");
+
+    // BLMOVE transfers one element and reports it.
+    redis::cmd("RPUSH")
+        .arg(format!("{prefix}:source"))
+        .arg("moved")
+        .query_async::<i64>(&mut connection)
+        .await
+        .expect("seed BLMOVE source");
+    let moved = call_structured(
+        &client,
+        "redis_blmove",
+        serde_json::json!({
+            "source": {"value": format!("{prefix}:source")},
+            "destination": {"value": format!("{prefix}:destination")},
+            "from": "left",
+            "to": "right",
+            "timeout_ms": 2_000,
+        }),
+    )
+    .await;
+    assert_eq!(moved["timed_out"], false);
+    assert_eq!(moved["element"]["value"], "moved");
+    let destination_length: i64 = redis::cmd("LLEN")
+        .arg(format!("{prefix}:destination"))
+        .query_async(&mut connection)
+        .await
+        .expect("verify BLMOVE destination");
+    assert_eq!(destination_length, 1);
+
+    // Sorted-set pops preserve exact decimal score strings.
+    redis::cmd("ZADD")
+        .arg(format!("{prefix}:board"))
+        .arg("1.5")
+        .arg("low")
+        .arg("2.25")
+        .arg("high")
+        .query_async::<i64>(&mut connection)
+        .await
+        .expect("seed blocking sorted set");
+    let scored = call_structured(
+        &client,
+        "redis_bzpopmin",
+        serde_json::json!({
+            "keys": [{"value": format!("{prefix}:board")}],
+            "timeout_ms": 2_000,
+        }),
+    )
+    .await;
+    assert_eq!(scored["popped"]["member"]["value"], "low");
+    assert_eq!(scored["popped"]["score"], "1.5");
+
+    // Redis 7.0 counted forms pop bounded batches from the first ready key.
+    if version >= RedisVersion::new(7, 0, 0) {
+        redis::cmd("RPUSH")
+            .arg(format!("{prefix}:batch"))
+            .arg("one")
+            .arg("two")
+            .arg("three")
+            .query_async::<i64>(&mut connection)
+            .await
+            .expect("seed BLMPOP list");
+        let batch = call_structured(
+            &client,
+            "redis_blmpop",
+            serde_json::json!({
+                "keys": [{"value": format!("{prefix}:batch")}],
+                "end": "left",
+                "count": 2,
+                "timeout_ms": 2_000,
+            }),
+        )
+        .await;
+        assert_eq!(batch["popped"], 2);
+        assert_eq!(batch["elements"][0]["value"], "one");
+        assert_eq!(batch["elements"][1]["value"], "two");
+
+        let scored_batch = call_structured(
+            &client,
+            "redis_bzmpop",
+            serde_json::json!({
+                "keys": [{"value": format!("{prefix}:board")}],
+                "end": "max",
+                "count": 5,
+                "timeout_ms": 2_000,
+            }),
+        )
+        .await;
+        assert_eq!(scored_batch["popped"], 1);
+        assert_eq!(scored_batch["members"][0]["member"]["value"], "high");
+        assert_eq!(scored_batch["members"][0]["score"], "2.25");
+    }
+
+    // The Redis 8.10 multi-move form is version-gated in both directions.
+    if version >= RedisVersion::new(8, 10, 0) {
+        redis::cmd("RPUSH")
+            .arg(format!("{prefix}:msource"))
+            .arg("a")
+            .arg("b")
+            .query_async::<i64>(&mut connection)
+            .await
+            .expect("seed BLMOVEM source");
+        let multi_moved = call_structured(
+            &client,
+            "redis_blmovem",
+            serde_json::json!({
+                "source": {"value": format!("{prefix}:msource")},
+                "destination": {"value": format!("{prefix}:mdestination")},
+                "from": "left",
+                "to": "right",
+                "timeout_ms": 2_000,
+                "amount": {"type": "exactly", "count": 2, "ordering": "bulk"},
+            }),
+        )
+        .await;
+        assert_eq!(multi_moved["moved"], 2);
+        assert_eq!(multi_moved["timed_out"], false);
+    } else {
+        let gated = client
+            .call_tool(
+                "redis_blmovem",
+                serde_json::json!({
+                    "source": {"value": format!("{prefix}:msource")},
+                    "destination": {"value": format!("{prefix}:mdestination")},
+                    "from": "left",
+                    "to": "right",
+                    "timeout_ms": 2_000,
+                }),
+            )
+            .await
+            .expect("capability gate is a tool result");
+        assert!(gated.is_error, "{gated:?}");
+    }
+
+    // WAIT reports achieved acknowledgements without durability claims.
+    let wait = call_structured(
+        &client,
+        "redis_wait",
+        serde_json::json!({"replicas": 0, "timeout_ms": 200}),
+    )
+    .await;
+    assert_eq!(wait["acknowledged_replicas"], 0);
+    assert_eq!(wait["requirement_met"], true);
+
+    // WAITAOF succeeds with zero requirements and surfaces the server's
+    // explicit error when the AOF is disabled but a local count is requested.
+    if version >= RedisVersion::new(7, 2, 0) {
+        let wait_aof = call_structured(
+            &client,
+            "redis_waitaof",
+            serde_json::json!({"local": 0, "replicas": 0, "timeout_ms": 200}),
+        )
+        .await;
+        assert_eq!(wait_aof["acknowledged_local"], 0);
+        assert_eq!(wait_aof["requirement_met"], true);
+        let aof_disabled = client
+            .call_tool(
+                "redis_waitaof",
+                serde_json::json!({"local": 1, "replicas": 0, "timeout_ms": 200}),
+            )
+            .await
+            .expect("disabled AOF is a tool result");
+        assert!(aof_disabled.is_error, "{aof_disabled:?}");
+    }
+
+    // Indefinite blocking is impossible: a zero timeout is rejected before
+    // any connection is dialed.
+    let zero_timeout = client
+        .call_tool(
+            "redis_blpop",
+            serde_json::json!({
+                "keys": [{"value": format!("{prefix}:empty")}],
+                "timeout_ms": 0,
+            }),
+        )
+        .await
+        .expect("zero timeout is a tool result");
+    assert!(zero_timeout.is_error, "{zero_timeout:?}");
+
+    // Blocking tools require full access and are absent below it.
+    let read_write = router_client(&redis.url, AccessMode::ReadWrite).await;
+    let advertised = read_write
+        .list_tools()
+        .await
+        .expect("list read-write tools")
+        .tools
+        .into_iter()
+        .map(|tool| tool.name)
+        .collect::<Vec<_>>();
+    assert!(
+        !advertised
+            .iter()
+            .any(|name| name.starts_with("redis_bl") || name.starts_with("redis_bz")),
+        "blocking tools are full-access gated"
+    );
+
+    // The suite shares one keyspace when REDIS_URL is set; remove this
+    // test's keys so keyspace-sensitive diagnostics stay stable.
+    let mut cleanup = redis::cmd("UNLINK");
+    for suffix in [
+        "queue",
+        "empty",
+        "deferred",
+        "source",
+        "destination",
+        "board",
+        "batch",
+        "msource",
+        "mdestination",
+    ] {
+        cleanup.arg(format!("{prefix}:{suffix}"));
+    }
+    cleanup
+        .query_async::<i64>(&mut connection)
+        .await
+        .expect("remove blocking test keys");
+}
+
+#[cfg(unix)]
+#[tokio::test]
+async fn live_monitor_sessions_are_redacted_bounded_and_closable() {
+    // MONITOR observes every command on the server, so this test always uses
+    // an isolated wrapper-managed instance instead of a shared REDIS_URL.
+    let managed = match ManagedRedis::start().await {
+        Ok(managed) => managed,
+        Err(RedisServerError::BinaryNotFound { binary }) => {
+            eprintln!("skipping MONITOR session test: {binary} is not on PATH");
+            return;
+        }
+        Err(error) => panic!("start isolated MONITOR Redis: {error}"),
+    };
+    let url = managed.url();
+    let executor = DirectRedis::connect(&url).await.expect("connect to Redis");
+    let capabilities = executor
+        .discover_capabilities()
+        .await
+        .expect("discover Redis capabilities");
+    let router = RedisMcp::builder(executor)
+        .access(AccessMode::Full)
+        .capabilities(capabilities)
+        .monitor_sessions(
+            DirectRedisMonitorSessions::standalone(&url, MonitorSessionLimits::default())
+                .expect("monitor session manager"),
+        )
+        .build();
+    let client = McpClient::connect(ChannelTransport::new(router))
+        .await
+        .expect("connect MONITOR MCP client");
+    client
+        .initialize("redis-mcp-live-monitor-test", "0")
+        .await
+        .expect("initialize MONITOR MCP client");
+    let mut connection = redis::Client::open(url.as_str())
+        .expect("open MONITOR traffic client")
+        .get_multiplexed_async_connection()
+        .await
+        .expect("connect MONITOR traffic client");
+
+    // Redacted by default: command names and argument counts only.
+    let session = call_structured(&client, "redis_monitor_start", serde_json::json!({})).await;
+    let session_id = session["session_id"].as_str().expect("session id");
+    assert_eq!(session["include_arguments"], false);
+
+    // The default per-owner quota is one MONITOR session.
+    let quota = client
+        .call_tool("redis_monitor_start", serde_json::json!({}))
+        .await
+        .expect("quota rejection is a tool result");
+    assert!(quota.is_error, "{quota:?}");
+
+    redis::cmd("SET")
+        .arg("monitor-observed-key")
+        .arg("monitor-secret-value")
+        .query_async::<String>(&mut connection)
+        .await
+        .expect("generate observed traffic");
+
+    let mut observed = None;
+    for _ in 0..10 {
+        let page = call_structured(
+            &client,
+            "redis_monitor_read",
+            serde_json::json!({"session_id": session_id, "wait_ms": 1_000}),
+        )
+        .await;
+        let rendered = page.to_string();
+        assert!(
+            !rendered.contains("127.0.0.1"),
+            "client addresses must be pseudonymized: {rendered}"
+        );
+        assert!(
+            !rendered.contains("monitor-secret-value"),
+            "argument values must be omitted by default: {rendered}"
+        );
+        if let Some(event) = page["events"]
+            .as_array()
+            .expect("monitor events")
+            .iter()
+            .find(|event| event["command"]["value"] == "SET")
+        {
+            assert_eq!(event["argument_count"], 2);
+            assert!(event["arguments"].is_null());
+            assert!(
+                event["client"]
+                    .as_str()
+                    .expect("client pseudonym")
+                    .starts_with("client-")
+            );
+            observed = Some(event.clone());
+            break;
+        }
+    }
+    assert!(observed.is_some(), "SET command must reach the session");
+
+    // Closing releases the handle; further reads are owner-scoped not-found.
+    let closed = call_structured(
+        &client,
+        "redis_monitor_close",
+        serde_json::json!({"session_id": session_id}),
+    )
+    .await;
+    assert_eq!(closed["closed"], true);
+    let after_close = client
+        .call_tool(
+            "redis_monitor_read",
+            serde_json::json!({"session_id": session_id}),
+        )
+        .await
+        .expect("read after close is a tool result");
+    assert!(after_close.is_error, "{after_close:?}");
+
+    // Explicit opt-in captures binary-safe argument values.
+    let capturing = call_structured(
+        &client,
+        "redis_monitor_start",
+        serde_json::json!({"include_arguments": true}),
+    )
+    .await;
+    let capturing_id = capturing["session_id"].as_str().expect("session id");
+    redis::cmd("SET")
+        .arg("monitor-observed-key")
+        .arg("visible-value")
+        .query_async::<String>(&mut connection)
+        .await
+        .expect("generate captured traffic");
+    let mut captured = false;
+    for _ in 0..10 {
+        let page = call_structured(
+            &client,
+            "redis_monitor_read",
+            serde_json::json!({"session_id": capturing_id, "wait_ms": 1_000}),
+        )
+        .await;
+        if page["events"]
+            .as_array()
+            .expect("captured events")
+            .iter()
+            .any(|event| {
+                event["command"]["value"] == "SET"
+                    && event["arguments"][1]["value"] == "visible-value"
+            })
+        {
+            captured = true;
+            break;
+        }
+    }
+    assert!(captured, "opted-in sessions must capture argument values");
+    call_structured(
+        &client,
+        "redis_monitor_close",
+        serde_json::json!({"session_id": capturing_id}),
+    )
+    .await;
+}
+
+#[cfg(unix)]
+#[tokio::test]
+async fn live_backup_lifecycle_is_guarded_and_confirmable() {
+    // The backup state machine is server-global, so this test always uses an
+    // isolated wrapper-managed instance instead of a shared REDIS_URL.
+    let managed = match ManagedRedis::start().await {
+        Ok(managed) => managed,
+        Err(RedisServerError::BinaryNotFound { binary }) => {
+            eprintln!("skipping backup lifecycle test: {binary} is not on PATH");
+            return;
+        }
+        Err(error) => panic!("start isolated backup Redis: {error}"),
+    };
+    let url = managed.url();
+    let executor = DirectRedis::connect(&url).await.expect("connect to Redis");
+    let capabilities = executor
+        .discover_capabilities()
+        .await
+        .expect("discover Redis capabilities");
+    let version = capabilities.redis_version().expect("discovered version");
+    let router = RedisMcp::builder(executor)
+        .access(AccessMode::Full)
+        .capabilities(capabilities)
+        .bundle(ToolBundle::Admin)
+        .build();
+    let client = McpClient::connect(ChannelTransport::new(router))
+        .await
+        .expect("connect backup MCP client");
+    client
+        .initialize("redis-mcp-live-backup-test", "0")
+        .await
+        .expect("initialize backup MCP client");
+
+    if version < RedisVersion::new(8, 10, 0) {
+        let gated = client
+            .call_tool("redis_backup_start", serde_json::json!({}))
+            .await
+            .expect("capability gate is a tool result");
+        assert!(gated.is_error, "{gated:?}");
+        return;
+    }
+
+    // Destructive transitions demand explicit confirmation before any
+    // command is sent.
+    let unconfirmed = client
+        .call_tool("redis_backup_abort", serde_json::json!({}))
+        .await
+        .expect("missing confirmation is a tool result");
+    assert!(unconfirmed.is_error, "{unconfirmed:?}");
+
+    let started = client
+        .call_tool("redis_backup_start", serde_json::json!({}))
+        .await
+        .expect("BACKUP START is a tool result");
+    if started.is_error {
+        // Backups depend on server directory configuration this harness does
+        // not control; the guarded error path is still redacted and stable.
+        eprintln!("skipping backup lifecycle transitions: BACKUP START unavailable: {started:?}");
+        return;
+    }
+    let status = call_structured(&client, "redis_backup_status", serde_json::json!({})).await;
+    assert!(status["state"].is_string(), "{status:?}");
+
+    let sealed = call_structured(&client, "redis_backup_seal", serde_json::json!({})).await;
+    assert_eq!(sealed["acknowledged"], true);
+
+    let cleaned = call_structured(
+        &client,
+        "redis_backup_cleanup",
+        serde_json::json!({"confirm": true}),
+    )
+    .await;
+    assert_eq!(cleaned["acknowledged"], true);
 }

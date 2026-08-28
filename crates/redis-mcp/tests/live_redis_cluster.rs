@@ -4,11 +4,11 @@ use std::{collections::BTreeMap, io, net::TcpListener, time::Duration};
 
 use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64};
 use redis_mcp::{
-    AccessMode, CapabilityStatus, DirectRedis, DirectRedisCluster, DirectRedisPubSubSessionManager,
-    DirectRedisTransactions, NativeRedisInvocation, PubSubSessionLimits, PubSubSessionManager,
-    RawCommandPolicy, RedisDeployment, RedisExecutor, RedisInvocationEngine, RedisMcp, RedisModule,
-    RedisTransactionEngine, RedisTransactionOutcome, RedisTransactionRequest, RedisValue,
-    RedisVersion, ToolBundle,
+    AccessMode, CapabilityStatus, DirectRedis, DirectRedisBlocking, DirectRedisCluster,
+    DirectRedisPubSubSessionManager, DirectRedisTransactions, NativeRedisInvocation,
+    PubSubSessionLimits, PubSubSessionManager, RawCommandPolicy, RedisDeployment, RedisExecutor,
+    RedisInvocationEngine, RedisMcp, RedisModule, RedisTransactionEngine, RedisTransactionOutcome,
+    RedisTransactionRequest, RedisValue, RedisVersion, ToolBundle,
 };
 use redis_server_wrapper::{Error as RedisServerError, RedisCluster, RedisClusterHandle};
 use tower_mcp::client::{ChannelTransport, McpClient};
@@ -2897,4 +2897,134 @@ async fn bulk_load_routes_records_and_keeps_identity_in_cluster() {
         conflicted["failures"][0]["key"]["value"],
         format!("{prefix}:{{a}}:string")
     );
+}
+
+#[tokio::test]
+async fn blocking_pops_route_same_slot_keys_and_gate_standalone_lifecycles_in_cluster() {
+    let _cluster_guard = CLUSTER_TEST_LOCK.lock().await;
+    let Some(cluster) = TestCluster::start().await else {
+        return;
+    };
+    let executor = DirectRedisCluster::connect(&cluster.seed_urls)
+        .await
+        .expect("connect cluster blocking executor");
+    let capabilities = executor
+        .discover_capabilities()
+        .await
+        .expect("discover cluster blocking capabilities");
+    let router = RedisMcp::builder(executor)
+        .access(AccessMode::Full)
+        .capabilities(capabilities)
+        .blocking(
+            DirectRedisBlocking::cluster(&cluster.seed_urls)
+                .expect("cluster blocking dedicated-connection executor"),
+        )
+        .build();
+    let client = McpClient::connect(ChannelTransport::new(router))
+        .await
+        .expect("connect cluster blocking MCP client");
+    client
+        .initialize("redis-mcp-cluster-blocking-test", "0")
+        .await
+        .expect("initialize cluster blocking MCP client");
+
+    let tag = format!("blocking:cluster:{{same-{}}}", std::process::id());
+    let queue = format!("{tag}:queue");
+    let missing = format!("{tag}:missing");
+    let seeded = client
+        .call_tool(
+            "redis_rpush",
+            serde_json::json!({"key": queue, "elements": [{"value": "routed"}]}),
+        )
+        .await
+        .expect("seed cluster blocking list");
+    assert!(!seeded.is_error, "{seeded:?}");
+
+    // Same-slot key lists route by hash tag and answer from the ready key.
+    let popped = client
+        .call_tool(
+            "redis_blpop",
+            serde_json::json!({
+                "keys": [{"value": missing.clone()}, {"value": queue.clone()}],
+                "timeout_ms": 2_000,
+            }),
+        )
+        .await
+        .expect("cluster BLPOP");
+    assert!(!popped.is_error, "{popped:?}");
+    let popped = popped
+        .structured_content
+        .expect("cluster BLPOP structured content");
+    assert_eq!(popped["popped"]["key"]["value"], queue);
+    assert_eq!(popped["popped"]["element"]["value"], "routed");
+
+    // A finite server-side timeout stays an explicit result on Cluster.
+    let timed_out = client
+        .call_tool(
+            "redis_brpop",
+            serde_json::json!({"keys": [{"value": missing}], "timeout_ms": 200}),
+        )
+        .await
+        .expect("cluster BRPOP timeout");
+    assert!(!timed_out.is_error, "{timed_out:?}");
+    assert_eq!(
+        timed_out
+            .structured_content
+            .expect("cluster BRPOP structured content")["timed_out"],
+        true
+    );
+
+    // Cross-slot key lists surface the server's routing rejection instead of
+    // silently observing only one slot.
+    let cross_slot = client
+        .call_tool(
+            "redis_blpop",
+            serde_json::json!({
+                "keys": [
+                    {"value": format!("blocking:cluster:{{a-{}}}:q", std::process::id())},
+                    {"value": format!("blocking:cluster:{{b-{}}}:q", std::process::id())},
+                ],
+                "timeout_ms": 500,
+            }),
+        )
+        .await
+        .expect("cross-slot rejection is a tool result");
+    assert!(cross_slot.is_error, "{cross_slot:?}");
+
+    // Sorted-set blocking pops keep exact score strings across the router.
+    let zset = format!("{tag}:board");
+    let seeded_zset = client
+        .call_tool(
+            "redis_zadd",
+            serde_json::json!({
+                "key": zset.clone(),
+                "members": [{"score": 1.5, "member": "first"}],
+            }),
+        )
+        .await
+        .expect("seed cluster blocking sorted set");
+    assert!(!seeded_zset.is_error, "{seeded_zset:?}");
+    let scored = client
+        .call_tool(
+            "redis_bzpopmin",
+            serde_json::json!({"keys": [{"value": zset}], "timeout_ms": 2_000}),
+        )
+        .await
+        .expect("cluster BZPOPMIN");
+    assert!(!scored.is_error, "{scored:?}");
+    let scored = scored
+        .structured_content
+        .expect("cluster BZPOPMIN structured content");
+    assert_eq!(scored["popped"]["score"], "1.5");
+
+    // Node-scoped lifecycles refuse Cluster targets instead of pretending
+    // database-wide semantics.
+    let wait_gated = client
+        .call_tool(
+            "redis_wait",
+            serde_json::json!({"replicas": 0, "timeout_ms": 100}),
+        )
+        .await
+        .expect("deployment gate is a tool result");
+    assert!(wait_gated.is_error, "{wait_gated:?}");
 }

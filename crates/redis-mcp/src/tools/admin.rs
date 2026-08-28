@@ -12,7 +12,7 @@ use tower_mcp::{
 
 use super::{
     InputEncoding, ToolState, ValueEncoding, command, decode_input, destructive_annotations,
-    empty_input_schema, encode_bytes, output_schema, read_annotations,
+    empty_input_schema, encode_bytes, output_schema, read_annotations, write_annotations,
 };
 use crate::{
     AccessMode, RedisValue,
@@ -47,6 +47,38 @@ pub(super) fn add_read_tools(mut router: McpRouter, state: Arc<ToolState>) -> Mc
 
 pub(super) fn add_full_tools(mut router: McpRouter, state: Arc<ToolState>) -> McpRouter {
     router = router.tool(acl_log_reset_tool(state.clone()));
+    router = router.tool(backup_transition_tool(
+        state.clone(),
+        "redis_backup_start",
+        "START",
+        "Start Redis Backup",
+        "Start a new Redis 8.10 backup into the server-configured backup directory. The backup state machine is server-global; check redis_backup_status before transitioning and never expect filesystem paths in results. Requires Redis @admin +backup|start; full access and node-local.",
+        false,
+    ));
+    router = router.tool(backup_transition_tool(
+        state.clone(),
+        "redis_backup_seal",
+        "SEAL",
+        "Seal Redis Backup",
+        "Freeze the in-progress Redis 8.10 backup into an immutable base, increment, and manifest set. The backup state machine is server-global; check redis_backup_status before transitioning. Requires Redis @admin +backup|seal; full access and node-local.",
+        false,
+    ));
+    router = router.tool(backup_transition_tool(
+        state.clone(),
+        "redis_backup_abort",
+        "ABORT",
+        "Abort Redis Backup",
+        "Cancel the in-progress, unsealed Redis 8.10 backup, discarding its files. The backup state machine is server-global, so this aborts whichever backup is running regardless of which client started it; requires confirm=true, Redis @admin +backup|abort, full access, and is node-local.",
+        true,
+    ));
+    router = router.tool(backup_transition_tool(
+        state.clone(),
+        "redis_backup_cleanup",
+        "CLEANUP",
+        "Clean Up Redis Backup",
+        "Remove the sealed Redis 8.10 backup's files and return the server to idle. The backup state machine is server-global, so this removes the sealed backup regardless of which client produced it; requires confirm=true, Redis @admin +backup|cleanup, full access, and is node-local.",
+        true,
+    ));
     router = router.tool(client_control_tool(state.clone()));
     router = router.tool(config_set_tool(state.clone()));
     router = router.tool(config_resetstat_tool(state.clone()));
@@ -791,6 +823,80 @@ fn backup_files_tool(state: Arc<ToolState>) -> Tool {
             state.output(&BackupFilesOutput { entry_count, paths_and_file_metadata_redacted: true })
         })
         .build()
+}
+
+#[derive(Debug, Serialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+struct BackupTransitionOutput {
+    /// The BACKUP subcommand the server acknowledged.
+    transition: String,
+    acknowledged: bool,
+}
+
+/// One BACKUP lifecycle transition tool. The backup state machine is
+/// server-global: a transition affects whichever backup is in progress,
+/// regardless of which client started it, so callers must check
+/// redis_backup_status first and destructive transitions require explicit
+/// confirmation.
+fn backup_transition_tool(
+    state: Arc<ToolState>,
+    tool_name: &'static str,
+    subcommand: &'static str,
+    title: &'static str,
+    description: &'static str,
+    destructive: bool,
+) -> Tool {
+    let annotations = if destructive {
+        destructive_annotations(false)
+    } else {
+        write_annotations(false)
+    };
+    let handler_state = state;
+    ToolBuilder::new(tool_name)
+        .title(title)
+        .description(description)
+        .output_schema(output_schema::<BackupTransitionOutput>())
+        .annotations(annotations)
+        .extractor_handler(
+            handler_state,
+            move |State(state): State<Arc<ToolState>>,
+                  Json(input): Json<BackupTransitionInput>| async move {
+                state.require(AccessMode::Full, tool_name)?;
+                state.require_tool_capabilities(tool_name)?;
+                if destructive {
+                    require_confirmation(
+                        input.confirm.unwrap_or(false),
+                        &format!("BACKUP {subcommand}"),
+                    )?;
+                } else if input.confirm.is_some() {
+                    return Err(tower_mcp::Error::tool(format!(
+                        "BACKUP {subcommand} is not a destructive transition; omit confirm"
+                    )));
+                }
+                let mut redis_command = command(tool_name, AccessMode::Full, "BACKUP");
+                redis_command.arg(subcommand);
+                let context = format!("BACKUP {subcommand} failed");
+                let value = admin_raw(&state, redis_command, &context).await?;
+                let acknowledged = matches!(
+                    value,
+                    RedisValue::Okay | RedisValue::SimpleString(_) | RedisValue::Nil
+                );
+                state.output(&BackupTransitionOutput {
+                    transition: subcommand.to_string(),
+                    acknowledged,
+                })
+            },
+        )
+        .build()
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+struct BackupTransitionInput {
+    /// Must be true for destructive transitions (abort, cleanup); rejected
+    /// for non-destructive transitions.
+    #[serde(default)]
+    confirm: Option<bool>,
 }
 
 #[derive(Debug, Clone, Copy, Deserialize, JsonSchema)]

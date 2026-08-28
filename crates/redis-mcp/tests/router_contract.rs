@@ -41,6 +41,85 @@ impl redis_mcp::RedisTransactionExecutor for StubTransactions {
     }
 }
 
+#[derive(Clone, Copy)]
+struct StubBlocking;
+
+#[async_trait]
+impl redis_mcp::RedisBlockingExecutor for StubBlocking {
+    async fn execute_blocking(
+        &self,
+        call: redis_mcp::RedisPreparedBlockingCall,
+    ) -> Result<RedisValue, RedisError> {
+        Ok(match call.command().name() {
+            "WAIT" => RedisValue::Integer(0),
+            "WAITAOF" => RedisValue::Array(vec![RedisValue::Integer(0), RedisValue::Integer(0)]),
+            // Every blocking pop and move reports a server-side timeout.
+            _ => RedisValue::Nil,
+        })
+    }
+}
+
+#[derive(Clone, Copy)]
+struct StubMonitorSessions;
+
+#[async_trait]
+impl redis_mcp::MonitorSessionManager for StubMonitorSessions {
+    async fn start(
+        &self,
+        _owner: &redis_mcp::RedisSessionOwner,
+        options: redis_mcp::MonitorSessionOptions,
+    ) -> Result<redis_mcp::MonitorSessionSnapshot, redis_mcp::RedisSessionError> {
+        Ok(redis_mcp::MonitorSessionSnapshot {
+            session_id: "monitor_00000000000000000000000000000000".to_string(),
+            include_arguments: options.include_arguments,
+            buffered_events: 0,
+            max_buffered_events: 1_000,
+            max_event_bytes: 8_192,
+            idle_timeout: Duration::from_secs(60),
+        })
+    }
+
+    async fn read(
+        &self,
+        _owner: &redis_mcp::RedisSessionOwner,
+        _session_id: &str,
+        _request: redis_mcp::MonitorReadRequest,
+    ) -> Result<redis_mcp::MonitorReadResult, redis_mcp::RedisSessionError> {
+        Ok(redis_mcp::MonitorReadResult {
+            events: vec![redis_mcp::MonitorEvent {
+                sequence: 1,
+                timestamp: "1700000000.123456".to_string(),
+                database: 0,
+                client: "client-1".to_string(),
+                command: b"SET".to_vec(),
+                argument_count: 2,
+                arguments: None,
+                age: Duration::from_millis(1),
+            }],
+            remaining_buffered: 0,
+            timed_out: false,
+            dropped_buffer_full_total: 0,
+            dropped_oversized_total: 0,
+            dropped_unparsed_total: 0,
+            disconnected: false,
+        })
+    }
+
+    async fn close(
+        &self,
+        _owner: &redis_mcp::RedisSessionOwner,
+        _session_id: &str,
+    ) -> Result<(), redis_mcp::RedisSessionError> {
+        Ok(())
+    }
+
+    async fn close_owner(&self, _owner: &redis_mcp::RedisSessionOwner) -> usize {
+        0
+    }
+
+    async fn shutdown(&self) {}
+}
+
 #[derive(Clone, Default)]
 struct OwnerRecordingPubSubSessions {
     subscribed_owners: Arc<Mutex<Vec<String>>>,
@@ -887,7 +966,10 @@ async fn client_for_bundles(
         .bundles(bundles.iter().copied())
         .raw_command_policy(raw_policy);
     if bundles.contains(&ToolBundle::Sessions) {
-        builder = builder.pubsub_sessions(StubPubSubSessions);
+        builder = builder
+            .pubsub_sessions(StubPubSubSessions)
+            .blocking(StubBlocking)
+            .monitor_sessions(StubMonitorSessions);
     }
     if bundles.contains(&ToolBundle::Transactions) {
         builder = builder.transactions(StubTransactions);
@@ -2418,6 +2500,8 @@ async fn capability_client(
             .capabilities(capabilities)
             .unavailable_tool_policy(policy)
             .pubsub_sessions(StubPubSubSessions)
+            .blocking(StubBlocking)
+            .monitor_sessions(StubMonitorSessions)
             .build();
     let client = McpClient::connect(ChannelTransport::new(router))
         .await

@@ -915,6 +915,8 @@ impl ToolMetadata {
             | "redis_command_readonly"
             | "redis_command_write"
             | "redis_command_inventory"
+            | "redis_bulk_load"
+            | "redis_bulk_seed"
             | "redis_transaction"
             | "redis_ts_mrange"
             | "redis_ts_mrevrange"
@@ -2792,6 +2794,18 @@ pub(crate) const CATALOG: &[ToolMetadata] = &[
         bundle: ToolBundle::Transactions,
         required_access: AccessMode::Full,
         requires_raw_opt_in: true,
+    },
+    ToolMetadata {
+        name: "redis_bulk_load",
+        bundle: ToolBundle::Bulk,
+        required_access: AccessMode::ReadWrite,
+        requires_raw_opt_in: false,
+    },
+    ToolMetadata {
+        name: "redis_bulk_seed",
+        bundle: ToolBundle::Bulk,
+        required_access: AccessMode::ReadWrite,
+        requires_raw_opt_in: false,
     },
     ToolMetadata {
         name: "redis_command_readonly",

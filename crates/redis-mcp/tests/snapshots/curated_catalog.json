@@ -4220,6 +4220,1213 @@
       "requires_raw_opt_in": false
     },
     {
+      "bundle": "bulk",
+      "capability_requirements": {
+        "deployment": "any",
+        "minimum_module_version": null,
+        "minimum_redis_version": null,
+        "required_commands": [],
+        "required_module": null
+      },
+      "family": null,
+      "name": "redis_bulk_load",
+      "output_policy": "budget_guarded",
+      "protocol": {
+        "annotations": {
+          "destructiveHint": false
+        },
+        "description": "Load bounded structured records (strings, hashes, lists, sets, sorted sets, JSON documents, and vector sets, with optional expirations) through sequential batches of bounded concurrent commands. Every record is validated before anything executes; stop-on-error and continue-on-error are explicit; dry_run plans without writing. Multi-command records are not atomic and report partial application.",
+        "inputSchema": {
+          "$defs": {
+            "BulkBytesInput": {
+              "additionalProperties": false,
+              "properties": {
+                "encoding": {
+                  "$ref": "#/$defs/InputEncoding",
+                  "default": "utf8",
+                  "description": "Encoding of `value`."
+                },
+                "value": {
+                  "description": "UTF-8 text or standard base64, according to `encoding`.",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "value"
+              ],
+              "type": "object"
+            },
+            "BulkErrorHandlingInput": {
+              "oneOf": [
+                {
+                  "const": "stop",
+                  "description": "Finish the current batch, then skip every remaining record.",
+                  "type": "string"
+                },
+                {
+                  "const": "continue",
+                  "description": "Keep loading the remaining records and report every failure.",
+                  "type": "string"
+                }
+              ]
+            },
+            "BulkHashFieldInput": {
+              "additionalProperties": false,
+              "properties": {
+                "name": {
+                  "$ref": "#/$defs/BulkBytesInput"
+                },
+                "value": {
+                  "$ref": "#/$defs/BulkBytesInput"
+                }
+              },
+              "required": [
+                "name",
+                "value"
+              ],
+              "type": "object"
+            },
+            "BulkRecordInput": {
+              "additionalProperties": false,
+              "properties": {
+                "expire_ms": {
+                  "default": null,
+                  "description": "Expire the key this many milliseconds after loading. Non-string types\nissue a separate PEXPIRE that is not atomic with the data write.",
+                  "format": "uint64",
+                  "minimum": 0,
+                  "type": [
+                    "integer",
+                    "null"
+                  ]
+                },
+                "key": {
+                  "$ref": "#/$defs/BulkBytesInput",
+                  "description": "Redis key receiving this record."
+                },
+                "value": {
+                  "$ref": "#/$defs/BulkValueInput",
+                  "description": "Structured value loaded into the key."
+                }
+              },
+              "required": [
+                "key",
+                "value"
+              ],
+              "type": "object"
+            },
+            "BulkScoredMemberInput": {
+              "additionalProperties": false,
+              "properties": {
+                "member": {
+                  "$ref": "#/$defs/BulkBytesInput"
+                },
+                "score": {
+                  "format": "double",
+                  "type": "number"
+                }
+              },
+              "required": [
+                "member",
+                "score"
+              ],
+              "type": "object"
+            },
+            "BulkValueInput": {
+              "description": "One structured record value. Exactly one variant is present.",
+              "oneOf": [
+                {
+                  "additionalProperties": false,
+                  "description": "SET, with any expiration applied atomically in the same command.",
+                  "properties": {
+                    "string": {
+                      "properties": {
+                        "value": {
+                          "$ref": "#/$defs/BulkBytesInput"
+                        }
+                      },
+                      "required": [
+                        "value"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "string"
+                  ],
+                  "type": "object"
+                },
+                {
+                  "additionalProperties": false,
+                  "description": "HSET field/value pairs merged into the hash.",
+                  "properties": {
+                    "hash": {
+                      "properties": {
+                        "fields": {
+                          "items": {
+                            "$ref": "#/$defs/BulkHashFieldInput"
+                          },
+                          "maxItems": 128,
+                          "minItems": 1,
+                          "type": "array"
+                        }
+                      },
+                      "required": [
+                        "fields"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "hash"
+                  ],
+                  "type": "object"
+                },
+                {
+                  "additionalProperties": false,
+                  "description": "RPUSH elements appended in order.",
+                  "properties": {
+                    "list": {
+                      "properties": {
+                        "elements": {
+                          "items": {
+                            "$ref": "#/$defs/BulkBytesInput"
+                          },
+                          "maxItems": 128,
+                          "minItems": 1,
+                          "type": "array"
+                        }
+                      },
+                      "required": [
+                        "elements"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "list"
+                  ],
+                  "type": "object"
+                },
+                {
+                  "additionalProperties": false,
+                  "description": "SADD members merged into the set.",
+                  "properties": {
+                    "set": {
+                      "properties": {
+                        "members": {
+                          "items": {
+                            "$ref": "#/$defs/BulkBytesInput"
+                          },
+                          "maxItems": 128,
+                          "minItems": 1,
+                          "type": "array"
+                        }
+                      },
+                      "required": [
+                        "members"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "set"
+                  ],
+                  "type": "object"
+                },
+                {
+                  "additionalProperties": false,
+                  "description": "ZADD member/score pairs merged into the sorted set.",
+                  "properties": {
+                    "sorted_set": {
+                      "properties": {
+                        "members": {
+                          "items": {
+                            "$ref": "#/$defs/BulkScoredMemberInput"
+                          },
+                          "maxItems": 128,
+                          "minItems": 1,
+                          "type": "array"
+                        }
+                      },
+                      "required": [
+                        "members"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "sorted_set"
+                  ],
+                  "type": "object"
+                },
+                {
+                  "additionalProperties": false,
+                  "description": "JSON.SET $, replacing the whole document. Requires RedisJSON.",
+                  "properties": {
+                    "json": {
+                      "properties": {
+                        "value": true
+                      },
+                      "required": [
+                        "value"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "json"
+                  ],
+                  "type": "object"
+                },
+                {
+                  "additionalProperties": false,
+                  "description": "One VADD per element merged into the vector set. Requires Redis 8.",
+                  "properties": {
+                    "vector_set": {
+                      "properties": {
+                        "elements": {
+                          "items": {
+                            "$ref": "#/$defs/BulkVectorElementInput"
+                          },
+                          "maxItems": 128,
+                          "minItems": 1,
+                          "type": "array"
+                        }
+                      },
+                      "required": [
+                        "elements"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "vector_set"
+                  ],
+                  "type": "object"
+                }
+              ]
+            },
+            "BulkVectorElementInput": {
+              "additionalProperties": false,
+              "properties": {
+                "element": {
+                  "$ref": "#/$defs/BulkBytesInput"
+                },
+                "vector": {
+                  "items": {
+                    "format": "double",
+                    "type": "number"
+                  },
+                  "maxItems": 16384,
+                  "minItems": 1,
+                  "type": "array"
+                }
+              },
+              "required": [
+                "element",
+                "vector"
+              ],
+              "type": "object"
+            },
+            "InputEncoding": {
+              "enum": [
+                "utf8",
+                "base64"
+              ],
+              "type": "string"
+            }
+          },
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "batch_size": {
+              "default": null,
+              "description": "Records per sequential batch.",
+              "format": "uint",
+              "maximum": 100,
+              "minimum": 1,
+              "type": [
+                "integer",
+                "null"
+              ]
+            },
+            "concurrency": {
+              "default": null,
+              "description": "Concurrent commands in flight inside one batch.",
+              "format": "uint",
+              "maximum": 8,
+              "minimum": 1,
+              "type": [
+                "integer",
+                "null"
+              ]
+            },
+            "dry_run": {
+              "default": false,
+              "description": "Validate and plan every record without writing anything to Redis.",
+              "type": "boolean"
+            },
+            "on_error": {
+              "$ref": "#/$defs/BulkErrorHandlingInput",
+              "description": "Reaction to a failed record."
+            },
+            "records": {
+              "description": "Records loaded in order across sequential bounded batches.",
+              "items": {
+                "$ref": "#/$defs/BulkRecordInput"
+              },
+              "maxItems": 1000,
+              "minItems": 1,
+              "type": "array"
+            }
+          },
+          "required": [
+            "records"
+          ],
+          "title": "BulkLoadInput",
+          "type": "object"
+        },
+        "name": "redis_bulk_load",
+        "outputSchema": {
+          "$defs": {
+            "BulkBatchOutput": {
+              "additionalProperties": false,
+              "properties": {
+                "applied": {
+                  "format": "uint",
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                "batch": {
+                  "format": "uint",
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                "failed": {
+                  "format": "uint",
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                "records": {
+                  "format": "uint",
+                  "minimum": 0,
+                  "type": "integer"
+                }
+              },
+              "required": [
+                "batch",
+                "records",
+                "applied",
+                "failed"
+              ],
+              "type": "object"
+            },
+            "BulkFailureOutput": {
+              "additionalProperties": false,
+              "properties": {
+                "code": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "index": {
+                  "description": "Zero-based record position, absent for workflow-level failures such as\nthe deadline elapsing.",
+                  "format": "uint",
+                  "minimum": 0,
+                  "type": [
+                    "integer",
+                    "null"
+                  ]
+                },
+                "key": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/$defs/BulkKeyOutput"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "message": {
+                  "type": "string"
+                },
+                "partially_applied": {
+                  "description": "True when earlier commands of this record already applied, so the key\nmay hold partial data.",
+                  "type": "boolean"
+                }
+              },
+              "required": [
+                "message",
+                "partially_applied"
+              ],
+              "type": "object"
+            },
+            "BulkKeyOutput": {
+              "additionalProperties": false,
+              "properties": {
+                "encoding": {
+                  "$ref": "#/$defs/ValueEncoding"
+                },
+                "value": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "value",
+                "encoding"
+              ],
+              "type": "object"
+            },
+            "ValueEncoding": {
+              "enum": [
+                "utf8",
+                "base64"
+              ],
+              "type": "string"
+            }
+          },
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "applied": {
+              "format": "uint",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "attempted": {
+              "format": "uint",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "batches": {
+              "items": {
+                "$ref": "#/$defs/BulkBatchOutput"
+              },
+              "type": "array"
+            },
+            "complete": {
+              "type": "boolean"
+            },
+            "deadline_exceeded": {
+              "type": "boolean"
+            },
+            "dry_run": {
+              "type": "boolean"
+            },
+            "duration_ms": {
+              "format": "uint64",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "failed": {
+              "format": "uint",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "failures": {
+              "description": "Bounded representative failures in record order.",
+              "items": {
+                "$ref": "#/$defs/BulkFailureOutput"
+              },
+              "type": "array"
+            },
+            "failures_truncated": {
+              "type": "boolean"
+            },
+            "requested": {
+              "format": "uint",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "sample_keys": {
+              "description": "First generated keys, for seed previews.",
+              "items": {
+                "type": "string"
+              },
+              "type": [
+                "array",
+                "null"
+              ]
+            },
+            "skipped": {
+              "format": "uint",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "total_commands": {
+              "format": "uint",
+              "minimum": 0,
+              "type": "integer"
+            }
+          },
+          "required": [
+            "requested",
+            "attempted",
+            "applied",
+            "failed",
+            "skipped",
+            "total_commands",
+            "dry_run",
+            "complete",
+            "deadline_exceeded",
+            "duration_ms",
+            "batches",
+            "failures",
+            "failures_truncated"
+          ],
+          "title": "BulkReportOutput",
+          "type": "object"
+        },
+        "title": "Bulk Load Redis Records"
+      },
+      "required_access": "read_write",
+      "required_module": null,
+      "requires_raw_opt_in": false
+    },
+    {
+      "bundle": "bulk",
+      "capability_requirements": {
+        "deployment": "any",
+        "minimum_module_version": null,
+        "minimum_redis_version": null,
+        "required_commands": [],
+        "required_module": null
+      },
+      "family": null,
+      "name": "redis_bulk_seed",
+      "output_policy": "budget_guarded",
+      "protocol": {
+        "annotations": {
+          "destructiveHint": false
+        },
+        "description": "Deterministically generate a bounded test dataset from an explicit seed and schema, then load it through the bounded bulk workflow. The same seed, schema, and library version always produce the same records; dry_run generates and validates without writing.",
+        "inputSchema": {
+          "$defs": {
+            "BulkErrorHandlingInput": {
+              "oneOf": [
+                {
+                  "const": "stop",
+                  "description": "Finish the current batch, then skip every remaining record.",
+                  "type": "string"
+                },
+                {
+                  "const": "continue",
+                  "description": "Keep loading the remaining records and report every failure.",
+                  "type": "string"
+                }
+              ]
+            },
+            "SeedFieldInput": {
+              "additionalProperties": false,
+              "properties": {
+                "name": {
+                  "description": "Field name.",
+                  "maxLength": 128,
+                  "minLength": 1,
+                  "type": "string"
+                },
+                "value": {
+                  "$ref": "#/$defs/SeedValueInput"
+                }
+              },
+              "required": [
+                "name",
+                "value"
+              ],
+              "type": "object"
+            },
+            "SeedTemplateInput": {
+              "description": "The generated shape of every seeded record. Exactly one variant is present.",
+              "oneOf": [
+                {
+                  "additionalProperties": false,
+                  "properties": {
+                    "string": {
+                      "properties": {
+                        "value": {
+                          "$ref": "#/$defs/SeedValueInput"
+                        }
+                      },
+                      "required": [
+                        "value"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "string"
+                  ],
+                  "type": "object"
+                },
+                {
+                  "additionalProperties": false,
+                  "properties": {
+                    "hash": {
+                      "properties": {
+                        "fields": {
+                          "items": {
+                            "$ref": "#/$defs/SeedFieldInput"
+                          },
+                          "maxItems": 64,
+                          "minItems": 1,
+                          "type": "array"
+                        }
+                      },
+                      "required": [
+                        "fields"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "hash"
+                  ],
+                  "type": "object"
+                },
+                {
+                  "additionalProperties": false,
+                  "properties": {
+                    "list": {
+                      "properties": {
+                        "element": {
+                          "$ref": "#/$defs/SeedValueInput"
+                        },
+                        "elements": {
+                          "format": "uint",
+                          "maximum": 128,
+                          "minimum": 1,
+                          "type": "integer"
+                        }
+                      },
+                      "required": [
+                        "element",
+                        "elements"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "list"
+                  ],
+                  "type": "object"
+                },
+                {
+                  "additionalProperties": false,
+                  "properties": {
+                    "set": {
+                      "properties": {
+                        "member": {
+                          "$ref": "#/$defs/SeedValueInput"
+                        },
+                        "members": {
+                          "format": "uint",
+                          "maximum": 128,
+                          "minimum": 1,
+                          "type": "integer"
+                        }
+                      },
+                      "required": [
+                        "member",
+                        "members"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "set"
+                  ],
+                  "type": "object"
+                },
+                {
+                  "additionalProperties": false,
+                  "properties": {
+                    "sorted_set": {
+                      "properties": {
+                        "member": {
+                          "$ref": "#/$defs/SeedValueInput"
+                        },
+                        "members": {
+                          "format": "uint",
+                          "maximum": 128,
+                          "minimum": 1,
+                          "type": "integer"
+                        },
+                        "score": {
+                          "$ref": "#/$defs/SeedValueInput",
+                          "description": "Must generate numeric values."
+                        }
+                      },
+                      "required": [
+                        "member",
+                        "score",
+                        "members"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "sorted_set"
+                  ],
+                  "type": "object"
+                },
+                {
+                  "additionalProperties": false,
+                  "description": "A flat JSON object of generated fields. Requires RedisJSON.",
+                  "properties": {
+                    "json": {
+                      "properties": {
+                        "fields": {
+                          "items": {
+                            "$ref": "#/$defs/SeedFieldInput"
+                          },
+                          "maxItems": 64,
+                          "minItems": 1,
+                          "type": "array"
+                        }
+                      },
+                      "required": [
+                        "fields"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "json"
+                  ],
+                  "type": "object"
+                }
+              ]
+            },
+            "SeedValueInput": {
+              "oneOf": [
+                {
+                  "additionalProperties": false,
+                  "description": "The same value for every record.",
+                  "properties": {
+                    "constant": {
+                      "properties": {
+                        "value": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "value"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "constant"
+                  ],
+                  "type": "object"
+                },
+                {
+                  "additionalProperties": false,
+                  "description": "A deterministic lowercase alphanumeric token of this length.",
+                  "properties": {
+                    "token": {
+                      "properties": {
+                        "length": {
+                          "format": "uint",
+                          "maximum": 64,
+                          "minimum": 1,
+                          "type": "integer"
+                        }
+                      },
+                      "required": [
+                        "length"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "token"
+                  ],
+                  "type": "object"
+                },
+                {
+                  "additionalProperties": false,
+                  "description": "A deterministic integer in the inclusive range.",
+                  "properties": {
+                    "integer": {
+                      "properties": {
+                        "maximum": {
+                          "format": "int64",
+                          "type": "integer"
+                        },
+                        "minimum": {
+                          "format": "int64",
+                          "type": "integer"
+                        }
+                      },
+                      "required": [
+                        "minimum",
+                        "maximum"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "integer"
+                  ],
+                  "type": "object"
+                },
+                {
+                  "additionalProperties": false,
+                  "description": "A deterministic float in the range.",
+                  "properties": {
+                    "float": {
+                      "properties": {
+                        "maximum": {
+                          "format": "double",
+                          "type": "number"
+                        },
+                        "minimum": {
+                          "format": "double",
+                          "type": "number"
+                        }
+                      },
+                      "required": [
+                        "minimum",
+                        "maximum"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "float"
+                  ],
+                  "type": "object"
+                },
+                {
+                  "additionalProperties": false,
+                  "description": "A deterministic choice from the listed values.",
+                  "properties": {
+                    "choice": {
+                      "properties": {
+                        "values": {
+                          "items": {
+                            "type": "string"
+                          },
+                          "maxItems": 64,
+                          "minItems": 1,
+                          "type": "array"
+                        }
+                      },
+                      "required": [
+                        "values"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "choice"
+                  ],
+                  "type": "object"
+                },
+                {
+                  "additionalProperties": false,
+                  "description": "`start + index` for reproducible identifiers.",
+                  "properties": {
+                    "sequence": {
+                      "properties": {
+                        "start": {
+                          "default": 0,
+                          "format": "uint64",
+                          "minimum": 0,
+                          "type": "integer"
+                        }
+                      },
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "sequence"
+                  ],
+                  "type": "object"
+                }
+              ]
+            }
+          },
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "batch_size": {
+              "default": null,
+              "description": "Records per sequential batch.",
+              "format": "uint",
+              "maximum": 100,
+              "minimum": 1,
+              "type": [
+                "integer",
+                "null"
+              ]
+            },
+            "concurrency": {
+              "default": null,
+              "description": "Concurrent commands in flight inside one batch.",
+              "format": "uint",
+              "maximum": 8,
+              "minimum": 1,
+              "type": [
+                "integer",
+                "null"
+              ]
+            },
+            "count": {
+              "description": "Records generated as `{key_prefix}{index}`.",
+              "format": "uint",
+              "maximum": 1000,
+              "minimum": 1,
+              "type": "integer"
+            },
+            "dry_run": {
+              "default": false,
+              "description": "Generate and validate the dataset without writing anything to Redis.",
+              "type": "boolean"
+            },
+            "expire_ms": {
+              "default": null,
+              "description": "Expire every generated key this many milliseconds after loading.",
+              "format": "uint64",
+              "minimum": 0,
+              "type": [
+                "integer",
+                "null"
+              ]
+            },
+            "key_prefix": {
+              "description": "Prefix for every generated key.",
+              "maxLength": 512,
+              "minLength": 1,
+              "type": "string"
+            },
+            "on_error": {
+              "$ref": "#/$defs/BulkErrorHandlingInput",
+              "description": "Reaction to a failed record."
+            },
+            "seed": {
+              "description": "Explicit deterministic seed. The same seed, schema, and library\nversion always generate the same dataset.",
+              "format": "uint64",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "template": {
+              "$ref": "#/$defs/SeedTemplateInput",
+              "description": "The generated shape of every record."
+            }
+          },
+          "required": [
+            "seed",
+            "count",
+            "key_prefix",
+            "template"
+          ],
+          "title": "BulkSeedInput",
+          "type": "object"
+        },
+        "name": "redis_bulk_seed",
+        "outputSchema": {
+          "$defs": {
+            "BulkBatchOutput": {
+              "additionalProperties": false,
+              "properties": {
+                "applied": {
+                  "format": "uint",
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                "batch": {
+                  "format": "uint",
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                "failed": {
+                  "format": "uint",
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                "records": {
+                  "format": "uint",
+                  "minimum": 0,
+                  "type": "integer"
+                }
+              },
+              "required": [
+                "batch",
+                "records",
+                "applied",
+                "failed"
+              ],
+              "type": "object"
+            },
+            "BulkFailureOutput": {
+              "additionalProperties": false,
+              "properties": {
+                "code": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "index": {
+                  "description": "Zero-based record position, absent for workflow-level failures such as\nthe deadline elapsing.",
+                  "format": "uint",
+                  "minimum": 0,
+                  "type": [
+                    "integer",
+                    "null"
+                  ]
+                },
+                "key": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/$defs/BulkKeyOutput"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "message": {
+                  "type": "string"
+                },
+                "partially_applied": {
+                  "description": "True when earlier commands of this record already applied, so the key\nmay hold partial data.",
+                  "type": "boolean"
+                }
+              },
+              "required": [
+                "message",
+                "partially_applied"
+              ],
+              "type": "object"
+            },
+            "BulkKeyOutput": {
+              "additionalProperties": false,
+              "properties": {
+                "encoding": {
+                  "$ref": "#/$defs/ValueEncoding"
+                },
+                "value": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "value",
+                "encoding"
+              ],
+              "type": "object"
+            },
+            "ValueEncoding": {
+              "enum": [
+                "utf8",
+                "base64"
+              ],
+              "type": "string"
+            }
+          },
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "applied": {
+              "format": "uint",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "attempted": {
+              "format": "uint",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "batches": {
+              "items": {
+                "$ref": "#/$defs/BulkBatchOutput"
+              },
+              "type": "array"
+            },
+            "complete": {
+              "type": "boolean"
+            },
+            "deadline_exceeded": {
+              "type": "boolean"
+            },
+            "dry_run": {
+              "type": "boolean"
+            },
+            "duration_ms": {
+              "format": "uint64",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "failed": {
+              "format": "uint",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "failures": {
+              "description": "Bounded representative failures in record order.",
+              "items": {
+                "$ref": "#/$defs/BulkFailureOutput"
+              },
+              "type": "array"
+            },
+            "failures_truncated": {
+              "type": "boolean"
+            },
+            "requested": {
+              "format": "uint",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "sample_keys": {
+              "description": "First generated keys, for seed previews.",
+              "items": {
+                "type": "string"
+              },
+              "type": [
+                "array",
+                "null"
+              ]
+            },
+            "skipped": {
+              "format": "uint",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "total_commands": {
+              "format": "uint",
+              "minimum": 0,
+              "type": "integer"
+            }
+          },
+          "required": [
+            "requested",
+            "attempted",
+            "applied",
+            "failed",
+            "skipped",
+            "total_commands",
+            "dry_run",
+            "complete",
+            "deadline_exceeded",
+            "duration_ms",
+            "batches",
+            "failures",
+            "failures_truncated"
+          ],
+          "title": "BulkReportOutput",
+          "type": "object"
+        },
+        "title": "Seed Deterministic Redis Records"
+      },
+      "required_access": "read_write",
+      "required_module": null,
+      "requires_raw_opt_in": false
+    },
+    {
       "bundle": "admin",
       "capability_requirements": {
         "deployment": "standalone",

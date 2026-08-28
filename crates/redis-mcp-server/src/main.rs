@@ -32,6 +32,7 @@ impl From<CliAccessMode> for AccessMode {
 #[derive(Debug, Clone, Copy, ValueEnum)]
 enum CliOptionalBundle {
     Admin,
+    Bulk,
     Invocation,
     Json,
     Search,
@@ -43,6 +44,7 @@ impl From<CliOptionalBundle> for ToolBundle {
     fn from(value: CliOptionalBundle) -> Self {
         match value {
             CliOptionalBundle::Admin => Self::Admin,
+            CliOptionalBundle::Bulk => Self::Bulk,
             CliOptionalBundle::Invocation => Self::Invocation,
             CliOptionalBundle::Json => Self::Json,
             CliOptionalBundle::Search => Self::Search,

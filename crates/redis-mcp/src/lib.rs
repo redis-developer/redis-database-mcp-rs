@@ -9,6 +9,7 @@
 #![cfg_attr(not(feature = "full"), allow(dead_code, unused_mut, unused_variables))]
 
 mod access;
+mod bulk;
 mod capabilities;
 mod catalog;
 mod executor;
@@ -23,6 +24,14 @@ mod transactions;
 use std::{collections::BTreeSet, sync::Arc, time::Duration};
 
 pub use access::AccessMode;
+pub use bulk::{
+    BulkBatchSummary, BulkErrorHandling, BulkLoadOptions, BulkLoadReport, BulkLoadRequest,
+    BulkRecord, BulkRecordFailure, BulkRecordValue, BulkSeedField, BulkSeedRequest,
+    BulkSeedTemplate, BulkSeedValue, DEFAULT_BULK_BATCH_SIZE, DEFAULT_BULK_CONCURRENCY,
+    DEFAULT_MAX_BULK_BATCH_SIZE, DEFAULT_MAX_BULK_BATCH_SUMMARIES, DEFAULT_MAX_BULK_CONCURRENCY,
+    DEFAULT_MAX_BULK_DURATION, DEFAULT_MAX_BULK_INPUT_BYTES, DEFAULT_MAX_BULK_RECORDS,
+    DEFAULT_MAX_BULK_REPORTED_FAILURES, RedisBulkEngine, RedisBulkLimits, generate_seed_records,
+};
 pub use capabilities::{
     CapabilityStatus, DEFAULT_CAPABILITY_DISCOVERY_TIMEOUT, RedisCapabilities, RedisDeployment,
     RedisModuleCapability, RedisVersion, RedisVersionParseError, UnavailableToolPolicy,
@@ -98,6 +107,7 @@ impl RedisMcp {
             pubsub_sessions: None,
             transactions: None,
             transaction_limits: RedisTransactionLimits::default(),
+            bulk_limits: RedisBulkLimits::default(),
             capabilities: RedisCapabilities::unknown(),
             unavailable_tool_policy: UnavailableToolPolicy::Advertise,
             server_name: "redis-mcp".to_string(),
@@ -118,6 +128,7 @@ pub struct RedisMcpBuilder {
     pubsub_sessions: Option<Arc<dyn PubSubSessionManager>>,
     transactions: Option<Arc<dyn RedisTransactionExecutor>>,
     transaction_limits: RedisTransactionLimits,
+    bulk_limits: RedisBulkLimits,
     capabilities: RedisCapabilities,
     unavailable_tool_policy: UnavailableToolPolicy,
     server_name: String,
@@ -266,6 +277,12 @@ impl RedisMcpBuilder {
         self
     }
 
+    /// Replace the default bulk workflow bounds.
+    pub fn bulk_limits(mut self, limits: RedisBulkLimits) -> Self {
+        self.bulk_limits = limits;
+        self
+    }
+
     /// Supply a precomputed Redis capability snapshot.
     ///
     /// Custom executors can construct this snapshot without depending on
@@ -365,6 +382,7 @@ impl RedisMcpBuilder {
             invocation_engine,
             self.pubsub_sessions,
             transaction_engine,
+            self.bulk_limits,
         ));
         let mut router = McpRouter::new().server_info(self.server_name, self.server_version);
         if let (Some(manager), Some(owner)) = (&state.pubsub_sessions, pubsub_owner) {

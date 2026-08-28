@@ -333,6 +333,31 @@ startup so version- and module-gated tools preflight accurately; discovery
 failures (for example an ACL that blocks introspection) log a warning and
 fall back to advertising the selected catalog without version awareness.
 
+### Slim server builds
+
+The binary ships with everything by default and is compile-time tunable to
+exactly the surface a deployment wants: the server crate mirrors every
+library Cargo feature as a passthrough, so `--no-default-features` plus an
+explicit feature list builds a smaller binary whose catalog contains only
+the selected families and bundles. Requesting an uncompiled bundle at
+runtime (`--enable-bundle json` on a binary built without `json`) fails at
+startup with an actionable error before any connection is dialed — a slim
+binary never silently serves less than it was asked for.
+
+Two measured recipes (release profile, macOS arm64; the default full binary
+is 24.2 MiB):
+
+    # Read-only cache inspector: keys, strings, hashes, diagnostics. 14.4 MiB.
+    cargo build --release -p redis-mcp-server --no-default-features \
+      --features keyspace,strings,hashes,diagnostics
+
+    # JSON + Search document server. 14.3 MiB.
+    cargo build --release -p redis-mcp-server --no-default-features \
+      --features keyspace,strings,json,search
+
+CI compiles representative slim combinations of both crates and verifies the
+uncompiled-bundle rejection, so slim builds cannot rot.
+
 For Redis Cluster, provide one or more seed URLs instead of `--url`. Multiple
 seeds improve initial discovery when a node is unavailable:
 

@@ -48,6 +48,21 @@ impl ServerRuntime {
     /// Failure messages describe the failing component and never echo
     /// connection URLs, which may embed credentials.
     pub(crate) async fn build(config: &ServerConfig) -> Result<Self, tower_mcp::BoxError> {
+        // A bundle explicitly requested at runtime must exist in this binary;
+        // silently serving a smaller surface would read as success. Checked
+        // before any connection is dialed so slim misconfiguration fails
+        // instantly and offline.
+        for bundle in &config.bundles {
+            let compiled = redis_mcp::tool_catalog()
+                .iter()
+                .any(|tool| tool.bundle == *bundle && tool.is_compiled());
+            if !compiled {
+                return Err(format!(
+                    "the {bundle} bundle is not compiled into this binary; rebuild with the `{bundle}` Cargo feature (or without --no-default-features)"
+                )
+                .into());
+            }
+        }
         match &config.target {
             ServerTarget::Cluster(urls) => {
                 let executor = DirectRedisCluster::connect(urls).await.map_err(|error| {

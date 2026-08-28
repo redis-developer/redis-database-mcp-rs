@@ -16,6 +16,37 @@ categories = ["database", "command-line-utilities"]
 name = "redis-mcp-server"
 path = "src/main.rs"
 
+[features]
+# The shipped binary has everything by default; constrained deployments
+# select exactly the surface they want with --no-default-features plus the
+# passthrough features below.
+default = ["full"]
+full = ["redis-mcp/full"]
+all-families = ["redis-mcp/all-families"]
+keyspace = ["redis-mcp/keyspace"]
+strings = ["redis-mcp/strings"]
+hashes = ["redis-mcp/hashes"]
+lists = ["redis-mcp/lists"]
+sets = ["redis-mcp/sets"]
+sorted-sets = ["redis-mcp/sorted-sets"]
+streams = ["redis-mcp/streams"]
+bitmaps = ["redis-mcp/bitmaps"]
+arrays = ["redis-mcp/arrays"]
+hyperloglog = ["redis-mcp/hyperloglog"]
+geospatial = ["redis-mcp/geospatial"]
+vector-sets = ["redis-mcp/vector-sets"]
+pubsub = ["redis-mcp/pubsub"]
+scripting = ["redis-mcp/scripting"]
+json = ["redis-mcp/json"]
+search = ["redis-mcp/search"]
+timeseries = ["redis-mcp/timeseries"]
+diagnostics = ["redis-mcp/diagnostics"]
+sessions = ["redis-mcp/sessions"]
+transactions = ["redis-mcp/transactions"]
+admin = ["redis-mcp/admin"]
+bulk = ["redis-mcp/bulk"]
+guidance = ["redis-mcp/guidance"]
+
 [dependencies]
 clap.workspace = true
 redis-mcp.workspace = true

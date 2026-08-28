@@ -308,6 +308,14 @@
         "target": "Keep real MCP calls in the supported Redis, Stack, and cluster matrix."
       },
       {
+        "id": "guidance_surface",
+        "library_score": 3,
+        "redis_mcp_score": 0,
+        "library_evidence": ["crates/redis-mcp/src/guidance.rs", "crates/redis-mcp/guidance", "crates/redis-mcp/tests/snapshots/guidance_catalog.json", "crates/redis-mcp/tests/router_contract.rs"],
+        "redis_mcp_evidence": ["src/tools"],
+        "target": "Keep guidance prompts and resources versioned, bounded, snapshot-tested, and validated against the tool catalog; baselines ship no MCP prompts or resources."
+      },
+      {
         "id": "embedding_and_host_policy",
         "library_score": 3,
         "redis_mcp_score": 0,

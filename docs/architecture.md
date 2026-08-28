@@ -463,6 +463,32 @@ guarded transitions built on the shared executor: `redis_backup_start`,
 `redis_backup_cleanup` acknowledge server-global state changes, pair with the
 finite status and file-count inspections, and never return filesystem paths.
 
+## Guidance prompts and resources
+
+Tools define what a client can run; the `guidance` bundle defines what it
+should do. It contributes no tools: it registers MCP resources and prompts on
+the same router, rides in the curated default surface, and compiles out with
+the `guidance` Cargo feature.
+
+Static knowledge is compiled into the library from `crates/redis-mcp/guidance`
+and served as `redis-mcp://guidance/{slug}` markdown resources, so content
+versions with the crate, never fetches externally, and stays bounded by an
+enforced per-document ceiling. Two live resources describe the actual
+configured surface: `redis-mcp://catalog` renders every curated tool with its
+bundle, access tier, raw opt-in, and capability requirements, and
+`redis-mcp://capabilities` renders the capability snapshot the router was
+built with, in the same shape tools preflight against. Prompts are guided
+workflows — latency diagnosis, memory review, data-model design, Search index
+design, and bounded bulk loading — whose generated instructions name exact
+tools and guidance URIs.
+
+Drift is checked in both directions: unit tests validate that every
+`redis_*` name mentioned anywhere in guidance content or rendered prompts
+exists in the compiled catalog and that cross-references between guides
+resolve, while the contract suite snapshots the advertised prompt and
+resource catalog exactly like the tool catalog and verifies that routers
+without the bundle advertise neither.
+
 ## Output budgets and continuation contracts
 
 `OutputBudget` is host policy applied after each typed tool has built its

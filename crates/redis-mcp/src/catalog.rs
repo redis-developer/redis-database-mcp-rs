@@ -148,6 +148,8 @@ pub enum ToolBundle {
     Admin,
     /// Deliberately bounded bulk workflows.
     Bulk,
+    /// Curated Redis expertise exposed as MCP prompts and resources.
+    Guidance,
     /// Governed Redis argv invocation tiers for Redis-syntax MCP clients.
     Invocation,
     /// Generic Redis command execution, gated by a separate policy.
@@ -156,8 +158,15 @@ pub enum ToolBundle {
 
 impl ToolBundle {
     /// Bundles enabled by the curated standalone default.
-    pub const DEFAULTS: &'static [Self] =
-        &[Self::Essentials, Self::DataStructures, Self::Diagnostics];
+    ///
+    /// Guidance contributes prompts and resources rather than tools, so it
+    /// rides in the default surface without consuming tool budget.
+    pub const DEFAULTS: &'static [Self] = &[
+        Self::Essentials,
+        Self::DataStructures,
+        Self::Diagnostics,
+        Self::Guidance,
+    ];
 
     /// Every bundle understood by this library version.
     pub const ALL: &'static [Self] = &[
@@ -172,6 +181,7 @@ impl ToolBundle {
         Self::Scripting,
         Self::Admin,
         Self::Bulk,
+        Self::Guidance,
         Self::Invocation,
         Self::Raw,
     ];
@@ -189,6 +199,7 @@ impl ToolBundle {
             Self::Scripting => "scripting",
             Self::Admin => "admin",
             Self::Bulk => "bulk",
+            Self::Guidance => "guidance",
             Self::Invocation => "invocation",
             Self::Raw => "raw",
         }
@@ -289,6 +300,7 @@ impl ToolMetadata {
                 ToolBundle::Admin => cfg!(feature = "admin"),
                 ToolBundle::Raw => true,
                 ToolBundle::Bulk => true,
+                ToolBundle::Guidance => cfg!(feature = "guidance"),
                 ToolBundle::Invocation => true,
                 ToolBundle::Essentials
                 | ToolBundle::DataStructures

@@ -15,6 +15,8 @@ mod capabilities;
 mod catalog;
 mod executor;
 pub mod families;
+#[cfg(feature = "guidance")]
+mod guidance;
 mod invocation;
 mod monitor;
 mod output;
@@ -55,6 +57,8 @@ pub use executor::{
     RedisExecutor, RedisValue,
 };
 pub use families::{ToolFamily, compiled_tool_families};
+#[cfg(feature = "guidance")]
+pub use guidance::{GUIDANCE_DOCS, GuidanceDoc, MAX_GUIDANCE_DOC_BYTES};
 pub use invocation::{
     NativeCommandMetadata, NativeRedisInvocation, NativeRedisResponse, RedisInvocationEngine,
     RedisInvocationEngineBuildError, RedisInvocationEngineBuilder, RedisOutputLimit,
@@ -541,6 +545,10 @@ impl RedisMcpBuilder {
             if self.raw_command_policy.is_enabled() {
                 router = tools::add_raw_tool(router, state);
             }
+        }
+        #[cfg(feature = "guidance")]
+        if self.bundles.contains(&ToolBundle::Guidance) {
+            router = guidance::add_guidance(router, &capabilities);
         }
         if self.unavailable_tool_policy == UnavailableToolPolicy::Hide {
             router = router.tool_filter(CapabilityFilter::new(move |_session, tool: &Tool| {

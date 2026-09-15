@@ -212,3 +212,11 @@ jobs:
             echo "expected startup to fail for an uncompiled bundle"; exit 1
           fi
           echo "$output" | grep -q "not compiled into this binary"
+      - name: Slim server rejects documentation serving when not compiled
+        run: |
+          if output=$(cargo run --quiet -p redis-mcp-server --no-default-features \
+            --features keyspace,strings,hashes,diagnostics -- \
+            --enable-docs --stdio 2>&1); then
+            echo "expected startup to fail when docs are not compiled"; exit 1
+          fi
+          echo "$output" | grep -q "documentation serving is not compiled into this binary"

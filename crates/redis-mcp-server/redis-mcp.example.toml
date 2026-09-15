@@ -14,7 +14,9 @@
 # REDIS_MCP_COMMAND_TIMEOUT_MS, and REDIS_MCP_<FAMILY>_<LIMIT> for every
 # limit key in the [limits.*] tables (for example
 # REDIS_MCP_PUBSUB_MAX_SESSIONS). The target keeps its historical names:
-# REDIS_URL and REDIS_CLUSTER_URLS.
+# REDIS_URL and REDIS_CLUSTER_URLS. Documentation serving uses
+# REDIS_MCP_DOCS_ENABLED, REDIS_MCP_DOCS_PIN, REDIS_MCP_DOCS_MAX_BYTES,
+# REDIS_MCP_DOCS_CACHE_ENTRIES, and REDIS_MCP_DOCS_FETCH_TIMEOUT_MS.
 
 [target]
 # Exactly one of url or cluster_urls. URLs may embed credentials and TLS
@@ -48,6 +50,18 @@ max_entries = 1000
 [timeouts]
 # Upper bound for one Redis command.
 command_ms = 30000
+
+[docs]
+# Serve official Redis command documentation as passthrough resources
+# (redis-mcp://docs/commands/{command}). The only network egress the server
+# performs: outbound HTTPS to raw.githubusercontent.com at the pinned
+# redis/docs revision, so it stays off unless explicitly enabled.
+enabled = false
+# redis/docs commit pages are served from.
+pin = "f8693349287b0efbef3c865b6f6a2aceca88594d"
+max_doc_bytes = 65536
+cache_entries = 128
+fetch_timeout_ms = 10000
 
 [limits.pubsub]
 max_sessions = 64

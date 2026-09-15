@@ -16,7 +16,7 @@ use redis_mcp::{
     AccessMode, DEFAULT_COMMAND_TIMEOUT, DEFAULT_MAX_CONCURRENT_BLOCKING_CALLS,
     DEFAULT_MAX_CONCURRENT_TRANSACTIONS, DEFAULT_MAX_OUTPUT_BYTES, DEFAULT_MAX_OUTPUT_ENTRIES,
     MonitorSessionLimits, PubSubSessionLimits, RawCommandPolicy, RedisBlockingLimits,
-    RedisBulkLimits, RedisTransactionLimits, ToolBundle, UnavailableToolPolicy,
+    RedisBulkLimits, RedisDocsOptions, RedisTransactionLimits, ToolBundle, UnavailableToolPolicy,
 };
 use serde::Deserialize;
 
@@ -107,6 +107,7 @@ const MONITOR_HEADING: &str = "MONITOR session limits";
 const BLOCKING_HEADING: &str = "Blocking call limits";
 const TRANSACTION_HEADING: &str = "Transaction limits";
 const BULK_HEADING: &str = "Bulk workflow limits";
+const DOCS_HEADING: &str = "Command documentation";
 
 #[derive(Debug, Parser)]
 #[command(name = "redis-mcp-server", version, about)]
@@ -243,6 +244,24 @@ pub(crate) struct Args {
     #[arg(long, help_heading = BULK_HEADING)]
     pub(crate) bulk_max_batch_summaries: Option<usize>,
 
+    /// Serve official Redis command documentation as passthrough resources.
+    /// Introduces outbound HTTPS to raw.githubusercontent.com at the pinned
+    /// revision; nothing is fetched without this opt-in.
+    #[arg(long, help_heading = DOCS_HEADING)]
+    pub(crate) enable_docs: bool,
+    /// redis/docs commit documentation is served from.
+    #[arg(long, help_heading = DOCS_HEADING)]
+    pub(crate) docs_pin: Option<String>,
+    /// Maximum bytes for one documentation page.
+    #[arg(long, help_heading = DOCS_HEADING)]
+    pub(crate) docs_max_bytes: Option<usize>,
+    /// Fetched pages kept in the bounded in-memory cache.
+    #[arg(long, help_heading = DOCS_HEADING)]
+    pub(crate) docs_cache_entries: Option<usize>,
+    /// Ceiling for one documentation fetch, in milliseconds.
+    #[arg(long, help_heading = DOCS_HEADING)]
+    pub(crate) docs_fetch_timeout_ms: Option<u64>,
+
     /// Explicit transport marker for MCP client configurations. Stdio is
     /// always used.
     #[arg(long)]
@@ -259,6 +278,7 @@ pub(crate) struct FileConfig {
     pub(crate) server: FileServer,
     pub(crate) output: FileOutput,
     pub(crate) timeouts: FileTimeouts,
+    pub(crate) docs: FileDocs,
     pub(crate) limits: FileLimits,
 }
 
@@ -291,6 +311,16 @@ pub(crate) struct FileOutput {
 #[serde(deny_unknown_fields, default)]
 pub(crate) struct FileTimeouts {
     pub(crate) command_ms: Option<u64>,
+}
+
+#[derive(Debug, Default, Deserialize)]
+#[serde(deny_unknown_fields, default)]
+pub(crate) struct FileDocs {
+    pub(crate) enabled: Option<bool>,
+    pub(crate) pin: Option<String>,
+    pub(crate) max_doc_bytes: Option<usize>,
+    pub(crate) cache_entries: Option<usize>,
+    pub(crate) fetch_timeout_ms: Option<u64>,
 }
 
 #[derive(Debug, Default, Deserialize)]
@@ -390,6 +420,8 @@ pub(crate) struct ServerConfig {
     pub(crate) transaction_limits: RedisTransactionLimits,
     pub(crate) transaction_max_concurrent: usize,
     pub(crate) bulk_limits: RedisBulkLimits,
+    pub(crate) docs_enabled: bool,
+    pub(crate) docs_options: RedisDocsOptions,
 }
 
 /// Actionable configuration failure. Messages never contain credential
@@ -402,6 +434,7 @@ pub(crate) enum ConfigError {
     ConflictingTargets,
     UnrestrictedRawRequiresFullAccess,
     TransactionsRequireRawCommands,
+    InvalidDocsOptions,
 }
 
 impl std::fmt::Display for ConfigError {
@@ -424,6 +457,9 @@ impl std::fmt::Display for ConfigError {
             }
             Self::TransactionsRequireRawCommands => formatter.write_str(
                 "transactions require an enabled raw command policy (--raw or --raw-unrestricted)",
+            ),
+            Self::InvalidDocsOptions => formatter.write_str(
+                "enabled documentation serving requires a well-formed revision and non-zero byte, cache, and timeout bounds",
             ),
         }
     }
@@ -872,6 +908,39 @@ pub(crate) fn resolve(
             defaults_bulk.max_batch_summaries(),
         ));
 
+    let docs_enabled = pick(
+        args.enable_docs.then_some(true),
+        env_bool(env, "REDIS_MCP_DOCS_ENABLED")?,
+        file.docs.enabled,
+        false,
+    );
+    let defaults_docs = RedisDocsOptions::default();
+    let docs_options = RedisDocsOptions::default()
+        .with_pin(pick(
+            args.docs_pin.clone(),
+            env("REDIS_MCP_DOCS_PIN").filter(|value| !value.trim().is_empty()),
+            file.docs.pin.clone(),
+            defaults_docs.pin().to_string(),
+        ))
+        .with_max_doc_bytes(pick(
+            args.docs_max_bytes,
+            env_parsed(env, "REDIS_MCP_DOCS_MAX_BYTES")?,
+            file.docs.max_doc_bytes,
+            defaults_docs.max_doc_bytes(),
+        ))
+        .with_cache_entries(pick(
+            args.docs_cache_entries,
+            env_parsed(env, "REDIS_MCP_DOCS_CACHE_ENTRIES")?,
+            file.docs.cache_entries,
+            defaults_docs.cache_entries(),
+        ))
+        .with_fetch_timeout(millis(pick(
+            args.docs_fetch_timeout_ms,
+            env_parsed(env, "REDIS_MCP_DOCS_FETCH_TIMEOUT_MS")?,
+            file.docs.fetch_timeout_ms,
+            defaults_docs.fetch_timeout().as_millis() as u64,
+        )));
+
     let config = ServerConfig {
         target,
         access,
@@ -890,6 +959,8 @@ pub(crate) fn resolve(
         transaction_limits,
         transaction_max_concurrent,
         bulk_limits,
+        docs_enabled,
+        docs_options,
     };
     validate(&config)?;
     Ok(config)
@@ -905,6 +976,9 @@ fn validate(config: &ServerConfig) -> Result<(), ConfigError> {
     }
     if config.transactions && config.raw_policy == RawCommandPolicy::Disabled {
         return Err(ConfigError::TransactionsRequireRawCommands);
+    }
+    if config.docs_enabled && config.docs_options.validate().is_err() {
+        return Err(ConfigError::InvalidDocsOptions);
     }
     Ok(())
 }
@@ -1153,6 +1227,51 @@ mod tests {
     }
 
     #[test]
+    fn docs_serving_is_opt_in_and_layered() {
+        let disabled = resolve(&args(&["--stdio"]), None, &no_env).expect("resolve default docs");
+        assert!(!disabled.docs_enabled);
+
+        let file: FileConfig =
+            toml::from_str("[docs]\nenabled = true\npin = \"abc123\"\n").expect("docs file");
+        let from_file = resolve(&args(&["--stdio"]), Some(&file), &no_env).expect("file docs");
+        assert!(from_file.docs_enabled);
+        assert_eq!(from_file.docs_options.pin(), "abc123");
+
+        let env = env_of(&[("REDIS_MCP_DOCS_PIN", "def456")]);
+        let lookup = |name: &str| env.get(name).cloned();
+        let env_pin = resolve(&args(&["--stdio"]), Some(&file), &lookup).expect("env docs pin");
+        assert_eq!(env_pin.docs_options.pin(), "def456");
+
+        let cli_pin = resolve(
+            &args(&["--stdio", "--enable-docs", "--docs-pin", "cli789"]),
+            Some(&file),
+            &lookup,
+        )
+        .expect("cli docs pin");
+        assert!(cli_pin.docs_enabled);
+        assert_eq!(cli_pin.docs_options.pin(), "cli789");
+    }
+
+    #[test]
+    fn enabled_docs_reject_invalid_options_during_resolution() {
+        let zero_bytes = resolve(
+            &args(&["--stdio", "--enable-docs", "--docs-max-bytes", "0"]),
+            None,
+            &no_env,
+        )
+        .expect_err("zero docs byte ceiling");
+        assert!(matches!(zero_bytes, ConfigError::InvalidDocsOptions));
+
+        let path_pin = resolve(
+            &args(&["--stdio", "--enable-docs", "--docs-pin", "../main"]),
+            None,
+            &no_env,
+        )
+        .expect_err("path-like docs revision");
+        assert!(matches!(path_pin, ConfigError::InvalidDocsOptions));
+    }
+
+    #[test]
     fn no_discovery_flag_and_env_disable_discovery() {
         let disabled = resolve(&args(&["--stdio", "--no-discovery"]), None, &no_env)
             .expect("resolve no-discovery");
@@ -1194,6 +1313,14 @@ mod tests {
             ("output.max_bytes", example.output.max_bytes.is_some()),
             ("output.max_entries", example.output.max_entries.is_some()),
             ("timeouts.command_ms", example.timeouts.command_ms.is_some()),
+            (
+                "docs.*",
+                example.docs.enabled.is_some()
+                    && example.docs.pin.is_some()
+                    && example.docs.max_doc_bytes.is_some()
+                    && example.docs.cache_entries.is_some()
+                    && example.docs.fetch_timeout_ms.is_some(),
+            ),
             (
                 "limits.pubsub.*",
                 example.limits.pubsub.max_sessions.is_some()

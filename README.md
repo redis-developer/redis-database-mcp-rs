@@ -65,7 +65,9 @@ intended redisctl-style adapter and router merge boundary.
 
 ## Curated default
 
-The standalone default exposes 201 broadly useful tools:
+The curated default catalog contains 201 broadly useful tools across all
+access levels. A running server exposes the subset permitted by its configured
+access mode (113 tools at read-only on the current full build):
 
 - read-only essentials: `redis_ping`, `redis_dbsize`, `redis_scan`,
   `redis_get`, `redis_type`, `redis_ttl`, `redis_exists`, `redis_mget`,
@@ -311,6 +313,8 @@ The same generated command surface is available non-interactively through
 `mcp-repl --exec`, making it the interim one-shot CLI as well as the REPL. A
 future Redis-specific frontend can build on a reusable `mcp-repl` core after
 the generated experience has exposed which specialized layers are worthwhile.
+See [the verified mcp-repl recipes](docs/mcp-repl-recipes.md) for interactive,
+NDJSON, schema-contract, pagination, and session workflows.
 
 Inside the REPL:
 
@@ -669,7 +673,8 @@ cluster-configured stdio server. The version list follows the
 
 - Cloud or Enterprise REST APIs
 - redisctl profiles or per-tool target URLs
-- transactions, MONITOR, or unbounded streaming commands
+- unbounded or connection-stateful operations without a finite
+  session/workflow contract
 - terminal tokenization, history, completion, result rendering, or an
   application-specific CLI/REPL frontend
 

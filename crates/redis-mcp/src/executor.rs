@@ -5,7 +5,7 @@ use std::{error::Error, fmt, sync::Arc, time::Duration};
 use async_trait::async_trait;
 use redis::{
     ErrorKind as RedisRsErrorKind, ServerErrorKind as RedisRsServerErrorKind,
-    aio::{ConnectionLike, ConnectionManager},
+    aio::{ConnectionLike, ConnectionManager, ConnectionManagerConfig},
     cluster::ClusterClient,
     cluster_async::ClusterConnection,
 };
@@ -538,7 +538,11 @@ impl DirectRedis {
     /// Connect to a fixed Redis URL.
     pub async fn connect(url: &str) -> Result<Self, RedisError> {
         let client = redis::Client::open(url).map_err(RedisError::from)?;
-        let connection = ConnectionManager::new(client)
+        // RedisInvocationEngine owns the command deadline. Disable redis-rs'
+        // shorter transport response timeout so it cannot preempt a
+        // caller-selected command timeout (redis-rs 1.7 defaults to 500ms).
+        let config = ConnectionManagerConfig::new().set_response_timeout(None);
+        let connection = ConnectionManager::new_with_config(client, config)
             .await
             .map_err(RedisError::from)?;
         Ok(Self { connection })

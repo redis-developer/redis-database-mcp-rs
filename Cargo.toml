@@ -22,6 +22,7 @@ rand = "0.10"
 redis = { version = "1.5", default-features = false, features = ["cluster-async", "connection-manager", "tokio-rustls-comp"] }
 redis-mcp = { version = "0.1.0", path = "crates/redis-mcp", default-features = false }
 redis-server-wrapper = "0.5.0"
+reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "http2"] }
 schemars = "1.2"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"

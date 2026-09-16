@@ -63,6 +63,13 @@ impl ServerRuntime {
                 .into());
             }
         }
+        #[cfg(not(feature = "docs"))]
+        if config.docs_enabled {
+            return Err(
+                "documentation serving is not compiled into this binary; rebuild with the `docs` Cargo feature (or without --no-default-features)"
+                    .into(),
+            );
+        }
         match &config.target {
             ServerTarget::Cluster(urls) => {
                 let executor = DirectRedisCluster::connect(urls).await.map_err(|error| {
@@ -189,6 +196,12 @@ impl ServerRuntime {
             builder = builder
                 .transactions(transactions)
                 .transaction_limits(config.transaction_limits);
+        }
+        #[cfg(feature = "docs")]
+        if config.docs_enabled {
+            builder = builder
+                .docs_fetcher(crate::docs::HttpDocsFetcher::new()?)
+                .docs_options(config.docs_options.clone());
         }
         for bundle in &config.bundles {
             builder = builder.bundle(*bundle);

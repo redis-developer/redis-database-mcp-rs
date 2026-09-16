@@ -1,6 +1,8 @@
 #![forbid(unsafe_code)]
 
 mod config;
+#[cfg(feature = "docs")]
+mod docs;
 mod runtime;
 
 use clap::Parser;

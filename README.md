@@ -339,7 +339,19 @@ correct. Environment variables follow the flag names (`REDIS_MCP_ACCESS`,
 flags, the configurable surface covers output budgets, the per-command
 timeout, capability discovery (`--no-discovery` to skip), the
 unavailable-tool policy, and every Pub/Sub, MONITOR, blocking, transaction,
-and bulk limit.
+bulk, and documentation limit.
+
+Official command documentation is a separate opt-in because reads perform
+outbound HTTPS. `--enable-docs` (or `[docs] enabled = true`) advertises
+`redis-mcp://docs/commands/{command}` and fetches only validated command pages
+from `raw.githubusercontent.com/redis/docs` at the configured revision. The
+client does not follow redirects, streams into the configured byte ceiling,
+uses a bounded in-memory cache, and is also bounded by the library fetch
+timeout. The default full binary compiles this capability but leaves it off;
+slim builds must include the `docs` feature explicitly.
+
+    redis-mcp-server --url redis://127.0.0.1:6379 \
+      --enable-docs --stdio
 
 The server discovers the target's version, deployment, and modules at
 startup so version- and module-gated tools preflight accurately; discovery
@@ -367,6 +379,10 @@ is 24.2 MiB):
     # JSON + Search document server. 14.3 MiB.
     cargo build --release -p redis-mcp-server --no-default-features \
       --features keyspace,strings,json,search
+
+    # Add the opt-in documentation host to any slim surface.
+    cargo build --release -p redis-mcp-server --no-default-features \
+      --features keyspace,strings,docs
 
 CI compiles representative slim combinations of both crates and verifies the
 uncompiled-bundle rejection, so slim builds cannot rot.

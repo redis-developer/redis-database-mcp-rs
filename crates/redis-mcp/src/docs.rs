@@ -109,7 +109,8 @@ impl RedisDocsOptions {
         self
     }
 
-    pub(crate) fn validate(&self) -> Result<(), RedisError> {
+    /// Validate the pin and every resource bound before constructing a host.
+    pub fn validate(&self) -> Result<(), RedisError> {
         if self.pin.is_empty()
             || !self
                 .pin

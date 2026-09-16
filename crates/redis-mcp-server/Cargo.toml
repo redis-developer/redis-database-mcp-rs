@@ -21,7 +21,10 @@ path = "src/main.rs"
 # select exactly the surface they want with --no-default-features plus the
 # passthrough features below.
 default = ["full"]
-full = ["redis-mcp/full"]
+full = ["redis-mcp/full", "docs"]
+# The HTTP documentation fetcher; serving docs still requires the explicit
+# runtime opt-in because it introduces network egress.
+docs = ["dep:reqwest", "dep:async-trait"]
 all-families = ["redis-mcp/all-families"]
 keyspace = ["redis-mcp/keyspace"]
 strings = ["redis-mcp/strings"]
@@ -48,8 +51,10 @@ bulk = ["redis-mcp/bulk"]
 guidance = ["redis-mcp/guidance"]
 
 [dependencies]
+async-trait = { workspace = true, optional = true }
 clap.workspace = true
 redis-mcp.workspace = true
+reqwest = { workspace = true, optional = true }
 serde.workspace = true
 tokio.workspace = true
 toml.workspace = true

@@ -1281,7 +1281,7 @@ dependencies = [
 [[package]]
 name = "redis-tower"
 version = "0.1.1"
-source = "git+https://github.com/joshrotenberg/redis-tower?rev=c8640d6df1d190a97746b086964aadfd4414803c#c8640d6df1d190a97746b086964aadfd4414803c"
+source = "git+https://github.com/joshrotenberg/redis-tower?rev=e36f2308f8a9e3682d07fbab283e797feb8fd14b#e36f2308f8a9e3682d07fbab283e797feb8fd14b"
 dependencies = [
  "async-stream",
  "bytes",
@@ -1304,7 +1304,7 @@ dependencies = [
 [[package]]
 name = "redis-tower-cluster"
 version = "0.1.1"
-source = "git+https://github.com/joshrotenberg/redis-tower?rev=c8640d6df1d190a97746b086964aadfd4414803c#c8640d6df1d190a97746b086964aadfd4414803c"
+source = "git+https://github.com/joshrotenberg/redis-tower?rev=e36f2308f8a9e3682d07fbab283e797feb8fd14b#e36f2308f8a9e3682d07fbab283e797feb8fd14b"
 dependencies = [
  "async-stream",
  "bytes",
@@ -1323,7 +1323,7 @@ dependencies = [
 [[package]]
 name = "redis-tower-commands"
 version = "0.1.1"
-source = "git+https://github.com/joshrotenberg/redis-tower?rev=c8640d6df1d190a97746b086964aadfd4414803c#c8640d6df1d190a97746b086964aadfd4414803c"
+source = "git+https://github.com/joshrotenberg/redis-tower?rev=e36f2308f8a9e3682d07fbab283e797feb8fd14b#e36f2308f8a9e3682d07fbab283e797feb8fd14b"
 dependencies = [
  "bytes",
  "hex",
@@ -1335,7 +1335,7 @@ dependencies = [
 [[package]]
 name = "redis-tower-core"
 version = "0.1.1"
-source = "git+https://github.com/joshrotenberg/redis-tower?rev=c8640d6df1d190a97746b086964aadfd4414803c#c8640d6df1d190a97746b086964aadfd4414803c"
+source = "git+https://github.com/joshrotenberg/redis-tower?rev=e36f2308f8a9e3682d07fbab283e797feb8fd14b#e36f2308f8a9e3682d07fbab283e797feb8fd14b"
 dependencies = [
  "bytes",
  "futures",
@@ -1357,7 +1357,7 @@ dependencies = [
 [[package]]
 name = "redis-tower-protocol"
 version = "0.1.2"
-source = "git+https://github.com/joshrotenberg/redis-tower?rev=c8640d6df1d190a97746b086964aadfd4414803c#c8640d6df1d190a97746b086964aadfd4414803c"
+source = "git+https://github.com/joshrotenberg/redis-tower?rev=e36f2308f8a9e3682d07fbab283e797feb8fd14b#e36f2308f8a9e3682d07fbab283e797feb8fd14b"
 dependencies = [
  "bytes",
  "resp-rs",

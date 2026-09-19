@@ -54,8 +54,8 @@ use std::{
     time::{Duration, Instant},
 };
 
+use crate::response::FromRedisValue;
 use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64};
-use redis::FromRedisValue;
 use schemars::{JsonSchema, schema_for};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value as JsonValue, json};
@@ -265,9 +265,6 @@ impl ToolState {
         context: &str,
     ) -> tower_mcp::Result<T> {
         let value = self.execute(command, context).await?;
-        let value = value
-            .into_redis_rs()
-            .map_err(|error| tower_mcp::Error::tool(format!("{context}: {error}")))?;
         T::from_redis_value(value)
             .map_err(|error| tower_mcp::Error::tool(format!("{context}: {error}")))
     }

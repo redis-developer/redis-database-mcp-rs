@@ -8272,3 +8272,80 @@ async fn live_backup_lifecycle_is_guarded_and_confirmable() {
     .await;
     assert_eq!(cleaned["acknowledged"], true);
 }
+
+#[tokio::test]
+async fn live_blocking_deadline_exceeds_redis_rs_default_without_early_timeout() {
+    let Some(redis) = TestRedis::start().await else {
+        return;
+    };
+    let engine =
+        redis_mcp::RedisBlockingEngine::new(DirectRedisBlocking::standalone(&redis.url).unwrap());
+    let started = std::time::Instant::now();
+    let reply = engine
+        .pop_list(
+            vec![test_key("blocking-over-500ms").into_bytes()],
+            redis_mcp::RedisListEnd::Left,
+            Duration::from_millis(850),
+        )
+        .await
+        .unwrap();
+    assert!(
+        reply.is_none(),
+        "an empty queue must end with the server timeout result"
+    );
+    assert!(started.elapsed() >= Duration::from_millis(800));
+    assert!(started.elapsed() < Duration::from_secs(3));
+}
+
+#[tokio::test]
+async fn live_denied_multi_never_runs_writes_outside_a_transaction() {
+    let Some(redis) = TestRedis::start().await else {
+        return;
+    };
+    let mut admin = redis::Client::open(redis.url.as_str())
+        .unwrap()
+        .get_multiplexed_async_connection()
+        .await
+        .unwrap();
+    redis::cmd("ACL")
+        .arg("SETUSER")
+        .arg("no-multi")
+        .arg("reset")
+        .arg("on")
+        .arg(">test-secret")
+        .arg("~*")
+        .arg("+set")
+        .arg("+exec")
+        .query_async::<()>(&mut admin)
+        .await
+        .unwrap();
+    let mut url = url::Url::parse(&redis.url).unwrap();
+    url.set_username("no-multi").unwrap();
+    url.set_password(Some("test-secret")).unwrap();
+    let invocation =
+        RedisInvocationEngine::builder(DirectRedis::connect(&redis.url).await.unwrap())
+            .access(AccessMode::Full)
+            .raw_command_policy(RawCommandPolicy::Classified)
+            .build();
+    let engine = RedisTransactionEngine::new(
+        invocation,
+        DirectRedisTransactions::standalone(url.as_str()).unwrap(),
+    );
+    let key = test_key("denied-multi");
+    let result = engine
+        .invoke(
+            RedisTransactionRequest::new().command(
+                NativeRedisInvocation::new("SET")
+                    .arg(key.clone())
+                    .arg("must-not-be-written"),
+            ),
+        )
+        .await;
+    assert!(result.is_err());
+    let value: Option<String> = redis::cmd("GET")
+        .arg(&key)
+        .query_async(&mut admin)
+        .await
+        .unwrap();
+    assert_eq!(value, None);
+}

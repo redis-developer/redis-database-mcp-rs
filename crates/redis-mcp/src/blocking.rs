@@ -12,12 +12,9 @@
 
 use std::{fmt, sync::Arc, time::Duration};
 
+use crate::transport::Target;
 use async_trait::async_trait;
-use redis::{
-    AsyncConnectionConfig,
-    aio::ConnectionLike,
-    cluster::{ClusterClient, ClusterClientBuilder},
-};
+use redis_tower::commands::RawCommand;
 use tokio::sync::Semaphore;
 
 use crate::{
@@ -752,17 +749,17 @@ fn unexpected_reply(command: &str, value: &RedisValue) -> RedisError {
 }
 
 enum DirectBlockingTarget {
-    Standalone(Box<redis::Client>),
-    Cluster(Box<ClusterClient>),
+    Standalone(Target),
+    Cluster(Vec<Target>),
 }
 
-/// Direct redis-rs blocking executor for fixed standalone or Cluster targets.
+/// Direct redis-tower blocking executor for fixed standalone or Cluster targets.
 ///
 /// Every call dials a fresh dedicated connection that is dropped afterwards,
 /// so a blocking wait can never occupy a pooled or multiplexed connection.
-/// Cluster targets disable request retries because a replayed blocking pop
-/// could consume a second element; multi-key routing follows the first key
-/// and the server rejects cross-slot key lists.
+/// Transport failures are never replayed because a second blocking pop could
+/// consume another element. Cluster routing follows the owning primary and
+/// rejects cross-slot key lists before dispatch.
 pub struct DirectRedisBlocking {
     target: DirectBlockingTarget,
     concurrency: Arc<Semaphore>,
@@ -786,8 +783,10 @@ impl fmt::Debug for DirectRedisBlocking {
 impl DirectRedisBlocking {
     /// Prepare an executor for a fixed standalone Redis URL.
     pub fn standalone(url: &str) -> Result<Self, RedisError> {
-        let client = redis::Client::open(url).map_err(RedisError::from)?;
-        Ok(Self::from_client(client))
+        Ok(Self {
+            target: DirectBlockingTarget::Standalone(Target::parse(url)?),
+            concurrency: Arc::new(Semaphore::new(DEFAULT_MAX_CONCURRENT_BLOCKING_CALLS)),
+        })
     }
 
     /// Prepare an executor for a Redis Cluster through one or more seed URLs.
@@ -798,8 +797,8 @@ impl DirectRedisBlocking {
     {
         let seed_urls = seed_urls
             .into_iter()
-            .map(|url| url.as_ref().to_string())
-            .collect::<Vec<_>>();
+            .map(|url| Target::parse(url.as_ref()))
+            .collect::<Result<Vec<_>, _>>()?;
         if seed_urls.is_empty() {
             return Err(RedisError::new(
                 RedisErrorKind::InvalidRequest,
@@ -807,32 +806,13 @@ impl DirectRedisBlocking {
             )
             .with_code("EMPTY_CLUSTER_SEEDS"));
         }
-        // retries(0): a MOVED or connection failure surfaces as a structured
-        // error instead of silently replaying a possibly consumed pop.
-        let client = ClusterClientBuilder::new(seed_urls)
-            .retries(0)
-            .build()
-            .map_err(RedisError::from)?;
-        Ok(Self::from_cluster_client(client))
-    }
-
-    /// Wrap an existing redis-rs standalone client.
-    pub fn from_client(client: redis::Client) -> Self {
-        Self {
-            target: DirectBlockingTarget::Standalone(Box::new(client)),
-            concurrency: Arc::new(Semaphore::new(DEFAULT_MAX_CONCURRENT_BLOCKING_CALLS)),
+        for url in &seed_urls {
+            url.cluster_builder()?;
         }
-    }
-
-    /// Wrap an existing redis-rs cluster client.
-    ///
-    /// The client should be built with zero request retries so a delivered
-    /// blocking pop is never replayed.
-    pub fn from_cluster_client(client: ClusterClient) -> Self {
-        Self {
-            target: DirectBlockingTarget::Cluster(Box::new(client)),
+        Ok(Self {
+            target: DirectBlockingTarget::Cluster(seed_urls),
             concurrency: Arc::new(Semaphore::new(DEFAULT_MAX_CONCURRENT_BLOCKING_CALLS)),
-        }
+        })
     }
 
     /// Bound how many blocking calls may hold dedicated connections at once.
@@ -849,10 +829,10 @@ impl DirectRedisBlocking {
     }
 }
 
-fn blocking_command(command: &RedisCommand) -> redis::Cmd {
-    let mut cmd = redis::cmd(command.name());
+fn blocking_command(command: &RedisCommand) -> RawCommand {
+    let mut cmd = RawCommand::new(command.name());
     for argument in command.arguments() {
-        cmd.arg(argument);
+        cmd = cmd.arg(argument.clone());
     }
     cmd
 }
@@ -881,45 +861,52 @@ impl RedisBlockingExecutor for DirectRedisBlocking {
                 "the blocking executor is shutting down",
             )
         })?;
-        let command = blocking_command(call.command());
         let deadline = call.client_deadline();
-        match &self.target {
-            DirectBlockingTarget::Standalone(client) => {
-                let attempt = async {
-                    // RedisBlockingEngine supplies the request-specific
-                    // deadline. Keep redis-rs' transport timeout from
-                    // preempting the declared server wait.
-                    let config = AsyncConnectionConfig::new().set_response_timeout(None);
-                    let mut connection = client
-                        .get_multiplexed_async_connection_with_config(&config)
-                        .await
-                        .map_err(RedisError::from)?;
+        let attempt = async {
+            let frame = match &self.target {
+                DirectBlockingTarget::Standalone(url) => {
+                    let mut connection = url.connect().await?;
                     connection
-                        .req_packed_command(&command)
+                        .execute(blocking_command(call.command()))
                         .await
-                        .map_err(RedisError::from)
-                };
-                match tokio::time::timeout(deadline, attempt).await {
-                    Ok(result) => result.map(RedisValue::from),
-                    Err(_) => Err(deadline_exceeded(call.command(), deadline)),
+                        .map_err(RedisError::from)?
                 }
-            }
-            DirectBlockingTarget::Cluster(client) => {
-                let attempt = async {
-                    let mut connection = client
-                        .get_async_connection()
-                        .await
-                        .map_err(RedisError::from)?;
+                DirectBlockingTarget::Cluster(seeds) => {
+                    crate::executor::validate_cluster_command_slots(call.command())?;
+                    let mut connected = None;
+                    let mut last_error = None;
+                    // Only discovery may try another seed. Once the command is
+                    // submitted, a transport failure is returned without replay.
+                    for url in seeds {
+                        match url.exclusive_cluster().await {
+                            Ok(connection) => {
+                                connected = Some(connection);
+                                break;
+                            }
+                            Err(error) => last_error = Some(error),
+                        }
+                    }
+                    let mut connection =
+                        connected.ok_or_else(|| last_error.expect("nonempty seeds"))?;
                     connection
-                        .req_packed_command(&command)
+                        .execute(blocking_command(call.command()))
                         .await
-                        .map_err(RedisError::from)
-                };
-                match tokio::time::timeout(deadline, attempt).await {
-                    Ok(result) => result.map(RedisValue::from),
-                    Err(_) => Err(deadline_exceeded(call.command(), deadline)),
+                        .map_err(RedisError::from)?
                 }
+            };
+            let value = RedisValue::from(frame);
+            if let RedisValue::ServerError { code, message } = value {
+                return Err(RedisError::new(
+                    RedisErrorKind::Server,
+                    message.unwrap_or_else(|| code.clone()),
+                )
+                .with_code(code));
             }
+            Ok(value)
+        };
+        match tokio::time::timeout(deadline, attempt).await {
+            Ok(result) => result,
+            Err(_) => Err(deadline_exceeded(call.command(), deadline)),
         }
     }
 }

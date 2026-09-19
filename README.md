@@ -509,9 +509,36 @@ the router and tool contracts are otherwise identical:
     # Ok(())
     # }
 
+The bundled adapters use redis-tower. Ordinary requests share reconnecting
+multiplexed clients; blocking operations, transactions, Pub/Sub, and MONITOR
+use dedicated connections. Connection setup is bounded at ten seconds, while
+command, blocking, transaction, and session deadlines remain authoritative.
+There is no hidden 500 ms response timeout. Delivered writes are not replayed
+after an ambiguous transport failure.
+
+Redis URL `?protocol=resp2` and `?protocol=resp3` options remain supported;
+ordinary adapters retain the RESP2 default. Binary Pub/Sub names and payloads
+remain bytes through subscription, delivery, and resubscription. Cluster shard
+subscriptions use one dedicated connection per distinct hash slot in a bounded
+session. The dependency migration preserves MCP tool schemas and access rules.
+
+The migration currently uses an immutable redis-tower Git revision containing
+required Cluster and binary Pub/Sub APIs. Registry packaging remains blocked
+until those APIs are released. RESP3 attribute-prefixed wire replies currently
+fail with an explicit protocol error; this prevents reply misalignment while
+full attribute attachment is being decided. Host-supplied `RedisValue::Attribute`
+values continue to work.
+
+For hosts wrapping an existing client, use
+`DirectRedis::from_multiplexed_client` or
+`DirectRedisCluster::from_multiplexed_client`. These replace the old redis-rs
+connection constructors. Blocking and transaction adapters accept target URLs
+and open a fresh connection per operation. The redis-rs dependency is now used
+only by tests as an independent seeding client and decoding oracle.
+
 Hosts with their own connection lifecycle implement `RedisExecutor` using
 crate-owned `RedisCommand`, `RedisValue`, and `RedisError` types. They do not
-need to share this crate's redis-rs dependency line. Commands include the
+need to share this crate's redis-tower dependency line. Commands include the
 originating tool, required access level, and any required Redis module for host
 telemetry, capability routing, and audit records. See
 [the custom executor example](crates/redis-mcp/examples/custom_executor.rs).
@@ -582,7 +609,7 @@ and workflow tools.
 
 `RedisCapabilities` is crate-owned too. A host can supply an authoritative or
 partial snapshot containing Redis and module versions, deployment mode, and
-per-command availability without sharing the library's redis-rs dependency.
+per-command availability without sharing the library's Redis client dependency.
 `with_command_inventory` and `with_module_inventory` make omitted catalog
 requirements explicitly unavailable; the individual `with_command` and
 `with_module` methods support partial knowledge.
@@ -594,9 +621,9 @@ from `tools/list` instead. Every catalog entry exposes its minimum Redis/module
 versions and required command names.
 
 The current catalog marks `redis_info`, `redis_dbsize`, `redis_scan`,
-`redis_randomkey`, `redis_hotkeys`, and `redis_ft_list` as standalone-only because redis-rs
-otherwise routes them to one cluster node or returns a fan-out shape without
-the database-wide aggregation their contracts imply. A discovered cluster
+`redis_randomkey`, `redis_hotkeys`, and `redis_ft_list` as standalone-only because
+their contracts require database-wide aggregation that these tools do not yet
+implement for Cluster. A discovered cluster
 snapshot therefore hides or rejects those tools instead of silently reporting
 one node as the whole database.
 

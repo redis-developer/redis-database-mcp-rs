@@ -6,7 +6,7 @@ use std::{
     time::Instant,
 };
 
-use redis::FromRedisValue;
+use crate::response::FromRedisValue;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;

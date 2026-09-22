@@ -14,6 +14,7 @@ use std::{fmt, sync::Arc, time::Duration};
 
 use async_trait::async_trait;
 use redis::{
+    AsyncConnectionConfig,
     aio::ConnectionLike,
     cluster::{ClusterClient, ClusterClientBuilder},
 };
@@ -885,8 +886,12 @@ impl RedisBlockingExecutor for DirectRedisBlocking {
         match &self.target {
             DirectBlockingTarget::Standalone(client) => {
                 let attempt = async {
+                    // RedisBlockingEngine supplies the request-specific
+                    // deadline. Keep redis-rs' transport timeout from
+                    // preempting the declared server wait.
+                    let config = AsyncConnectionConfig::new().set_response_timeout(None);
                     let mut connection = client
-                        .get_multiplexed_async_connection()
+                        .get_multiplexed_async_connection_with_config(&config)
                         .await
                         .map_err(RedisError::from)?;
                     connection

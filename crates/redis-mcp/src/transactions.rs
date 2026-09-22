@@ -10,7 +10,8 @@ use std::{fmt, sync::Arc, time::Duration};
 
 use async_trait::async_trait;
 use redis::{
-    ErrorKind as RedisRsErrorKind, ServerErrorKind as RedisRsServerErrorKind,
+    AsyncConnectionConfig, ErrorKind as RedisRsErrorKind,
+    ServerErrorKind as RedisRsServerErrorKind,
     aio::ConnectionLike as _,
     cluster::{ClusterClient, ClusterClientBuilder},
     cluster_routing::{Route, RoutingInfo, SingleNodeRoutingInfo, SlotAddr},
@@ -734,8 +735,12 @@ impl RedisTransactionExecutor for DirectRedisTransactions {
         let offset = commands.len() + 1;
         match &self.target {
             DirectTransactionTarget::Standalone(client) => {
+                // RedisTransactionEngine bounds the complete attempt. Disable
+                // redis-rs' shorter per-response timeout so WATCH/EXEC cannot
+                // fail before the configured transaction duration.
+                let config = AsyncConnectionConfig::new().set_response_timeout(None);
                 let mut connection = client
-                    .get_multiplexed_async_connection()
+                    .get_multiplexed_async_connection_with_config(&config)
                     .await
                     .map_err(RedisError::from)?;
                 if !transaction.watched_keys().is_empty() {

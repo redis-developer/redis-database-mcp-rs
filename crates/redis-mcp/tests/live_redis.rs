@@ -1,4 +1,4 @@
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64};
 use redis_mcp::{
@@ -7,8 +7,8 @@ use redis_mcp::{
     NativeRedisInvocation, OutputBudget, PubSubReadRequest, PubSubSessionLimits,
     PubSubSessionManager, PubSubSessionOwner, PubSubSubscriptionKind, RawCommandPolicy,
     RedisDeployment, RedisInvocationEngine, RedisMcp, RedisModule, RedisTransactionEngine,
-    RedisTransactionOutcome, RedisTransactionRequest, RedisValue, RedisVersion, ToolBundle,
-    UnavailableToolPolicy,
+    RedisTransactionLimits, RedisTransactionOutcome, RedisTransactionRequest, RedisValue,
+    RedisVersion, ToolBundle, UnavailableToolPolicy,
 };
 use tower_mcp::client::{ChannelTransport, McpClient};
 
@@ -5404,6 +5404,92 @@ async fn live_binary_values_remain_explicit_in_resp2_and_resp3() {
     }
 }
 
+#[cfg(unix)]
+#[tokio::test]
+async fn live_policy_timeouts_outlive_the_redis_rs_response_default() {
+    let Some(redis) = TestRedis::start().await else {
+        return;
+    };
+    let target_url = redis::parse_redis_url(&redis.url).expect("parse Redis test URL");
+    let target_host = target_url
+        .host_str()
+        .expect("wrapper-managed Redis URL uses a TCP host");
+    let target_port = target_url.port().unwrap_or(6379);
+    let proxy = FaultProxy::spawn((target_host, target_port))
+        .await
+        .expect("start timeout fault proxy");
+    let mut proxy_url = target_url.clone();
+    proxy_url
+        .set_host(Some(&proxy.addr().ip().to_string()))
+        .expect("set timeout fault-proxy host");
+    proxy_url
+        .set_port(Some(proxy.addr().port()))
+        .expect("set timeout fault-proxy port");
+
+    // Connect before injecting latency so this measures a command response,
+    // not only connection setup. The invocation engine's two-second timeout
+    // must remain authoritative over redis-rs' shorter transport default.
+    let invocation = RedisInvocationEngine::builder(
+        DirectRedis::connect(proxy_url.as_str())
+            .await
+            .expect("connect delayed invocation executor"),
+    )
+    .access(AccessMode::ReadOnly)
+    .raw_command_policy(RawCommandPolicy::Classified)
+    .command_timeout(Duration::from_secs(2))
+    .build();
+    proxy.set_delay(
+        Direction::UpstreamToClient,
+        Delay::Fixed(Duration::from_millis(750)),
+    );
+    let started = Instant::now();
+    let ping = invocation
+        .invoke(NativeRedisInvocation::new("PING"))
+        .await
+        .expect("delayed PING stays within the invocation deadline");
+    assert_eq!(ping, RedisValue::SimpleString("PONG".to_string()));
+    assert!(
+        started.elapsed() >= Duration::from_millis(650),
+        "fault proxy did not delay the PING response: {:?}",
+        started.elapsed()
+    );
+
+    // A transaction uses a fresh dedicated connection, but its complete
+    // attempt is likewise governed by RedisTransactionEngine's duration.
+    let transaction_invocation = RedisInvocationEngine::builder(
+        DirectRedis::connect(&redis.url)
+            .await
+            .expect("connect transaction policy executor"),
+    )
+    .access(AccessMode::ReadOnly)
+    .raw_command_policy(RawCommandPolicy::Classified)
+    .build();
+    let transactions = RedisTransactionEngine::new(
+        transaction_invocation,
+        DirectRedisTransactions::standalone(proxy_url.as_str())
+            .expect("prepare delayed transaction adapter"),
+    )
+    .with_limits(RedisTransactionLimits::default().with_max_duration(Duration::from_secs(3)));
+    let started = Instant::now();
+    let outcome = transactions
+        .invoke(RedisTransactionRequest::new().command(NativeRedisInvocation::new("PING")))
+        .await
+        .expect("delayed transaction stays within its configured duration");
+    assert!(
+        matches!(
+            outcome,
+            RedisTransactionOutcome::Committed { ref results }
+                if results == &[RedisValue::SimpleString("PONG".to_string())]
+        ),
+        "unexpected delayed transaction outcome: {outcome:?}"
+    );
+    assert!(
+        started.elapsed() >= Duration::from_millis(650),
+        "fault proxy did not delay the transaction response: {:?}",
+        started.elapsed()
+    );
+}
+
 #[tokio::test]
 async fn live_diagnostics_are_structured_bounded_redacted_and_binary_safe() {
     let Some(redis) = TestRedis::start().await else {
@@ -7694,17 +7780,23 @@ async fn live_blocking_calls_are_finite_bounded_and_binary_safe() {
     );
 
     // A server-side timeout is an explicit result, not an error.
+    let started = Instant::now();
     let timed_out = call_structured(
         &client,
         "redis_brpop",
         serde_json::json!({
             "keys": [{"value": format!("{prefix}:empty")}],
-            "timeout_ms": 200,
+            "timeout_ms": 750,
         }),
     )
     .await;
     assert_eq!(timed_out["timed_out"], true);
     assert!(timed_out["popped"].is_null());
+    assert!(
+        started.elapsed() >= Duration::from_millis(650),
+        "blocking timeout returned before Redis' server deadline: {:?}",
+        started.elapsed()
+    );
 
     // The call genuinely blocks: an element pushed after the call starts is
     // still delivered.

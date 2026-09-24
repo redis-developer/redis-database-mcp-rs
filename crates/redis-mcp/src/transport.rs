@@ -3,9 +3,13 @@
 use crate::{RedisError, RedisErrorKind};
 use redis_tower::{commands::RawCommand, reconnect::ConnectionFactory};
 use redis_tower_cluster::MultiplexedClusterClient;
+#[cfg(unix)]
+use redis_tower_core::RedisStream;
 use redis_tower_core::{
     ConnectionConfig, ProtocolVersion, RedisConnection, RedisError as TowerError,
 };
+#[cfg(unix)]
+use std::path::PathBuf;
 use std::{future::Future, pin::Pin, time::Duration};
 
 pub(crate) const CONNECT_TIMEOUT: Duration = Duration::from_secs(10);
@@ -21,6 +25,8 @@ pub(crate) struct Target {
 
 #[derive(Clone)]
 struct UnixSetup {
+    #[cfg(unix)]
+    path: PathBuf,
     username: Option<String>,
     password: Option<String>,
     database: Option<u16>,
@@ -49,7 +55,17 @@ impl Target {
             }
         }
         let unix = matches!(url.scheme(), "unix" | "redis+unix" | "valkey+unix");
+        #[cfg(unix)]
+        let unix_path = unix
+            .then(|| url.to_file_path().map_err(|_| invalid_url()))
+            .transpose()?;
         if unix && username.is_some() && password.is_none() {
+            return Err(invalid_url());
+        }
+        if matches!(url.scheme(), "rediss" | "valkeys") && url.fragment().is_some() {
+            // The prior redis-rs feature set could not honor `#insecure` TLS
+            // URLs. Reject fragments explicitly instead of silently dropping
+            // a caller's certificate-validation intent.
             return Err(invalid_url());
         }
         url.set_query(None);
@@ -58,6 +74,11 @@ impl Target {
             // redis-tower names the same Unix transport `unix`.
             url.set_scheme("unix").map_err(|_| invalid_url())?;
         }
+        if !unix && matches!(url.host(), Some(url::Host::Ipv6(_))) && url.port().is_none() {
+            // redis-tower's string parser requires an explicit port to
+            // distinguish the final IPv6 segment from a port separator.
+            url.set_port(Some(6379)).map_err(|_| invalid_url())?;
+        }
         let url = url.to_string();
         redis_tower_core::parse_redis_url(&url).map_err(|_| invalid_url())?;
         Ok(Self {
@@ -65,11 +86,17 @@ impl Target {
             config: ConnectionConfig::default()
                 .with_protocol(protocol)
                 .with_connect_timeout(Some(CONNECT_TIMEOUT)),
-            unix_setup: unix.then_some(UnixSetup {
-                username,
-                password,
-                database,
-            }),
+            unix_setup: if unix {
+                Some(UnixSetup {
+                    #[cfg(unix)]
+                    path: unix_path.expect("Unix targets have a decoded path"),
+                    username,
+                    password,
+                    database,
+                })
+            } else {
+                None
+            },
         })
     }
 
@@ -93,7 +120,22 @@ impl Target {
         // RESP2 connection first, replay the full legacy setup, then negotiate
         // the requested protocol. This path is also used for reconnection.
         let initial = self.config.clone().with_protocol(ProtocolVersion::Resp2);
-        let mut connection = RedisConnection::connect_url_with_config(&self.url, &initial).await?;
+        #[cfg(unix)]
+        let mut connection = {
+            let stream = tokio::net::UnixStream::connect(&setup.path)
+                .await
+                .map_err(|error| TowerError::connection(setup.path.display().to_string(), error))?;
+            let mut connection =
+                RedisConnection::from_stream_with_config(RedisStream::Unix(stream), &initial);
+            identify_client(&mut connection).await?;
+            connection
+        };
+        #[cfg(not(unix))]
+        let mut connection = {
+            return Err(TowerError::InvalidUrl(
+                "unix sockets are not supported on this platform".into(),
+            ));
+        };
         if let Some(password) = &setup.password {
             let mut auth = RawCommand::new("AUTH");
             if let Some(username) = &setup.username {
@@ -174,6 +216,26 @@ impl Target {
     }
 }
 
+#[cfg(unix)]
+async fn identify_client(connection: &mut RedisConnection) -> Result<(), TowerError> {
+    for command in [
+        RawCommand::new("CLIENT")
+            .arg("SETINFO")
+            .arg("LIB-NAME")
+            .arg("redis-mcp"),
+        RawCommand::new("CLIENT")
+            .arg("SETINFO")
+            .arg("LIB-VER")
+            .arg(env!("CARGO_PKG_VERSION")),
+    ] {
+        match connection.execute(command).await {
+            Ok(_) | Err(TowerError::Redis(_)) => {}
+            Err(error) => return Err(error),
+        }
+    }
+    Ok(())
+}
+
 impl ConnectionFactory for Target {
     fn connect(&self) -> Pin<Box<dyn Future<Output = Result<RedisConnection, TowerError>> + Send>> {
         let target = self.clone();
@@ -234,7 +296,7 @@ mod tests {
     #[tokio::test]
     async fn authenticated_unix_aliases_replay_acl_setup() {
         let directory = tempfile::tempdir().expect("create Redis test directory");
-        let socket = directory.path().join("redis.sock");
+        let socket = directory.path().join("redis socket.sock");
         let acl_file = directory.path().join("users.acl");
         std::fs::write(
             &acl_file,
@@ -261,12 +323,14 @@ mod tests {
         };
 
         for scheme in ["redis+unix", "valkey+unix"] {
+            let encoded_socket = socket.display().to_string().replace(' ', "%20");
             let url = format!(
                 "{scheme}://{}?user=agent&pass=secret&db=1&protocol=resp3",
-                socket.display()
+                encoded_socket
             );
             let target = Target::parse(&url).expect("parse authenticated Unix target");
             assert!(target.url.starts_with("unix:"));
+            assert!(target.url.contains("%20"));
             let mut connection = target.connect().await.expect("connect with ACL identity");
             let identity: String = connection
                 .execute(RawCommand::new("ACL").arg("WHOAMI").query())
@@ -277,7 +341,7 @@ mod tests {
 
             let wrong_url = format!(
                 "{scheme}://{}?user=agent&pass=wrong&protocol=resp3",
-                socket.display()
+                encoded_socket
             );
             let result = Target::parse(&wrong_url)
                 .expect("parse bad credentials")
@@ -289,6 +353,30 @@ mod tests {
             };
             assert_eq!(error.kind(), RedisErrorKind::Authentication);
             assert_eq!(error.code(), Some("WRONGPASS"));
+        }
+    }
+
+    #[test]
+    fn ipv6_urls_without_ports_are_normalized_for_tower() {
+        for scheme in ["redis", "rediss", "valkey", "valkeys"] {
+            let target = Target::parse(&format!("{scheme}://[::1]/?protocol=resp3"))
+                .expect("parse default-port IPv6 target");
+            let parsed = redis_tower_core::parse_redis_url(&target.url)
+                .expect("normalized target is accepted by redis-tower");
+            assert_eq!(parsed.host, "[::1]");
+            assert_eq!(parsed.port, 6379);
+            assert_eq!(target.config.protocol(), ProtocolVersion::Resp3);
+        }
+    }
+
+    #[test]
+    fn insecure_tls_fragments_are_rejected_explicitly() {
+        for scheme in ["rediss", "valkeys"] {
+            let error = match Target::parse(&format!("{scheme}://localhost/#insecure")) {
+                Ok(_) => panic!("insecure TLS fragment must not be silently dropped"),
+                Err(error) => error,
+            };
+            assert_eq!(error.code(), Some("INVALID_REDIS_URL"));
         }
     }
 

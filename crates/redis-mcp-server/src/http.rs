@@ -310,8 +310,27 @@ async fn enforce_policy(
     };
     request.extensions_mut().insert(owner.clone());
 
-    let is_delete = *request.method() == Method::DELETE;
-    let mut response = if matches!(*request.method(), Method::POST | Method::DELETE) {
+    let method = request.method().clone();
+    let is_delete = method == Method::DELETE;
+    let mut response = if is_delete {
+        let delete = async {
+            let response = next.run(request).await;
+            if response.status().is_success() {
+                // Keep the transport binding until Redis cleanup succeeds.
+                // If the outer timeout cancels cleanup, the TTL reaper will
+                // observe the deleted transport session and retry it.
+                policy.sessions.close_owner(&owner).await;
+                if let Some(session_id) = mcp_session_id.as_deref() {
+                    policy.session_owners.lock().await.remove(session_id);
+                }
+            }
+            response
+        };
+        match tokio::time::timeout(policy.request_timeout, delete).await {
+            Ok(response) => response,
+            Err(_) => (StatusCode::REQUEST_TIMEOUT, "request timed out").into_response(),
+        }
+    } else if method == Method::POST {
         match tokio::time::timeout(policy.request_timeout, next.run(request)).await {
             Ok(response) => response,
             Err(_) => (StatusCode::REQUEST_TIMEOUT, "request timed out").into_response(),
@@ -319,12 +338,7 @@ async fn enforce_policy(
     } else {
         next.run(request).await
     };
-    if is_delete {
-        policy.sessions.close_owner(&owner).await;
-        if let Some(session_id) = mcp_session_id.as_deref() {
-            policy.session_owners.lock().await.remove(session_id);
-        }
-    } else if mcp_session_id.is_none() {
+    if !is_delete && mcp_session_id.is_none() {
         // Bind a newly created legacy session to the principal that performed
         // initialization before its ID is returned to the caller.
         let created_session_id = response

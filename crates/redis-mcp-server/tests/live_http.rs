@@ -397,6 +397,15 @@ async fn authenticated_http_enforces_policy_and_supports_final_protocol() {
         .to_str()
         .expect("legacy session header text")
         .to_string();
+    let rejected_delete = client
+        .delete(&server.endpoint)
+        .bearer_auth(TOKEN_A)
+        .header("mcp-session-id", &legacy_session_id)
+        .header(header::ORIGIN, "https://attacker.example")
+        .send()
+        .await
+        .expect("send rejected legacy session DELETE");
+    assert!(!rejected_delete.status().is_success());
     let hijack = client
         .post(&server.endpoint)
         .bearer_auth(TOKEN_B)

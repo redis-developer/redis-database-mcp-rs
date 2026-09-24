@@ -322,7 +322,10 @@ Loopback is the default and may run without authentication. Supplying
 health endpoints. Binding to a non-loopback address additionally requires
 `--http-allow-remote` and at least one `--http-allowed-host`; browser Origins
 remain limited to localhost unless explicitly added with
-`--http-allowed-origin`.
+`--http-allowed-origin`. The built-in listener is plain HTTP, so remote
+deployments must put it behind a TLS-terminating proxy or an equivalently
+protected network path; the acknowledgement flag does not make plaintext
+Bearer tokens safe on an untrusted network.
 
 Legacy MCP sessions are isolated by their opaque `mcp-session-id`. A
 sessionless final-protocol client that uses stateful Redis tools (Pub/Sub or

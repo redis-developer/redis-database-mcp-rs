@@ -47,7 +47,9 @@ discover_capabilities = true
 
 [http]
 # Loopback is the safe default. A non-loopback bind additionally requires
-# allow_remote=true, REDIS_MCP_HTTP_BEARER_TOKEN, and allowed_hosts.
+# allow_remote=true, REDIS_MCP_HTTP_BEARER_TOKEN, and allowed_hosts. The
+# listener is plain HTTP; terminate TLS before exposing it over an untrusted
+# network.
 bind = "127.0.0.1:8080"
 allow_remote = false
 allowed_hosts = []

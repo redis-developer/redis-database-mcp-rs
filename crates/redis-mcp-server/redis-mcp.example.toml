@@ -17,8 +17,10 @@
 # REDIS_URL and REDIS_CLUSTER_URLS. Documentation serving uses
 # REDIS_MCP_DOCS_ENABLED, REDIS_MCP_DOCS_PIN, REDIS_MCP_DOCS_MAX_BYTES,
 # REDIS_MCP_DOCS_CACHE_ENTRIES, and REDIS_MCP_DOCS_FETCH_TIMEOUT_MS. HTTP
-# settings use REDIS_MCP_HTTP_<SETTING>; the optional bearer secret is only
-# accepted as REDIS_MCP_HTTP_BEARER_TOKEN and never from CLI or this file.
+# settings use REDIS_MCP_HTTP_<SETTING>; optional bearer secrets are only
+# accepted as REDIS_MCP_HTTP_BEARER_TOKEN (one principal) or the comma-delimited
+# REDIS_MCP_HTTP_BEARER_TOKENS (multiple principals), never from CLI or this
+# file. The singular and plural forms are mutually exclusive.
 
 [target]
 # Exactly one of url or cluster_urls. URLs may embed credentials and TLS
@@ -47,9 +49,9 @@ discover_capabilities = true
 
 [http]
 # Loopback is the safe default. A non-loopback bind additionally requires
-# allow_remote=true, REDIS_MCP_HTTP_BEARER_TOKEN, and allowed_hosts. The
-# listener is plain HTTP; terminate TLS before exposing it over an untrusted
-# network.
+# allow_remote=true, at least one configured HTTP bearer token, and
+# allowed_hosts. The listener is plain HTTP; terminate TLS before exposing it
+# over an untrusted network.
 bind = "127.0.0.1:8080"
 allow_remote = false
 allowed_hosts = []

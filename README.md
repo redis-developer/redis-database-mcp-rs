@@ -319,9 +319,12 @@ The identical router can be served over Streamable HTTP at `/mcp`:
 
 Loopback is the default and may run without authentication. Supplying
 `REDIS_MCP_HTTP_BEARER_TOKEN` requires Bearer authentication on the MCP and
-health endpoints. Binding to a non-loopback address additionally requires
-`--http-allow-remote` and at least one `--http-allowed-host`; browser Origins
-remain limited to localhost unless explicitly added with
+health endpoints. `REDIS_MCP_HTTP_BEARER_TOKENS` accepts a comma-delimited
+allowlist instead; configure one distinct token for each final-protocol
+principal that needs isolated stateful handles. The singular and plural forms
+are mutually exclusive. Binding to a non-loopback address additionally
+requires `--http-allow-remote` and at least one `--http-allowed-host`; browser
+Origins remain limited to localhost unless explicitly added with
 `--http-allowed-origin`. The built-in listener is plain HTTP, so remote
 deployments must put it behind a TLS-terminating proxy or an equivalently
 protected network path; the acknowledgement flag does not make plaintext
@@ -329,13 +332,16 @@ Bearer tokens safe on an untrusted network.
 
 Legacy MCP sessions are isolated by their opaque `mcp-session-id`. A
 sessionless final-protocol client that uses stateful Redis tools (Pub/Sub or
-MONITOR) should send a stable, unique `x-redis-mcp-client-id` together with
-its Bearer token. The server hashes both values into an opaque owner; the
-header is not an authentication credential. Without that header, each
-sessionless request gets a fresh owner and therefore cannot reuse or inherit
-stateful handles. Request bodies, concurrent HTTP requests, live MCP sessions,
-session TTL, POST/DELETE duration, and graceful drain time all have explicit
-configurable bounds; see the example configuration for their defaults.
+MONITOR) uses its Bearer credential as its stable principal. The server hashes
+the matched credential into an opaque owner; caller-controlled client metadata
+never grants access to another principal's handles. Without authentication,
+each sessionless request gets a fresh owner and therefore cannot reuse or
+inherit stateful handles. Legacy DELETE and TTL expiry close owner-scoped Redis
+resources. Final-protocol resources persist until their Redis session is
+closed, its Redis idle limit expires, or the process shuts down. Request bodies,
+concurrent HTTP requests, live MCP sessions, session TTL, POST/DELETE duration,
+and graceful drain time all have explicit configurable bounds; see the example
+configuration for their defaults.
 
 The same generated command surface is available non-interactively through
 `mcp-repl --exec`, making it the interim one-shot CLI as well as the REPL. A

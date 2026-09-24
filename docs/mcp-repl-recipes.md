@@ -166,9 +166,9 @@ output schema, annotations, and a successful `describe` result.
   finite and request cancellation is the current lifecycle boundary; add
   server-directed tasks only for a workflow that materially benefits from
   surviving the original call.
-- Streamable HTTP sessionless callers that use Pub/Sub or MONITOR must send a
-  stable `x-redis-mcp-client-id` with their Bearer token so handles remain
-  reusable without sharing an owner with another client.
+- Streamable HTTP sessionless callers that use Pub/Sub or MONITOR need a
+  distinct configured Bearer token per isolated principal. The credential,
+  rather than caller-controlled client metadata, owns reusable handles.
 - mcp-repl remains an external development client. A future first-party Redis
   frontend should consume a public connection/surface/coercion/call seam if
   that core is extracted, while keeping Reedline, rendering, history, and

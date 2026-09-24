@@ -492,7 +492,7 @@ impl std::fmt::Debug for SecretString {
 pub(crate) struct HttpConfig {
     pub(crate) bind: SocketAddr,
     pub(crate) allow_remote: bool,
-    pub(crate) bearer_token: Option<SecretString>,
+    pub(crate) bearer_tokens: Vec<SecretString>,
     pub(crate) allowed_hosts: Vec<String>,
     pub(crate) allowed_origins: Vec<String>,
     pub(crate) max_body_bytes: usize,
@@ -677,6 +677,26 @@ fn env_string_list(env: EnvLookup<'_>, name: &'static str) -> Option<Vec<String>
     })
 }
 
+fn http_bearer_tokens(env: EnvLookup<'_>) -> Result<Vec<SecretString>, ConfigError> {
+    let single = env("REDIS_MCP_HTTP_BEARER_TOKEN").and_then(SecretString::new);
+    let multiple = env("REDIS_MCP_HTTP_BEARER_TOKENS").map(|value| {
+        value
+            .split(',')
+            .map(str::trim)
+            .filter(|token| !token.is_empty())
+            .map(|token| SecretString(Arc::from(token)))
+            .collect::<Vec<_>>()
+    });
+    match (single, multiple) {
+        (Some(_), Some(_)) => Err(ConfigError::InvalidHttpOptions(
+            "configure either REDIS_MCP_HTTP_BEARER_TOKEN or REDIS_MCP_HTTP_BEARER_TOKENS, not both",
+        )),
+        (Some(token), None) => Ok(vec![token]),
+        (None, Some(tokens)) => Ok(tokens),
+        (None, None) => Ok(Vec::new()),
+    }
+}
+
 fn pick<T>(cli: Option<T>, env: Option<T>, file: Option<T>, default: T) -> T {
     cli.or(env).or(file).unwrap_or(default)
 }
@@ -710,6 +730,7 @@ pub(crate) fn resolve(
         file_transport,
         CliTransport::Stdio,
     );
+    let bearer_tokens = http_bearer_tokens(env)?;
     let http = HttpConfig {
         bind: pick(args.http, env_http_bind, file.http.bind, DEFAULT_HTTP_BIND),
         allow_remote: pick(
@@ -721,7 +742,7 @@ pub(crate) fn resolve(
         // Secrets deliberately do not have CLI or TOML forms: command-line
         // arguments are process-visible and config files are commonly checked
         // in. Operators provide the token directly through the environment.
-        bearer_token: env("REDIS_MCP_HTTP_BEARER_TOKEN").and_then(SecretString::new),
+        bearer_tokens,
         allowed_hosts: pick(
             (!args.http_allowed_hosts.is_empty()).then(|| args.http_allowed_hosts.clone()),
             env_string_list(env, "REDIS_MCP_HTTP_ALLOWED_HOSTS"),
@@ -1218,9 +1239,9 @@ fn validate(config: &ServerConfig) -> Result<(), ConfigError> {
                     "binding HTTP to a non-loopback address requires --http-allow-remote (or REDIS_MCP_HTTP_ALLOW_REMOTE=true)",
                 ));
             }
-            if http.bearer_token.is_none() {
+            if http.bearer_tokens.is_empty() {
                 return Err(ConfigError::InvalidHttpOptions(
-                    "binding HTTP to a non-loopback address requires REDIS_MCP_HTTP_BEARER_TOKEN",
+                    "binding HTTP to a non-loopback address requires REDIS_MCP_HTTP_BEARER_TOKEN or REDIS_MCP_HTTP_BEARER_TOKENS",
                 ));
             }
             if http.allowed_hosts.is_empty() {
@@ -1387,7 +1408,7 @@ mod tests {
             panic!("CLI must select HTTP");
         };
         assert_eq!(cli_http.bind, "127.0.0.1:9000".parse().unwrap());
-        assert!(cli_http.bearer_token.is_none());
+        assert!(cli_http.bearer_tokens.is_empty());
 
         let env = env_of(&[("REDIS_MCP_TRANSPORT", "http")]);
         let lookup = |name: &str| env.get(name).cloned();
@@ -1439,6 +1460,30 @@ mod tests {
         let debug = format!("{config:?}");
         assert!(!debug.contains("do-not-print-this"), "{debug}");
         assert!(debug.contains("[REDACTED]"), "{debug}");
+    }
+
+    #[test]
+    fn bearer_token_allowlist_is_environment_only_and_redacted() {
+        let env = env_of(&[("REDIS_MCP_HTTP_BEARER_TOKENS", "agent-a,agent-b")]);
+        let lookup = |name: &str| env.get(name).cloned();
+        let config =
+            resolve(&args(&["--http", "127.0.0.1:8080"]), None, &lookup).expect("token allowlist");
+        let ServerTransport::Http(http) = &config.transport else {
+            panic!("HTTP config");
+        };
+        assert_eq!(http.bearer_tokens.len(), 2);
+        let debug = format!("{config:?}");
+        assert!(!debug.contains("agent-a"), "{debug}");
+        assert!(!debug.contains("agent-b"), "{debug}");
+
+        let both = env_of(&[
+            ("REDIS_MCP_HTTP_BEARER_TOKEN", "one"),
+            ("REDIS_MCP_HTTP_BEARER_TOKENS", "two,three"),
+        ]);
+        let lookup = |name: &str| both.get(name).cloned();
+        let error = resolve(&args(&["--http", "127.0.0.1:8080"]), None, &lookup)
+            .expect_err("ambiguous token sources");
+        assert!(matches!(error, ConfigError::InvalidHttpOptions(_)));
     }
 
     #[test]

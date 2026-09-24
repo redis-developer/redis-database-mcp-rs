@@ -7,7 +7,8 @@ use tower_mcp::client::{HttpClientTransport, McpClient, StdioClientTransport};
 #[cfg(unix)]
 use redis_server_wrapper::{Error as RedisServerError, RedisServer, RedisServerHandle};
 
-const TOKEN: &str = "live-http-test-token";
+const TOKEN_A: &str = "live-http-agent-a-token";
+const TOKEN_B: &str = "live-http-agent-b-token";
 const FINAL_VERSION: &str = "2026-07-28";
 
 struct TestRedis {
@@ -91,25 +92,40 @@ struct HttpServer {
 
 impl HttpServer {
     async fn start(redis_url: &str) -> Self {
+        Self::start_with_session_ttl(redis_url, None).await
+    }
+
+    async fn start_with_session_ttl(redis_url: &str, session_ttl_ms: Option<u64>) -> Self {
         let probe = std::net::TcpListener::bind("127.0.0.1:0").expect("reserve HTTP port");
         let address = probe.local_addr().expect("reserved address");
         drop(probe);
 
         let mut command = tokio::process::Command::new(env!("CARGO_BIN_EXE_redis-mcp-server"));
+        command.args([
+            "--url",
+            redis_url,
+            "--access",
+            "read-write",
+            "--http",
+            &address.to_string(),
+            "--http-max-body-bytes",
+            "1024",
+            "--http-max-sessions",
+            "2",
+        ]);
+        if let Some(session_ttl_ms) = session_ttl_ms {
+            command.args([
+                "--http-session-ttl-ms",
+                &session_ttl_ms.to_string(),
+                "--http-drain-timeout-ms",
+                "250",
+            ]);
+        }
         command
-            .args([
-                "--url",
-                redis_url,
-                "--access",
-                "read-write",
-                "--http",
-                &address.to_string(),
-                "--http-max-body-bytes",
-                "1024",
-                "--http-max-sessions",
-                "2",
-            ])
-            .env("REDIS_MCP_HTTP_BEARER_TOKEN", TOKEN)
+            .env(
+                "REDIS_MCP_HTTP_BEARER_TOKENS",
+                format!("{TOKEN_A},{TOKEN_B}"),
+            )
             .env("RUST_LOG", "redis_mcp_server=warn")
             .stdin(Stdio::null())
             .stdout(Stdio::null())
@@ -135,10 +151,10 @@ impl HttpServer {
         {
             let pid = self.child.id().expect("HTTP server pid");
             let status = std::process::Command::new("kill")
-                .args(["-INT", &pid.to_string()])
+                .args(["-TERM", &pid.to_string()])
                 .status()
-                .expect("send SIGINT to HTTP server");
-            assert!(status.success(), "send SIGINT to HTTP server: {status}");
+                .expect("send SIGTERM to HTTP server");
+            assert!(status.success(), "send SIGTERM to HTTP server: {status}");
         }
         #[cfg(not(unix))]
         self.child.start_kill().expect("stop HTTP server");
@@ -161,8 +177,8 @@ fn test_key(suffix: &str) -> String {
     format!("redis-mcp-server:http:{}:{suffix}", std::process::id())
 }
 
-async fn connect_http(endpoint: &str, name: &str) -> McpClient {
-    let transport = HttpClientTransport::new(endpoint).bearer_token(TOKEN);
+async fn connect_http(endpoint: &str, token: &str, name: &str) -> McpClient {
+    let transport = HttpClientTransport::new(endpoint).bearer_token(token);
     let client = McpClient::connect(transport)
         .await
         .expect("connect HTTP MCP client");
@@ -179,9 +195,9 @@ async fn http_matches_stdio_and_isolates_stateful_clients() {
         return;
     };
     let server = HttpServer::start(&redis.url).await;
-    let http_a = connect_http(&server.endpoint, "http-a").await;
-    let http_b = connect_http(&server.endpoint, "http-b").await;
-    let third_transport = HttpClientTransport::new(&server.endpoint).bearer_token(TOKEN);
+    let http_a = connect_http(&server.endpoint, TOKEN_A, "http-a").await;
+    let http_b = connect_http(&server.endpoint, TOKEN_A, "http-b").await;
+    let third_transport = HttpClientTransport::new(&server.endpoint).bearer_token(TOKEN_A);
     let third = McpClient::connect(third_transport)
         .await
         .expect("connect third HTTP client");
@@ -272,6 +288,31 @@ async fn http_matches_stdio_and_isolates_stateful_clients() {
 }
 
 #[tokio::test]
+async fn expired_http_session_releases_redis_resources_after_abrupt_disconnect() {
+    let Some(redis) = TestRedis::start().await else {
+        return;
+    };
+    let server = HttpServer::start_with_session_ttl(&redis.url, Some(100)).await;
+    let client = connect_http(&server.endpoint, TOKEN_A, "abrupt-client").await;
+    let channel = test_key("expired-pubsub");
+
+    client
+        .call_tool(
+            "redis_subscribe",
+            json!({"subscriptions": [{"value": channel}]}),
+        )
+        .await
+        .expect("subscribe before abrupt disconnect");
+    wait_for_subscriber_count(&redis.url, &channel, 1).await;
+
+    // Dropping without client.shutdown() leaves the transport session for its
+    // TTL reaper. The server must couple that expiry to Redis resource cleanup.
+    drop(client);
+    wait_for_zero_subscribers(&redis.url, &channel).await;
+    server.shutdown().await;
+}
+
+#[tokio::test]
 async fn authenticated_http_enforces_policy_and_supports_final_protocol() {
     let Some(redis) = TestRedis::start().await else {
         return;
@@ -289,7 +330,7 @@ async fn authenticated_http_enforces_policy_and_supports_final_protocol() {
 
     let wrong_host = client
         .post(&server.endpoint)
-        .bearer_auth(TOKEN)
+        .bearer_auth(TOKEN_A)
         .header(header::HOST, "attacker.example")
         .json(&json!({"jsonrpc":"2.0", "id":2, "method":"server/discover"}))
         .send()
@@ -299,7 +340,7 @@ async fn authenticated_http_enforces_policy_and_supports_final_protocol() {
 
     let wrong_origin = client
         .post(&server.endpoint)
-        .bearer_auth(TOKEN)
+        .bearer_auth(TOKEN_A)
         .header(header::ORIGIN, "https://attacker.example")
         .json(&json!({"jsonrpc":"2.0", "id":3, "method":"server/discover"}))
         .send()
@@ -309,7 +350,7 @@ async fn authenticated_http_enforces_policy_and_supports_final_protocol() {
 
     let oversized = client
         .post(&server.endpoint)
-        .bearer_auth(TOKEN)
+        .bearer_auth(TOKEN_A)
         .header("content-type", "application/json")
         .body("x".repeat(2048))
         .send()
@@ -319,7 +360,7 @@ async fn authenticated_http_enforces_policy_and_supports_final_protocol() {
 
     let discovery = client
         .post(&server.endpoint)
-        .bearer_auth(TOKEN)
+        .bearer_auth(TOKEN_A)
         .json(&json!({"jsonrpc":"2.0", "id":4, "method":"server/discover"}))
         .send()
         .await
@@ -331,9 +372,54 @@ async fn authenticated_http_enforces_policy_and_supports_final_protocol() {
         json!(["2025-11-25", "2026-07-28"])
     );
 
+    let legacy_init = client
+        .post(&server.endpoint)
+        .bearer_auth(TOKEN_A)
+        .header(header::ACCEPT, "application/json, text/event-stream")
+        .json(&json!({
+            "jsonrpc": "2.0",
+            "id": 40,
+            "method": "initialize",
+            "params": {
+                "protocolVersion": "2025-11-25",
+                "capabilities": {},
+                "clientInfo": {"name": "legacy-owner", "version": "0"}
+            }
+        }))
+        .send()
+        .await
+        .expect("initialize raw legacy session");
+    assert!(legacy_init.status().is_success());
+    let legacy_session_id = legacy_init
+        .headers()
+        .get("mcp-session-id")
+        .expect("legacy session header")
+        .to_str()
+        .expect("legacy session header text")
+        .to_string();
+    let hijack = client
+        .post(&server.endpoint)
+        .bearer_auth(TOKEN_B)
+        .header("mcp-session-id", &legacy_session_id)
+        .json(&json!({"jsonrpc":"2.0", "method":"notifications/initialized"}))
+        .send()
+        .await
+        .expect("attempt cross-principal legacy session access");
+    assert_eq!(hijack.status(), StatusCode::FORBIDDEN);
+    let initialized = client
+        .post(&server.endpoint)
+        .bearer_auth(TOKEN_A)
+        .header("mcp-session-id", &legacy_session_id)
+        .json(&json!({"jsonrpc":"2.0", "method":"notifications/initialized"}))
+        .send()
+        .await
+        .expect("initialize owned legacy session");
+    assert_eq!(initialized.status(), StatusCode::ACCEPTED);
+
     let listed = final_request(
         &client,
         &server.endpoint,
+        TOKEN_A,
         "agent-a",
         5,
         "tools/list",
@@ -349,6 +435,7 @@ async fn authenticated_http_enforces_policy_and_supports_final_protocol() {
     let unknown = final_request(
         &client,
         &server.endpoint,
+        TOKEN_A,
         "agent-a",
         6,
         "unknown/method",
@@ -360,6 +447,7 @@ async fn authenticated_http_enforces_policy_and_supports_final_protocol() {
     let missing_task = final_request(
         &client,
         &server.endpoint,
+        TOKEN_A,
         "agent-a",
         7,
         "tasks/get",
@@ -372,6 +460,7 @@ async fn authenticated_http_enforces_policy_and_supports_final_protocol() {
     let subscribed = final_tool(
         &client,
         &server.endpoint,
+        TOKEN_A,
         "agent-a",
         8,
         "redis_subscribe",
@@ -383,11 +472,13 @@ async fn authenticated_http_enforces_policy_and_supports_final_protocol() {
         .expect("final Pub/Sub session id")
         .to_string();
 
-    // A distinct authenticated client ID derives a distinct stable owner.
+    // Client metadata is caller-controlled. A distinct configured credential,
+    // even while claiming the same name, derives a distinct stable owner.
     let foreign = final_tool(
         &client,
         &server.endpoint,
-        "agent-b",
+        TOKEN_B,
+        "agent-a",
         9,
         "redis_pubsub_read",
         json!({"session_id": session_id, "wait_ms": 1}),
@@ -398,6 +489,7 @@ async fn authenticated_http_enforces_policy_and_supports_final_protocol() {
     final_tool(
         &client,
         &server.endpoint,
+        TOKEN_A,
         "agent-a",
         10,
         "redis_publish",
@@ -407,6 +499,7 @@ async fn authenticated_http_enforces_policy_and_supports_final_protocol() {
     let read = final_tool(
         &client,
         &server.endpoint,
+        TOKEN_A,
         "agent-a",
         11,
         "redis_pubsub_read",
@@ -426,6 +519,7 @@ async fn authenticated_http_enforces_policy_and_supports_final_protocol() {
 async fn final_tool(
     client: &HttpClient,
     endpoint: &str,
+    token: &str,
     client_id: &str,
     id: u64,
     tool: &str,
@@ -434,6 +528,7 @@ async fn final_tool(
     final_request(
         client,
         endpoint,
+        token,
         client_id,
         id,
         "tools/call",
@@ -445,6 +540,7 @@ async fn final_tool(
 async fn final_request(
     client: &HttpClient,
     endpoint: &str,
+    token: &str,
     client_id: &str,
     id: u64,
     method: &str,
@@ -462,8 +558,7 @@ async fn final_request(
         (method == "tools/call").then(|| params["name"].as_str().expect("tool name").to_string());
     let mut request = client
         .post(endpoint)
-        .bearer_auth(TOKEN)
-        .header("x-redis-mcp-client-id", client_id)
+        .bearer_auth(token)
         .header("mcp-protocol-version", FINAL_VERSION)
         .header("mcp-method", method)
         .header(header::ACCEPT, "application/json")
@@ -482,6 +577,10 @@ async fn final_request(
 }
 
 async fn wait_for_zero_subscribers(redis_url: &str, channel: &str) {
+    wait_for_subscriber_count(redis_url, channel, 0).await;
+}
+
+async fn wait_for_subscriber_count(redis_url: &str, channel: &str, expected: u64) {
     let client = redis::Client::open(redis_url).expect("open Redis observer");
     let mut connection = client
         .get_multiplexed_async_connection()
@@ -494,10 +593,10 @@ async fn wait_for_zero_subscribers(redis_url: &str, channel: &str) {
             .query_async(&mut connection)
             .await
             .expect("inspect Pub/Sub subscribers");
-        if counts.first().is_some_and(|(_, count)| *count == 0) {
+        if counts.first().is_some_and(|(_, count)| *count == expected) {
             return;
         }
         tokio::time::sleep(Duration::from_millis(20)).await;
     }
-    panic!("HTTP disconnect did not release the Redis Pub/Sub connection");
+    panic!("Redis Pub/Sub subscriber count did not reach {expected}");
 }

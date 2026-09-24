@@ -610,10 +610,6 @@ impl RedisExecutor for DirectRedis {
 
 /// A fixed Redis Cluster target backed by redis-tower's multiplexed router.
 ///
-/// Migration pending: redis-tower-cluster 0.1.1 lacks public explicit slot
-/// routing and pinned execution on replicas. This compatibility adapter remains
-/// until those APIs can preserve bounded, address-tagged fanout semantics.
-///
 /// The adapter discovers topology from one or more seed URLs and handles
 /// `MOVED`/`ASK` redirections, topology refreshes, and supported multi-slot
 /// commands. Cluster selection remains server configuration and never appears

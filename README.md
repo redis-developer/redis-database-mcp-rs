@@ -522,12 +522,10 @@ remain bytes through subscription, delivery, and resubscription. Cluster shard
 subscriptions use one dedicated connection per distinct hash slot in a bounded
 session. The dependency migration preserves MCP tool schemas and access rules.
 
-The migration currently uses an immutable redis-tower Git revision containing
-required Cluster and binary Pub/Sub APIs. Registry packaging remains blocked
-until those APIs are released. RESP3 attribute-prefixed wire replies currently
-fail with an explicit protocol error; this prevents reply misalignment while
-full attribute attachment is being decided. Host-supplied `RedisValue::Attribute`
-values continue to work.
+The adapters use the released redis-tower crates from crates.io. RESP3
+attribute-prefixed wire replies currently fail with an explicit protocol error;
+this prevents reply misalignment while full attribute attachment is being
+decided. Host-supplied `RedisValue::Attribute` values continue to work.
 
 For hosts wrapping an existing client, use
 `DirectRedis::from_multiplexed_client` or

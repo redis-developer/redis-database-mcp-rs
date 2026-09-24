@@ -25,7 +25,9 @@ use futures_util::StreamExt;
 use redis_tower::MonitorStream;
 use tokio::sync::{Mutex, Notify, RwLock};
 
-use crate::pubsub_sessions::{PubSubSessionError, PubSubSessionErrorKind, PubSubSessionOwner};
+use crate::pubsub_sessions::{
+    PubSubSessionError, PubSubSessionErrorKind, PubSubSessionOwner, redacted_target_error,
+};
 
 /// Owner identity shared by every owner-isolated session kind.
 ///
@@ -664,13 +666,10 @@ impl MonitorSessionManager for DirectRedisMonitorSessions {
             }
         }
         let monitor = tokio::time::timeout(self.inner.limits.operation_timeout(), async {
-            let connection = self
-                .inner
-                .target
-                .connect()
+            let connection = self.inner.target.connect().await?;
+            MonitorStream::new(connection)
                 .await
-                .map_err(|error| redis_tower_core::RedisError::Redis(error.to_string()))?;
-            MonitorStream::new(connection).await
+                .map_err(crate::RedisError::from)
         })
         .await
         .map_err(|_| {
@@ -680,13 +679,7 @@ impl MonitorSessionManager for DirectRedisMonitorSessions {
             )
             .with_code("SESSION_SETUP_TIMEOUT")
         })?
-        .map_err(|_error| {
-            RedisSessionError::new(
-                RedisSessionErrorKind::Connection,
-                "MONITOR connection failed",
-            )
-            .with_code("SESSION_CONNECTION_FAILED")
-        })?;
+        .map_err(|error| redacted_target_error(error, "MONITOR connection failed"))?;
         let buffer = Arc::new(MonitorBuffer::new(
             self.inner.limits,
             options.include_arguments,

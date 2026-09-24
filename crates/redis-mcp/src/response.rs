@@ -4,17 +4,11 @@ use redis_tower_core::{Frame, RedisError as TowerError};
 
 use crate::{RedisError, RedisErrorKind, RedisValue};
 
-/// Preserve redis-rs URL protocol selection while using tower's URL factory.
-/// Tower's parser does not understand the `protocol` query parameter itself.
-/// The legacy standalone default is RESP2; explicit RESP3 remains available.
-pub(crate) fn connection_factory(
-    url: &str,
-) -> Result<redis_tower::reconnect::UrlConnectionFactory, RedisError> {
-    let target = crate::transport::Target::parse(url)?;
-    Ok(
-        redis_tower::reconnect::UrlConnectionFactory::new(target.url)
-            .with_connection_config(target.config),
-    )
+/// Preserve redis-rs URL setup semantics in the reconnectable tower target.
+/// The legacy standalone default is RESP2; explicit RESP3 remains available,
+/// including authenticated Unix-socket URLs.
+pub(crate) fn connection_factory(url: &str) -> Result<crate::transport::Target, RedisError> {
+    crate::transport::Target::parse(url)
 }
 
 #[cfg(test)]
@@ -648,7 +642,7 @@ mod tests {
         );
         assert_eq!(
             connection_url("unix:///tmp/redis.sock?db=2&protocol=resp2").unwrap(),
-            ("unix:///tmp/redis.sock?db=2".into(), ProtocolVersion::Resp2)
+            ("unix:///tmp/redis.sock".into(), ProtocolVersion::Resp2)
         );
         assert!(connection_url("redis://localhost/?protocol=invalid").is_err());
     }

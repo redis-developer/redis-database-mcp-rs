@@ -14,9 +14,7 @@ use crate::transport::{Target, connect_cluster};
 use async_trait::async_trait;
 use futures_util::StreamExt;
 use redis_tower::{
-    BinaryPubSubConnection, BinaryPubSubMessage,
-    pubsub::MessageKind,
-    reconnect::{ConnectionFactory, ReconnectConfig, UrlConnectionFactory},
+    BinaryPubSubConnection, BinaryPubSubMessage, pubsub::MessageKind, reconnect::ReconnectConfig,
 };
 use redis_tower_cluster::{
     BinaryClusterPubSubConnection, BinaryShardedClusterPubSubConnection, MultiplexedClusterClient,
@@ -533,11 +531,7 @@ struct Unsubscribe {
 }
 
 enum PubSubTransport {
-    Standalone(
-        BinaryPubSubConnection,
-        UrlConnectionFactory,
-        ReconnectConfig,
-    ),
+    Standalone(BinaryPubSubConnection, Target, ReconnectConfig),
     Cluster(BinaryClusterPubSubConnection),
     Sharded(BinaryShardedClusterPubSubConnection),
 }
@@ -794,15 +788,16 @@ impl DirectRedisPubSubSessionManager {
             let names = subscriptions.iter().map(Vec::as_slice).collect::<Vec<_>>();
             let cluster = match &self.inner.target {
                 DirectTarget::Standalone(target) => {
-                    let factory = UrlConnectionFactory::new(target.url.clone())
-                        .with_connection_config(target.config.clone());
+                    let factory = target.clone();
                     let connection = factory.connect().await?;
-                    let mut pubsub = BinaryPubSubConnection::from_connection(connection)?;
+                    let mut pubsub = BinaryPubSubConnection::from_connection(connection)
+                        .map_err(crate::RedisError::from)?;
                     match kind {
-                        PubSubSubscriptionKind::Channel => pubsub.subscribe_bytes(&names).await?,
-                        PubSubSubscriptionKind::Pattern => pubsub.psubscribe_bytes(&names).await?,
-                        PubSubSubscriptionKind::Sharded => pubsub.ssubscribe_bytes(&names).await?,
+                        PubSubSubscriptionKind::Channel => pubsub.subscribe_bytes(&names).await,
+                        PubSubSubscriptionKind::Pattern => pubsub.psubscribe_bytes(&names).await,
+                        PubSubSubscriptionKind::Sharded => pubsub.ssubscribe_bytes(&names).await,
                     }
+                    .map_err(crate::RedisError::from)?;
                     let config = ReconnectConfig::default()
                         .connect_timeout(self.inner.limits.operation_timeout);
                     pumps.insert(
@@ -816,16 +811,17 @@ impl DirectRedisPubSubSessionManager {
                     None
                 }
                 DirectTarget::Cluster(targets) => {
-                    let cluster = connect_cluster(targets)
-                        .await
-                        .map_err(|error| TowerError::Redis(error.to_string()))?;
+                    let cluster = connect_cluster(targets).await?;
                     if kind == PubSubSubscriptionKind::Sharded {
                         let mut groups = std::collections::BTreeMap::<u16, Vec<&[u8]>>::new();
                         for name in &names {
                             groups.entry(slot_for_key(name)).or_default().push(name);
                         }
                         for (slot, names) in groups {
-                            let pubsub = cluster.sharded_pubsub_bytes(&names).await?;
+                            let pubsub = cluster
+                                .sharded_pubsub_bytes(&names)
+                                .await
+                                .map_err(crate::RedisError::from)?;
                             pumps.insert(
                                 slot,
                                 spawn_pubsub_pump(
@@ -841,17 +837,20 @@ impl DirectRedisPubSubSessionManager {
                             .master_addrs()
                             .first()
                             .map(|node| (*node).clone())
-                            .ok_or(TowerError::ConnectionClosed)?;
-                        let mut pubsub = cluster.pubsub_on_bytes(node).await?;
+                            .ok_or(TowerError::ConnectionClosed)
+                            .map_err(crate::RedisError::from)?;
+                        let mut pubsub = cluster
+                            .pubsub_on_bytes(node)
+                            .await
+                            .map_err(crate::RedisError::from)?;
                         match kind {
-                            PubSubSubscriptionKind::Channel => {
-                                pubsub.subscribe_bytes(&names).await?
-                            }
+                            PubSubSubscriptionKind::Channel => pubsub.subscribe_bytes(&names).await,
                             PubSubSubscriptionKind::Pattern => {
-                                pubsub.psubscribe_bytes(&names).await?
+                                pubsub.psubscribe_bytes(&names).await
                             }
                             PubSubSubscriptionKind::Sharded => unreachable!(),
                         }
+                        .map_err(crate::RedisError::from)?;
                         pumps.insert(
                             0,
                             spawn_pubsub_pump(
@@ -864,7 +863,7 @@ impl DirectRedisPubSubSessionManager {
                     Some(cluster)
                 }
             };
-            Ok::<_, TowerError>(DirectConnection {
+            Ok::<_, crate::RedisError>(DirectConnection {
                 pumps,
                 cluster,
                 kind,
@@ -873,7 +872,7 @@ impl DirectRedisPubSubSessionManager {
         tokio::time::timeout(self.inner.limits.operation_timeout, future)
             .await
             .map_err(|_| operation_timeout("opening Pub/Sub session"))?
-            .map_err(|error| redacted_redis_error(error, "opening Pub/Sub session failed"))
+            .map_err(|error| redacted_target_error(error, "opening Pub/Sub session failed"))
     }
 
     async fn owned_session(
@@ -1327,7 +1326,7 @@ fn redacted_redis_error(error: TowerError, context: &str) -> PubSubSessionError 
     redacted_target_error(crate::RedisError::from(error), context)
 }
 
-fn redacted_target_error(error: crate::RedisError, context: &str) -> PubSubSessionError {
+pub(crate) fn redacted_target_error(error: crate::RedisError, context: &str) -> PubSubSessionError {
     let kind = match error.kind() {
         crate::RedisErrorKind::Authentication => PubSubSessionErrorKind::Authentication,
         crate::RedisErrorKind::Authorization => PubSubSessionErrorKind::Authorization,
@@ -1363,6 +1362,30 @@ mod tests {
         let handle = random_identifier("ps");
         assert!(validate_session_id(&handle).is_ok());
         assert_eq!(handle.len(), 35);
+    }
+
+    #[test]
+    fn target_errors_keep_their_typed_session_category() {
+        let authentication = redacted_target_error(
+            crate::RedisError::new(
+                crate::RedisErrorKind::Authentication,
+                "credential detail must be redacted",
+            )
+            .with_code("WRONGPASS"),
+            "opening session failed",
+        );
+        assert_eq!(
+            authentication.kind(),
+            PubSubSessionErrorKind::Authentication
+        );
+        assert_eq!(authentication.code(), Some("WRONGPASS"));
+        assert!(!authentication.to_string().contains("credential detail"));
+
+        let timeout = redacted_target_error(
+            crate::RedisError::new(crate::RedisErrorKind::Timeout, "private target"),
+            "opening session failed",
+        );
+        assert_eq!(timeout.kind(), PubSubSessionErrorKind::Timeout);
     }
 
     #[test]

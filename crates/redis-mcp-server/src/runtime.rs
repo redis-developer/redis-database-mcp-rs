@@ -26,12 +26,21 @@ pub(crate) struct ServerRuntime {
 }
 
 /// The session managers a transport must shut down when it stops serving.
+#[derive(Clone)]
 pub(crate) struct ServerSessions {
     pubsub: Arc<dyn PubSubSessionManager>,
     monitor: Option<Arc<dyn MonitorSessionManager>>,
 }
 
 impl ServerSessions {
+    /// Close every stateful Redis handle owned by one HTTP MCP session.
+    pub(crate) async fn close_owner(&self, owner: &redis_mcp::PubSubSessionOwner) {
+        self.pubsub.close_owner(owner).await;
+        if let Some(monitor) = &self.monitor {
+            monitor.close_owner(owner).await;
+        }
+    }
+
     /// Close every owner-scoped and global session.
     pub(crate) async fn shutdown(&self) {
         self.pubsub.shutdown().await;

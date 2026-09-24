@@ -4,12 +4,13 @@
 //! One schema, three sources, one precedence: CLI arguments override
 //! environment variables override the TOML file override built-in defaults.
 //! The file is only ever loaded explicitly (`--config` or
-//! `REDIS_MCP_CONFIG`), unknown TOML keys are rejected, and every setting is
-//! reachable from every source. Resolution is pure — the environment is
+//! `REDIS_MCP_CONFIG`), unknown TOML keys are rejected, and every non-secret
+//! setting is reachable from every source. The HTTP Bearer token is
+//! environment-only. Resolution is pure — the environment is
 //! injected as a lookup function — so precedence is unit-testable per
 //! setting.
 
-use std::time::Duration;
+use std::{net::SocketAddr, sync::Arc, time::Duration};
 
 use clap::{Parser, ValueEnum};
 use redis_mcp::{
@@ -108,6 +109,23 @@ const BLOCKING_HEADING: &str = "Blocking call limits";
 const TRANSACTION_HEADING: &str = "Transaction limits";
 const BULK_HEADING: &str = "Bulk workflow limits";
 const DOCS_HEADING: &str = "Command documentation";
+const HTTP_HEADING: &str = "Streamable HTTP transport";
+
+pub(crate) const DEFAULT_HTTP_BIND: SocketAddr =
+    SocketAddr::new(std::net::IpAddr::V4(std::net::Ipv4Addr::LOCALHOST), 8080);
+pub(crate) const DEFAULT_HTTP_MAX_BODY_BYTES: usize = 4 * 1024 * 1024;
+pub(crate) const DEFAULT_HTTP_MAX_CONCURRENCY: usize = 64;
+pub(crate) const DEFAULT_HTTP_MAX_SESSIONS: usize = 256;
+pub(crate) const DEFAULT_HTTP_SESSION_TTL: Duration = Duration::from_secs(30 * 60);
+pub(crate) const DEFAULT_HTTP_REQUEST_TIMEOUT: Duration = Duration::from_secs(60);
+pub(crate) const DEFAULT_HTTP_DRAIN_TIMEOUT: Duration = Duration::from_secs(10);
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub(crate) enum CliTransport {
+    Stdio,
+    Http,
+}
 
 #[derive(Debug, Parser)]
 #[command(name = "redis-mcp-server", version, about)]
@@ -262,10 +280,42 @@ pub(crate) struct Args {
     #[arg(long, help_heading = DOCS_HEADING)]
     pub(crate) docs_fetch_timeout_ms: Option<u64>,
 
-    /// Explicit transport marker for MCP client configurations. Stdio is
-    /// always used.
-    #[arg(long)]
+    /// Serve MCP over stdio (the default transport).
+    #[arg(long, conflicts_with = "http")]
     pub(crate) stdio: bool,
+
+    /// Serve Streamable HTTP at this socket address instead of stdio.
+    #[arg(long, value_name = "ADDRESS", conflicts_with = "stdio", help_heading = HTTP_HEADING)]
+    pub(crate) http: Option<SocketAddr>,
+    /// Explicitly acknowledge binding HTTP to a non-loopback address.
+    #[arg(long, help_heading = HTTP_HEADING)]
+    pub(crate) http_allow_remote: bool,
+    /// Allowed HTTP Host value. Repeat or comma-separate for multiple hosts.
+    #[arg(
+        long = "http-allowed-host",
+        value_delimiter = ',',
+        help_heading = HTTP_HEADING
+    )]
+    pub(crate) http_allowed_hosts: Vec<String>,
+    /// Allowed browser Origin. Repeat or comma-separate for multiple origins.
+    #[arg(
+        long = "http-allowed-origin",
+        value_delimiter = ',',
+        help_heading = HTTP_HEADING
+    )]
+    pub(crate) http_allowed_origins: Vec<String>,
+    #[arg(long, help_heading = HTTP_HEADING)]
+    pub(crate) http_max_body_bytes: Option<usize>,
+    #[arg(long, help_heading = HTTP_HEADING)]
+    pub(crate) http_max_concurrency: Option<usize>,
+    #[arg(long, help_heading = HTTP_HEADING)]
+    pub(crate) http_max_sessions: Option<usize>,
+    #[arg(long, help_heading = HTTP_HEADING)]
+    pub(crate) http_session_ttl_ms: Option<u64>,
+    #[arg(long, help_heading = HTTP_HEADING)]
+    pub(crate) http_request_timeout_ms: Option<u64>,
+    #[arg(long, help_heading = HTTP_HEADING)]
+    pub(crate) http_drain_timeout_ms: Option<u64>,
 }
 
 /// The explicit TOML file schema. Every field is optional; unknown keys are
@@ -279,6 +329,7 @@ pub(crate) struct FileConfig {
     pub(crate) output: FileOutput,
     pub(crate) timeouts: FileTimeouts,
     pub(crate) docs: FileDocs,
+    pub(crate) http: FileHttp,
     pub(crate) limits: FileLimits,
 }
 
@@ -292,12 +343,28 @@ pub(crate) struct FileTarget {
 #[derive(Debug, Default, Deserialize)]
 #[serde(deny_unknown_fields, default)]
 pub(crate) struct FileServer {
+    pub(crate) transport: Option<CliTransport>,
     pub(crate) access: Option<CliAccessMode>,
     pub(crate) raw: Option<CliRawPolicy>,
     pub(crate) transactions: Option<bool>,
     pub(crate) bundles: Option<Vec<CliOptionalBundle>>,
     pub(crate) unavailable_tools: Option<CliUnavailableTools>,
     pub(crate) discover_capabilities: Option<bool>,
+}
+
+#[derive(Debug, Default, Deserialize)]
+#[serde(deny_unknown_fields, default)]
+pub(crate) struct FileHttp {
+    pub(crate) bind: Option<SocketAddr>,
+    pub(crate) allow_remote: Option<bool>,
+    pub(crate) allowed_hosts: Option<Vec<String>>,
+    pub(crate) allowed_origins: Option<Vec<String>>,
+    pub(crate) max_body_bytes: Option<usize>,
+    pub(crate) max_concurrency: Option<usize>,
+    pub(crate) max_sessions: Option<usize>,
+    pub(crate) session_ttl_ms: Option<u64>,
+    pub(crate) request_timeout_ms: Option<u64>,
+    pub(crate) drain_timeout_ms: Option<u64>,
 }
 
 #[derive(Debug, Default, Deserialize)]
@@ -400,9 +467,52 @@ pub(crate) enum ServerTarget {
     Cluster(Vec<String>),
 }
 
+/// Secret material is accepted only through the environment and is always
+/// redacted from diagnostics.
+#[derive(Clone, PartialEq, Eq)]
+pub(crate) struct SecretString(Arc<str>);
+
+impl SecretString {
+    pub(crate) fn new(value: String) -> Option<Self> {
+        (!value.trim().is_empty()).then(|| Self(Arc::from(value)))
+    }
+
+    pub(crate) fn expose(&self) -> &str {
+        &self.0
+    }
+}
+
+impl std::fmt::Debug for SecretString {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str("[REDACTED]")
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct HttpConfig {
+    pub(crate) bind: SocketAddr,
+    pub(crate) allow_remote: bool,
+    pub(crate) bearer_token: Option<SecretString>,
+    pub(crate) allowed_hosts: Vec<String>,
+    pub(crate) allowed_origins: Vec<String>,
+    pub(crate) max_body_bytes: usize,
+    pub(crate) max_concurrency: usize,
+    pub(crate) max_sessions: usize,
+    pub(crate) session_ttl: Duration,
+    pub(crate) request_timeout: Duration,
+    pub(crate) drain_timeout: Duration,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) enum ServerTransport {
+    Stdio,
+    Http(HttpConfig),
+}
+
 /// Fully resolved, validated server configuration.
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) struct ServerConfig {
+    pub(crate) transport: ServerTransport,
     pub(crate) target: ServerTarget,
     pub(crate) access: AccessMode,
     pub(crate) raw_policy: RawCommandPolicy,
@@ -435,6 +545,7 @@ pub(crate) enum ConfigError {
     UnrestrictedRawRequiresFullAccess,
     TransactionsRequireRawCommands,
     InvalidDocsOptions,
+    InvalidHttpOptions(&'static str),
 }
 
 impl std::fmt::Display for ConfigError {
@@ -461,6 +572,7 @@ impl std::fmt::Display for ConfigError {
             Self::InvalidDocsOptions => formatter.write_str(
                 "enabled documentation serving requires a well-formed revision and non-zero byte, cache, and timeout bounds",
             ),
+            Self::InvalidHttpOptions(message) => formatter.write_str(message),
         }
     }
 }
@@ -554,6 +666,17 @@ fn env_list<T: ValueEnum>(
     }
 }
 
+fn env_string_list(env: EnvLookup<'_>, name: &'static str) -> Option<Vec<String>> {
+    env(name).map(|value| {
+        value
+            .split(',')
+            .map(str::trim)
+            .filter(|entry| !entry.is_empty())
+            .map(str::to_string)
+            .collect()
+    })
+}
+
 fn pick<T>(cli: Option<T>, env: Option<T>, file: Option<T>, default: T) -> T {
     cli.or(env).or(file).unwrap_or(default)
 }
@@ -566,6 +689,92 @@ pub(crate) fn resolve(
 ) -> Result<ServerConfig, ConfigError> {
     let defaults = FileConfig::default();
     let file = file.unwrap_or(&defaults);
+
+    let env_http_bind = env_parsed::<SocketAddr>(env, "REDIS_MCP_HTTP_BIND")?;
+    let cli_transport = if args.http.is_some() {
+        Some(CliTransport::Http)
+    } else if args.stdio {
+        Some(CliTransport::Stdio)
+    } else {
+        None
+    };
+    let env_transport = env_enum::<CliTransport>(env, "REDIS_MCP_TRANSPORT")?
+        .or_else(|| env_http_bind.is_some().then_some(CliTransport::Http));
+    let file_transport = file
+        .server
+        .transport
+        .or_else(|| file.http.bind.is_some().then_some(CliTransport::Http));
+    let transport_kind = pick(
+        cli_transport,
+        env_transport,
+        file_transport,
+        CliTransport::Stdio,
+    );
+    let http = HttpConfig {
+        bind: pick(args.http, env_http_bind, file.http.bind, DEFAULT_HTTP_BIND),
+        allow_remote: pick(
+            args.http_allow_remote.then_some(true),
+            env_bool(env, "REDIS_MCP_HTTP_ALLOW_REMOTE")?,
+            file.http.allow_remote,
+            false,
+        ),
+        // Secrets deliberately do not have CLI or TOML forms: command-line
+        // arguments are process-visible and config files are commonly checked
+        // in. Operators provide the token directly through the environment.
+        bearer_token: env("REDIS_MCP_HTTP_BEARER_TOKEN").and_then(SecretString::new),
+        allowed_hosts: pick(
+            (!args.http_allowed_hosts.is_empty()).then(|| args.http_allowed_hosts.clone()),
+            env_string_list(env, "REDIS_MCP_HTTP_ALLOWED_HOSTS"),
+            file.http.allowed_hosts.clone(),
+            Vec::new(),
+        ),
+        allowed_origins: pick(
+            (!args.http_allowed_origins.is_empty()).then(|| args.http_allowed_origins.clone()),
+            env_string_list(env, "REDIS_MCP_HTTP_ALLOWED_ORIGINS"),
+            file.http.allowed_origins.clone(),
+            Vec::new(),
+        ),
+        max_body_bytes: pick(
+            args.http_max_body_bytes,
+            env_parsed(env, "REDIS_MCP_HTTP_MAX_BODY_BYTES")?,
+            file.http.max_body_bytes,
+            DEFAULT_HTTP_MAX_BODY_BYTES,
+        ),
+        max_concurrency: pick(
+            args.http_max_concurrency,
+            env_parsed(env, "REDIS_MCP_HTTP_MAX_CONCURRENCY")?,
+            file.http.max_concurrency,
+            DEFAULT_HTTP_MAX_CONCURRENCY,
+        ),
+        max_sessions: pick(
+            args.http_max_sessions,
+            env_parsed(env, "REDIS_MCP_HTTP_MAX_SESSIONS")?,
+            file.http.max_sessions,
+            DEFAULT_HTTP_MAX_SESSIONS,
+        ),
+        session_ttl: millis(pick(
+            args.http_session_ttl_ms,
+            env_parsed(env, "REDIS_MCP_HTTP_SESSION_TTL_MS")?,
+            file.http.session_ttl_ms,
+            DEFAULT_HTTP_SESSION_TTL.as_millis() as u64,
+        )),
+        request_timeout: millis(pick(
+            args.http_request_timeout_ms,
+            env_parsed(env, "REDIS_MCP_HTTP_REQUEST_TIMEOUT_MS")?,
+            file.http.request_timeout_ms,
+            DEFAULT_HTTP_REQUEST_TIMEOUT.as_millis() as u64,
+        )),
+        drain_timeout: millis(pick(
+            args.http_drain_timeout_ms,
+            env_parsed(env, "REDIS_MCP_HTTP_DRAIN_TIMEOUT_MS")?,
+            file.http.drain_timeout_ms,
+            DEFAULT_HTTP_DRAIN_TIMEOUT.as_millis() as u64,
+        )),
+    };
+    let transport = match transport_kind {
+        CliTransport::Stdio => ServerTransport::Stdio,
+        CliTransport::Http => ServerTransport::Http(http),
+    };
 
     // Target: within each source url and cluster urls are mutually
     // exclusive (clap enforces the CLI); across sources the higher-precedence
@@ -942,6 +1151,7 @@ pub(crate) fn resolve(
         )));
 
     let config = ServerConfig {
+        transport,
         target,
         access,
         raw_policy,
@@ -980,6 +1190,46 @@ fn validate(config: &ServerConfig) -> Result<(), ConfigError> {
     if config.docs_enabled && config.docs_options.validate().is_err() {
         return Err(ConfigError::InvalidDocsOptions);
     }
+    if let ServerTransport::Http(http) = &config.transport {
+        if http.max_body_bytes == 0
+            || http.max_concurrency == 0
+            || http.max_sessions == 0
+            || http.session_ttl.is_zero()
+            || http.request_timeout.is_zero()
+            || http.drain_timeout.is_zero()
+        {
+            return Err(ConfigError::InvalidHttpOptions(
+                "HTTP body, concurrency, session, TTL, request-timeout, and drain-timeout limits must all be greater than zero",
+            ));
+        }
+        if http.allowed_hosts.iter().any(|host| host.trim().is_empty())
+            || http
+                .allowed_origins
+                .iter()
+                .any(|origin| origin.trim().is_empty())
+        {
+            return Err(ConfigError::InvalidHttpOptions(
+                "HTTP host and origin allowlist entries must not be empty",
+            ));
+        }
+        if !http.bind.ip().is_loopback() {
+            if !http.allow_remote {
+                return Err(ConfigError::InvalidHttpOptions(
+                    "binding HTTP to a non-loopback address requires --http-allow-remote (or REDIS_MCP_HTTP_ALLOW_REMOTE=true)",
+                ));
+            }
+            if http.bearer_token.is_none() {
+                return Err(ConfigError::InvalidHttpOptions(
+                    "binding HTTP to a non-loopback address requires REDIS_MCP_HTTP_BEARER_TOKEN",
+                ));
+            }
+            if http.allowed_hosts.is_empty() {
+                return Err(ConfigError::InvalidHttpOptions(
+                    "binding HTTP to a non-loopback address requires an explicit HTTP Host allowlist",
+                ));
+            }
+        }
+    }
     Ok(())
 }
 
@@ -1013,6 +1263,7 @@ mod tests {
             ServerTarget::Standalone("redis://127.0.0.1:6379".to_string())
         );
         assert_eq!(config.access, AccessMode::ReadOnly);
+        assert_eq!(config.transport, ServerTransport::Stdio);
         assert_eq!(config.raw_policy, RawCommandPolicy::Disabled);
         assert!(!config.transactions);
         assert!(config.discover_capabilities);
@@ -1126,6 +1377,79 @@ mod tests {
         let lookup = |name: &str| env.get(name).cloned();
         let error = resolve(&args(&["--stdio"]), None, &lookup).expect_err("bad bool");
         assert!(error.to_string().contains("REDIS_MCP_TRANSACTIONS"));
+    }
+
+    #[test]
+    fn http_is_loopback_by_default_and_can_be_selected_from_each_source() {
+        let cli = resolve(&args(&["--http", "127.0.0.1:9000"]), None, &no_env)
+            .expect("loopback HTTP from CLI");
+        let ServerTransport::Http(cli_http) = cli.transport else {
+            panic!("CLI must select HTTP");
+        };
+        assert_eq!(cli_http.bind, "127.0.0.1:9000".parse().unwrap());
+        assert!(cli_http.bearer_token.is_none());
+
+        let env = env_of(&[("REDIS_MCP_TRANSPORT", "http")]);
+        let lookup = |name: &str| env.get(name).cloned();
+        let from_env = resolve(&args(&[]), None, &lookup).expect("HTTP from env");
+        assert!(matches!(from_env.transport, ServerTransport::Http(_)));
+
+        let file: FileConfig =
+            toml::from_str("[server]\ntransport = \"http\"\n").expect("HTTP file");
+        let from_file = resolve(&args(&[]), Some(&file), &no_env).expect("HTTP from file");
+        assert!(matches!(from_file.transport, ServerTransport::Http(_)));
+    }
+
+    #[test]
+    fn remote_http_requires_acknowledgement_auth_and_host_allowlist() {
+        let remote = ["--http", "0.0.0.0:8080"];
+        let error = resolve(&args(&remote), None, &no_env).expect_err("needs acknowledgement");
+        assert!(error.to_string().contains("--http-allow-remote"));
+
+        let error = resolve(
+            &args(&["--http", "0.0.0.0:8080", "--http-allow-remote"]),
+            None,
+            &no_env,
+        )
+        .expect_err("needs authentication");
+        assert!(error.to_string().contains("REDIS_MCP_HTTP_BEARER_TOKEN"));
+
+        let env = env_of(&[("REDIS_MCP_HTTP_BEARER_TOKEN", "do-not-print-this")]);
+        let lookup = |name: &str| env.get(name).cloned();
+        let error = resolve(
+            &args(&["--http", "0.0.0.0:8080", "--http-allow-remote"]),
+            None,
+            &lookup,
+        )
+        .expect_err("needs hosts");
+        assert!(error.to_string().contains("Host allowlist"));
+
+        let config = resolve(
+            &args(&[
+                "--http",
+                "0.0.0.0:8080",
+                "--http-allow-remote",
+                "--http-allowed-host",
+                "redis.example:8080",
+            ]),
+            None,
+            &lookup,
+        )
+        .expect("guarded remote HTTP");
+        let debug = format!("{config:?}");
+        assert!(!debug.contains("do-not-print-this"), "{debug}");
+        assert!(debug.contains("[REDACTED]"), "{debug}");
+    }
+
+    #[test]
+    fn http_limits_reject_zero() {
+        let error = resolve(
+            &args(&["--http", "127.0.0.1:8080", "--http-max-concurrency", "0"]),
+            None,
+            &no_env,
+        )
+        .expect_err("zero concurrency");
+        assert!(matches!(error, ConfigError::InvalidHttpOptions(_)));
     }
 
     #[test]
@@ -1299,6 +1623,7 @@ mod tests {
         let presence = [
             ("target.url", example.target.url.is_some()),
             ("server.access", example.server.access.is_some()),
+            ("server.transport", example.server.transport.is_some()),
             ("server.raw", example.server.raw.is_some()),
             ("server.transactions", example.server.transactions.is_some()),
             ("server.bundles", example.server.bundles.is_some()),
@@ -1313,6 +1638,19 @@ mod tests {
             ("output.max_bytes", example.output.max_bytes.is_some()),
             ("output.max_entries", example.output.max_entries.is_some()),
             ("timeouts.command_ms", example.timeouts.command_ms.is_some()),
+            (
+                "http.*",
+                example.http.bind.is_some()
+                    && example.http.allow_remote.is_some()
+                    && example.http.allowed_hosts.is_some()
+                    && example.http.allowed_origins.is_some()
+                    && example.http.max_body_bytes.is_some()
+                    && example.http.max_concurrency.is_some()
+                    && example.http.max_sessions.is_some()
+                    && example.http.session_ttl_ms.is_some()
+                    && example.http.request_timeout_ms.is_some()
+                    && example.http.drain_timeout_ms.is_some(),
+            ),
             (
                 "docs.*",
                 example.docs.enabled.is_some()

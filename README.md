@@ -309,6 +309,31 @@ Use it with any stdio MCP client. With
       --enable-bundle scripting \
       --stdio
 
+The identical router can be served over Streamable HTTP at `/mcp`:
+
+    REDIS_MCP_HTTP_BEARER_TOKEN='replace-with-a-secret' \
+      redis-mcp-server \
+        --url redis://127.0.0.1:6379 \
+        --access read-write \
+        --http 127.0.0.1:8080
+
+Loopback is the default and may run without authentication. Supplying
+`REDIS_MCP_HTTP_BEARER_TOKEN` requires Bearer authentication on the MCP and
+health endpoints. Binding to a non-loopback address additionally requires
+`--http-allow-remote` and at least one `--http-allowed-host`; browser Origins
+remain limited to localhost unless explicitly added with
+`--http-allowed-origin`.
+
+Legacy MCP sessions are isolated by their opaque `mcp-session-id`. A
+sessionless final-protocol client that uses stateful Redis tools (Pub/Sub or
+MONITOR) should send a stable, unique `x-redis-mcp-client-id` together with
+its Bearer token. The server hashes both values into an opaque owner; the
+header is not an authentication credential. Without that header, each
+sessionless request gets a fresh owner and therefore cannot reuse or inherit
+stateful handles. Request bodies, concurrent HTTP requests, live MCP sessions,
+session TTL, POST/DELETE duration, and graceful drain time all have explicit
+configurable bounds; see the example configuration for their defaults.
+
 The same generated command surface is available non-interactively through
 `mcp-repl --exec`, making it the interim one-shot CLI as well as the REPL. A
 future Redis-specific frontend can build on a reusable `mcp-repl` core after
@@ -328,7 +353,7 @@ Inside the REPL:
 
 ### Configuration sources and precedence
 
-Every server setting is reachable from three sources with one precedence:
+Every non-secret server setting is reachable from three sources with one precedence:
 CLI arguments override environment variables override an explicit TOML file
 override built-in defaults. The file is only read when selected with
 `--config <path>` or `REDIS_MCP_CONFIG`, and unknown keys in it fail startup
@@ -343,7 +368,9 @@ correct. Environment variables follow the flag names (`REDIS_MCP_ACCESS`,
 flags, the configurable surface covers output budgets, the per-command
 timeout, capability discovery (`--no-discovery` to skip), the
 unavailable-tool policy, and every Pub/Sub, MONITOR, blocking, transaction,
-bulk, and documentation limit.
+bulk, HTTP, and documentation limit. The HTTP Bearer secret is intentionally
+environment-only so it does not appear in process arguments or checked-in
+configuration.
 
 Official command documentation is a separate opt-in because reads perform
 outbound HTTPS. `--enable-docs` (or `[docs] enabled = true`) advertises
@@ -667,7 +694,7 @@ explain/profile, dictionaries, synonyms, deprecated tag values, binary fields,
 output limits, ACL command restrictions, module versions, and same-slot
 three-node Cluster routing.
 
-CI runs the complete suite on Redis 8.8 and the live router/stdio contract on
+CI runs the complete suite on Redis 8.8 and the live router/stdio/HTTP contract on
 every currently supported Redis Open Source series: 6.2, 7.2, 7.4, 8.0, 8.2,
 8.4, 8.6, 8.8, and 8.10.1. Standalone and Cluster jobs cover the latest pin,
 and a separate job regenerates the official command metadata from the pinned

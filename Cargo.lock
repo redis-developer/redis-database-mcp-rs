@@ -1290,9 +1290,9 @@ dependencies = [
 
 [[package]]
 name = "redis-tower"
-version = "0.1.2"
+version = "0.1.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "946205b52b6f1950049661f9e5d13eafc42f28104557d5b52de999b72d80e6f8"
+checksum = "cbd1ebeb0482cfb299a7819842b8969b95294042faffff871550095516657724"
 dependencies = [
  "async-stream",
  "bytes",
@@ -1314,9 +1314,9 @@ dependencies = [
 
 [[package]]
 name = "redis-tower-cluster"
-version = "0.1.2"
+version = "0.1.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b0b7c28c33b418a0108f38bb8c5d44f20fa64d04c58543b4ec7cfde465d05978"
+checksum = "f15bb7820c6b16210d6326c25e3e7483f1b89864f62b05f5d9d9f1e1d1cc5a2e"
 dependencies = [
  "async-stream",
  "bytes",

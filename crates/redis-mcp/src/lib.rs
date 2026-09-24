@@ -23,8 +23,10 @@ mod monitor;
 mod output;
 mod pubsub_sessions;
 mod raw;
+mod response;
 mod tools;
 mod transactions;
+mod transport;
 
 use std::{collections::BTreeSet, sync::Arc, time::Duration};
 
@@ -411,7 +413,7 @@ impl RedisMcpBuilder {
     /// Supply a precomputed Redis capability snapshot.
     ///
     /// Custom executors can construct this snapshot without depending on
-    /// redis-rs. Capabilities omitted from the snapshot remain unknown and are
+    /// the bundled Redis client. Capabilities omitted from the snapshot remain unknown and are
     /// allowed through for backward compatibility.
     pub fn capabilities(mut self, capabilities: RedisCapabilities) -> Self {
         self.capabilities = capabilities;

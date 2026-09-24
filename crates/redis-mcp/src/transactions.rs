@@ -8,14 +8,10 @@
 
 use std::{fmt, sync::Arc, time::Duration};
 
+use crate::transport::{Target, connect_cluster};
 use async_trait::async_trait;
-use redis::{
-    AsyncConnectionConfig, ErrorKind as RedisRsErrorKind,
-    ServerErrorKind as RedisRsServerErrorKind,
-    aio::ConnectionLike as _,
-    cluster::{ClusterClient, ClusterClientBuilder},
-    cluster_routing::{Route, RoutingInfo, SingleNodeRoutingInfo, SlotAddr},
-};
+use redis_tower::commands::RawCommand;
+use redis_tower_core::{Command, Frame};
 use tokio::sync::Semaphore;
 
 use crate::{
@@ -481,17 +477,17 @@ impl RedisTransactionEngine {
 }
 
 enum DirectTransactionTarget {
-    Standalone(Box<redis::Client>),
-    Cluster(Box<ClusterClient>),
+    Standalone(Target),
+    Cluster(Vec<Target>),
 }
 
-/// Direct redis-rs transaction executor for fixed standalone or Cluster
+/// Direct redis-tower transaction executor for fixed standalone or Cluster
 /// targets.
 ///
 /// Every transaction runs on a freshly dialed dedicated connection that is
 /// dropped afterwards, so MULTI and WATCH state can never leak into pooled
-/// connections or across MCP calls. Cluster targets disable request retries
-/// because a replayed pipeline could commit a transaction twice.
+/// connections or across MCP calls. Transactions are never replayed after a server or transport error because
+/// a second pipeline could commit the writes twice.
 pub struct DirectRedisTransactions {
     target: DirectTransactionTarget,
     concurrency: Arc<Semaphore>,
@@ -515,53 +511,36 @@ impl fmt::Debug for DirectRedisTransactions {
 impl DirectRedisTransactions {
     /// Prepare an executor for a fixed standalone Redis URL.
     pub fn standalone(url: &str) -> Result<Self, RedisError> {
-        let client = redis::Client::open(url).map_err(RedisError::from)?;
-        Ok(Self::from_client(client))
+        Ok(Self {
+            target: DirectTransactionTarget::Standalone(Target::parse(url)?),
+            concurrency: Arc::new(Semaphore::new(DEFAULT_MAX_CONCURRENT_TRANSACTIONS)),
+        })
     }
 
-    /// Prepare an executor for a Redis Cluster through one or more seed URLs.
+    /// Prepare a Cluster executor using validated discovery seed URLs.
     pub fn cluster<I, S>(seed_urls: I) -> Result<Self, RedisError>
     where
         I: IntoIterator<Item = S>,
         S: AsRef<str>,
     {
-        let seed_urls = seed_urls
+        let targets = seed_urls
             .into_iter()
-            .map(|url| url.as_ref().to_string())
-            .collect::<Vec<_>>();
-        if seed_urls.is_empty() {
+            .map(|url| Target::parse(url.as_ref()))
+            .collect::<Result<Vec<_>, _>>()?;
+        if targets.is_empty() {
             return Err(RedisError::new(
                 RedisErrorKind::InvalidRequest,
                 "at least one Redis Cluster seed URL is required",
             )
             .with_code("EMPTY_CLUSTER_SEEDS"));
         }
-        // retries(0): a MOVED or connection failure surfaces as a structured
-        // error instead of silently replaying a possibly committed EXEC.
-        let client = ClusterClientBuilder::new(seed_urls)
-            .retries(0)
-            .build()
-            .map_err(RedisError::from)?;
-        Ok(Self::from_cluster_client(client))
-    }
-
-    /// Wrap an existing redis-rs standalone client.
-    pub fn from_client(client: redis::Client) -> Self {
-        Self {
-            target: DirectTransactionTarget::Standalone(Box::new(client)),
-            concurrency: Arc::new(Semaphore::new(DEFAULT_MAX_CONCURRENT_TRANSACTIONS)),
+        for target in &targets {
+            target.cluster_builder()?;
         }
-    }
-
-    /// Wrap an existing redis-rs cluster client.
-    ///
-    /// The client should be built with zero request retries so committed
-    /// writes are never replayed.
-    pub fn from_cluster_client(client: ClusterClient) -> Self {
-        Self {
-            target: DirectTransactionTarget::Cluster(Box::new(client)),
+        Ok(Self {
+            target: DirectTransactionTarget::Cluster(targets),
             concurrency: Arc::new(Semaphore::new(DEFAULT_MAX_CONCURRENT_TRANSACTIONS)),
-        }
+        })
     }
 
     /// Bound how many transactions may hold dedicated connections at once.
@@ -578,29 +557,16 @@ impl DirectRedisTransactions {
     }
 }
 
-fn watch_command(watch: &[Vec<u8>]) -> redis::Cmd {
-    let mut command = redis::cmd("WATCH");
-    for key in watch {
-        command.arg(key);
+fn raw_frame(name: &str, arguments: &[Vec<u8>]) -> Frame {
+    let mut command = RawCommand::new(name);
+    for argument in arguments {
+        command = command.arg(argument.clone());
     }
-    command
+    command.to_frame()
 }
 
-fn transaction_pipeline(commands: &[RedisCommand]) -> redis::Pipeline {
-    let mut pipeline = redis::Pipeline::with_capacity(commands.len());
-    pipeline.atomic();
-    for command in commands {
-        let mut cmd = redis::cmd(command.name());
-        for argument in command.arguments() {
-            cmd.arg(argument);
-        }
-        pipeline.add_command(cmd);
-    }
-    pipeline
-}
-
-fn check_watch_reply(value: redis::Value) -> Result<(), RedisError> {
-    match RedisValue::from(value) {
+fn check_watch_reply(value: RedisValue) -> Result<(), RedisError> {
+    match value {
         RedisValue::Okay => Ok(()),
         RedisValue::SimpleString(value) if value.eq_ignore_ascii_case("OK") => Ok(()),
         RedisValue::ServerError { code, message } => Err(RedisError::new(
@@ -641,33 +607,10 @@ fn mark_unknown_outcome(error: RedisError) -> RedisError {
 }
 
 fn interpret_exec_reply(
-    result: Result<Vec<redis::Value>, redis::RedisError>,
+    result: Result<Vec<RedisValue>, RedisError>,
     command_count: usize,
 ) -> Result<RedisTransactionOutcome, RedisError> {
-    let mut values = match result {
-        Ok(values) => values,
-        Err(error) => {
-            if error.kind() == RedisRsErrorKind::Server(RedisRsServerErrorKind::ExecAbort) {
-                let failures = error
-                    .into_server_errors()
-                    .map(|failures| {
-                        failures
-                            .iter()
-                            .map(|(index, error)| {
-                                RedisTransactionCommandFailure::new(
-                                    Some(*index),
-                                    error.code().to_string(),
-                                    error.details().map(str::to_string),
-                                )
-                            })
-                            .collect()
-                    })
-                    .unwrap_or_default();
-                return Ok(RedisTransactionOutcome::Rejected { failures });
-            }
-            return Err(mark_unknown_outcome(RedisError::from(error)));
-        }
-    };
+    let mut values = result.map_err(mark_unknown_outcome)?;
     if values.len() != 1 {
         return Err(RedisError::new(
             RedisErrorKind::InvalidResponse,
@@ -676,8 +619,8 @@ fn interpret_exec_reply(
         .with_code("INVALID_TRANSACTION_RESPONSE"));
     }
     match values.pop().expect("one EXEC reply") {
-        redis::Value::Nil => Ok(RedisTransactionOutcome::Aborted),
-        redis::Value::Array(items) => {
+        RedisValue::Nil => Ok(RedisTransactionOutcome::Aborted),
+        RedisValue::Array(items) => {
             if items.len() != command_count {
                 return Err(RedisError::new(
                     RedisErrorKind::InvalidResponse,
@@ -688,27 +631,18 @@ fn interpret_exec_reply(
                 )
                 .with_code("INVALID_TRANSACTION_RESPONSE"));
             }
-            Ok(RedisTransactionOutcome::Committed {
-                results: items.into_iter().map(RedisValue::from).collect(),
-            })
+            Ok(RedisTransactionOutcome::Committed { results: items })
         }
-        redis::Value::ServerError(error) if error.code() == "EXECABORT" => {
+        RedisValue::ServerError { code, message } if code == "EXECABORT" => {
             Ok(RedisTransactionOutcome::Rejected {
-                failures: vec![RedisTransactionCommandFailure::new(
-                    None,
-                    error.code().to_string(),
-                    error.details().map(str::to_string),
-                )],
+                failures: vec![RedisTransactionCommandFailure::new(None, code, message)],
             })
         }
-        redis::Value::ServerError(error) => Err(RedisError::new(
+        RedisValue::ServerError { code, message } => Err(RedisError::new(
             RedisErrorKind::Server,
-            format!(
-                "EXEC failed: {}",
-                error.details().unwrap_or("no server detail")
-            ),
+            message.unwrap_or_else(|| "EXEC failed".into()),
         )
-        .with_code(error.code().to_string())),
+        .with_code(code)),
         other => Err(RedisError::new(
             RedisErrorKind::InvalidResponse,
             format!("EXEC returned an unexpected reply: {other:?}"),
@@ -730,67 +664,90 @@ impl RedisTransactionExecutor for DirectRedisTransactions {
             )
         })?;
         let commands = transaction.commands();
-        let pipeline = transaction_pipeline(commands);
-        // Skip the MULTI reply and one QUEUED reply per command; keep EXEC.
-        let offset = commands.len() + 1;
-        match &self.target {
-            DirectTransactionTarget::Standalone(client) => {
-                // RedisTransactionEngine bounds the complete attempt. Disable
-                // redis-rs' shorter per-response timeout so WATCH/EXEC cannot
-                // fail before the configured transaction duration.
-                let config = AsyncConnectionConfig::new().set_response_timeout(None);
-                let mut connection = client
-                    .get_multiplexed_async_connection_with_config(&config)
-                    .await
-                    .map_err(RedisError::from)?;
-                if !transaction.watched_keys().is_empty() {
-                    let reply = connection
-                        .req_packed_command(&watch_command(transaction.watched_keys()))
-                        .await
-                        .map_err(RedisError::from)?;
-                    check_watch_reply(reply)?;
+        let command_frames = commands
+            .iter()
+            .map(|command| raw_frame(command.name(), command.arguments()))
+            .collect::<Vec<_>>();
+        let watch = (!transaction.watched_keys().is_empty())
+            .then(|| raw_frame("WATCH", transaction.watched_keys()));
+        // Keep the Cluster owner alive while the dedicated connection is used.
+        let cluster;
+        let mut connection = match &self.target {
+            DirectTransactionTarget::Standalone(target) => target.connect().await?,
+            DirectTransactionTarget::Cluster(targets) => {
+                let mut all_frames = command_frames.clone();
+                all_frames.extend(watch.iter().cloned());
+                let slot = redis_tower_cluster::key_extractor::common_slot(&all_frames).map_err(
+                    |error| {
+                        RedisError::new(RedisErrorKind::InvalidRequest, error.to_string())
+                            .with_code("CROSSSLOT")
+                    },
+                )?;
+                cluster = connect_cluster(targets).await?;
+                let topology = cluster.topology().await;
+                let node = match slot {
+                    Some(slot) => topology.master_for_slot(slot).cloned(),
+                    None => topology.master_addrs().first().map(|node| (*node).clone()),
                 }
-                let result = connection.req_packed_commands(&pipeline, offset, 1).await;
-                interpret_exec_reply(result, commands.len())
+                .ok_or_else(|| {
+                    RedisError::new(
+                        RedisErrorKind::Connection,
+                        "Cluster has no transaction owner",
+                    )
+                })?;
+                cluster
+                    .connect_to_node(node)
+                    .await
+                    .map_err(RedisError::from)?
             }
-            DirectTransactionTarget::Cluster(client) => {
-                let mut connection = client
-                    .get_async_connection()
-                    .await
-                    .map_err(RedisError::from)?;
-                let watch_route = transaction
-                    .watched_keys()
-                    .first()
-                    .map(|key| Route::with_key(key, SlotAddr::Master));
-                if let Some(route) = watch_route {
-                    let reply = connection
-                        .route_command(
-                            watch_command(transaction.watched_keys()),
-                            RoutingInfo::SingleNode(SingleNodeRoutingInfo::SpecificNode(route)),
-                        )
-                        .await
-                        .map_err(RedisError::from)?;
-                    check_watch_reply(reply)?;
+        };
+        if let Some(watch) = watch {
+            let mut replies = connection
+                .execute_pipeline(vec![watch])
+                .await
+                .map_err(RedisError::from)?;
+            check_watch_reply(RedisValue::from(replies.remove(0)))?;
+        }
+        // Confirm MULTI before sending writes. If ACLs reject MULTI, no
+        // queued command may accidentally execute outside the transaction.
+        let multi = connection
+            .execute(RawCommand::new("MULTI"))
+            .await
+            .map_err(RedisError::from)?;
+        check_watch_reply(RedisValue::from(multi)).map_err(|_| {
+            RedisError::new(RedisErrorKind::Server, "MULTI was rejected")
+                .with_code("TRANSACTION_MULTI_FAILED")
+        })?;
+        // Keep all QUEUED/error replies and EXEC to preserve rejection indices.
+        let mut frames = command_frames;
+        frames.push(raw_frame("EXEC", &[]));
+        let replies = connection
+            .execute_pipeline(frames)
+            .await
+            .map_err(RedisError::from)
+            .map_err(mark_unknown_outcome)?;
+        let mut replies = replies.into_iter().map(RedisValue::from);
+        let mut failures = Vec::new();
+        for index in 0..commands.len() {
+            match replies.next().expect("one queued reply per command") {
+                RedisValue::ServerError { code, message } => failures.push(
+                    RedisTransactionCommandFailure::new(Some(index), code, message),
+                ),
+                RedisValue::SimpleString(value) if value == "QUEUED" => {}
+                _ => {
+                    return Err(RedisError::new(
+                        RedisErrorKind::InvalidResponse,
+                        "transaction command was not queued",
+                    )
+                    .with_code("INVALID_TRANSACTION_RESPONSE"));
                 }
-                // A watched transaction must reach the exact node that holds
-                // the WATCH state, so route the pipeline by the watched slot.
-                // Unwatched pipelines use redis-rs slot routing, which rejects
-                // cross-slot command lists.
-                let result = if let Some(route) = watch_route {
-                    connection
-                        .route_pipeline(
-                            pipeline,
-                            offset,
-                            1,
-                            SingleNodeRoutingInfo::SpecificNode(route),
-                        )
-                        .await
-                } else {
-                    connection.req_packed_commands(&pipeline, offset, 1).await
-                };
-                interpret_exec_reply(result, commands.len())
             }
         }
+        let outcome = interpret_exec_reply(Ok(replies.collect()), commands.len())?;
+        if matches!(outcome, RedisTransactionOutcome::Rejected { .. }) && !failures.is_empty() {
+            return Ok(RedisTransactionOutcome::Rejected { failures });
+        }
+        Ok(outcome)
     }
 }
 
@@ -1071,13 +1028,13 @@ mod tests {
     #[test]
     fn exec_replies_map_to_explicit_outcomes() {
         assert_eq!(
-            interpret_exec_reply(Ok(vec![redis::Value::Nil]), 2).expect("aborted"),
+            interpret_exec_reply(Ok(vec![RedisValue::Nil]), 2).expect("aborted"),
             RedisTransactionOutcome::Aborted
         );
         let committed = interpret_exec_reply(
-            Ok(vec![redis::Value::Array(vec![
-                redis::Value::Okay,
-                redis::Value::Int(7),
+            Ok(vec![RedisValue::Array(vec![
+                RedisValue::Okay,
+                RedisValue::Integer(7),
             ])]),
             2,
         )
@@ -1089,7 +1046,7 @@ mod tests {
             }
         );
         let misaligned =
-            interpret_exec_reply(Ok(vec![redis::Value::Array(vec![redis::Value::Okay])]), 2)
+            interpret_exec_reply(Ok(vec![RedisValue::Array(vec![RedisValue::Okay])]), 2)
                 .expect_err("misaligned results");
         assert_eq!(misaligned.code(), Some("INVALID_TRANSACTION_RESPONSE"));
     }

@@ -19,12 +19,15 @@ use std::{
     time::{Duration, Instant},
 };
 
+use crate::transport::Target;
 use async_trait::async_trait;
 use futures_util::StreamExt;
-use redis::Client;
+use redis_tower::MonitorStream;
 use tokio::sync::{Mutex, Notify, RwLock};
 
-use crate::pubsub_sessions::{PubSubSessionError, PubSubSessionErrorKind, PubSubSessionOwner};
+use crate::pubsub_sessions::{
+    PubSubSessionError, PubSubSessionErrorKind, PubSubSessionOwner, redacted_target_error,
+};
 
 /// Owner identity shared by every owner-isolated session kind.
 ///
@@ -350,7 +353,7 @@ impl fmt::Debug for DirectRedisMonitorSessions {
 }
 
 struct MonitorManagerInner {
-    client: Client,
+    target: Target,
     limits: MonitorSessionLimits,
     sessions: RwLock<HashMap<String, Arc<MonitorSession>>>,
     shutting_down: AtomicBool,
@@ -593,15 +596,12 @@ impl DirectRedisMonitorSessions {
     /// MONITOR is node-local by definition.
     pub fn standalone(url: &str, limits: MonitorSessionLimits) -> Result<Self, RedisSessionError> {
         let limits = limits.validate()?;
-        let client = Client::open(url).map_err(|error| {
-            RedisSessionError::new(
-                RedisSessionErrorKind::InvalidRequest,
-                format!("invalid Redis URL: {error}"),
-            )
-            .with_code("INVALID_REDIS_URL")
+        let target = Target::parse(url).map_err(|_error| {
+            RedisSessionError::new(RedisSessionErrorKind::InvalidRequest, "invalid Redis URL")
+                .with_code("INVALID_REDIS_URL")
         })?;
         let inner = Arc::new(MonitorManagerInner {
-            client,
+            target,
             limits,
             sessions: RwLock::new(HashMap::new()),
             shutting_down: AtomicBool::new(false),
@@ -665,10 +665,12 @@ impl MonitorSessionManager for DirectRedisMonitorSessions {
                 .with_code("OWNER_SESSION_QUOTA_EXCEEDED"));
             }
         }
-        let monitor = tokio::time::timeout(
-            self.inner.limits.operation_timeout(),
-            self.inner.client.get_async_monitor(),
-        )
+        let monitor = tokio::time::timeout(self.inner.limits.operation_timeout(), async {
+            let connection = self.inner.target.connect().await?;
+            MonitorStream::new(connection)
+                .await
+                .map_err(crate::RedisError::from)
+        })
         .await
         .map_err(|_| {
             RedisSessionError::new(
@@ -677,22 +679,20 @@ impl MonitorSessionManager for DirectRedisMonitorSessions {
             )
             .with_code("SESSION_SETUP_TIMEOUT")
         })?
-        .map_err(|error| {
-            RedisSessionError::new(
-                RedisSessionErrorKind::Connection,
-                format!("MONITOR connection failed: {}", error.category()),
-            )
-            .with_code("SESSION_CONNECTION_FAILED")
-        })?;
+        .map_err(|error| redacted_target_error(error, "MONITOR connection failed"))?;
         let buffer = Arc::new(MonitorBuffer::new(
             self.inner.limits,
             options.include_arguments,
         ));
         let pump_buffer = buffer.clone();
         let pump = tokio::spawn(async move {
-            let mut stream = monitor.into_on_message::<String>();
-            while let Some(line) = stream.next().await {
-                pump_buffer.accept_line(&line);
+            let mut stream = monitor;
+            while let Some(Ok(event)) = stream.next().await {
+                // MONITOR escapes binary arguments in its textual wire line.
+                // Keep the existing parser and argument-redaction policy.
+                if let Ok(line) = std::str::from_utf8(&event.raw) {
+                    pump_buffer.accept_line(line);
+                }
             }
             pump_buffer.mark_disconnected();
         });

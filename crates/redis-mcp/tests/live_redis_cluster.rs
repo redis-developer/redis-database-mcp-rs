@@ -3028,3 +3028,32 @@ async fn blocking_pops_route_same_slot_keys_and_gate_standalone_lifecycles_in_cl
         .expect("deployment gate is a tool result");
     assert!(wait_gated.is_error, "{wait_gated:?}");
 }
+
+#[tokio::test]
+async fn cluster_blocking_wait_preserves_a_deadline_longer_than_500ms() {
+    let _guard = CLUSTER_TEST_LOCK.lock().await;
+    let Some(cluster) = TestCluster::start().await else {
+        return;
+    };
+    let engine = redis_mcp::RedisBlockingEngine::new(
+        DirectRedisBlocking::cluster(&cluster.seed_urls).unwrap(),
+    );
+    let started = std::time::Instant::now();
+    let reply = engine
+        .pop_list(
+            vec![
+                format!(
+                    "redis-mcp:{{blocking-over-500ms-{}}}:queue",
+                    std::process::id()
+                )
+                .into_bytes(),
+            ],
+            redis_mcp::RedisListEnd::Left,
+            Duration::from_millis(850),
+        )
+        .await
+        .unwrap();
+    assert!(reply.is_none());
+    assert!(started.elapsed() >= Duration::from_millis(800));
+    assert!(started.elapsed() < Duration::from_secs(3));
+}

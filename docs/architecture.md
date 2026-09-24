@@ -8,8 +8,8 @@ Status: accepted for the 0.1 foundation
 
 `redis-mcp` owns Redis tool contracts, tool behavior, access classification,
 structured results, and the command-execution boundary. It exposes a
-transport-independent Tower-MCP router and a redis-rs-backed fixed-target
-executor, but hosts can implement the executor without depending on redis-rs.
+transport-independent Tower-MCP router and redis-tower-backed fixed-target
+executors. Hosts can implement the executor without depending on redis-tower.
 
 The default server remains fixed-target. Redis URLs, redisctl profile names,
 credentials, and target selection do not appear in the default tool schemas.
@@ -22,18 +22,25 @@ credentials, and target selection do not appear in the default tool schemas.
 - `RedisCommand` exposes the originating tool, required access level, uppercase
   Redis command name, and binary-safe arguments. Its `Debug` implementation
   reports only the argument count so values and credentials are not logged.
-- `RedisValue` represents RESP2 and RESP3 values without exposing redis-rs
+- `RedisValue` represents RESP2 and RESP3 values without exposing dependency-owned
   types. Binary strings remain bytes; maps and attributes retain entry order.
 - `RedisErrorKind` gives adapters and tool handlers stable authentication,
   authorization, timeout, connection, request, response, capability, module,
   server, and fallback categories.
-- `DirectRedis` is the standalone convenience adapter that converts these
-  types to and from redis-rs 1.6 and uses its reconnecting connection manager.
-- `DirectRedisCluster` is the fixed-cluster convenience adapter. It discovers
-  topology from configured seed URLs and delegates redirection, topology
-  refresh, and supported multi-slot command splitting to redis-rs.
-- Their `from_connection_manager` and `from_cluster_connection` constructors
-  are intentionally redis-rs-specific, but implementing `RedisExecutor` is not.
+- `DirectRedis` converts crate-owned commands and replies using redis-tower's
+  reconnecting `MultiplexedClient` and a URL connection factory.
+- `DirectRedisCluster` uses `MultiplexedClusterClient` for slot routing,
+  redirection and topology refresh, with bounded seed fallback. Explicit
+  node fan-out snapshots and deduplicates the requested node roles, checks
+  the node limit before dispatch, and uses authenticated dedicated sockets.
+  MGET, MSET, DEL, UNLINK, EXISTS, and TOUCH retain split-by-slot behavior.
+- Both expose `from_multiplexed_client` for hosts that already own a
+  redis-tower client. The public `RedisExecutor` boundary remains independent
+  of any Redis client library.
+- Setup attempts have a ten-second total bound. Ordinary transport response
+  timeouts are disabled so the invocation deadline remains authoritative;
+  dedicated blocking, transaction and session operations keep their own
+  finite bounds. Reconnect does not imply replay of an in-flight write.
 
 Redis Cluster `CROSSSLOT` failures map to `RedisErrorKind::InvalidRequest` and
 retain the stable `CROSSSLOT` code. Other server-side cluster failures retain
@@ -221,8 +228,8 @@ and telemetry.
 `RedisCapabilities` is a crate-owned, partially known snapshot. It records the
 Redis version, standalone or cluster deployment, module presence and versions,
 and command availability. Custom hosts can supply it directly without using
-redis-rs. Missing facts remain `Unknown`; this is deliberately permissive so
-existing custom executors continue to work. `DirectRedis` and
+the Redis client. Missing facts remain `Unknown`; this is deliberately permissive
+so existing custom executors continue to work. `DirectRedis` and
 `DirectRedisCluster` can discover a snapshot asynchronously under one bounded
 total timeout using INFO, MODULE LIST, and COMMAND INFO. Cluster INFO and module
 responses are reduced conservatively: the oldest node version and capabilities
@@ -259,9 +266,8 @@ reply shape between the two. Variable JSON results are measured by encoded
 bytes and nested entries; destructive deletion, clearing, array pop/trim, and
 merge require full access. `JSON.MGET` retains Redis Cluster's native same-slot
 contract. The direct cluster adapter validates its key slots before execution
-because an unknown module command cannot safely inherit redis-rs' built-in
-multi-key routing metadata; cross-slot requests therefore fail with the stable
-`CROSSSLOT` invalid-request classification instead of reaching one arbitrary
+because module commands need explicit validation of their multi-key contracts;
+cross-slot requests therefore fail with the stable `CROSSSLOT` invalid-request classification instead of reaching one arbitrary
 node.
 
 The Search bundle contains 24 structured tools. It covers the complete
@@ -289,7 +295,7 @@ The five inspection tools cover `PUBSUB CHANNELS`, `NUMSUB`, `NUMPAT`,
 global output limits, count queries have bounded binary-safe inputs, and every
 cluster fan-out has an explicit `max_cluster_nodes` ceiling. The direct cluster
 adapter returns sorted address-tagged node replies instead of accepting
-redis-rs' opaque aggregate. Handlers then byte-sort and deduplicate channel
+an opaque client aggregate. Handlers then byte-sort and deduplicate channel
 names, sum subscriber and pattern counts, and expose server-side node failures
 alongside an explicit completeness flag. Transport failures fail the whole
 request rather than presenting partial data as complete. Custom executors can
@@ -330,15 +336,15 @@ report buffer-full and oversized-message drop totals.
 `PubSubSessionManager` is a public host boundary rather than part of
 `RedisExecutor`. One command executor connection cannot safely represent a
 subscription that outlives a request. The DirectRedis manager accordingly owns
-one dedicated RESP3 connection and one bounded queue per session; subscription
-pushes never share the ordinary multiplexed request/response connection.
-Standalone connections use redis-rs automatic channel and pattern
-resubscription, and the manager explicitly reissues sharded subscriptions after
-a reported disconnect. Cluster connections route each sharded channel by slot.
-Global and sharded delivery are live-tested on a three-master Cluster; Cluster
-topology failover beyond redis-rs' connection recovery remains an explicit
-adapter limitation. Sentinel and host-specific failover policies require a
-custom manager.
+one bounded message queue per session and dedicated binary Pub/Sub transports.
+Standalone and regular Cluster sessions use one connection; sharded Cluster
+sessions group channels by hash slot and use one connection per group, bounded
+by the subscription limit. Subscription pushes never share ordinary command
+workers. redis-tower replays all confirmed binary subscriptions on reconnect;
+sharded sessions follow observed slot ownership changes. Message delivery
+remains at-most-once across reconnect gaps. Session teardown aborts its message
+pumps and closes their sockets. Sentinel and host-specific failover policies
+require a custom manager.
 
 Every manager operation receives a `PubSubSessionOwner`. Lookup uses the owner
 and handle together and returns the same not-found result for missing, guessed,

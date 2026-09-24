@@ -10,13 +10,17 @@ use std::{
     time::{Duration, Instant},
 };
 
+use crate::transport::{Target, connect_cluster};
 use async_trait::async_trait;
-use redis::{
-    Client, ConnectionInfo, ProtocolVersion, PushInfo, PushKind,
-    aio::{ConnectionManager, ConnectionManagerConfig},
-    cluster::{ClusterClient, ClusterClientBuilder},
-    cluster_async::ClusterConnection,
+use futures_util::StreamExt;
+use redis_tower::{
+    BinaryPubSubConnection, BinaryPubSubMessage, pubsub::MessageKind, reconnect::ReconnectConfig,
 };
+use redis_tower_cluster::{
+    BinaryClusterPubSubConnection, BinaryShardedClusterPubSubConnection, MultiplexedClusterClient,
+    slot_for_key,
+};
+use redis_tower_core::{ProtocolVersion, RedisError as TowerError};
 use tokio::sync::{Mutex, Notify, RwLock};
 
 /// Default maximum number of sessions held by one manager.
@@ -412,8 +416,8 @@ pub struct DirectRedisPubSubSessionManager {
 }
 
 enum DirectTarget {
-    Standalone(Box<Client>),
-    Cluster(Vec<String>),
+    Standalone(Target),
+    Cluster(Vec<Target>),
 }
 
 struct DirectManagerInner {
@@ -504,9 +508,100 @@ impl Drop for SessionQuotaLease {
     }
 }
 
-enum DirectConnection {
-    Standalone(ConnectionManager),
-    Cluster(ClusterConnection),
+struct DirectConnection {
+    pumps: std::collections::BTreeMap<u16, PubSubPump>,
+    cluster: Option<MultiplexedClusterClient>,
+    kind: PubSubSubscriptionKind,
+}
+
+struct PubSubPump {
+    commands: tokio::sync::mpsc::Sender<Unsubscribe>,
+    task: tokio::task::JoinHandle<()>,
+}
+
+impl Drop for PubSubPump {
+    fn drop(&mut self) {
+        self.task.abort();
+    }
+}
+
+struct Unsubscribe {
+    names: Vec<Vec<u8>>,
+    reply: tokio::sync::oneshot::Sender<Result<(), TowerError>>,
+}
+
+enum PubSubTransport {
+    Standalone(BinaryPubSubConnection, Target, ReconnectConfig),
+    Cluster(BinaryClusterPubSubConnection),
+    Sharded(BinaryShardedClusterPubSubConnection),
+}
+
+impl PubSubTransport {
+    async fn next_message(&mut self) -> Result<BinaryPubSubMessage, TowerError> {
+        match self {
+            Self::Standalone(connection, factory, config) => loop {
+                match connection.next().await {
+                    Some(Ok(message)) => return Ok(message),
+                    Some(Err(error))
+                        if !matches!(
+                            error,
+                            TowerError::Connection { .. } | TowerError::ConnectionClosed
+                        ) =>
+                    {
+                        return Err(error);
+                    }
+                    _ => connection.reconnect_with_backoff(factory, config).await?,
+                }
+            },
+            Self::Cluster(connection) => connection.next_message().await,
+            Self::Sharded(connection) => connection.next_message().await,
+        }
+    }
+
+    async fn unsubscribe(
+        &mut self,
+        kind: PubSubSubscriptionKind,
+        names: &[Vec<u8>],
+    ) -> Result<(), TowerError> {
+        let names = names.iter().map(Vec::as_slice).collect::<Vec<_>>();
+        match self {
+            Self::Standalone(connection, ..) => match kind {
+                PubSubSubscriptionKind::Channel => connection.unsubscribe_bytes(&names).await,
+                PubSubSubscriptionKind::Pattern => connection.punsubscribe_bytes(&names).await,
+                PubSubSubscriptionKind::Sharded => connection.sunsubscribe_bytes(&names).await,
+            },
+            Self::Cluster(connection) => match kind {
+                PubSubSubscriptionKind::Channel => connection.unsubscribe_bytes(&names).await,
+                PubSubSubscriptionKind::Pattern => connection.punsubscribe_bytes(&names).await,
+                PubSubSubscriptionKind::Sharded => Ok(()),
+            },
+            Self::Sharded(connection) => connection.unsubscribe_bytes(&names).await,
+        }
+    }
+}
+
+fn spawn_pubsub_pump(
+    mut transport: PubSubTransport,
+    kind: PubSubSubscriptionKind,
+    buffer: Arc<DirectBuffer>,
+) -> PubSubPump {
+    let (commands, mut incoming) = tokio::sync::mpsc::channel::<Unsubscribe>(1);
+    let task = tokio::spawn(async move {
+        loop {
+            tokio::select! {
+                command = incoming.recv() => {
+                    let Some(command) = command else { break; };
+                    let result = transport.unsubscribe(kind, &command.names).await;
+                    let _ = command.reply.send(result);
+                }
+                message = transport.next_message() => match message {
+                    Ok(message) => buffer.accept_message(message),
+                    Err(_) => { buffer.notify.notify_one(); break; }
+                }
+            }
+        }
+    });
+    PubSubPump { commands, task }
 }
 
 struct BufferedMessage {
@@ -529,22 +624,8 @@ struct DirectBuffer {
     state: StdMutex<DirectBufferState>,
     notify: Notify,
     next_sequence: AtomicU64,
-    disconnected: AtomicBool,
     max_messages: usize,
     max_message_bytes: usize,
-}
-
-struct ResubscriptionAttempt<'a> {
-    disconnected: &'a AtomicBool,
-    completed: bool,
-}
-
-impl Drop for ResubscriptionAttempt<'_> {
-    fn drop(&mut self) {
-        if !self.completed {
-            self.disconnected.store(true, Ordering::Release);
-        }
-    }
 }
 
 impl DirectBuffer {
@@ -553,40 +634,20 @@ impl DirectBuffer {
             state: StdMutex::new(DirectBufferState::default()),
             notify: Notify::new(),
             next_sequence: AtomicU64::new(1),
-            disconnected: AtomicBool::new(false),
             max_messages: limits.max_buffered_messages,
             max_message_bytes: limits.max_message_bytes,
         }
     }
 
-    fn accept_push(&self, push: PushInfo) {
-        if push.kind == PushKind::Disconnection {
-            self.disconnected.store(true, Ordering::Release);
-            self.notify.notify_one();
-            return;
-        }
-        let (kind, pattern, channel, payload) = match push.kind {
-            PushKind::Message | PushKind::SMessage if push.data.len() == 2 => {
-                let kind = if push.kind == PushKind::SMessage {
-                    PubSubSubscriptionKind::Sharded
-                } else {
-                    PubSubSubscriptionKind::Channel
-                };
-                (
-                    kind,
-                    None,
-                    redis_value_bytes(&push.data[0]),
-                    redis_value_bytes(&push.data[1]),
-                )
-            }
-            PushKind::PMessage if push.data.len() == 3 => (
-                PubSubSubscriptionKind::Pattern,
-                redis_value_bytes(&push.data[0]),
-                redis_value_bytes(&push.data[1]),
-                redis_value_bytes(&push.data[2]),
-            ),
-            _ => return,
+    fn accept_message(&self, message: BinaryPubSubMessage) {
+        let kind = match message.kind {
+            MessageKind::Message => PubSubSubscriptionKind::Channel,
+            MessageKind::PMessage => PubSubSubscriptionKind::Pattern,
+            MessageKind::SMessage => PubSubSubscriptionKind::Sharded,
         };
+        let pattern = message.pattern.map(|value| value.to_vec());
+        let channel = Some(message.channel.to_vec());
+        let payload = Some(message.payload.to_vec());
         let (Some(channel), Some(payload)) = (channel, payload) else {
             return;
         };
@@ -649,12 +710,10 @@ impl DirectRedisPubSubSessionManager {
     /// and forced to RESP3 so subscription pushes never contaminate the normal
     /// request/response connection manager.
     pub fn standalone(url: &str, limits: PubSubSessionLimits) -> Result<Self, PubSubSessionError> {
-        let client = Client::open(url)
-            .map_err(|error| redacted_redis_error(error, "Pub/Sub target configuration failed"))?;
-        let info = force_resp3(client.get_connection_info().clone());
-        let client = Client::open(info)
-            .map_err(|error| redacted_redis_error(error, "Pub/Sub target configuration failed"))?;
-        Self::new(DirectTarget::Standalone(Box::new(client)), limits)
+        let mut target = Target::parse(url)
+            .map_err(|error| redacted_target_error(error, "Pub/Sub target configuration failed"))?;
+        target.config = target.config.with_protocol(ProtocolVersion::Resp3);
+        Self::new(DirectTarget::Standalone(target), limits)
     }
 
     /// Create a Redis Cluster manager from one or more seed URLs.
@@ -668,8 +727,12 @@ impl DirectRedisPubSubSessionManager {
     {
         let seed_urls = seed_urls
             .into_iter()
-            .map(|url| url.as_ref().to_string())
-            .collect::<Vec<_>>();
+            .map(|url| {
+                Target::parse(url.as_ref()).map_err(|error| {
+                    redacted_target_error(error, "Pub/Sub Cluster target configuration failed")
+                })
+            })
+            .collect::<Result<Vec<_>, _>>()?;
         if seed_urls.is_empty() {
             return Err(PubSubSessionError::new(
                 PubSubSessionErrorKind::InvalidRequest,
@@ -677,10 +740,11 @@ impl DirectRedisPubSubSessionManager {
             )
             .with_code("EMPTY_CLUSTER_SEEDS"));
         }
-        // Parse now so malformed or unsupported URLs fail before the manager is exposed.
-        ClusterClient::new(seed_urls.clone()).map_err(|error| {
-            redacted_redis_error(error, "Pub/Sub Cluster target configuration failed")
-        })?;
+        for target in &seed_urls {
+            target.cluster_builder().map_err(|error| {
+                redacted_target_error(error, "Pub/Sub Cluster target configuration failed")
+            })?;
+        }
         Self::new(DirectTarget::Cluster(seed_urls), limits)
     }
 
@@ -716,38 +780,99 @@ impl DirectRedisPubSubSessionManager {
     async fn create_connection(
         &self,
         buffer: Arc<DirectBuffer>,
+        kind: PubSubSubscriptionKind,
+        subscriptions: &[Vec<u8>],
     ) -> Result<DirectConnection, PubSubSessionError> {
-        let push_buffer = buffer.clone();
-        let push_sender = move |push: PushInfo| {
-            push_buffer.accept_push(push);
-            Ok::<(), redis::aio::SendError>(())
-        };
         let future = async {
-            match &self.inner.target {
-                DirectTarget::Standalone(client) => {
-                    let config = ConnectionManagerConfig::new()
-                        .set_push_sender(push_sender)
-                        .set_automatic_resubscription()
-                        .set_response_timeout(Some(self.inner.limits.operation_timeout))
-                        .set_connection_timeout(Some(self.inner.limits.operation_timeout));
-                    client
-                        .get_connection_manager_with_config(config)
-                        .await
-                        .map(DirectConnection::Standalone)
+            let mut pumps = std::collections::BTreeMap::new();
+            let names = subscriptions.iter().map(Vec::as_slice).collect::<Vec<_>>();
+            let cluster = match &self.inner.target {
+                DirectTarget::Standalone(target) => {
+                    let factory = target.clone();
+                    let connection = factory.connect().await?;
+                    let mut pubsub = BinaryPubSubConnection::from_connection(connection)
+                        .map_err(crate::RedisError::from)?;
+                    match kind {
+                        PubSubSubscriptionKind::Channel => pubsub.subscribe_bytes(&names).await,
+                        PubSubSubscriptionKind::Pattern => pubsub.psubscribe_bytes(&names).await,
+                        PubSubSubscriptionKind::Sharded => pubsub.ssubscribe_bytes(&names).await,
+                    }
+                    .map_err(crate::RedisError::from)?;
+                    let config = ReconnectConfig::default()
+                        .connect_timeout(self.inner.limits.operation_timeout);
+                    pumps.insert(
+                        0,
+                        spawn_pubsub_pump(
+                            PubSubTransport::Standalone(pubsub, factory, config),
+                            kind,
+                            buffer.clone(),
+                        ),
+                    );
+                    None
                 }
-                DirectTarget::Cluster(seed_urls) => ClusterClientBuilder::new(seed_urls.clone())
-                    .use_protocol(ProtocolVersion::RESP3)
-                    .push_sender(push_sender)
-                    .build()?
-                    .get_async_connection()
-                    .await
-                    .map(DirectConnection::Cluster),
-            }
+                DirectTarget::Cluster(targets) => {
+                    let cluster = connect_cluster(targets).await?;
+                    if kind == PubSubSubscriptionKind::Sharded {
+                        let mut groups = std::collections::BTreeMap::<u16, Vec<&[u8]>>::new();
+                        for name in &names {
+                            groups.entry(slot_for_key(name)).or_default().push(name);
+                        }
+                        for (slot, names) in groups {
+                            let pubsub = cluster
+                                .sharded_pubsub_bytes(&names)
+                                .await
+                                .map_err(crate::RedisError::from)?;
+                            pumps.insert(
+                                slot,
+                                spawn_pubsub_pump(
+                                    PubSubTransport::Sharded(pubsub),
+                                    kind,
+                                    buffer.clone(),
+                                ),
+                            );
+                        }
+                    } else {
+                        let topology = cluster.topology().await;
+                        let node = topology
+                            .master_addrs()
+                            .first()
+                            .map(|node| (*node).clone())
+                            .ok_or(TowerError::ConnectionClosed)
+                            .map_err(crate::RedisError::from)?;
+                        let mut pubsub = cluster
+                            .pubsub_on_bytes(node)
+                            .await
+                            .map_err(crate::RedisError::from)?;
+                        match kind {
+                            PubSubSubscriptionKind::Channel => pubsub.subscribe_bytes(&names).await,
+                            PubSubSubscriptionKind::Pattern => {
+                                pubsub.psubscribe_bytes(&names).await
+                            }
+                            PubSubSubscriptionKind::Sharded => unreachable!(),
+                        }
+                        .map_err(crate::RedisError::from)?;
+                        pumps.insert(
+                            0,
+                            spawn_pubsub_pump(
+                                PubSubTransport::Cluster(pubsub),
+                                kind,
+                                buffer.clone(),
+                            ),
+                        );
+                    }
+                    Some(cluster)
+                }
+            };
+            Ok::<_, crate::RedisError>(DirectConnection {
+                pumps,
+                cluster,
+                kind,
+            })
         };
         tokio::time::timeout(self.inner.limits.operation_timeout, future)
             .await
             .map_err(|_| operation_timeout("opening Pub/Sub session"))?
-            .map_err(|error| redacted_redis_error(error, "opening Pub/Sub session failed"))
+            .map_err(|error| redacted_target_error(error, "opening Pub/Sub session failed"))
     }
 
     async fn owned_session(
@@ -824,44 +949,6 @@ impl DirectSession {
         self.connection.lock().await.take();
         self.buffer.notify.notify_one();
     }
-
-    async fn ensure_sharded_resubscription(&self) -> Result<(), PubSubSessionError> {
-        if !self.buffer.disconnected.swap(false, Ordering::AcqRel) {
-            return Ok(());
-        }
-        let mut attempt = ResubscriptionAttempt {
-            disconnected: &self.buffer.disconnected,
-            completed: false,
-        };
-        let sharded = self
-            .subscriptions
-            .lock()
-            .await
-            .iter()
-            .filter(|subscription| subscription.kind == PubSubSubscriptionKind::Sharded)
-            .map(|subscription| subscription.value.clone())
-            .collect::<Vec<_>>();
-        if sharded.is_empty() {
-            attempt.completed = true;
-            return Ok(());
-        }
-        let mut connection = self.connection.lock().await;
-        let Some(connection) = connection.as_mut() else {
-            return Err(session_not_found());
-        };
-        let result = run_subscription_command(
-            connection,
-            PubSubSubscriptionKind::Sharded,
-            &sharded,
-            false,
-            self.limits.operation_timeout,
-        )
-        .await;
-        if result.is_ok() {
-            attempt.completed = true;
-        }
-        result
-    }
 }
 
 #[async_trait]
@@ -888,15 +975,9 @@ impl PubSubSessionManager for DirectRedisPubSubSessionManager {
         // more dedicated connections than the configured quotas allow.
         let quota_lease = self.inner.quota.reserve(owner)?;
         let buffer = Arc::new(DirectBuffer::new(self.inner.limits));
-        let mut connection = self.create_connection(buffer.clone()).await?;
-        run_subscription_command(
-            &mut connection,
-            kind,
-            &subscriptions,
-            false,
-            self.inner.limits.operation_timeout,
-        )
-        .await?;
+        let connection = self
+            .create_connection(buffer.clone(), kind, &subscriptions)
+            .await?;
 
         let mut sessions = self.inner.sessions.write().await;
         if self.inner.shutting_down.load(Ordering::Acquire) {
@@ -1022,21 +1103,6 @@ impl PubSubSessionManager for DirectRedisPubSubSessionManager {
                 session.touch();
                 return session.buffer.timed_out_result();
             }
-            if session.buffer.disconnected.load(Ordering::Acquire) {
-                match tokio::time::timeout(
-                    deadline.saturating_duration_since(now),
-                    session.ensure_sharded_resubscription(),
-                )
-                .await
-                {
-                    Ok(result) => result?,
-                    Err(_) => {
-                        session.touch();
-                        return session.buffer.timed_out_result();
-                    }
-                }
-                continue;
-            }
             let _ = tokio::time::timeout(deadline.saturating_duration_since(now), notified).await;
         }
     }
@@ -1152,81 +1218,40 @@ async fn run_subscription_command(
     unsubscribe: bool,
     timeout: Duration,
 ) -> Result<(), PubSubSessionError> {
-    let future = async {
-        match connection {
-            DirectConnection::Standalone(connection) => match (kind, unsubscribe) {
-                (PubSubSubscriptionKind::Channel, false) => {
-                    connection.subscribe(subscriptions).await
-                }
-                (PubSubSubscriptionKind::Channel, true) => {
-                    connection.unsubscribe(subscriptions).await
-                }
-                (PubSubSubscriptionKind::Pattern, false) => {
-                    connection.psubscribe(subscriptions).await
-                }
-                (PubSubSubscriptionKind::Pattern, true) => {
-                    connection.punsubscribe(subscriptions).await
-                }
-                (PubSubSubscriptionKind::Sharded, false) => {
-                    redis::cmd("SSUBSCRIBE")
-                        .arg(subscriptions)
-                        .exec_async(connection)
-                        .await
-                }
-                (PubSubSubscriptionKind::Sharded, true) => {
-                    redis::cmd("SUNSUBSCRIBE")
-                        .arg(subscriptions)
-                        .exec_async(connection)
-                        .await
-                }
-            },
-            DirectConnection::Cluster(connection) => match (kind, unsubscribe) {
-                (PubSubSubscriptionKind::Channel, false) => {
-                    connection.subscribe(subscriptions).await
-                }
-                (PubSubSubscriptionKind::Channel, true) => {
-                    connection.unsubscribe(subscriptions).await
-                }
-                (PubSubSubscriptionKind::Pattern, false) => {
-                    connection.psubscribe(subscriptions).await
-                }
-                (PubSubSubscriptionKind::Pattern, true) => {
-                    connection.punsubscribe(subscriptions).await
-                }
-                (PubSubSubscriptionKind::Sharded, false) => {
-                    for subscription in subscriptions {
-                        connection.ssubscribe(subscription).await?;
-                    }
-                    Ok(())
-                }
-                (PubSubSubscriptionKind::Sharded, true) => {
-                    for subscription in subscriptions {
-                        connection.sunsubscribe(subscription).await?;
-                    }
-                    Ok(())
-                }
-            },
+    debug_assert!(
+        unsubscribe,
+        "initial subscriptions are established before exposing a session"
+    );
+    if kind != connection.kind {
+        return Ok(());
+    }
+    let mut groups = std::collections::BTreeMap::<u16, Vec<Vec<u8>>>::new();
+    for name in subscriptions {
+        let slot = if connection.cluster.is_some() && kind == PubSubSubscriptionKind::Sharded {
+            slot_for_key(name)
+        } else {
+            0
+        };
+        groups.entry(slot).or_default().push(name.clone());
+    }
+    let operation = async {
+        for (slot, names) in groups {
+            let Some(pump) = connection.pumps.get(&slot) else {
+                continue;
+            };
+            let (reply, result) = tokio::sync::oneshot::channel();
+            pump.commands
+                .send(Unsubscribe { names, reply })
+                .await
+                .map_err(|_| TowerError::ConnectionClosed)?;
+            result.await.map_err(|_| TowerError::ConnectionClosed)??;
         }
+        Ok::<_, TowerError>(())
     };
-    tokio::time::timeout(timeout, future)
+    tokio::time::timeout(timeout, operation)
         .await
-        .map_err(|_| {
-            operation_timeout(if unsubscribe {
-                "unsubscribing"
-            } else {
-                "subscribing"
-            })
-        })?
-        .map_err(|error| {
-            redacted_redis_error(
-                error,
-                if unsubscribe {
-                    "Pub/Sub unsubscribe failed"
-                } else {
-                    "Pub/Sub subscribe failed"
-                },
-            )
-        })
+        .map_err(|_| operation_timeout("updating Pub/Sub subscriptions"))?
+        .map_err(|error| redacted_redis_error(error, "updating Pub/Sub subscriptions failed"))
 }
 
 fn validate_subscriptions(
@@ -1297,52 +1322,21 @@ fn operation_timeout(operation: &str) -> PubSubSessionError {
     .with_code("SESSION_OPERATION_TIMEOUT")
 }
 
-fn redacted_redis_error(error: redis::RedisError, context: &str) -> PubSubSessionError {
-    let code = error.code().map(str::to_string);
-    let kind = if matches!(code.as_deref(), Some("WRONGPASS" | "NOAUTH")) {
-        PubSubSessionErrorKind::Authentication
-    } else if code.as_deref() == Some("NOPERM") {
-        PubSubSessionErrorKind::Authorization
-    } else if error.is_timeout() {
-        PubSubSessionErrorKind::Timeout
-    } else {
-        match error.kind() {
-            redis::ErrorKind::AuthenticationFailed => PubSubSessionErrorKind::Authentication,
-            redis::ErrorKind::Server(redis::ServerErrorKind::NoPerm) => {
-                PubSubSessionErrorKind::Authorization
-            }
-            redis::ErrorKind::Io | redis::ErrorKind::ClusterConnectionNotFound => {
-                PubSubSessionErrorKind::Connection
-            }
-            redis::ErrorKind::Server(_) | redis::ErrorKind::Extension => {
-                PubSubSessionErrorKind::Server
-            }
-            redis::ErrorKind::InvalidClientConfig | redis::ErrorKind::Client => {
-                PubSubSessionErrorKind::InvalidRequest
-            }
-            _ => PubSubSessionErrorKind::Other,
-        }
+fn redacted_redis_error(error: TowerError, context: &str) -> PubSubSessionError {
+    redacted_target_error(crate::RedisError::from(error), context)
+}
+
+pub(crate) fn redacted_target_error(error: crate::RedisError, context: &str) -> PubSubSessionError {
+    let kind = match error.kind() {
+        crate::RedisErrorKind::Authentication => PubSubSessionErrorKind::Authentication,
+        crate::RedisErrorKind::Authorization => PubSubSessionErrorKind::Authorization,
+        crate::RedisErrorKind::Connection => PubSubSessionErrorKind::Connection,
+        crate::RedisErrorKind::Timeout => PubSubSessionErrorKind::Timeout,
+        crate::RedisErrorKind::InvalidRequest => PubSubSessionErrorKind::InvalidRequest,
+        crate::RedisErrorKind::Server => PubSubSessionErrorKind::Server,
+        _ => PubSubSessionErrorKind::Other,
     };
-    let mut converted = PubSubSessionError::new(kind, context);
-    converted.code = code.or_else(|| Some("REDIS_SESSION_ERROR".to_string()));
-    converted
-}
-
-fn force_resp3(info: ConnectionInfo) -> ConnectionInfo {
-    let redis = info
-        .redis_settings()
-        .clone()
-        .set_protocol(ProtocolVersion::RESP3);
-    info.set_redis_settings(redis)
-}
-
-fn redis_value_bytes(value: &redis::Value) -> Option<Vec<u8>> {
-    match value {
-        redis::Value::BulkString(value) => Some(value.clone()),
-        redis::Value::SimpleString(value) => Some(value.as_bytes().to_vec()),
-        redis::Value::BigNumber(value) => Some(value.clone()),
-        _ => None,
-    }
+    PubSubSessionError::new(kind, context).with_code(error.code().unwrap_or("REDIS_SESSION_ERROR"))
 }
 
 pub(crate) fn random_identifier(prefix: &str) -> String {
@@ -1368,6 +1362,30 @@ mod tests {
         let handle = random_identifier("ps");
         assert!(validate_session_id(&handle).is_ok());
         assert_eq!(handle.len(), 35);
+    }
+
+    #[test]
+    fn target_errors_keep_their_typed_session_category() {
+        let authentication = redacted_target_error(
+            crate::RedisError::new(
+                crate::RedisErrorKind::Authentication,
+                "credential detail must be redacted",
+            )
+            .with_code("WRONGPASS"),
+            "opening session failed",
+        );
+        assert_eq!(
+            authentication.kind(),
+            PubSubSessionErrorKind::Authentication
+        );
+        assert_eq!(authentication.code(), Some("WRONGPASS"));
+        assert!(!authentication.to_string().contains("credential detail"));
+
+        let timeout = redacted_target_error(
+            crate::RedisError::new(crate::RedisErrorKind::Timeout, "private target"),
+            "opening session failed",
+        );
+        assert_eq!(timeout.kind(), PubSubSessionErrorKind::Timeout);
     }
 
     #[test]

@@ -20,13 +20,28 @@ pub(crate) const CONNECT_TIMEOUT: Duration = Duration::from_secs(10);
 pub(crate) struct Target {
     pub url: String,
     pub config: ConnectionConfig,
-    unix_setup: Option<UnixSetup>,
+    setup: Option<Box<TransportSetup>>,
+}
+
+#[derive(Clone)]
+enum TransportSetup {
+    Unix(UnixSetup),
+    TlsIpv6(TlsIpv6Setup),
 }
 
 #[derive(Clone)]
 struct UnixSetup {
     #[cfg(unix)]
     path: PathBuf,
+    username: Option<String>,
+    password: Option<String>,
+    database: Option<u16>,
+}
+
+#[derive(Clone)]
+struct TlsIpv6Setup {
+    address: String,
+    server_name: String,
     username: Option<String>,
     password: Option<String>,
     database: Option<u16>,
@@ -74,28 +89,42 @@ impl Target {
             // redis-tower names the same Unix transport `unix`.
             url.set_scheme("unix").map_err(|_| invalid_url())?;
         }
+        let tls_ipv6 = matches!(url.scheme(), "rediss" | "valkeys")
+            && matches!(url.host(), Some(url::Host::Ipv6(_)));
         if !unix && matches!(url.host(), Some(url::Host::Ipv6(_))) && url.port().is_none() {
             // redis-tower's string parser requires an explicit port to
             // distinguish the final IPv6 segment from a port separator.
             url.set_port(Some(6379)).map_err(|_| invalid_url())?;
         }
         let url = url.to_string();
-        redis_tower_core::parse_redis_url(&url).map_err(|_| invalid_url())?;
+        let parsed = redis_tower_core::parse_redis_url(&url).map_err(|_| invalid_url())?;
+        let tls_ipv6_setup = tls_ipv6.then(|| TlsIpv6Setup {
+            address: format!("{}:{}", parsed.host, parsed.port),
+            server_name: parsed
+                .host
+                .strip_prefix('[')
+                .and_then(|host| host.strip_suffix(']'))
+                .unwrap_or(&parsed.host)
+                .to_owned(),
+            username: parsed.username.clone(),
+            password: parsed.password.clone(),
+            database: parsed.database,
+        });
         Ok(Self {
             url,
             config: ConnectionConfig::default()
                 .with_protocol(protocol)
                 .with_connect_timeout(Some(CONNECT_TIMEOUT)),
-            unix_setup: if unix {
-                Some(UnixSetup {
+            setup: if unix {
+                Some(Box::new(TransportSetup::Unix(UnixSetup {
                     #[cfg(unix)]
                     path: unix_path.expect("Unix targets have a decoded path"),
                     username,
                     password,
                     database,
-                })
+                })))
             } else {
-                None
+                tls_ipv6_setup.map(|setup| Box::new(TransportSetup::TlsIpv6(setup)))
             },
         })
     }
@@ -111,7 +140,31 @@ impl Target {
     }
 
     async fn connect_unbounded(&self) -> Result<RedisConnection, TowerError> {
-        let Some(setup) = &self.unix_setup else {
+        if let Some(TransportSetup::TlsIpv6(setup)) = self.setup.as_deref() {
+            // redis-tower 0.1.2 keeps IPv6 brackets in the parsed host. They
+            // belong in the socket address, but rustls rejects them in a
+            // ServerName. Keep those two representations separate until the
+            // upstream parser does so itself.
+            let initial = self.config.clone().with_protocol(ProtocolVersion::Resp2);
+            let tls = redis_tower_core::tls::TlsConfig::default_rustls();
+            let connection = RedisConnection::connect_tls_with_config(
+                &setup.address,
+                &setup.server_name,
+                &tls,
+                &initial,
+            )
+            .await?;
+            return finish_setup(
+                connection,
+                setup.username.as_deref(),
+                setup.password.as_deref(),
+                setup.database,
+                self.config.protocol(),
+            )
+            .await;
+        }
+
+        let Some(TransportSetup::Unix(setup)) = self.setup.as_deref() else {
             return RedisConnection::connect_url_with_config(&self.url, &self.config).await;
         };
 
@@ -121,7 +174,7 @@ impl Target {
         // the requested protocol. This path is also used for reconnection.
         let initial = self.config.clone().with_protocol(ProtocolVersion::Resp2);
         #[cfg(unix)]
-        let mut connection = {
+        let connection = {
             let stream = tokio::net::UnixStream::connect(&setup.path)
                 .await
                 .map_err(|error| TowerError::connection(setup.path.display().to_string(), error))?;
@@ -136,22 +189,14 @@ impl Target {
                 "unix sockets are not supported on this platform".into(),
             ));
         };
-        if let Some(password) = &setup.password {
-            let mut auth = RawCommand::new("AUTH");
-            if let Some(username) = &setup.username {
-                auth = auth.arg(username);
-            }
-            connection.execute(auth.arg(password)).await?;
-        }
-        if let Some(database) = setup.database {
-            connection
-                .execute(RawCommand::new("SELECT").arg(database.to_string()))
-                .await?;
-        }
-        connection
-            .negotiate_protocol(self.config.protocol())
-            .await?;
-        Ok(connection)
+        finish_setup(
+            connection,
+            setup.username.as_deref(),
+            setup.password.as_deref(),
+            setup.database,
+            self.config.protocol(),
+        )
+        .await
     }
 
     pub async fn exclusive_cluster(
@@ -214,6 +259,29 @@ impl Target {
         }
         Ok(builder)
     }
+}
+
+async fn finish_setup(
+    mut connection: RedisConnection,
+    username: Option<&str>,
+    password: Option<&str>,
+    database: Option<u16>,
+    protocol: ProtocolVersion,
+) -> Result<RedisConnection, TowerError> {
+    if let Some(password) = password {
+        let mut auth = RawCommand::new("AUTH");
+        if let Some(username) = username {
+            auth = auth.arg(username);
+        }
+        connection.execute(auth.arg(password)).await?;
+    }
+    if let Some(database) = database {
+        connection
+            .execute(RawCommand::new("SELECT").arg(database.to_string()))
+            .await?;
+    }
+    connection.negotiate_protocol(protocol).await?;
+    Ok(connection)
 }
 
 #[cfg(unix)]
@@ -366,6 +434,50 @@ mod tests {
             assert_eq!(parsed.host, "[::1]");
             assert_eq!(parsed.port, 6379);
             assert_eq!(target.config.protocol(), ProtocolVersion::Resp3);
+            if matches!(scheme, "rediss" | "valkeys") {
+                let Some(TransportSetup::TlsIpv6(setup)) = target.setup.as_deref() else {
+                    panic!("TLS IPv6 target has split connection names");
+                };
+                assert_eq!(setup.address, "[::1]:6379");
+                assert_eq!(setup.server_name, "::1");
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn tls_ipv6_connection_uses_unbracketed_rustls_server_name() {
+        let listener = match tokio::net::TcpListener::bind("[::1]:0").await {
+            Ok(listener) => listener,
+            Err(error) if error.kind() == std::io::ErrorKind::AddrNotAvailable => {
+                eprintln!("skipping TLS IPv6 transport test: IPv6 loopback is unavailable");
+                return;
+            }
+            Err(error) => panic!("bind IPv6 loopback: {error}"),
+        };
+        let port = listener.local_addr().expect("read listener address").port();
+        let server = tokio::spawn(async move {
+            let (stream, _) = listener.accept().await.expect("accept TLS client");
+            stream.writable().await.expect("wait for writable socket");
+            stream
+                .try_write(b"not a TLS record")
+                .expect("write invalid TLS response");
+        });
+
+        let target =
+            Target::parse(&format!("rediss://[::1]:{port}/")).expect("parse TLS IPv6 target");
+        let error = match target.connect_tower().await {
+            Ok(_) => panic!("invalid test server cannot finish TLS"),
+            Err(error) => error,
+        };
+        server.await.expect("join test TLS server");
+
+        match &error {
+            TowerError::Connection { source, .. } => assert_ne!(
+                source.kind(),
+                std::io::ErrorKind::InvalidInput,
+                "rustls rejected the bracketed IPv6 server name: {error}"
+            ),
+            other => panic!("expected TLS connection error, got {other}"),
         }
     }
 

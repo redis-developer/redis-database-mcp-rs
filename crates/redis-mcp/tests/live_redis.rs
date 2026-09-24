@@ -5406,7 +5406,7 @@ async fn live_binary_values_remain_explicit_in_resp2_and_resp3() {
 
 #[cfg(unix)]
 #[tokio::test]
-async fn live_policy_timeouts_outlive_the_redis_rs_response_default() {
+async fn live_policy_timeouts_remain_authoritative_over_transport() {
     let Some(redis) = TestRedis::start().await else {
         return;
     };
@@ -5428,7 +5428,7 @@ async fn live_policy_timeouts_outlive_the_redis_rs_response_default() {
 
     // Connect before injecting latency so this measures a command response,
     // not only connection setup. The invocation engine's two-second timeout
-    // must remain authoritative over redis-rs' shorter transport default.
+    // must remain authoritative over any transport response timeout.
     let invocation = RedisInvocationEngine::builder(
         DirectRedis::connect(proxy_url.as_str())
             .await
@@ -5454,8 +5454,9 @@ async fn live_policy_timeouts_outlive_the_redis_rs_response_default() {
         started.elapsed()
     );
 
-    // A transaction uses a fresh dedicated connection, but its complete
-    // attempt is likewise governed by RedisTransactionEngine's duration.
+    // A transaction uses a fresh dedicated connection and confirms MULTI
+    // before sending queued commands. Its complete multi-round-trip attempt
+    // is likewise governed by RedisTransactionEngine's duration.
     let transaction_invocation = RedisInvocationEngine::builder(
         DirectRedis::connect(&redis.url)
             .await
@@ -5469,7 +5470,7 @@ async fn live_policy_timeouts_outlive_the_redis_rs_response_default() {
         DirectRedisTransactions::standalone(proxy_url.as_str())
             .expect("prepare delayed transaction adapter"),
     )
-    .with_limits(RedisTransactionLimits::default().with_max_duration(Duration::from_secs(3)));
+    .with_limits(RedisTransactionLimits::default().with_max_duration(Duration::from_secs(5)));
     let started = Instant::now();
     let outcome = transactions
         .invoke(RedisTransactionRequest::new().command(NativeRedisInvocation::new("PING")))

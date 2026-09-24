@@ -1097,7 +1097,7 @@ dependencies = [
  "bytes",
  "getrandom 0.4.3",
  "lru-slab",
- "rand 0.10.2",
+ "rand 0.10.3",
  "rand_pcg",
  "ring",
  "rustc-hash",
@@ -1121,7 +1121,7 @@ dependencies = [
  "once_cell",
  "socket2 0.6.5",
  "tracing",
- "windows-sys 0.52.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -1144,6 +1144,16 @@ name = "r-efi"
 version = "6.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f8dcc9c7d52a811697d2151c701e0d08956f92b0e24136cf4cf27b57a6a0d9bf"
+
+[[package]]
+name = "rand"
+version = "0.9.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b9ef1d0d795eb7d84685bca4f72f3649f064e6641543d3a8c415898726a57b41"
+dependencies = [
+ "rand_chacha",
+ "rand_core 0.9.5",
+]
 
 [[package]]
 name = "rand"
@@ -1210,7 +1220,7 @@ dependencies = [
  "log",
  "percent-encoding",
  "pin-project-lite",
- "rand 0.10.2",
+ "rand 0.10.3",
  "rustls",
  "rustls-native-certs",
  "ryu",
@@ -1230,7 +1240,7 @@ dependencies = [
  "base64 0.23.1",
  "futures-util",
  "pretty_assertions",
- "rand 0.10.2",
+ "rand 0.10.3",
  "redis",
  "redis-server-wrapper",
  "redis-tower",
@@ -1280,8 +1290,9 @@ dependencies = [
 
 [[package]]
 name = "redis-tower"
-version = "0.1.1"
-source = "git+https://github.com/joshrotenberg/redis-tower?rev=e36f2308f8a9e3682d07fbab283e797feb8fd14b#e36f2308f8a9e3682d07fbab283e797feb8fd14b"
+version = "0.1.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "946205b52b6f1950049661f9e5d13eafc42f28104557d5b52de999b72d80e6f8"
 dependencies = [
  "async-stream",
  "bytes",
@@ -1303,8 +1314,9 @@ dependencies = [
 
 [[package]]
 name = "redis-tower-cluster"
-version = "0.1.1"
-source = "git+https://github.com/joshrotenberg/redis-tower?rev=e36f2308f8a9e3682d07fbab283e797feb8fd14b#e36f2308f8a9e3682d07fbab283e797feb8fd14b"
+version = "0.1.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b0b7c28c33b418a0108f38bb8c5d44f20fa64d04c58543b4ec7cfde465d05978"
 dependencies = [
  "async-stream",
  "bytes",
@@ -1322,8 +1334,9 @@ dependencies = [
 
 [[package]]
 name = "redis-tower-commands"
-version = "0.1.1"
-source = "git+https://github.com/joshrotenberg/redis-tower?rev=e36f2308f8a9e3682d07fbab283e797feb8fd14b#e36f2308f8a9e3682d07fbab283e797feb8fd14b"
+version = "0.1.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d9be904757d4b31ce4ca8e674356bbe05934d41723fc14b1f509dace8eeff365"
 dependencies = [
  "bytes",
  "hex",
@@ -1334,8 +1347,9 @@ dependencies = [
 
 [[package]]
 name = "redis-tower-core"
-version = "0.1.1"
-source = "git+https://github.com/joshrotenberg/redis-tower?rev=e36f2308f8a9e3682d07fbab283e797feb8fd14b#e36f2308f8a9e3682d07fbab283e797feb8fd14b"
+version = "0.1.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "8432b27bd13df313cd9a052290f47ef3ed6bd0681383626122ebf77aca4bf1e1"
 dependencies = [
  "bytes",
  "futures",
@@ -1356,8 +1370,9 @@ dependencies = [
 
 [[package]]
 name = "redis-tower-protocol"
-version = "0.1.2"
-source = "git+https://github.com/joshrotenberg/redis-tower?rev=e36f2308f8a9e3682d07fbab283e797feb8fd14b#e36f2308f8a9e3682d07fbab283e797feb8fd14b"
+version = "0.1.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "9e2886a68f13604e6957cd51a27fb87f048cb42ca4d6293bdeb6030546edcf91"
 dependencies = [
  "bytes",
  "resp-rs",

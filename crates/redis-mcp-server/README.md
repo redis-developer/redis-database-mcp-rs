@@ -38,9 +38,11 @@ network. The Redis target may use `rediss://` for TLS.
 ## Configuration and deployment
 
 CLI values override environment variables, which override an explicitly
-selected TOML file, which overrides built-in defaults. Secrets are
-environment-only. The packaged `redis-mcp.example.toml` lists every non-secret
-setting and its default.
+selected TOML file, which overrides built-in defaults. HTTP Bearer tokens are
+environment-only so they do not appear in process arguments or checked-in
+configuration. Redis credentials may be supplied in the configured target URL.
+The packaged `redis-mcp.example.toml` lists every non-secret setting and its
+default.
 
 The default binary compiles the full library plus the opt-in command-document
 fetcher. Runtime defaults remain curated and read-only. Slim builds mirror the

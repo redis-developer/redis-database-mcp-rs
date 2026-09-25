@@ -124,7 +124,9 @@ approval outcome, and `completed` timeline events. Repeat the publish,
 approval, or completion with the same idempotency key to verify that the
 operation is not duplicated. If the client does not advertise form
 elicitation, the approval call reports the missing capability and status stays
-durably `awaiting_approval` for inspection or recovery. Read
+durably `awaiting_approval` for inspection or recovery. Recovery records a
+durable cancellation for the old claimant before transferring ownership; the
+new claimant requests a fresh approval if needed. Read
 `redis-mcp://guidance/agent-handoffs` for sharding, ownership, and recovery
 rules.
 

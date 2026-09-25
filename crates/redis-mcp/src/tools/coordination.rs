@@ -67,7 +67,20 @@ if status == 'completed' then return redis.error_reply('HANDOFF_COMPLETED') end
 local stream_id = redis.call('HGET', KEYS[1], 'stream_id')
 if stream_id ~= ARGV[5] then return redis.error_reply('HANDOFF_STREAM_MISMATCH') end
 local next_status = 'claimed'
-if status == 'awaiting_approval' then next_status = 'awaiting_approval' end
+if status == 'awaiting_approval' and ARGV[4] == 'recovered' then
+  local approval_key = redis.call('HGET', KEYS[1], 'approval_idempotency')
+  local approval_status = redis.call('HGET', KEYS[1], 'approval_status')
+  if approval_key and approval_status == 'pending' then
+    redis.call('HSET', KEYS[1],
+      'approval_status', 'cancelled',
+      'approval_resolved_at_ms', ARGV[3],
+      'approval:' .. approval_key .. ':status', 'cancelled',
+      'approval:' .. approval_key .. ':resolved_at_ms', ARGV[3])
+    redis.call('XADD', KEYS[2], '*', 'event', 'approval_cancelled', 'at_ms', ARGV[3])
+  end
+elseif status == 'awaiting_approval' then
+  next_status = 'awaiting_approval'
+end
 redis.call('HSET', KEYS[1], 'status', next_status, 'claimed_by', ARGV[1],
   'consumer', ARGV[2], 'claimed_at_ms', ARGV[3])
 redis.call('XADD', KEYS[2], '*', 'event', ARGV[4], 'at_ms', ARGV[3])
@@ -98,15 +111,16 @@ local status = redis.call('HGET', KEYS[1], 'status')
 if status == 'completed' then return redis.error_reply('HANDOFF_COMPLETED') end
 local owner = redis.call('HGET', KEYS[1], 'claimed_by')
 if owner ~= ARGV[1] then return redis.error_reply('HANDOFF_NOT_OWNED') end
-local existing_key = redis.call('HGET', KEYS[1], 'approval_idempotency')
-if existing_key == ARGV[2] then
-  local existing_message = redis.call('HGET', KEYS[1], 'approval_message')
+local record_prefix = 'approval:' .. ARGV[2] .. ':'
+local existing_id = redis.call('HGET', KEYS[1], record_prefix .. 'id')
+if existing_id then
+  local existing_message = redis.call('HGET', KEYS[1], record_prefix .. 'message')
   if existing_message ~= ARGV[4] then return redis.error_reply('HANDOFF_APPROVAL_CONFLICT') end
   return {
-    redis.call('HGET', KEYS[1], 'approval_id'),
-    redis.call('HGET', KEYS[1], 'approval_status'),
-    redis.call('HGET', KEYS[1], 'approval_requested_at_ms') or '',
-    redis.call('HGET', KEYS[1], 'approval_resolved_at_ms') or '',
+    existing_id,
+    redis.call('HGET', KEYS[1], record_prefix .. 'status'),
+    redis.call('HGET', KEYS[1], record_prefix .. 'requested_at_ms') or '',
+    redis.call('HGET', KEYS[1], record_prefix .. 'resolved_at_ms') or '',
     0
   }
 end
@@ -118,7 +132,11 @@ redis.call('HSET', KEYS[1],
   'approval_idempotency', ARGV[2],
   'approval_status', 'pending',
   'approval_message', ARGV[4],
-  'approval_requested_at_ms', ARGV[5])
+  'approval_requested_at_ms', ARGV[5],
+  record_prefix .. 'id', ARGV[3],
+  record_prefix .. 'status', 'pending',
+  record_prefix .. 'message', ARGV[4],
+  record_prefix .. 'requested_at_ms', ARGV[5])
 redis.call('HDEL', KEYS[1], 'approval_resolved_at_ms')
 redis.call('XADD', KEYS[2], '*', 'event', 'approval_requested', 'at_ms', ARGV[5])
 return {ARGV[3], 'pending', ARGV[5], '', 1}
@@ -128,28 +146,35 @@ const RESOLVE_APPROVAL_SCRIPT: &str = r#"
 if redis.call('EXISTS', KEYS[1]) == 0 then return redis.error_reply('HANDOFF_NOT_FOUND') end
 local owner = redis.call('HGET', KEYS[1], 'claimed_by')
 if owner ~= ARGV[1] then return redis.error_reply('HANDOFF_NOT_OWNED') end
-local approval_id = redis.call('HGET', KEYS[1], 'approval_id')
-local approval_key = redis.call('HGET', KEYS[1], 'approval_idempotency')
-if approval_id ~= ARGV[2] or approval_key ~= ARGV[3] then
+local record_prefix = 'approval:' .. ARGV[3] .. ':'
+local approval_id = redis.call('HGET', KEYS[1], record_prefix .. 'id')
+if approval_id ~= ARGV[2] then
   return redis.error_reply('HANDOFF_APPROVAL_MISMATCH')
 end
-local approval_status = redis.call('HGET', KEYS[1], 'approval_status')
+local approval_status = redis.call('HGET', KEYS[1], record_prefix .. 'status')
 if approval_status ~= 'pending' then
   return {
     approval_status,
-    redis.call('HGET', KEYS[1], 'approval_requested_at_ms') or '',
-    redis.call('HGET', KEYS[1], 'approval_resolved_at_ms') or '',
+    redis.call('HGET', KEYS[1], record_prefix .. 'requested_at_ms') or '',
+    redis.call('HGET', KEYS[1], record_prefix .. 'resolved_at_ms') or '',
     0
   }
 end
 local status = redis.call('HGET', KEYS[1], 'status')
 if status ~= 'awaiting_approval' then return redis.error_reply('HANDOFF_APPROVAL_NOT_PENDING') end
+local current_id = redis.call('HGET', KEYS[1], 'approval_id')
+local current_key = redis.call('HGET', KEYS[1], 'approval_idempotency')
+if current_id ~= ARGV[2] or current_key ~= ARGV[3] then
+  return redis.error_reply('HANDOFF_APPROVAL_MISMATCH')
+end
 redis.call('HSET', KEYS[1],
   'status', 'claimed',
   'approval_status', ARGV[4],
-  'approval_resolved_at_ms', ARGV[5])
+  'approval_resolved_at_ms', ARGV[5],
+  record_prefix .. 'status', ARGV[4],
+  record_prefix .. 'resolved_at_ms', ARGV[5])
 redis.call('XADD', KEYS[2], '*', 'event', 'approval_' .. ARGV[4], 'at_ms', ARGV[5])
-return {ARGV[4], redis.call('HGET', KEYS[1], 'approval_requested_at_ms'), ARGV[5], 1}
+return {ARGV[4], redis.call('HGET', KEYS[1], record_prefix .. 'requested_at_ms'), ARGV[5], 1}
 "#;
 
 #[derive(Debug, Deserialize, JsonSchema)]
@@ -781,7 +806,7 @@ fn approval_tool(state: Arc<ToolState>) -> Tool {
                         )?;
                         let resolved = ApprovalState {
                             approval_id: approval_id.clone(),
-                            outcome: ApprovalOutcome::Accepted,
+                            outcome: ApprovalOutcome::Cancelled,
                             message: input.message.clone(),
                             requested_at_ms,
                             resolved_at_ms: Some(u64::MAX),
@@ -792,7 +817,7 @@ fn approval_tool(state: Arc<ToolState>) -> Tool {
                                 &fields,
                                 CoordinationStatus::Claimed,
                                 resolved,
-                                "approval_accepted",
+                                "approval_cancelled",
                             )?,
                             "approval-resolved handoff status response",
                         )?;
@@ -800,7 +825,7 @@ fn approval_tool(state: Arc<ToolState>) -> Tool {
                             &ApprovalOutput {
                                 handle: input.handle.clone(),
                                 approval_id: approval_id.clone(),
-                                outcome: ApprovalOutcome::Accepted,
+                                outcome: ApprovalOutcome::Cancelled,
                                 requested_at_ms,
                                 resolved_at_ms: u64::MAX,
                                 resource_uri: resource_uri.clone(),

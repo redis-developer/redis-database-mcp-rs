@@ -38,8 +38,9 @@ are not durable identities.
   The approval form contains only one required boolean `confirm` field.
 - A 2026-07-28 client must advertise form elicitation. If it cannot, the call
   fails with the protocol's missing-capability error while Redis retains the
-  inspectable `awaiting_approval` state. A recovering claimant can reissue the
-  same approval idempotently.
+  inspectable `awaiting_approval` state. Recovery durably cancels that pending
+  approval before transferring ownership; the new claimant uses a fresh
+  idempotency key if approval is still required.
 - Divide shard polling among workers; the default shard count is exposed by
   application configuration, not inferred from Redis keys.
 - Choose a recovery idle threshold longer than the normal processing budget.

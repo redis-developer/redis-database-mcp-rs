@@ -125,6 +125,12 @@ entries contain an event (`published`, `claimed`, `recovered`,
 `approval_cancelled`, or `completed`)
 and server timestamp.
 
+Approval state also includes compact per-idempotency records in the handoff
+Hash so delayed retries remain stable after later approvals. Recovering an
+`awaiting_approval` entry records `approval_cancelled` before `recovered` and
+transfers the handoff in `claimed` state; pending approval authority is never
+silently transferred between principals.
+
 Principal material and raw idempotency keys are never stored. SHA-256 digests
 are routing/lookup identifiers, not authentication secrets.
 

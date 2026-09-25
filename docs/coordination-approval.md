@@ -32,14 +32,17 @@ Stream entry. `redis_handoff_complete` rejects an `awaiting_approval` handoff.
 
 Both rounds are safe to retry. A repeated idempotency key with the same
 message reuses the original approval. Once resolved, retries return the first
-committed outcome without asking the user again. Reusing a key with a
-different message is rejected.
+committed outcome without asking the user again, even after later approvals
+have completed. Reusing a key with a different message is rejected. Redis
+retains a compact per-idempotency approval record in the handoff Hash while
+the top-level approval fields expose the latest approval through status.
 
 No continuation registry lives in the MCP process. Approval fields share the
 handoff Hash and its existing Cluster hash tag, while audit events use the
 same-slot timeline Stream. If the claimant exits, `redis_handoff_recover`
-transfers the pending Stream entry without discarding `awaiting_approval`; the
-new claimant can reissue the same approval and resolve it.
+atomically cancels the old principal's pending approval while transferring the
+Stream entry. The new claimant can inspect that durable cancellation and issue
+a fresh approval with a new idempotency key; it does not need the old raw key.
 
 ## Capability fallback
 

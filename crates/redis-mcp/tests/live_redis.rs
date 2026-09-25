@@ -718,6 +718,22 @@ async fn durable_handoff_approval_round_trips_without_process_local_state() {
     assert_eq!(cancelled["outcome"], "cancelled");
     assert_eq!(handler_observer.calls.load(Ordering::SeqCst), 3);
 
+    // Historical idempotency records survive later approvals. A delayed retry
+    // of the first request returns its committed result without creating a
+    // fourth approval or eliciting again.
+    let delayed_replay = call_structured(
+        &worker,
+        "redis_handoff_request_approval",
+        serde_json::json!({
+            "handle": handle,
+            "idempotency_key": "restart-approval",
+            "message": "Approve restarting the affected service?"
+        }),
+    )
+    .await;
+    assert_eq!(delayed_replay, approved);
+    assert_eq!(handler_observer.calls.load(Ordering::SeqCst), 3);
+
     let status = call_structured(
         &worker,
         "redis_handoff_status",
@@ -826,9 +842,10 @@ async fn approval_without_client_capability_stays_durably_inspectable() {
             .contains("HANDOFF_APPROVAL_PENDING")
     );
 
-    // A new process/principal can recover the pending Stream entry, re-emit
-    // the same durable approval, and resolve it without any server-local
-    // continuation registry.
+    // A new process/principal can recover the pending Stream entry without
+    // knowing the original raw idempotency key. Recovery durably cancels the
+    // old principal's pending approval; the new claimant can request a fresh
+    // approval without any server-local continuation registry.
     tokio::time::sleep(Duration::from_millis(5)).await;
     let mut accepted = HashMap::new();
     accepted.insert("confirm".to_string(), ElicitFieldValue::Boolean(true));
@@ -850,13 +867,25 @@ async fn approval_without_client_capability_stays_durably_inspectable() {
     )
     .await;
     assert_eq!(recovered["claimed"], true);
+    let recovered_status = call_structured(
+        &recovery_worker,
+        "redis_handoff_status",
+        serde_json::json!({"handle": handle, "max_events": 10}),
+    )
+    .await;
+    assert_eq!(recovered_status["status"], "claimed");
+    assert_eq!(recovered_status["approval"]["outcome"], "cancelled");
+    let recovered_message = recovered_status["approval"]["message"]
+        .as_str()
+        .expect("recovered approval message")
+        .to_string();
     let resolved = call_structured(
         &recovery_worker,
         "redis_handoff_request_approval",
         serde_json::json!({
             "handle": handle,
-            "idempotency_key": "fallback-approval",
-            "message": "Approve this action?"
+            "idempotency_key": "recovered-approval",
+            "message": recovered_message
         }),
     )
     .await;

@@ -3,12 +3,12 @@
     {
       "arguments": [
         {
-          "description": "One of producer, worker, or recovery; omit to explain the full lifecycle.",
+          "description": "One of producer, worker, approver, or recovery; omit to explain the full lifecycle.",
           "name": "role",
           "required": false
         }
       ],
-      "description": "Guide a producer, worker, or recovery operator through the synchronous durable handoff lifecycle.",
+      "description": "Guide a producer, worker, approver, or recovery operator through the durable handoff lifecycle.",
       "name": "redis_coordinate_handoff",
       "title": "Coordinate durable agent work"
     },

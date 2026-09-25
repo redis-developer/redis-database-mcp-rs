@@ -24,6 +24,11 @@ pub(crate) fn server_error(message: &str) -> RedisError {
         "HANDOFF_ALREADY_COMPLETED",
         "HANDOFF_COMPLETED",
         "HANDOFF_STREAM_MISMATCH",
+        "HANDOFF_APPROVAL_PENDING",
+        "HANDOFF_APPROVAL_CONFLICT",
+        "HANDOFF_APPROVAL_MISMATCH",
+        "HANDOFF_APPROVAL_NOT_PENDING",
+        "HANDOFF_NOT_CLAIMED",
     ]
     .into_iter()
     .find(|code| message.split_whitespace().any(|part| part == *code))
@@ -35,7 +40,12 @@ pub(crate) fn server_error(message: &str) -> RedisError {
         | "HANDOFF_NOT_FOUND"
         | "HANDOFF_ALREADY_COMPLETED"
         | "HANDOFF_COMPLETED"
-        | "HANDOFF_STREAM_MISMATCH" => RedisErrorKind::InvalidRequest,
+        | "HANDOFF_STREAM_MISMATCH"
+        | "HANDOFF_APPROVAL_PENDING"
+        | "HANDOFF_APPROVAL_CONFLICT"
+        | "HANDOFF_APPROVAL_MISMATCH"
+        | "HANDOFF_APPROVAL_NOT_PENDING"
+        | "HANDOFF_NOT_CLAIMED" => RedisErrorKind::InvalidRequest,
         _ if message.contains("ACL failure in script") => RedisErrorKind::Authorization,
         _ if message.contains("user executing the script can't run this command") => {
             RedisErrorKind::Authorization
@@ -642,6 +652,11 @@ mod tests {
                 "ERR HANDOFF_NOT_FOUND",
                 RedisErrorKind::InvalidRequest,
                 "HANDOFF_NOT_FOUND",
+            ),
+            (
+                "ERR HANDOFF_APPROVAL_PENDING",
+                RedisErrorKind::InvalidRequest,
+                "HANDOFF_APPROVAL_PENDING",
             ),
             ("WRONGTYPE wrong value", RedisErrorKind::Server, "WRONGTYPE"),
         ] {

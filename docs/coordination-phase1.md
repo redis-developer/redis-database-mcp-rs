@@ -4,6 +4,11 @@ Status: accepted Phase 1 contract. Parent design: issue #109. Tasks,
 elicitation, and notifications are deferred; this contract is synchronous and
 works with ordinary MCP tool and resource reads.
 
+Phase 2's first compatible extension is tracked by #118: the same bundle now
+adds `redis_handoff_request_approval`, which stores a same-slot durable waiting
+state before returning a 2026-07-28 MRTR form. The Phase 1 tools and contracts
+below remain unchanged.
+
 ## Surface and policy
 
 The `coordination` Cargo feature compiles one opt-in runtime bundle:
@@ -115,8 +120,16 @@ Inbox entries contain `handle`, serialized `payload`, serialized `metadata`,
 fields plus `capability`, `shard`, `status`, publisher digest, inbox
 `stream_id`, `published_at_ms`, `attempts`, and—after transitions—claimant
 digest, consumer, claim/completion timestamps, and serialized result. Timeline
-entries contain an event (`published`, `claimed`, `recovered`, or `completed`)
+entries contain an event (`published`, `claimed`, `recovered`,
+`approval_requested`, `approval_accepted`, `approval_declined`,
+`approval_cancelled`, or `completed`)
 and server timestamp.
+
+Approval state also includes compact per-idempotency records in the handoff
+Hash so delayed retries remain stable after later approvals. Recovering an
+`awaiting_approval` entry records `approval_cancelled` before `recovered` and
+transfers the handoff in `claimed` state; pending approval authority is never
+silently transferred between principals.
 
 Principal material and raw idempotency keys are never stored. SHA-256 digests
 are routing/lookup identifiers, not authentication secrets.

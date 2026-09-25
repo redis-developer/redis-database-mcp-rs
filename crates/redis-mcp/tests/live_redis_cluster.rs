@@ -1,12 +1,13 @@
 #![cfg(unix)]
 
 use std::{
-    collections::{BTreeMap, BTreeSet},
+    collections::{BTreeMap, BTreeSet, HashMap},
     io,
     net::TcpListener,
     time::Duration,
 };
 
+use async_trait::async_trait;
 use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64};
 use redis_mcp::{
     AccessMode, CapabilityStatus, DirectRedis, DirectRedisBlocking, DirectRedisCluster,
@@ -16,7 +17,10 @@ use redis_mcp::{
     RedisTransactionRequest, RedisValue, RedisVersion, ToolBundle,
 };
 use redis_server_wrapper::{Error as RedisServerError, RedisCluster, RedisClusterHandle};
-use tower_mcp::client::{ChannelTransport, McpClient};
+use tower_mcp::{
+    ElicitFieldValue, ElicitRequestParams, ElicitResult, JsonRpcError, ProtocolSupport,
+    client::{ChannelTransport, ClientHandler, McpClient},
+};
 
 static CLUSTER_TEST_LOCK: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
 
@@ -35,7 +39,7 @@ async fn durable_handoffs_keep_every_atomic_operation_in_one_cluster_slot() {
         &namespace,
     )
     .await;
-    let worker = coordination_router_client(
+    let worker = coordination_approval_router_client(
         DirectRedisCluster::connect(&cluster.seed_urls)
             .await
             .expect("connect worker to coordination cluster"),
@@ -81,6 +85,20 @@ async fn durable_handoffs_keep_every_atomic_operation_in_one_cluster_slot() {
             .structured_content
             .expect("structured claim result");
         assert_eq!(claimed["handoff"]["handle"], handle);
+        let approved = worker
+            .call_tool(
+                "redis_handoff_request_approval",
+                serde_json::json!({
+                    "handle": handle,
+                    "idempotency_key": format!("cluster-approval-{index}"),
+                    "message": format!("Approve clustered work item {index}?")
+                }),
+            )
+            .await
+            .expect("approve same-slot handoff")
+            .structured_content
+            .expect("structured approval result");
+        assert_eq!(approved["outcome"], "accepted");
         let completed = worker
             .call_tool(
                 "redis_handoff_complete",
@@ -1315,6 +1333,51 @@ async fn coordination_router_client(
         .initialize("redis-mcp-coordination-cluster-test", "0")
         .await
         .expect("initialize coordination Cluster MCP client");
+    client
+}
+
+#[derive(Clone, Copy)]
+struct AcceptApproval;
+
+#[async_trait]
+impl ClientHandler for AcceptApproval {
+    async fn handle_elicit(
+        &self,
+        _params: ElicitRequestParams,
+    ) -> Result<ElicitResult, JsonRpcError> {
+        let mut content = HashMap::new();
+        content.insert("confirm".to_string(), ElicitFieldValue::Boolean(true));
+        Ok(ElicitResult::accept(content))
+    }
+}
+
+async fn coordination_approval_router_client(
+    executor: impl RedisExecutor,
+    seed_urls: &[String],
+    namespace: &str,
+) -> McpClient {
+    let blocking = DirectRedisBlocking::cluster(seed_urls)
+        .expect("prepare approval coordination Cluster blocking executor");
+    let router = RedisMcp::builder(executor)
+        .access(AccessMode::Full)
+        .bundles([ToolBundle::Coordination])
+        .coordination_config(
+            redis_mcp::CoordinationConfig::default()
+                .with_namespace(namespace)
+                .with_shards(4),
+        )
+        .coordination_blocking(blocking)
+        .build();
+    let client = McpClient::builder()
+        .protocol_support(ProtocolSupport::try_new(["2026-07-28"]).expect("final protocol"))
+        .with_elicitation()
+        .connect(ChannelTransport::new(router), AcceptApproval)
+        .await
+        .expect("connect approval coordination Cluster MCP client");
+    client
+        .discover("redis-mcp-coordination-cluster-approval-test", "0")
+        .await
+        .expect("discover approval coordination Cluster MCP server");
     client
 }
 

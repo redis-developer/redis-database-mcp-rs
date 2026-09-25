@@ -1249,12 +1249,13 @@
       "library_tools": [
         "redis_handoff_publish",
         "redis_handoff_claim",
+        "redis_handoff_request_approval",
         "redis_handoff_complete",
         "redis_handoff_status",
         "redis_handoff_recover"
       ],
       "disposition": "implemented",
-      "reason": "The opt-in coordination bundle composes Redis Streams, consumer groups, and same-slot durable state into bounded at-least-once agent handoffs: publishing and completion are atomic and idempotent, claims and recovery are finite, principals remain stable across authenticated transports, payloads are explicitly tagged, and canonical status resources expose an authorized correlated timeline."
+      "reason": "The opt-in coordination bundle composes Redis Streams, consumer groups, same-slot durable state, and MCP MRTR form elicitation into bounded at-least-once agent handoffs: publishing, approval transitions, and completion are atomic and idempotent, claims and recovery are finite, incapable clients leave an inspectable waiting state, principals remain stable across authenticated transports, payloads are explicitly tagged, and canonical status resources expose an authorized correlated timeline."
     },
     {
       "id": "aliases.application",

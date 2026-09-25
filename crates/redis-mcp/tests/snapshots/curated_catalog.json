@@ -20257,6 +20257,122 @@
         "minimum_redis_version": "6.2.0",
         "required_commands": [
           "HGETALL",
+          "EVAL",
+          "EXISTS",
+          "HGET",
+          "HSET",
+          "HDEL",
+          "XADD"
+        ],
+        "required_module": null
+      },
+      "family": null,
+      "name": "redis_handoff_request_approval",
+      "output_policy": "intrinsically_bounded",
+      "protocol": {
+        "annotations": {
+          "destructiveHint": false,
+          "idempotentHint": true
+        },
+        "description": "Durably mark a claimed handoff as awaiting approval, request one bounded boolean confirmation through MCP elicitation, and atomically record accept, decline, or cancel when the client retries the call.",
+        "inputSchema": {
+          "$defs": {
+            "CoordinationHandle": {
+              "description": "Opaque durable handoff locator returned by publish and claim.",
+              "type": "string"
+            }
+          },
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "handle": {
+              "$ref": "#/$defs/CoordinationHandle"
+            },
+            "idempotency_key": {
+              "description": "Stable retry key scoped to this approval point.",
+              "type": "string"
+            },
+            "message": {
+              "description": "Human-readable, non-sensitive confirmation question.",
+              "type": "string"
+            }
+          },
+          "required": [
+            "handle",
+            "idempotency_key",
+            "message"
+          ],
+          "title": "ApprovalInput",
+          "type": "object"
+        },
+        "name": "redis_handoff_request_approval",
+        "outputSchema": {
+          "$defs": {
+            "ApprovalOutcome": {
+              "enum": [
+                "pending",
+                "accepted",
+                "declined",
+                "cancelled"
+              ],
+              "type": "string"
+            },
+            "CoordinationHandle": {
+              "description": "Opaque durable handoff locator returned by publish and claim.",
+              "type": "string"
+            }
+          },
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "approval_id": {
+              "type": "string"
+            },
+            "handle": {
+              "$ref": "#/$defs/CoordinationHandle"
+            },
+            "outcome": {
+              "$ref": "#/$defs/ApprovalOutcome"
+            },
+            "requested_at_ms": {
+              "format": "uint64",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "resolved_at_ms": {
+              "format": "uint64",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "resource_uri": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "handle",
+            "approval_id",
+            "outcome",
+            "requested_at_ms",
+            "resolved_at_ms",
+            "resource_uri"
+          ],
+          "title": "ApprovalOutput",
+          "type": "object"
+        },
+        "title": "Request Durable Redis Handoff Approval"
+      },
+      "required_access": "read_write",
+      "required_module": null,
+      "requires_raw_opt_in": false
+    },
+    {
+      "bundle": "coordination",
+      "capability_requirements": {
+        "deployment": "any",
+        "minimum_module_version": null,
+        "minimum_redis_version": "6.2.0",
+        "required_commands": [
+          "HGETALL",
           "XREVRANGE"
         ],
         "required_module": null
@@ -20300,6 +20416,49 @@
         "name": "redis_handoff_status",
         "outputSchema": {
           "$defs": {
+            "ApprovalOutcome": {
+              "enum": [
+                "pending",
+                "accepted",
+                "declined",
+                "cancelled"
+              ],
+              "type": "string"
+            },
+            "ApprovalState": {
+              "additionalProperties": false,
+              "properties": {
+                "approval_id": {
+                  "type": "string"
+                },
+                "message": {
+                  "type": "string"
+                },
+                "outcome": {
+                  "$ref": "#/$defs/ApprovalOutcome"
+                },
+                "requested_at_ms": {
+                  "format": "uint64",
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                "resolved_at_ms": {
+                  "format": "uint64",
+                  "minimum": 0,
+                  "type": [
+                    "integer",
+                    "null"
+                  ]
+                }
+              },
+              "required": [
+                "approval_id",
+                "outcome",
+                "message",
+                "requested_at_ms"
+              ],
+              "type": "object"
+            },
             "CoordinationHandle": {
               "description": "Opaque durable handoff locator returned by publish and claim.",
               "type": "string"
@@ -20394,6 +20553,7 @@
               "enum": [
                 "published",
                 "claimed",
+                "awaiting_approval",
                 "completed"
               ],
               "type": "string"
@@ -20424,6 +20584,16 @@
           "$schema": "https://json-schema.org/draft/2020-12/schema",
           "additionalProperties": false,
           "properties": {
+            "approval": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/ApprovalState"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
             "attempts": {
               "format": "uint64",
               "minimum": 0,

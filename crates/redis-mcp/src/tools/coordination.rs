@@ -13,7 +13,11 @@ use tower_mcp::{
     McpRouter, Tool, ToolBuilder,
     context::RequestContext,
     extract::{Context, Json, State},
-    protocol::{ReadResourceResult, RequestOutcome},
+    protocol::{
+        ElicitAction, ElicitFieldValue, ElicitFormParams, ElicitFormSchema, ElicitMode,
+        ElicitRequestParams, InputRequest, InputRequests, InputRequiredResult, InputResponse,
+        InputResponses, ReadResourceResult, RequestOutcome,
+    },
     resource::ResourceTemplateBuilder,
 };
 
@@ -30,6 +34,7 @@ const GROUP: &str = "redis-mcp-handoffs-v1";
 const MAX_IDEMPOTENCY_BYTES: usize = 128;
 const MAX_CORRELATION_BYTES: usize = 128;
 const MAX_WORKER_BYTES: usize = 64;
+const MAX_APPROVAL_MESSAGE_BYTES: usize = 2 * 1024;
 const MAX_WAIT_MS: u64 = 5_000;
 const DEFAULT_STATUS_EVENTS: usize = 20;
 const MAX_STATUS_EVENTS: usize = 100;
@@ -61,7 +66,9 @@ local status = redis.call('HGET', KEYS[1], 'status')
 if status == 'completed' then return redis.error_reply('HANDOFF_COMPLETED') end
 local stream_id = redis.call('HGET', KEYS[1], 'stream_id')
 if stream_id ~= ARGV[5] then return redis.error_reply('HANDOFF_STREAM_MISMATCH') end
-redis.call('HSET', KEYS[1], 'status', 'claimed', 'claimed_by', ARGV[1],
+local next_status = 'claimed'
+if status == 'awaiting_approval' then next_status = 'awaiting_approval' end
+redis.call('HSET', KEYS[1], 'status', next_status, 'claimed_by', ARGV[1],
   'consumer', ARGV[2], 'claimed_at_ms', ARGV[3])
 redis.call('XADD', KEYS[2], '*', 'event', ARGV[4], 'at_ms', ARGV[3])
 return redis.call('HINCRBY', KEYS[1], 'attempts', 1)
@@ -73,6 +80,7 @@ if existing then return {tonumber(existing), redis.call('HGET', KEYS[2], 'status
 if redis.call('EXISTS', KEYS[2]) == 0 then return redis.error_reply('HANDOFF_NOT_FOUND') end
 local status = redis.call('HGET', KEYS[2], 'status')
 if status == 'completed' then return redis.error_reply('HANDOFF_ALREADY_COMPLETED') end
+if status == 'awaiting_approval' then return redis.error_reply('HANDOFF_APPROVAL_PENDING') end
 local owner = redis.call('HGET', KEYS[2], 'claimed_by')
 if owner ~= ARGV[2] then return redis.error_reply('HANDOFF_NOT_OWNED') end
 local stream_id = redis.call('HGET', KEYS[2], 'stream_id')
@@ -82,6 +90,66 @@ redis.call('XADD', KEYS[3], '*', 'event', 'completed', 'at_ms', ARGV[4])
 local acknowledged = redis.call('XACK', KEYS[1], ARGV[1], stream_id)
 redis.call('SET', KEYS[4], tostring(acknowledged))
 return {acknowledged, 'completed', ARGV[3]}
+"#;
+
+const REQUEST_APPROVAL_SCRIPT: &str = r#"
+if redis.call('EXISTS', KEYS[1]) == 0 then return redis.error_reply('HANDOFF_NOT_FOUND') end
+local status = redis.call('HGET', KEYS[1], 'status')
+if status == 'completed' then return redis.error_reply('HANDOFF_COMPLETED') end
+local owner = redis.call('HGET', KEYS[1], 'claimed_by')
+if owner ~= ARGV[1] then return redis.error_reply('HANDOFF_NOT_OWNED') end
+local existing_key = redis.call('HGET', KEYS[1], 'approval_idempotency')
+if existing_key == ARGV[2] then
+  local existing_message = redis.call('HGET', KEYS[1], 'approval_message')
+  if existing_message ~= ARGV[4] then return redis.error_reply('HANDOFF_APPROVAL_CONFLICT') end
+  return {
+    redis.call('HGET', KEYS[1], 'approval_id'),
+    redis.call('HGET', KEYS[1], 'approval_status'),
+    redis.call('HGET', KEYS[1], 'approval_requested_at_ms') or '',
+    redis.call('HGET', KEYS[1], 'approval_resolved_at_ms') or '',
+    0
+  }
+end
+if status == 'awaiting_approval' then return redis.error_reply('HANDOFF_APPROVAL_PENDING') end
+if status ~= 'claimed' then return redis.error_reply('HANDOFF_NOT_CLAIMED') end
+redis.call('HSET', KEYS[1],
+  'status', 'awaiting_approval',
+  'approval_id', ARGV[3],
+  'approval_idempotency', ARGV[2],
+  'approval_status', 'pending',
+  'approval_message', ARGV[4],
+  'approval_requested_at_ms', ARGV[5])
+redis.call('HDEL', KEYS[1], 'approval_resolved_at_ms')
+redis.call('XADD', KEYS[2], '*', 'event', 'approval_requested', 'at_ms', ARGV[5])
+return {ARGV[3], 'pending', ARGV[5], '', 1}
+"#;
+
+const RESOLVE_APPROVAL_SCRIPT: &str = r#"
+if redis.call('EXISTS', KEYS[1]) == 0 then return redis.error_reply('HANDOFF_NOT_FOUND') end
+local owner = redis.call('HGET', KEYS[1], 'claimed_by')
+if owner ~= ARGV[1] then return redis.error_reply('HANDOFF_NOT_OWNED') end
+local approval_id = redis.call('HGET', KEYS[1], 'approval_id')
+local approval_key = redis.call('HGET', KEYS[1], 'approval_idempotency')
+if approval_id ~= ARGV[2] or approval_key ~= ARGV[3] then
+  return redis.error_reply('HANDOFF_APPROVAL_MISMATCH')
+end
+local approval_status = redis.call('HGET', KEYS[1], 'approval_status')
+if approval_status ~= 'pending' then
+  return {
+    approval_status,
+    redis.call('HGET', KEYS[1], 'approval_requested_at_ms') or '',
+    redis.call('HGET', KEYS[1], 'approval_resolved_at_ms') or '',
+    0
+  }
+end
+local status = redis.call('HGET', KEYS[1], 'status')
+if status ~= 'awaiting_approval' then return redis.error_reply('HANDOFF_APPROVAL_NOT_PENDING') end
+redis.call('HSET', KEYS[1],
+  'status', 'claimed',
+  'approval_status', ARGV[4],
+  'approval_resolved_at_ms', ARGV[5])
+redis.call('XADD', KEYS[2], '*', 'event', 'approval_' .. ARGV[4], 'at_ms', ARGV[5])
+return {ARGV[4], redis.call('HGET', KEYS[1], 'approval_requested_at_ms'), ARGV[5], 1}
 "#;
 
 #[derive(Debug, Deserialize, JsonSchema)]
@@ -168,6 +236,69 @@ struct CompleteOutput {
     resource_uri: String,
 }
 
+#[derive(Debug, Clone, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+struct ApprovalInput {
+    handle: CoordinationHandle,
+    /// Stable retry key scoped to this approval point.
+    idempotency_key: String,
+    /// Human-readable, non-sensitive confirmation question.
+    message: String,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+enum ApprovalOutcome {
+    Pending,
+    Accepted,
+    Declined,
+    Cancelled,
+}
+
+impl ApprovalOutcome {
+    const fn as_str(self) -> &'static str {
+        match self {
+            Self::Pending => "pending",
+            Self::Accepted => "accepted",
+            Self::Declined => "declined",
+            Self::Cancelled => "cancelled",
+        }
+    }
+
+    fn parse(value: &str) -> tower_mcp::Result<Self> {
+        match value {
+            "pending" => Ok(Self::Pending),
+            "accepted" => Ok(Self::Accepted),
+            "declined" => Ok(Self::Declined),
+            "cancelled" => Ok(Self::Cancelled),
+            _ => Err(tower_mcp::Error::tool(format!(
+                "unknown coordination approval outcome {value}"
+            ))),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+struct ApprovalOutput {
+    handle: CoordinationHandle,
+    approval_id: String,
+    outcome: ApprovalOutcome,
+    requested_at_ms: u64,
+    resolved_at_ms: u64,
+    resource_uri: String,
+}
+
+#[derive(Debug, Clone, Serialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+struct ApprovalState {
+    approval_id: String,
+    outcome: ApprovalOutcome,
+    message: String,
+    requested_at_ms: u64,
+    resolved_at_ms: Option<u64>,
+}
+
 #[derive(Debug, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 struct StatusInput {
@@ -188,6 +319,7 @@ struct StatusOutput {
     payload: CoordinationPayload,
     metadata: BTreeMap<String, JsonValue>,
     result: Option<CoordinationPayload>,
+    approval: Option<ApprovalState>,
     deadline_at_ms: Option<u64>,
     traceparent: Option<String>,
     attempts: u64,
@@ -222,6 +354,7 @@ pub(super) fn add_read_tools(router: McpRouter, state: Arc<ToolState>) -> McpRou
 pub(super) fn add_write_tools(mut router: McpRouter, state: Arc<ToolState>) -> McpRouter {
     router = router.tool(publish_tool(state.clone()));
     router = router.tool(claim_tool(state.clone()));
+    router = router.tool(approval_tool(state.clone()));
     router.tool(complete_tool(state))
 }
 
@@ -278,6 +411,14 @@ fn resource_uri(handle: &CoordinationHandle) -> String {
 }
 
 fn request_principal(ctx: &Context) -> tower_mcp::Result<CoordinationPrincipal> {
+    ctx.extension::<CoordinationPrincipal>()
+        .cloned()
+        .ok_or_else(|| tower_mcp::Error::tool("durable coordination principal is not configured"))
+}
+
+fn request_principal_from_context(
+    ctx: &RequestContext,
+) -> tower_mcp::Result<CoordinationPrincipal> {
     ctx.extension::<CoordinationPrincipal>()
         .cloned()
         .ok_or_else(|| tower_mcp::Error::tool("durable coordination principal is not configured"))
@@ -353,6 +494,7 @@ fn validate_publish_outputs(
         payload: input.payload.clone(),
         metadata: input.metadata.clone(),
         result: None,
+        approval: None,
         deadline_at_ms: input.deadline_at_ms,
         traceparent: input.traceparent.clone(),
         attempts: u64::MAX,
@@ -386,6 +528,7 @@ fn prospective_completed_status(
         payload: json_field(fields, "payload")?,
         metadata: json_field(fields, "metadata")?,
         result: Some(result),
+        approval: approval_state(fields)?,
         deadline_at_ms: optional_u64(fields, "deadline_at_ms")?,
         traceparent: optional_string(fields, "traceparent"),
         attempts: required(fields, "attempts")?
@@ -398,6 +541,49 @@ fn prospective_completed_status(
         timeline: vec![TimelineEvent {
             id: "18446744073709551615-18446744073709551615".to_string(),
             event: "completed".to_string(),
+            at_ms: u64::MAX,
+        }],
+        resource_uri,
+    })
+}
+
+fn prospective_approval_status(
+    handle: CoordinationHandle,
+    fields: &BTreeMap<String, String>,
+    status: CoordinationStatus,
+    approval: ApprovalState,
+    event: &str,
+) -> tower_mcp::Result<StatusOutput> {
+    let resource_uri = resource_uri(&handle);
+    let result = fields
+        .get("result")
+        .map(|value| serde_json::from_str(value))
+        .transpose()
+        .map_err(|error| tower_mcp::Error::tool(format!("invalid stored result: {error}")))?;
+    Ok(StatusOutput {
+        handle,
+        capability: required(fields, "capability")?.to_string(),
+        shard: required(fields, "shard")?
+            .parse()
+            .map_err(|_| tower_mcp::Error::tool("invalid stored shard"))?,
+        status,
+        stream_id: required(fields, "stream_id")?.to_string(),
+        correlation_id: optional_string(fields, "correlation_id"),
+        payload: json_field(fields, "payload")?,
+        metadata: json_field(fields, "metadata")?,
+        result,
+        approval: Some(approval),
+        deadline_at_ms: optional_u64(fields, "deadline_at_ms")?,
+        traceparent: optional_string(fields, "traceparent"),
+        attempts: required(fields, "attempts")?
+            .parse()
+            .map_err(|_| tower_mcp::Error::tool("invalid stored attempt count"))?,
+        // `false` is conservatively longer than `true` in the encoded result.
+        caller_is_publisher: false,
+        caller_is_claimant: false,
+        timeline: vec![TimelineEvent {
+            id: "18446744073709551615-18446744073709551615".to_string(),
+            event: event.to_string(),
             at_ms: u64::MAX,
         }],
         resource_uri,
@@ -528,6 +714,222 @@ fn claim_tool(state: Arc<ToolState>) -> Tool {
             )
             .await?;
             state.output(&ClaimOutput { claimed: true, handoff: Some(handoff) })
+        })
+        .build()
+}
+
+fn approval_tool(state: Arc<ToolState>) -> Tool {
+    ToolBuilder::new("redis_handoff_request_approval")
+        .title("Request Durable Redis Handoff Approval")
+        .description("Durably mark a claimed handoff as awaiting approval, request one bounded boolean confirmation through MCP elicitation, and atomically record accept, decline, or cancel when the client retries the call.")
+        .output_schema(output_schema::<ApprovalOutput>())
+        .annotations(write_annotations(true))
+        .mrtr_handler::<ApprovalInput, _, _>(move |ctx, input| {
+            let state = state.clone();
+            async move {
+                state.require(AccessMode::ReadWrite, "redis_handoff_request_approval")?;
+                validate_bounded(
+                    "idempotency_key",
+                    &input.idempotency_key,
+                    MAX_IDEMPOTENCY_BYTES,
+                )?;
+                validate_bounded("message", &input.message, MAX_APPROVAL_MESSAGE_BYTES)?;
+                let principal = request_principal_from_context(&ctx)?;
+                let parsed = input
+                    .handle
+                    .parse(state.coordination_config().shards())
+                    .map_err(tower_mcp::Error::tool)?;
+                let keys = state.coordination_config().keys(&parsed);
+                let idempotency_digest = digest_hex(input.idempotency_key.as_bytes());
+                let resource_uri = resource_uri(&input.handle);
+
+                match (ctx.input_responses(), ctx.request_state()) {
+                    (None, None) => {
+                        let approval_id = format!("{:032x}", rand::random::<u128>());
+                        let requested_at_ms = now_ms();
+                        let mut state_cmd = command(
+                            "redis_handoff_request_approval",
+                            AccessMode::ReadWrite,
+                            "HGETALL",
+                        );
+                        state_cmd.arg(keys.state.as_str());
+                        let fields = pairs(
+                            state
+                                .raw(state_cmd, "reading handoff before approval failed")
+                                .await?,
+                            "handoff state",
+                        )?;
+                        if fields.is_empty() {
+                            return Err(tower_mcp::Error::tool("handoff was not found"));
+                        }
+                        let pending = ApprovalState {
+                            approval_id: approval_id.clone(),
+                            outcome: ApprovalOutcome::Pending,
+                            message: input.message.clone(),
+                            requested_at_ms,
+                            resolved_at_ms: None,
+                        };
+                        state.ensure_output_fits(
+                            &prospective_approval_status(
+                                input.handle.clone(),
+                                &fields,
+                                CoordinationStatus::AwaitingApproval,
+                                pending,
+                                "approval_requested",
+                            )?,
+                            "approval-pending handoff status response",
+                        )?;
+                        let resolved = ApprovalState {
+                            approval_id: approval_id.clone(),
+                            outcome: ApprovalOutcome::Accepted,
+                            message: input.message.clone(),
+                            requested_at_ms,
+                            resolved_at_ms: Some(u64::MAX),
+                        };
+                        state.ensure_output_fits(
+                            &prospective_approval_status(
+                                input.handle.clone(),
+                                &fields,
+                                CoordinationStatus::Claimed,
+                                resolved,
+                                "approval_accepted",
+                            )?,
+                            "approval-resolved handoff status response",
+                        )?;
+                        state.ensure_output_fits(
+                            &ApprovalOutput {
+                                handle: input.handle.clone(),
+                                approval_id: approval_id.clone(),
+                                outcome: ApprovalOutcome::Accepted,
+                                requested_at_ms,
+                                resolved_at_ms: u64::MAX,
+                                resource_uri: resource_uri.clone(),
+                            },
+                            "approval response",
+                        )?;
+
+                        let mut cmd = command(
+                            "redis_handoff_request_approval",
+                            AccessMode::ReadWrite,
+                            "EVAL",
+                        );
+                        cmd.arg(REQUEST_APPROVAL_SCRIPT)
+                            .arg("2")
+                            .arg(keys.state.as_str())
+                            .arg(keys.events.as_str())
+                            .arg(principal.digest())
+                            .arg(idempotency_digest.as_str())
+                            .arg(approval_id)
+                            .arg(input.message.as_str())
+                            .arg(requested_at_ms.to_string());
+                        let values = array(
+                            state.raw(cmd, "requesting handoff approval failed").await?,
+                            "approval request",
+                        )?;
+                        if values.len() != 5 {
+                            return Err(tower_mcp::Error::tool(
+                                "approval request returned an invalid reply",
+                            ));
+                        }
+                        let approval_id = text(values[0].clone(), "approval ID")?;
+                        let outcome = ApprovalOutcome::parse(&text(
+                            values[1].clone(),
+                            "approval status",
+                        )?)?;
+                        let requested_at_ms = parse_u64_text(
+                            values[2].clone(),
+                            "approval requested timestamp",
+                        )?;
+                        if outcome != ApprovalOutcome::Pending {
+                            let resolved_at_ms = parse_u64_text(
+                                values[3].clone(),
+                                "approval resolved timestamp",
+                            )?;
+                            return state.output(&ApprovalOutput {
+                                handle: input.handle,
+                                approval_id,
+                                outcome,
+                                requested_at_ms,
+                                resolved_at_ms,
+                                resource_uri,
+                            }).map(RequestOutcome::Complete);
+                        }
+
+                        let mut requests = InputRequests::new();
+                        requests.insert(
+                            "approval".to_string(),
+                            InputRequest::Elicit(ElicitRequestParams::Form(ElicitFormParams {
+                                mode: Some(ElicitMode::Form),
+                                message: input.message,
+                                requested_schema: ElicitFormSchema::new()
+                                    .boolean_field_with_default(
+                                        "confirm",
+                                        Some("Approve this handoff action"),
+                                        true,
+                                        false,
+                                    ),
+                                meta: None,
+                            })),
+                        );
+                        Ok(RequestOutcome::input_required(
+                            InputRequiredResult::with_requests(requests)
+                                .with_request_state(approval_id),
+                        ))
+                    }
+                    (Some(responses), Some(approval_id)) => {
+                        let outcome = approval_response(responses)?;
+                        let resolved_at_ms = now_ms();
+                        let mut cmd = command(
+                            "redis_handoff_request_approval",
+                            AccessMode::ReadWrite,
+                            "EVAL",
+                        );
+                        cmd.arg(RESOLVE_APPROVAL_SCRIPT)
+                            .arg("2")
+                            .arg(keys.state.as_str())
+                            .arg(keys.events.as_str())
+                            .arg(principal.digest())
+                            .arg(approval_id)
+                            .arg(idempotency_digest)
+                            .arg(outcome.as_str())
+                            .arg(resolved_at_ms.to_string());
+                        let values = array(
+                            state.raw(cmd, "resolving handoff approval failed").await?,
+                            "approval resolution",
+                        )?;
+                        if values.len() != 4 {
+                            return Err(tower_mcp::Error::tool(
+                                "approval resolution returned an invalid reply",
+                            ));
+                        }
+                        let outcome = ApprovalOutcome::parse(&text(
+                            values[0].clone(),
+                            "approval outcome",
+                        )?)?;
+                        let requested_at_ms = parse_u64_text(
+                            values[1].clone(),
+                            "approval requested timestamp",
+                        )?;
+                        let resolved_at_ms = parse_u64_text(
+                            values[2].clone(),
+                            "approval resolved timestamp",
+                        )?;
+                        state
+                            .output(&ApprovalOutput {
+                                handle: input.handle,
+                                approval_id: approval_id.to_string(),
+                                outcome,
+                                requested_at_ms,
+                                resolved_at_ms,
+                                resource_uri,
+                            })
+                            .map(RequestOutcome::Complete)
+                    }
+                    _ => Err(tower_mcp::Error::tool(
+                        "approval continuation requires both inputResponses and requestState",
+                    )),
+                }
+            }
         })
         .build()
 }
@@ -681,6 +1083,7 @@ async fn read_status(
         payload,
         metadata,
         result,
+        approval: approval_state(&fields)?,
         deadline_at_ms,
         traceparent: optional_string(&fields, "traceparent"),
         attempts,
@@ -955,6 +1358,67 @@ fn optional_u64(fields: &BTreeMap<String, String>, name: &str) -> tower_mcp::Res
         .transpose()
 }
 
+fn approval_state(fields: &BTreeMap<String, String>) -> tower_mcp::Result<Option<ApprovalState>> {
+    let Some(approval_id) = fields.get("approval_id") else {
+        return Ok(None);
+    };
+    Ok(Some(ApprovalState {
+        approval_id: approval_id.clone(),
+        outcome: ApprovalOutcome::parse(required(fields, "approval_status")?)?,
+        message: required(fields, "approval_message")?.to_string(),
+        requested_at_ms: required(fields, "approval_requested_at_ms")?
+            .parse()
+            .map_err(|_| tower_mcp::Error::tool("invalid stored approval requested timestamp"))?,
+        resolved_at_ms: optional_u64(fields, "approval_resolved_at_ms")?,
+    }))
+}
+
+fn approval_response(responses: &InputResponses) -> tower_mcp::Result<ApprovalOutcome> {
+    if responses.len() != 1 {
+        return Err(tower_mcp::Error::tool(
+            "approval continuation requires exactly one approval response",
+        ));
+    }
+    let Some(InputResponse::Elicit(result)) = responses.get("approval") else {
+        return Err(tower_mcp::Error::tool(
+            "approval continuation omitted the elicitation response",
+        ));
+    };
+    match result.action {
+        ElicitAction::Accept => {
+            let confirmed = result
+                .content
+                .as_ref()
+                .and_then(|content| content.get("confirm"))
+                .and_then(|value| match value {
+                    ElicitFieldValue::Boolean(value) => Some(*value),
+                    _ => None,
+                })
+                .ok_or_else(|| {
+                    tower_mcp::Error::tool(
+                        "accepted approval response requires a boolean confirm field",
+                    )
+                })?;
+            Ok(if confirmed {
+                ApprovalOutcome::Accepted
+            } else {
+                ApprovalOutcome::Declined
+            })
+        }
+        ElicitAction::Decline => Ok(ApprovalOutcome::Declined),
+        ElicitAction::Cancel => Ok(ApprovalOutcome::Cancelled),
+        _ => Err(tower_mcp::Error::tool(
+            "approval response used an unsupported elicitation action",
+        )),
+    }
+}
+
+fn parse_u64_text(value: RedisValue, context: &str) -> tower_mcp::Result<u64> {
+    text(value, context)?
+        .parse()
+        .map_err(|_| tower_mcp::Error::tool(format!("{context} was not an unsigned integer")))
+}
+
 fn json_field<T: serde::de::DeserializeOwned>(
     fields: &BTreeMap<String, String>,
     name: &str,
@@ -982,5 +1446,45 @@ mod tests {
         let entry = first_stream_entry(value, "test").unwrap().unwrap();
         assert_eq!(entry.id, "1-0");
         assert_eq!(entry.fields["handle"], "h");
+    }
+
+    #[test]
+    fn approval_responses_keep_accept_decline_and_cancel_distinct() {
+        let response = |result| {
+            let mut responses = InputResponses::new();
+            responses.insert("approval".to_string(), InputResponse::Elicit(result));
+            responses
+        };
+        let mut accepted = std::collections::HashMap::new();
+        accepted.insert("confirm".to_string(), ElicitFieldValue::Boolean(true));
+        assert_eq!(
+            approval_response(&response(tower_mcp::ElicitResult::accept(accepted))).unwrap(),
+            ApprovalOutcome::Accepted
+        );
+
+        let mut unchecked = std::collections::HashMap::new();
+        unchecked.insert("confirm".to_string(), ElicitFieldValue::Boolean(false));
+        assert_eq!(
+            approval_response(&response(tower_mcp::ElicitResult::accept(unchecked))).unwrap(),
+            ApprovalOutcome::Declined
+        );
+        assert_eq!(
+            approval_response(&response(tower_mcp::ElicitResult::decline())).unwrap(),
+            ApprovalOutcome::Declined
+        );
+        assert_eq!(
+            approval_response(&response(tower_mcp::ElicitResult::cancel())).unwrap(),
+            ApprovalOutcome::Cancelled
+        );
+    }
+
+    #[test]
+    fn approval_response_rejects_missing_boolean_confirmation() {
+        let mut responses = InputResponses::new();
+        responses.insert(
+            "approval".to_string(),
+            InputResponse::Elicit(tower_mcp::ElicitResult::accept(Default::default())),
+        );
+        assert!(approval_response(&responses).is_err());
     }
 }

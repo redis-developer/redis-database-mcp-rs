@@ -67,9 +67,9 @@ Redis ACLs remain the authorization boundary; MCP access modes and annotations
 are defense in depth.
 
 The opt-in `coordination` bundle provides a Redis Streams-backed durable
-handoff protocol with publish, claim, complete, status, and recovery tools.
-Its keys are sharded and hash-tagged for Redis Cluster, and its principal is a
-host extension separate from transient MCP transport sessions.
+handoff protocol with publish, claim, MRTR approval, complete, status, and
+recovery tools. Its keys are sharded and hash-tagged for Redis Cluster, and its
+principal is a host extension separate from transient MCP transport sessions.
 
 ## Documentation and support
 

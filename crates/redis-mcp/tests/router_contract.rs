@@ -4718,6 +4718,7 @@ async fn bundles_are_composable_and_raw_remains_a_separate_opt_in() {
             "redis_handoff_complete",
             "redis_handoff_publish",
             "redis_handoff_recover",
+            "redis_handoff_request_approval",
             "redis_handoff_status",
         ]
     );

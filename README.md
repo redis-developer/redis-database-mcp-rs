@@ -37,7 +37,10 @@ The package-specific guides keep their published-crate examples focused:
 - [`redis-mcp-server`](crates/redis-mcp-server/README.md) for stdio, Streamable
   HTTP, configuration, and mcp-repl; and
 - [the initial release boundary](docs/initial-release.md) for the supported
-  Redis/module/MCP matrix, security defaults, exclusions, and release evidence.
+  Redis/module/MCP matrix, security defaults, exclusions, and release evidence;
+  and
+- [durable coordination approval](docs/coordination-approval.md) for the
+  Redis-backed MRTR waiting, retry, recovery, and fallback contract.
 
 The two crates are versioned together initially. The server's published
 manifest resolves `redis-mcp` by version, while the workspace uses the sibling

@@ -103,11 +103,13 @@ In terminal A, publish and note the returned `handle` and `shard`:
 job = redis_handoff_publish capability=incident_triage idempotency_key=incident-42 payload={"type":"json","value":{"incident":42}} metadata={"severity":"high"} correlation_id=trace-42
 ```
 
-In terminal B, substitute the returned shard, claim, and then complete with
-the returned handle:
+In terminal B, substitute the returned shard and claim. For a risky action,
+request approval before completing; mcp-repl renders the server-provided
+boolean form and automatically retries the MRTR call with the answer:
 
 ```text
 claimed = redis_handoff_claim capability=incident_triage shard=0 worker=worker_b
+redis_handoff_request_approval handle=$claimed.handoff.handle idempotency_key=restart-approval message="Approve restarting the affected service?"
 redis_handoff_complete handle=$claimed.handoff.handle idempotency_key=completion-42 result={"type":"text","value":"triaged"}
 ```
 
@@ -117,9 +119,12 @@ Back in terminal A:
 redis_handoff_status handle=$job.handle max_events=20
 ```
 
-The producer sees `published`, `claimed`, and `completed` timeline events.
-Repeat the publish or completion with the same idempotency key to verify that
-the operation is not duplicated. Read
+The producer sees `published`, `claimed`, `approval_requested`, the terminal
+approval outcome, and `completed` timeline events. Repeat the publish,
+approval, or completion with the same idempotency key to verify that the
+operation is not duplicated. If the client does not advertise form
+elicitation, the approval call reports the missing capability and status stays
+durably `awaiting_approval` for inspection or recovery. Read
 `redis-mcp://guidance/agent-handoffs` for sharding, ownership, and recovery
 rules.
 

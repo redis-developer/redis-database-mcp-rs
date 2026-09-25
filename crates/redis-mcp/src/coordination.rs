@@ -219,6 +219,7 @@ impl CoordinationPayload {
 pub enum CoordinationStatus {
     Published,
     Claimed,
+    AwaitingApproval,
     Completed,
 }
 
@@ -227,6 +228,7 @@ impl CoordinationStatus {
         match self {
             Self::Published => "published",
             Self::Claimed => "claimed",
+            Self::AwaitingApproval => "awaiting_approval",
             Self::Completed => "completed",
         }
     }
@@ -235,6 +237,7 @@ impl CoordinationStatus {
         match value {
             "published" => Ok(Self::Published),
             "claimed" => Ok(Self::Claimed),
+            "awaiting_approval" => Ok(Self::AwaitingApproval),
             "completed" => Ok(Self::Completed),
             _ => Err(format!("unknown coordination status {value}")),
         }
@@ -351,10 +354,10 @@ pub(crate) fn add_resources(router: McpRouter) -> McpRouter {
     .prompt(
         PromptBuilder::new("redis_coordinate_handoff")
             .title("Coordinate durable agent work")
-            .description("Guide a producer, worker, or recovery operator through the synchronous durable handoff lifecycle.")
+            .description("Guide a producer, worker, approver, or recovery operator through the durable handoff lifecycle.")
             .optional_arg(
                 "role",
-                "One of producer, worker, or recovery; omit to explain the full lifecycle.",
+                "One of producer, worker, approver, or recovery; omit to explain the full lifecycle.",
             )
             .handler(|arguments: HashMap<String, String>| async move {
                 let role = arguments.get("role").map(String::as_str).unwrap_or("full lifecycle");
@@ -363,7 +366,7 @@ pub(crate) fn add_resources(router: McpRouter) -> McpRouter {
                     messages: vec![PromptMessage {
                         role: PromptRole::User,
                         content: Content::text(format!(
-                            "Act as the {role} in a durable Redis agent handoff. First read {COORDINATION_GUIDE_URI}. Use only the bounded coordination tools. Producers call redis_handoff_publish with a stable idempotency key and retain its handle/resource_uri. Workers poll explicit shards with redis_handoff_claim, perform idempotent external effects, then call redis_handoff_complete with a stable completion idempotency key. Read redis_handoff_status or the canonical resource for progress. Recovery operators use redis_handoff_recover only after a justified idle threshold, then inspect the correlated timeline. State clearly that delivery is at least once and do not claim exactly-once processing."
+                            "Act as the {role} in a durable Redis agent handoff. First read {COORDINATION_GUIDE_URI}. Use only the bounded coordination tools. Producers call redis_handoff_publish with a stable idempotency key and retain its handle/resource_uri. Workers poll explicit shards with redis_handoff_claim. Before a risky action, the current claimant calls redis_handoff_request_approval with a stable idempotency key and a non-sensitive question; accept, decline, and cancel remain durable and do not complete the handoff. Workers perform idempotent external effects, then call redis_handoff_complete with a stable completion idempotency key. Read redis_handoff_status or the canonical resource for progress. Recovery operators use redis_handoff_recover only after a justified idle threshold, then inspect the correlated timeline. State clearly that delivery is at least once and do not claim exactly-once processing."
                         )),
                         meta: None,
                     }],
@@ -407,6 +410,14 @@ mod tests {
         let config = CoordinationConfig::default();
         assert_eq!(config.shard_for("incident-42-v1"), 11);
         assert_eq!(config.clone().with_shards(4).shard_for("incident-42-v1"), 3);
+    }
+
+    #[test]
+    fn approval_waiting_status_round_trips() {
+        assert_eq!(
+            CoordinationStatus::parse(CoordinationStatus::AwaitingApproval.as_str()).unwrap(),
+            CoordinationStatus::AwaitingApproval
+        );
     }
 
     #[test]

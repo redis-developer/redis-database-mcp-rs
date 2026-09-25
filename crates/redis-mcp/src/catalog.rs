@@ -469,6 +469,7 @@ impl ToolMetadata {
             "redis_handoff_publish"
             | "redis_handoff_claim"
             | "redis_handoff_complete"
+            | "redis_handoff_request_approval"
             | "redis_handoff_status"
             | "redis_handoff_recover" => Some(RedisVersion::new(6, 2, 0)),
             "redis_copy" | "redis_copy_replace" | "redis_getdel" | "redis_getex"
@@ -529,6 +530,9 @@ impl ToolMetadata {
             "redis_handoff_complete" => &[
                 "HGETALL", "EVAL", "GET", "SET", "EXISTS", "HGET", "HSET", "XADD", "XACK",
             ],
+            "redis_handoff_request_approval" => {
+                &["HGETALL", "EVAL", "EXISTS", "HGET", "HSET", "HDEL", "XADD"]
+            }
             "redis_handoff_status" => &["HGETALL", "XREVRANGE"],
             "redis_handoff_recover" => &[
                 "XAUTOCLAIM",
@@ -1052,6 +1056,12 @@ pub(crate) const CATALOG: &[ToolMetadata] = &[
     },
     ToolMetadata {
         name: "redis_handoff_complete",
+        bundle: ToolBundle::Coordination,
+        required_access: AccessMode::ReadWrite,
+        requires_raw_opt_in: false,
+    },
+    ToolMetadata {
+        name: "redis_handoff_request_approval",
         bundle: ToolBundle::Coordination,
         required_access: AccessMode::ReadWrite,
         requires_raw_opt_in: false,

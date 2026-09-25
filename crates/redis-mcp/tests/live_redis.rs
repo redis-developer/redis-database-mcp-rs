@@ -1,7 +1,8 @@
 use std::{
+    collections::{HashMap, VecDeque},
     sync::{
-        Arc,
-        atomic::{AtomicBool, Ordering},
+        Arc, Mutex,
+        atomic::{AtomicBool, AtomicUsize, Ordering},
     },
     time::{Duration, Instant},
 };
@@ -17,7 +18,10 @@ use redis_mcp::{
     RedisModule, RedisTransactionEngine, RedisTransactionLimits, RedisTransactionOutcome,
     RedisTransactionRequest, RedisValue, RedisVersion, ToolBundle, UnavailableToolPolicy,
 };
-use tower_mcp::client::{ChannelTransport, McpClient};
+use tower_mcp::{
+    ElicitFieldValue, ElicitRequestParams, ElicitResult, JsonRpcError, ProtocolSupport,
+    client::{ChannelTransport, ClientHandler, McpClient},
+};
 
 #[cfg(unix)]
 use redis_mcp::RedisErrorKind;
@@ -290,6 +294,77 @@ async fn coordination_router_client(url: &str, namespace: &str) -> McpClient {
     client
 }
 
+#[derive(Clone)]
+struct ApprovalHandler {
+    responses: Arc<Mutex<VecDeque<ElicitResult>>>,
+    calls: Arc<AtomicUsize>,
+}
+
+impl ApprovalHandler {
+    fn new(responses: impl IntoIterator<Item = ElicitResult>) -> Self {
+        Self {
+            responses: Arc::new(Mutex::new(responses.into_iter().collect())),
+            calls: Arc::new(AtomicUsize::new(0)),
+        }
+    }
+}
+
+#[async_trait]
+impl ClientHandler for ApprovalHandler {
+    async fn handle_elicit(
+        &self,
+        _params: ElicitRequestParams,
+    ) -> Result<ElicitResult, JsonRpcError> {
+        self.calls.fetch_add(1, Ordering::SeqCst);
+        self.responses
+            .lock()
+            .expect("lock approval responses")
+            .pop_front()
+            .ok_or_else(|| JsonRpcError::invalid_request("no approval response configured"))
+    }
+}
+
+async fn coordination_final_router_client(
+    url: &str,
+    namespace: &str,
+    handler: Option<ApprovalHandler>,
+) -> McpClient {
+    let executor = DirectRedis::connect(url)
+        .await
+        .expect("connect final-protocol coordination executor");
+    let blocking = DirectRedisBlocking::standalone(url)
+        .expect("prepare final-protocol coordination blocking executor");
+    let router = RedisMcp::builder(executor)
+        .access(AccessMode::Full)
+        .bundles([ToolBundle::Coordination])
+        .coordination_config(
+            redis_mcp::CoordinationConfig::default()
+                .with_namespace(namespace)
+                .with_shards(4),
+        )
+        .coordination_blocking(blocking)
+        .build();
+    let builder = McpClient::builder()
+        .protocol_support(ProtocolSupport::try_new(["2026-07-28"]).expect("final protocol"));
+    let client = if let Some(handler) = handler {
+        builder
+            .with_elicitation()
+            .connect(ChannelTransport::new(router), handler)
+            .await
+            .expect("connect elicitation-capable coordination MCP client")
+    } else {
+        builder
+            .connect_simple(ChannelTransport::new(router))
+            .await
+            .expect("connect coordination MCP client without elicitation")
+    };
+    client
+        .discover("redis-mcp-live-coordination-final-test", "0")
+        .await
+        .expect("discover final coordination MCP server");
+    client
+}
+
 async fn coordination_router_client_with_executor(
     executor: impl RedisExecutor,
     url: &str,
@@ -544,6 +619,252 @@ async fn durable_handoff_lifecycle_is_idempotent_owned_and_recoverable() {
 
 #[cfg(unix)]
 #[tokio::test]
+async fn durable_handoff_approval_round_trips_without_process_local_state() {
+    let Some(redis) = TestRedis::start().await else {
+        return;
+    };
+    let namespace = format!("coordapproval{}", std::process::id());
+    let producer = coordination_router_client(&redis.url, &namespace).await;
+    let mut accepted = HashMap::new();
+    accepted.insert("confirm".to_string(), ElicitFieldValue::Boolean(true));
+    let handler = ApprovalHandler::new([
+        ElicitResult::accept(accepted),
+        ElicitResult::decline(),
+        ElicitResult::cancel(),
+    ]);
+    let handler_observer = handler.clone();
+    let worker = coordination_final_router_client(&redis.url, &namespace, Some(handler)).await;
+    let other_worker = coordination_router_client(&redis.url, &namespace).await;
+
+    let published = call_structured(
+        &producer,
+        "redis_handoff_publish",
+        serde_json::json!({
+            "capability": "approval",
+            "idempotency_key": "approval-flow",
+            "payload": {"type": "json", "value": {"action": "restart"}}
+        }),
+    )
+    .await;
+    let handle = published["handle"].as_str().unwrap().to_string();
+    let claimed = call_structured(
+        &worker,
+        "redis_handoff_claim",
+        serde_json::json!({
+            "capability": "approval",
+            "shard": published["shard"],
+            "worker": "approval-worker"
+        }),
+    )
+    .await;
+    assert_eq!(claimed["claimed"], true);
+
+    let approval_input = serde_json::json!({
+        "handle": handle,
+        "idempotency_key": "restart-approval",
+        "message": "Approve restarting the affected service?"
+    });
+    let approved = call_structured(
+        &worker,
+        "redis_handoff_request_approval",
+        approval_input.clone(),
+    )
+    .await;
+    assert_eq!(approved["outcome"], "accepted");
+    assert_eq!(handler_observer.calls.load(Ordering::SeqCst), 1);
+
+    // A complete retry returns the first committed answer without eliciting
+    // again, even though the client still has more queued responses.
+    let replayed = call_structured(&worker, "redis_handoff_request_approval", approval_input).await;
+    assert_eq!(replayed, approved);
+    assert_eq!(handler_observer.calls.load(Ordering::SeqCst), 1);
+
+    let unauthorized = other_worker
+        .call_tool(
+            "redis_handoff_request_approval",
+            serde_json::json!({
+                "handle": handle,
+                "idempotency_key": "intruder",
+                "message": "Approve from another principal?"
+            }),
+        )
+        .await
+        .expect_err("another principal cannot request approval");
+    let unauthorized = unauthorized.to_string();
+    assert!(unauthorized.contains("HANDOFF_NOT_OWNED"), "{unauthorized}");
+
+    let declined = call_structured(
+        &worker,
+        "redis_handoff_request_approval",
+        serde_json::json!({
+            "handle": handle,
+            "idempotency_key": "second-approval",
+            "message": "Approve the fallback action?"
+        }),
+    )
+    .await;
+    assert_eq!(declined["outcome"], "declined");
+
+    let cancelled = call_structured(
+        &worker,
+        "redis_handoff_request_approval",
+        serde_json::json!({
+            "handle": handle,
+            "idempotency_key": "third-approval",
+            "message": "Approve the final action?"
+        }),
+    )
+    .await;
+    assert_eq!(cancelled["outcome"], "cancelled");
+    assert_eq!(handler_observer.calls.load(Ordering::SeqCst), 3);
+
+    let status = call_structured(
+        &worker,
+        "redis_handoff_status",
+        serde_json::json!({"handle": handle, "max_events": 20}),
+    )
+    .await;
+    assert_eq!(status["status"], "claimed");
+    assert_eq!(status["approval"]["outcome"], "cancelled");
+    assert_eq!(status["timeline"].as_array().unwrap().len(), 8);
+    let resource = worker
+        .read_resource(published["resource_uri"].as_str().unwrap())
+        .await
+        .expect("current claimant reads approval state resource");
+    let content = serde_json::to_value(resource.contents.first().expect("resource content"))
+        .expect("serialize approval resource content");
+    let body: serde_json::Value = serde_json::from_str(content["text"].as_str().unwrap())
+        .expect("approval resource is JSON text");
+    assert_eq!(body["approval"]["outcome"], "cancelled");
+
+    let completed = call_structured(
+        &worker,
+        "redis_handoff_complete",
+        serde_json::json!({
+            "handle": handle,
+            "idempotency_key": "approval-completion",
+            "result": {"type": "text", "value": "approval flow recorded"}
+        }),
+    )
+    .await;
+    assert_eq!(completed["status"], "completed");
+}
+
+#[cfg(unix)]
+#[tokio::test]
+async fn approval_without_client_capability_stays_durably_inspectable() {
+    let Some(redis) = TestRedis::start().await else {
+        return;
+    };
+    let namespace = format!("coordapprovalfallback{}", std::process::id());
+    let producer = coordination_router_client(&redis.url, &namespace).await;
+    let worker = coordination_final_router_client(&redis.url, &namespace, None).await;
+    let published = call_structured(
+        &producer,
+        "redis_handoff_publish",
+        serde_json::json!({
+            "capability": "approval",
+            "idempotency_key": "fallback-flow",
+            "payload": {"type": "text", "value": "needs approval"}
+        }),
+    )
+    .await;
+    let handle = published["handle"].as_str().unwrap().to_string();
+    call_structured(
+        &worker,
+        "redis_handoff_claim",
+        serde_json::json!({
+            "capability": "approval",
+            "shard": published["shard"],
+            "worker": "fallback-worker"
+        }),
+    )
+    .await;
+
+    let error = worker
+        .call_tool(
+            "redis_handoff_request_approval",
+            serde_json::json!({
+                "handle": handle,
+                "idempotency_key": "fallback-approval",
+                "message": "Approve this action?"
+            }),
+        )
+        .await
+        .expect_err("client without elicitation cannot fulfill approval");
+    assert!(
+        error
+            .to_string()
+            .contains("missing a capability required by this request"),
+        "unexpected capability error: {error}"
+    );
+
+    let status = call_structured(
+        &worker,
+        "redis_handoff_status",
+        serde_json::json!({"handle": handle, "max_events": 10}),
+    )
+    .await;
+    assert_eq!(status["status"], "awaiting_approval");
+    assert_eq!(status["approval"]["outcome"], "pending");
+
+    let completion = worker
+        .call_tool(
+            "redis_handoff_complete",
+            serde_json::json!({
+                "handle": handle,
+                "idempotency_key": "must-wait",
+                "result": {"type": "text", "value": "should not complete"}
+            }),
+        )
+        .await
+        .expect("pending approval completion is a tool result");
+    assert!(completion.is_error);
+    assert!(
+        serde_json::to_string(&completion)
+            .unwrap()
+            .contains("HANDOFF_APPROVAL_PENDING")
+    );
+
+    // A new process/principal can recover the pending Stream entry, re-emit
+    // the same durable approval, and resolve it without any server-local
+    // continuation registry.
+    tokio::time::sleep(Duration::from_millis(5)).await;
+    let mut accepted = HashMap::new();
+    accepted.insert("confirm".to_string(), ElicitFieldValue::Boolean(true));
+    let recovery_worker = coordination_final_router_client(
+        &redis.url,
+        &namespace,
+        Some(ApprovalHandler::new([ElicitResult::accept(accepted)])),
+    )
+    .await;
+    let recovered = call_structured(
+        &recovery_worker,
+        "redis_handoff_recover",
+        serde_json::json!({
+            "capability": "approval",
+            "shard": published["shard"],
+            "worker": "recovery-worker",
+            "min_idle_ms": 1
+        }),
+    )
+    .await;
+    assert_eq!(recovered["claimed"], true);
+    let resolved = call_structured(
+        &recovery_worker,
+        "redis_handoff_request_approval",
+        serde_json::json!({
+            "handle": handle,
+            "idempotency_key": "fallback-approval",
+            "message": "Approve this action?"
+        }),
+    )
+    .await;
+    assert_eq!(resolved["outcome"], "accepted");
+}
+
+#[cfg(unix)]
+#[tokio::test]
 async fn durable_handoff_rejects_valid_envelopes_that_cannot_fit_claim_output() {
     let Some(redis) = TestRedis::start().await else {
         return;
@@ -652,6 +973,7 @@ async fn durable_handoff_acl_is_least_privilege_and_redacts_denied_payloads() {
         "xgroup",
         "xadd",
         "hset",
+        "hdel",
         "hincrby",
         "xreadgroup",
         "exists",
@@ -699,7 +1021,14 @@ async fn durable_handoff_acl_is_least_privilege_and_redacts_denied_payloads() {
     };
     let allowed_url = restricted_url(&allowed_user);
     let producer = coordination_router_client(allowed_url.as_str(), &namespace).await;
-    let worker = coordination_router_client(allowed_url.as_str(), &namespace).await;
+    let mut accepted = HashMap::new();
+    accepted.insert("confirm".to_string(), ElicitFieldValue::Boolean(true));
+    let worker = coordination_final_router_client(
+        allowed_url.as_str(),
+        &namespace,
+        Some(ApprovalHandler::new([ElicitResult::accept(accepted)])),
+    )
+    .await;
     let published = call_structured(
         &producer,
         "redis_handoff_publish",
@@ -721,6 +1050,17 @@ async fn durable_handoff_acl_is_least_privilege_and_redacts_denied_payloads() {
     )
     .await;
     assert_eq!(claimed["claimed"], true);
+    let approved = call_structured(
+        &worker,
+        "redis_handoff_request_approval",
+        serde_json::json!({
+            "handle": claimed["handoff"]["handle"],
+            "idempotency_key": "acl-approval-1",
+            "message": "Approve the ACL-scoped action?"
+        }),
+    )
+    .await;
+    assert_eq!(approved["outcome"], "accepted");
 
     let denied_url = restricted_url(&denied_user);
     let denied_client = coordination_router_client(denied_url.as_str(), &namespace).await;

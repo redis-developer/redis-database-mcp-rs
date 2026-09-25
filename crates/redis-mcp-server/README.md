@@ -66,9 +66,10 @@ redis-mcp-server --url redis://127.0.0.1:6379 --access full \
   --enable-bundle coordination --stdio
 ```
 
-The bundle exposes bounded publish, claim, complete, status, and recovery
-tools plus `redis-mcp://guidance/agent-handoffs`. Recovery is the only
-full-access operation; the ordinary lifecycle requires read-write access.
+The bundle exposes bounded publish, claim, MRTR approval, complete, status,
+and recovery tools plus `redis-mcp://guidance/agent-handoffs`. Recovery is the
+only full-access operation; the ordinary lifecycle requires read-write access.
+Approval requires a 2026-07-28 client that advertises form elicitation.
 
 ## Interim human interface
 

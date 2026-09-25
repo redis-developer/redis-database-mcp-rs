@@ -37,6 +37,9 @@ pub(crate) fn server_error(message: &str) -> RedisError {
         | "HANDOFF_COMPLETED"
         | "HANDOFF_STREAM_MISMATCH" => RedisErrorKind::InvalidRequest,
         _ if message.contains("ACL failure in script") => RedisErrorKind::Authorization,
+        _ if message.contains("user executing the script can't run this command") => {
+            RedisErrorKind::Authorization
+        }
         _ => RedisErrorKind::Server,
     };
     RedisError::new(kind, message).with_code(code)
@@ -622,6 +625,11 @@ mod tests {
             ),
             (
                 "ERR ACL failure in script: User worker cannot run XADD",
+                RedisErrorKind::Authorization,
+                "ERR",
+            ),
+            (
+                "ERR @user_script: 4: The user executing the script can't run this command or subcommand",
                 RedisErrorKind::Authorization,
                 "ERR",
             ),

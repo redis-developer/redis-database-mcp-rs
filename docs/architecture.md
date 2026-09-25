@@ -352,7 +352,12 @@ or foreign handles. The builder installs a random default owner and teardown
 guard for one-client routers such as stdio. A multi-client HTTP or WebSocket
 host must bridge a stable owner extension from its authenticated session or
 principal into each request and call `close_owner` when that host session ends;
-per-request extensions override the default. The DirectRedis manager also
+per-request extensions override the default. The bundled HTTP server derives
+legacy owners from `mcp-session-id`, and derives final-protocol owners from the
+matched Bearer credential. Legacy DELETE or transport-session expiry and
+process shutdown close the corresponding resources. Final-protocol resources
+remain available to that credential until explicit Redis-session close, Redis
+idle expiry, or process shutdown. The DirectRedis manager also
 enforces global and per-owner session quotas, subscriptions per session,
 buffered messages, accepted message bytes, read bytes and duration, operation
 timeouts, and idle lifetime. A background weak-reference reaper closes stale

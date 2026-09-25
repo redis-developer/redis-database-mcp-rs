@@ -6,8 +6,9 @@ from JSON Schema, and supports interactive and one-shot use without adding a
 terminal dependency to the library or server.
 
 These recipes were verified with mcp-repl 0.3.8 against the stdio server. The
-Streamable HTTP repeat remains pending until the server implements that
-transport.
+server also exposes the same catalog at its Streamable HTTP `/mcp` endpoint;
+the repeatable campaign below remains stdio-based so it can own the child
+process and its complete lifecycle.
 
 ## Build the server
 
@@ -165,8 +166,9 @@ output schema, annotations, and a successful `describe` result.
   finite and request cancellation is the current lifecycle boundary; add
   server-directed tasks only for a workflow that materially benefits from
   surviving the original call.
-- Streamable HTTP parity belongs to
-  [#64](https://github.com/redis-developer/redis-database-mcp-rs/issues/64).
+- Streamable HTTP sessionless callers that use Pub/Sub or MONITOR need a
+  distinct configured Bearer token per isolated principal. The credential,
+  rather than caller-controlled client metadata, owns reusable handles.
 - mcp-repl remains an external development client. A future first-party Redis
   frontend should consume a public connection/surface/coercion/call seam if
   that core is extracted, while keeping Reedline, rendering, history, and

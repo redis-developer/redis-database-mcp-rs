@@ -3,6 +3,7 @@
 mod config;
 #[cfg(feature = "docs")]
 mod docs;
+mod http;
 mod runtime;
 
 use clap::Parser;
@@ -10,7 +11,7 @@ use tower_mcp::{ProtocolSupport, StdioTransport};
 use tracing::info;
 use tracing_subscriber::EnvFilter;
 
-use config::Args;
+use config::{Args, ServerTransport};
 use runtime::ServerRuntime;
 
 #[tokio::main]
@@ -34,6 +35,14 @@ async fn main() -> Result<(), tower_mcp::BoxError> {
         "Redis MCP server ready"
     );
 
+    match &resolved.transport {
+        ServerTransport::Stdio => run_stdio(runtime).await?,
+        ServerTransport::Http(config) => http::run(runtime, config).await?,
+    }
+    Ok(())
+}
+
+async fn run_stdio(runtime: ServerRuntime) -> Result<(), tower_mcp::BoxError> {
     let protocols = ProtocolSupport::try_new(["2025-11-25", "2026-07-28"])?;
     let mut transport = StdioTransport::new(runtime.router).protocol_support(protocols);
     let handle = transport.handle();
@@ -42,6 +51,5 @@ async fn main() -> Result<(), tower_mcp::BoxError> {
         handle.stopping().await;
         sessions.shutdown().await;
     });
-    transport.run().await?;
-    Ok(())
+    transport.run().await.map_err(Into::into)
 }

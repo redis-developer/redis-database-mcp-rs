@@ -463,7 +463,7 @@ async fn durable_handoff_lifecycle_is_idempotent_owned_and_recoverable() {
     .await;
     assert_eq!(completed["status"], "completed");
     assert_eq!(completed["acknowledged"], true);
-    assert_eq!(completed["result"]["value"]["ok"], true);
+    assert_eq!(completed["result"]["value"]["resolution"], "restarted");
 
     let completion_replay = call_structured(
         &worker_b,
@@ -804,6 +804,7 @@ async fn durable_handoff_retries_resolve_ambiguous_publish_and_completion() {
     let completed = call_structured(&worker, "redis_handoff_complete", completion_input).await;
     assert_eq!(completed["status"], "completed");
     assert_eq!(completed["acknowledged"], true);
+    assert_eq!(completed["result"]["value"]["ok"], true);
 
     let status = call_structured(
         &producer,

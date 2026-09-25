@@ -322,6 +322,37 @@ impl RedisBlockingEngine {
         self.limits
     }
 
+    /// Read at most one new consumer-group entry on a dedicated connection.
+    ///
+    /// This is the bounded primitive used by durable coordination claims. It
+    /// deliberately keeps `XREADGROUP BLOCK` off the shared multiplexed
+    /// executor, and it never replays a command after it may have reached
+    /// Redis.
+    #[cfg(feature = "coordination")]
+    pub(crate) async fn read_group_one(
+        &self,
+        group: &str,
+        consumer: &str,
+        stream: &[u8],
+        timeout: Duration,
+    ) -> Result<RedisValue, RedisError> {
+        let timeout = self.validate_timeout(timeout)?;
+        let mut command =
+            RedisCommand::new("redis_handoff_claim", AccessMode::ReadWrite, "XREADGROUP");
+        command
+            .arg("GROUP")
+            .arg(group)
+            .arg(consumer)
+            .arg("COUNT")
+            .arg("1")
+            .arg("BLOCK")
+            .arg(timeout.as_millis().to_string())
+            .arg("STREAMS")
+            .arg(stream)
+            .arg(">");
+        self.execute(command, timeout).await
+    }
+
     /// BLPOP or BRPOP: pop one element from the first ready key.
     ///
     /// Returns `None` when the server timeout elapsed without an element.

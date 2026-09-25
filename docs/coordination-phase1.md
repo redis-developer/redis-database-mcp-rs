@@ -61,6 +61,10 @@ and a tagged payload. Completion uses the same payload envelope for its result.
 Payload types are `json`, `text`, and standard padded-base64 `binary`.
 `content_type` is available for text and binary; `schema_ref` is optional on
 all variants. The encoded payload defaults to 256 KiB and metadata to 16 KiB.
+Those are storage-envelope ceilings, not a promise that every envelope fits a
+smaller configured MCP output budget: publish validates the prospective claim
+and status results before changing Redis and rejects an envelope that could
+not be delivered safely.
 Capabilities, idempotency keys, correlation IDs, worker labels, content types,
 schema references, trace metadata, shard counts, wait durations, event counts,
 and outputs all have library-enforced bounds.
@@ -121,15 +125,18 @@ record. A retry after an ambiguous transport result returns the original
 handle rather than creating another entry.
 
 Claim uses finite `XREADGROUP COUNT 1`, then atomically records ownership,
-timeline, and attempt count. A crash between the group read and ownership
-record leaves the entry in Redis's pending entries list (PEL); the PEL is the
+timeline, and attempt count. A non-zero wait runs on a fresh bounded dedicated
+connection, so it cannot head-of-line block unrelated work on the shared
+multiplexed executor. A crash between the group read and ownership record
+leaves the entry in Redis's pending entries list (PEL); the PEL is the
 authority for recovery.
 
 Completion is one bounded Lua operation. It verifies claimant ownership,
 writes the result and completed state, appends the timeline, acknowledges the
 PEL entry, and finally commits completion idempotency. Result durability
 therefore precedes acknowledgement. A retry after an ambiguous result returns
-the committed completion.
+the original committed result and acknowledgement even if its retry body
+differs.
 
 Recovery uses `XAUTOCLAIM COUNT 1` with an explicit positive idle threshold,
 then atomically records transferred ownership and increments attempts.

@@ -495,10 +495,15 @@ impl RedisMcpBuilder {
             return Err(RedisMcpBuildError::InvalidDocsOptions);
         }
         #[cfg(feature = "coordination")]
-        if self.bundles.contains(&ToolBundle::Coordination) {
+        let coordination_enabled = self.bundles.contains(&ToolBundle::Coordination);
+        #[cfg(feature = "coordination")]
+        if coordination_enabled {
             self.coordination_config
                 .validate()
                 .map_err(|_| RedisMcpBuildError::InvalidCoordinationConfig)?;
+            if self.blocking.is_some() && self.blocking_limits.validate().is_err() {
+                return Err(RedisMcpBuildError::InvalidBlockingLimits);
+            }
         }
         let transactions_enabled =
             cfg!(feature = "transactions") && self.bundles.contains(&ToolBundle::Transactions);
@@ -541,12 +546,13 @@ impl RedisMcpBuilder {
                 RedisTransactionEngine::from_shared(invocation_engine.clone(), executor)
                     .with_limits(self.transaction_limits)
             });
-        let blocking_engine = sessions_enabled
-            .then_some(self.blocking)
-            .flatten()
-            .map(|executor| {
-                RedisBlockingEngine::from_shared(executor).with_limits(self.blocking_limits)
-            });
+        let blocking_engine = (sessions_enabled
+            || cfg!(feature = "coordination") && self.bundles.contains(&ToolBundle::Coordination))
+        .then_some(self.blocking)
+        .flatten()
+        .map(|executor| {
+            RedisBlockingEngine::from_shared(executor).with_limits(self.blocking_limits)
+        });
         let monitor_sessions = sessions_enabled.then_some(self.monitor_sessions).flatten();
         #[cfg(feature = "coordination")]
         let coordination_principal = self

@@ -153,7 +153,7 @@ impl ToolState {
             .ok_or_else(|| tower_mcp::Error::tool("Pub/Sub session manager is not configured"))
     }
 
-    #[cfg(feature = "sessions")]
+    #[cfg(any(feature = "sessions", feature = "coordination"))]
     fn blocking(&self) -> tower_mcp::Result<&crate::RedisBlockingEngine> {
         self.blocking
             .as_ref()
@@ -249,6 +249,20 @@ impl ToolState {
             ))
         } else {
             Ok(result)
+        }
+    }
+
+    #[cfg(feature = "coordination")]
+    fn ensure_output_fits<T: Serialize>(&self, value: &T, context: &str) -> tower_mcp::Result<()> {
+        let result = CallToolResult::from_serialize(value)?;
+        let actual_bytes = serde_json::to_vec(&result)?.len();
+        let max_bytes = self.output_budget.max_bytes();
+        if actual_bytes > max_bytes {
+            Err(tower_mcp::Error::tool(format!(
+                "{context} would encode to {actual_bytes} bytes, exceeding the configured MCP output limit of {max_bytes} bytes"
+            )))
+        } else {
+            Ok(())
         }
     }
 

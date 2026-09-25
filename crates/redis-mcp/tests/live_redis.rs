@@ -268,7 +268,26 @@ async fn coordination_router_client(url: &str, namespace: &str) -> McpClient {
     let executor = DirectRedis::connect(url)
         .await
         .expect("connect coordination executor");
-    coordination_router_client_with_executor(executor, namespace).await
+    let blocking =
+        DirectRedisBlocking::standalone(url).expect("prepare coordination blocking executor");
+    let router = RedisMcp::builder(executor)
+        .access(AccessMode::Full)
+        .bundles([ToolBundle::Coordination])
+        .coordination_config(
+            redis_mcp::CoordinationConfig::default()
+                .with_namespace(namespace)
+                .with_shards(4),
+        )
+        .blocking(blocking)
+        .build();
+    let client = McpClient::connect(ChannelTransport::new(router))
+        .await
+        .expect("connect coordination MCP client");
+    client
+        .initialize("redis-mcp-live-coordination-test", "0")
+        .await
+        .expect("initialize coordination MCP client");
+    client
 }
 
 async fn coordination_router_client_with_executor(
@@ -314,7 +333,7 @@ impl<E> AmbiguousAfterSuccess<E> {
 #[async_trait]
 impl<E: RedisExecutor> RedisExecutor for AmbiguousAfterSuccess<E> {
     async fn execute(&self, command: RedisCommand) -> Result<RedisValue, RedisError> {
-        let target = command.tool_name() == self.target_tool;
+        let target = command.tool_name() == self.target_tool && command.name() == "EVAL";
         let result = self.inner.execute(command).await?;
         if target && self.fail_once.swap(false, Ordering::SeqCst) {
             Err(RedisError::new(
@@ -427,6 +446,9 @@ async fn durable_handoff_lifecycle_is_idempotent_owned_and_recoverable() {
         .await
         .expect("stale completion returns a tool result");
     assert!(stale_completion.is_error);
+    let stale_error = serde_json::to_string(&stale_completion).expect("serialize ownership error");
+    assert!(stale_error.contains("[Authorization]"), "{stale_error}");
+    assert!(stale_error.contains("HANDOFF_NOT_OWNED"), "{stale_error}");
 
     let completion_input = serde_json::json!({
         "handle": handle,
@@ -441,10 +463,24 @@ async fn durable_handoff_lifecycle_is_idempotent_owned_and_recoverable() {
     .await;
     assert_eq!(completed["status"], "completed");
     assert_eq!(completed["acknowledged"], true);
+    assert_eq!(completed["result"]["value"]["ok"], true);
 
-    let completion_replay =
-        call_structured(&worker_b, "redis_handoff_complete", completion_input).await;
+    let completion_replay = call_structured(
+        &worker_b,
+        "redis_handoff_complete",
+        serde_json::json!({
+            "handle": handle,
+            "idempotency_key": "completion-42",
+            "result": {"type": "text", "value": "must-not-replace-committed-result"}
+        }),
+    )
+    .await;
     assert_eq!(completion_replay["status"], "completed");
+    assert_eq!(completion_replay["result"]["type"], "json");
+    assert_eq!(
+        completion_replay["result"]["value"]["resolution"],
+        "restarted"
+    );
 
     let final_status = call_structured(
         &producer,
@@ -460,6 +496,7 @@ async fn durable_handoff_lifecycle_is_idempotent_owned_and_recoverable() {
         .expect("publisher reads authorized handoff resource");
     let content = serde_json::to_value(resource.contents.first().expect("resource content"))
         .expect("serialize handoff resource content");
+    assert_eq!(content["mimeType"], "application/json");
     let body: serde_json::Value = serde_json::from_str(content["text"].as_str().unwrap())
         .expect("handoff resource is JSON text");
     assert_eq!(body["status"], "completed");
@@ -499,6 +536,81 @@ async fn durable_handoff_lifecycle_is_idempotent_owned_and_recoverable() {
             "invalid claim unexpectedly succeeded: {result:?}"
         );
     }
+}
+
+#[cfg(unix)]
+#[tokio::test]
+async fn durable_handoff_rejects_valid_envelopes_that_cannot_fit_claim_output() {
+    let Some(redis) = TestRedis::start().await else {
+        return;
+    };
+    let namespace = format!("coordbudget{}", std::process::id());
+    let executor = DirectRedis::connect(&redis.url)
+        .await
+        .expect("connect coordination budget executor");
+    let blocking = DirectRedisBlocking::standalone(&redis.url)
+        .expect("prepare coordination budget blocking executor");
+    let router = RedisMcp::builder(executor)
+        .access(AccessMode::Full)
+        .bundles([ToolBundle::Coordination])
+        .coordination_config(
+            redis_mcp::CoordinationConfig::default()
+                .with_namespace(&namespace)
+                .with_shards(4),
+        )
+        .output_budget(OutputBudget::new(8 * 1024, 100))
+        .blocking(blocking)
+        .build();
+    let client = McpClient::connect(ChannelTransport::new(router))
+        .await
+        .expect("connect coordination budget MCP client");
+    client
+        .initialize("redis-mcp-live-coordination-budget-test", "0")
+        .await
+        .expect("initialize coordination budget MCP client");
+
+    let rejected = client
+        .call_tool(
+            "redis_handoff_publish",
+            serde_json::json!({
+                "capability": "bounded",
+                "idempotency_key": "boundary",
+                "payload": {"type": "text", "value": "x".repeat(6 * 1024)}
+            }),
+        )
+        .await
+        .expect("oversized prospective response returns a tool result");
+    assert!(rejected.is_error, "{rejected:?}");
+    assert!(
+        serde_json::to_string(&rejected)
+            .expect("serialize prospective response error")
+            .contains("future claim response")
+    );
+
+    // The same idempotency key must still create a new handoff: the rejected
+    // envelope was validated before XADD/HSET/SET changed Redis.
+    let published = call_structured(
+        &client,
+        "redis_handoff_publish",
+        serde_json::json!({
+            "capability": "bounded",
+            "idempotency_key": "boundary",
+            "payload": {"type": "text", "value": "x".repeat(512)}
+        }),
+    )
+    .await;
+    assert_eq!(published["created"], true);
+    let claimed = call_structured(
+        &client,
+        "redis_handoff_claim",
+        serde_json::json!({
+            "capability": "bounded",
+            "shard": published["shard"],
+            "worker": "budget-worker"
+        }),
+    )
+    .await;
+    assert_eq!(claimed["claimed"], true);
 }
 
 #[cfg(unix)]

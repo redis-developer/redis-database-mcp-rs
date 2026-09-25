@@ -19529,6 +19529,7 @@
         "minimum_module_version": null,
         "minimum_redis_version": "6.2.0",
         "required_commands": [
+          "HGETALL",
           "EVAL",
           "GET",
           "SET",
@@ -19669,6 +19670,91 @@
             "CoordinationHandle": {
               "description": "Opaque durable handoff locator returned by publish and claim.",
               "type": "string"
+            },
+            "CoordinationPayload": {
+              "description": "A bounded, explicitly tagged handoff or completion payload.",
+              "oneOf": [
+                {
+                  "additionalProperties": false,
+                  "properties": {
+                    "schema_ref": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "type": {
+                      "const": "json",
+                      "type": "string"
+                    },
+                    "value": true
+                  },
+                  "required": [
+                    "type",
+                    "value"
+                  ],
+                  "type": "object"
+                },
+                {
+                  "additionalProperties": false,
+                  "properties": {
+                    "content_type": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "schema_ref": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "type": {
+                      "const": "text",
+                      "type": "string"
+                    },
+                    "value": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "type",
+                    "value"
+                  ],
+                  "type": "object"
+                },
+                {
+                  "additionalProperties": false,
+                  "properties": {
+                    "content_type": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "schema_ref": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "type": {
+                      "const": "binary",
+                      "type": "string"
+                    },
+                    "value": {
+                      "description": "Standard padded base64.",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "type",
+                    "value"
+                  ],
+                  "type": "object"
+                }
+              ]
             }
           },
           "$schema": "https://json-schema.org/draft/2020-12/schema",
@@ -19683,6 +19769,9 @@
             "resource_uri": {
               "type": "string"
             },
+            "result": {
+              "$ref": "#/$defs/CoordinationPayload"
+            },
             "status": {
               "type": "string"
             }
@@ -19691,6 +19780,7 @@
             "handle",
             "status",
             "acknowledged",
+            "result",
             "resource_uri"
           ],
           "title": "CompleteOutput",

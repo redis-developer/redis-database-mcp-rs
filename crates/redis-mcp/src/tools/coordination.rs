@@ -3,7 +3,7 @@
 use std::{
     collections::BTreeMap,
     sync::Arc,
-    time::{SystemTime, UNIX_EPOCH},
+    time::{Duration, SystemTime, UNIX_EPOCH},
 };
 
 use schemars::JsonSchema;
@@ -69,7 +69,7 @@ return redis.call('HINCRBY', KEYS[1], 'attempts', 1)
 
 const COMPLETE_SCRIPT: &str = r#"
 local existing = redis.call('GET', KEYS[4])
-if existing then return {1, redis.call('HGET', KEYS[2], 'status')} end
+if existing then return {tonumber(existing), redis.call('HGET', KEYS[2], 'status'), redis.call('HGET', KEYS[2], 'result')} end
 if redis.call('EXISTS', KEYS[2]) == 0 then return redis.error_reply('HANDOFF_NOT_FOUND') end
 local status = redis.call('HGET', KEYS[2], 'status')
 if status == 'completed' then return redis.error_reply('HANDOFF_ALREADY_COMPLETED') end
@@ -80,8 +80,8 @@ redis.call('HSET', KEYS[2], 'status', 'completed', 'result', ARGV[3],
   'completed_at_ms', ARGV[4])
 redis.call('XADD', KEYS[3], '*', 'event', 'completed', 'at_ms', ARGV[4])
 local acknowledged = redis.call('XACK', KEYS[1], ARGV[1], stream_id)
-redis.call('SET', KEYS[4], ARGV[5])
-return {acknowledged, 'completed'}
+redis.call('SET', KEYS[4], tostring(acknowledged))
+return {acknowledged, 'completed', ARGV[3]}
 "#;
 
 #[derive(Debug, Deserialize, JsonSchema)]
@@ -164,6 +164,7 @@ struct CompleteOutput {
     handle: CoordinationHandle,
     status: String,
     acknowledged: bool,
+    result: CoordinationPayload,
     resource_uri: String,
 }
 
@@ -175,7 +176,7 @@ struct StatusInput {
     max_events: usize,
 }
 
-#[derive(Debug, Serialize, JsonSchema)]
+#[derive(Debug, Clone, Serialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 struct StatusOutput {
     handle: CoordinationHandle,
@@ -196,7 +197,7 @@ struct StatusOutput {
     resource_uri: String,
 }
 
-#[derive(Debug, Serialize, JsonSchema)]
+#[derive(Debug, Clone, Serialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 struct TimelineEvent {
     id: String,
@@ -258,8 +259,15 @@ pub(super) fn add_resources(router: McpRouter, state: Arc<ToolState>) -> McpRout
                 },
             )
             .await?;
-            let body = serde_json::to_string_pretty(&status)?;
-            Ok(RequestOutcome::Complete(ReadResourceResult::text(uri, body)))
+            let result = ReadResourceResult::json(uri, &status);
+            let encoded_bytes = serde_json::to_vec(&result)?.len();
+            if encoded_bytes > state.max_output_bytes() {
+                return Err(tower_mcp::Error::tool(format!(
+                    "handoff resource would encode to {encoded_bytes} bytes, exceeding the configured resource output limit of {} bytes; retry the status tool with fewer events",
+                    state.max_output_bytes()
+                )));
+            }
+            Ok(RequestOutcome::Complete(result))
         }
     });
     router.resource_template(template)
@@ -309,6 +317,93 @@ fn validate_queue(state: &ToolState, capability: &str, shard: u16) -> tower_mcp:
     Ok(())
 }
 
+fn validate_publish_outputs(
+    state: &ToolState,
+    handle: &CoordinationHandle,
+    shard: u16,
+    input: &PublishInput,
+) -> tower_mcp::Result<()> {
+    let resource_uri = resource_uri(handle);
+    let stream_id = "18446744073709551615-18446744073709551615".to_string();
+    let claim = ClaimOutput {
+        claimed: true,
+        handoff: Some(ClaimedHandoff {
+            handle: handle.clone(),
+            capability: input.capability.clone(),
+            shard,
+            stream_id: stream_id.clone(),
+            payload: input.payload.clone(),
+            metadata: input.metadata.clone(),
+            correlation_id: input.correlation_id.clone(),
+            deadline_at_ms: input.deadline_at_ms,
+            traceparent: input.traceparent.clone(),
+            attempt: u64::MAX,
+            resource_uri: resource_uri.clone(),
+        }),
+    };
+    state.ensure_output_fits(&claim, "future claim response")?;
+
+    let status = StatusOutput {
+        handle: handle.clone(),
+        capability: input.capability.clone(),
+        shard,
+        status: CoordinationStatus::Published,
+        stream_id: stream_id.clone(),
+        correlation_id: input.correlation_id.clone(),
+        payload: input.payload.clone(),
+        metadata: input.metadata.clone(),
+        result: None,
+        deadline_at_ms: input.deadline_at_ms,
+        traceparent: input.traceparent.clone(),
+        attempts: u64::MAX,
+        caller_is_publisher: true,
+        caller_is_claimant: true,
+        timeline: vec![TimelineEvent {
+            id: stream_id,
+            event: "published".to_string(),
+            at_ms: u64::MAX,
+        }],
+        resource_uri,
+    };
+    state.ensure_output_fits(&status, "future handoff status response")
+}
+
+fn prospective_completed_status(
+    handle: CoordinationHandle,
+    fields: &BTreeMap<String, String>,
+    result: CoordinationPayload,
+) -> tower_mcp::Result<StatusOutput> {
+    let resource_uri = resource_uri(&handle);
+    Ok(StatusOutput {
+        handle,
+        capability: required(fields, "capability")?.to_string(),
+        shard: required(fields, "shard")?
+            .parse()
+            .map_err(|_| tower_mcp::Error::tool("invalid stored shard"))?,
+        status: CoordinationStatus::Completed,
+        stream_id: required(fields, "stream_id")?.to_string(),
+        correlation_id: optional_string(fields, "correlation_id"),
+        payload: json_field(fields, "payload")?,
+        metadata: json_field(fields, "metadata")?,
+        result: Some(result),
+        deadline_at_ms: optional_u64(fields, "deadline_at_ms")?,
+        traceparent: optional_string(fields, "traceparent"),
+        attempts: required(fields, "attempts")?
+            .parse()
+            .map_err(|_| tower_mcp::Error::tool("invalid stored attempt count"))?,
+        // `false` is the longer JSON spelling and therefore conservative for
+        // this pre-mutation encoded-size check.
+        caller_is_publisher: false,
+        caller_is_claimant: false,
+        timeline: vec![TimelineEvent {
+            id: "18446744073709551615-18446744073709551615".to_string(),
+            event: "completed".to_string(),
+            at_ms: u64::MAX,
+        }],
+        resource_uri,
+    })
+}
+
 fn worker_consumer(principal: &CoordinationPrincipal, worker: &str) -> tower_mcp::Result<String> {
     validate_bounded("worker", worker, MAX_WORKER_BYTES)?;
     if !worker
@@ -356,6 +451,7 @@ fn publish_tool(state: Arc<ToolState>) -> Tool {
             let handle = CoordinationHandle::create(&input.capability, shard, &principal, &input.idempotency_key).map_err(tower_mcp::Error::tool)?;
             let parsed = handle.parse(state.coordination_config().shards()).map_err(tower_mcp::Error::tool)?;
             let keys = state.coordination_config().keys(&parsed);
+            validate_publish_outputs(&state, &handle, shard, &input)?;
             let payload_json = serde_json::to_string(&input.payload)?;
             let mut cmd = command("redis_handoff_publish", AccessMode::ReadWrite, "EVAL");
             cmd.arg(PUBLISH_SCRIPT).arg("4").arg(keys.inbox.as_str()).arg(keys.state.as_str()).arg(keys.events.as_str()).arg(keys.idempotency.as_str())
@@ -396,11 +492,28 @@ fn claim_tool(state: Arc<ToolState>) -> Tool {
             let probe = CoordinationHandle::create(&input.capability, input.shard, &principal, "claim-probe").map_err(tower_mcp::Error::tool)?;
             let parsed = probe.parse(state.coordination_config().shards()).map_err(tower_mcp::Error::tool)?;
             let inbox = state.coordination_config().keys(&parsed).inbox;
-            let mut cmd = command("redis_handoff_claim", AccessMode::ReadWrite, "XREADGROUP");
-            cmd.arg("GROUP").arg(GROUP).arg(consumer.as_str()).arg("COUNT").arg("1");
-            if input.wait_ms > 0 { cmd.arg("BLOCK").arg(input.wait_ms.to_string()); }
-            cmd.arg("STREAMS").arg(inbox.as_str()).arg(">");
-            let value = state.raw(cmd, "claiming handoff failed").await?;
+            let value = if input.wait_ms > 0 {
+                state
+                    .blocking()?
+                    .read_group_one(
+                        GROUP,
+                        &consumer,
+                        inbox.as_bytes(),
+                        Duration::from_millis(input.wait_ms),
+                    )
+                    .await
+                    .map_err(|error| {
+                        tower_mcp::Error::tool(format!(
+                            "claiming handoff failed [{:?}]: {error}",
+                            error.kind()
+                        ))
+                    })?
+            } else {
+                let mut cmd = command("redis_handoff_claim", AccessMode::ReadWrite, "XREADGROUP");
+                cmd.arg("GROUP").arg(GROUP).arg(consumer.as_str()).arg("COUNT").arg("1")
+                    .arg("STREAMS").arg(inbox.as_str()).arg(">");
+                state.raw(cmd, "claiming handoff failed").await?
+            };
             let Some(entry) = first_stream_entry(value, "claim")? else {
                 return state.output(&ClaimOutput { claimed: false, handoff: None });
             };
@@ -432,17 +545,43 @@ fn complete_tool(state: Arc<ToolState>) -> Tool {
             let principal = request_principal(&ctx)?;
             let parsed = input.handle.parse(state.coordination_config().shards()).map_err(tower_mcp::Error::tool)?;
             let keys = state.coordination_config().keys(&parsed);
+            let resource_uri = resource_uri(&input.handle);
+            let prospective_completion = CompleteOutput {
+                handle: input.handle.clone(),
+                status: "completed".to_string(),
+                acknowledged: true,
+                result: input.result.clone(),
+                resource_uri: resource_uri.clone(),
+            };
+            state.ensure_output_fits(&prospective_completion, "completion response")?;
+            let mut state_cmd = command("redis_handoff_complete", AccessMode::ReadWrite, "HGETALL");
+            state_cmd.arg(keys.state.as_str());
+            let fields = pairs(
+                state
+                    .raw(state_cmd, "reading handoff state before completion failed")
+                    .await?,
+                "handoff state",
+            )?;
+            if !fields.is_empty() {
+                let prospective_status = prospective_completed_status(
+                    input.handle.clone(),
+                    &fields,
+                    input.result.clone(),
+                )?;
+                state.ensure_output_fits(&prospective_status, "completed handoff status response")?;
+            }
             let completion_key = format!("{}:completion:{}:{}", keys.state, principal.digest(), digest_hex(input.idempotency_key.as_bytes()));
             let result_json = serde_json::to_string(&input.result)?;
             let mut cmd = command("redis_handoff_complete", AccessMode::ReadWrite, "EVAL");
             cmd.arg(COMPLETE_SCRIPT).arg("4").arg(keys.inbox.as_str()).arg(keys.state.as_str()).arg(keys.events.as_str()).arg(completion_key)
                 .arg(GROUP).arg(principal.digest()).arg(result_json).arg(now_ms().to_string()).arg(input.handle.as_str());
             let values = array(state.raw(cmd, "completing handoff failed").await?, "complete")?;
-            if values.len() != 2 { return Err(tower_mcp::Error::tool("complete returned an invalid reply")); }
+            if values.len() != 3 { return Err(tower_mcp::Error::tool("complete returned an invalid reply")); }
             let acknowledged = integer(values[0].clone(), "complete acknowledgement")? == 1;
             let status = text(values[1].clone(), "complete status")?;
-            let resource_uri = resource_uri(&input.handle);
-            state.output(&CompleteOutput { handle: input.handle, status, acknowledged, resource_uri })
+            let result = serde_json::from_str(&text(values[2].clone(), "complete result")?)
+                .map_err(|error| tower_mcp::Error::tool(format!("invalid stored completion result: {error}")))?;
+            state.output(&CompleteOutput { handle: input.handle, status, acknowledged, result, resource_uri })
         })
         .build()
 }

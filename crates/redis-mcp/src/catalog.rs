@@ -527,7 +527,7 @@ impl ToolMetadata {
                 "XADD",
             ],
             "redis_handoff_complete" => &[
-                "EVAL", "GET", "SET", "EXISTS", "HGET", "HSET", "XADD", "XACK",
+                "HGETALL", "EVAL", "GET", "SET", "EXISTS", "HGET", "HSET", "XADD", "XACK",
             ],
             "redis_handoff_status" => &["HGETALL", "XREVRANGE"],
             "redis_handoff_recover" => &[

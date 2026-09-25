@@ -1,14 +1,21 @@
-use std::time::{Duration, Instant};
+use std::{
+    sync::{
+        Arc,
+        atomic::{AtomicBool, Ordering},
+    },
+    time::{Duration, Instant},
+};
 
+use async_trait::async_trait;
 use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64};
 use redis_mcp::{
     AccessMode, CapabilityStatus, DirectRedis, DirectRedisBlocking, DirectRedisMonitorSessions,
     DirectRedisPubSubSessionManager, DirectRedisTransactions, MonitorSessionLimits,
     NativeRedisInvocation, OutputBudget, PubSubReadRequest, PubSubSessionLimits,
     PubSubSessionManager, PubSubSessionOwner, PubSubSubscriptionKind, RawCommandPolicy,
-    RedisDeployment, RedisInvocationEngine, RedisMcp, RedisModule, RedisTransactionEngine,
-    RedisTransactionLimits, RedisTransactionOutcome, RedisTransactionRequest, RedisValue,
-    RedisVersion, ToolBundle, UnavailableToolPolicy,
+    RedisCommand, RedisDeployment, RedisError, RedisExecutor, RedisInvocationEngine, RedisMcp,
+    RedisModule, RedisTransactionEngine, RedisTransactionLimits, RedisTransactionOutcome,
+    RedisTransactionRequest, RedisValue, RedisVersion, ToolBundle, UnavailableToolPolicy,
 };
 use tower_mcp::client::{ChannelTransport, McpClient};
 
@@ -257,6 +264,69 @@ async fn admin_router_client(url: &str) -> McpClient {
     client
 }
 
+async fn coordination_router_client(url: &str, namespace: &str) -> McpClient {
+    let executor = DirectRedis::connect(url)
+        .await
+        .expect("connect coordination executor");
+    coordination_router_client_with_executor(executor, namespace).await
+}
+
+async fn coordination_router_client_with_executor(
+    executor: impl RedisExecutor,
+    namespace: &str,
+) -> McpClient {
+    let router = RedisMcp::builder(executor)
+        .access(AccessMode::Full)
+        .bundles([ToolBundle::Coordination])
+        .coordination_config(
+            redis_mcp::CoordinationConfig::default()
+                .with_namespace(namespace)
+                .with_shards(4),
+        )
+        .build();
+    let client = McpClient::connect(ChannelTransport::new(router))
+        .await
+        .expect("connect coordination MCP client");
+    client
+        .initialize("redis-mcp-live-coordination-test", "0")
+        .await
+        .expect("initialize coordination MCP client");
+    client
+}
+
+#[derive(Clone)]
+struct AmbiguousAfterSuccess<E> {
+    inner: E,
+    target_tool: &'static str,
+    fail_once: Arc<AtomicBool>,
+}
+
+impl<E> AmbiguousAfterSuccess<E> {
+    fn new(inner: E, target_tool: &'static str) -> Self {
+        Self {
+            inner,
+            target_tool,
+            fail_once: Arc::new(AtomicBool::new(true)),
+        }
+    }
+}
+
+#[async_trait]
+impl<E: RedisExecutor> RedisExecutor for AmbiguousAfterSuccess<E> {
+    async fn execute(&self, command: RedisCommand) -> Result<RedisValue, RedisError> {
+        let target = command.tool_name() == self.target_tool;
+        let result = self.inner.execute(command).await?;
+        if target && self.fail_once.swap(false, Ordering::SeqCst) {
+            Err(RedisError::new(
+                RedisErrorKind::Connection,
+                "simulated connection loss after Redis committed the command",
+            ))
+        } else {
+            Ok(result)
+        }
+    }
+}
+
 async fn call_structured(
     client: &McpClient,
     tool: &'static str,
@@ -270,6 +340,368 @@ async fn call_structured(
     result
         .structured_content
         .unwrap_or_else(|| panic!("{tool}: missing structured content"))
+}
+
+#[cfg(unix)]
+#[tokio::test]
+async fn durable_handoff_lifecycle_is_idempotent_owned_and_recoverable() {
+    let Some(redis) = TestRedis::start().await else {
+        return;
+    };
+    let namespace = format!("coordtest{}", std::process::id());
+    let producer = coordination_router_client(&redis.url, &namespace).await;
+    let worker_a = coordination_router_client(&redis.url, &namespace).await;
+    let worker_b = coordination_router_client(&redis.url, &namespace).await;
+
+    let publish_input = serde_json::json!({
+        "capability": "triage",
+        "idempotency_key": "incident-42",
+        "payload": {"type": "json", "value": {"incident": 42}},
+        "metadata": {"severity": "high"},
+        "correlation_id": "trace-42"
+    });
+    let published =
+        call_structured(&producer, "redis_handoff_publish", publish_input.clone()).await;
+    assert_eq!(published["created"], true);
+    let handle = published["handle"].as_str().unwrap().to_string();
+    let shard = published["shard"].as_u64().unwrap();
+
+    let replayed = call_structured(&producer, "redis_handoff_publish", publish_input).await;
+    assert_eq!(replayed["created"], false);
+    assert_eq!(replayed["handle"], handle);
+
+    let claimed = call_structured(
+        &worker_a,
+        "redis_handoff_claim",
+        serde_json::json!({"capability": "triage", "shard": shard, "worker": "worker-a"}),
+    )
+    .await;
+    assert_eq!(claimed["claimed"], true);
+    assert_eq!(claimed["handoff"]["handle"], handle);
+
+    let producer_status = call_structured(
+        &producer,
+        "redis_handoff_status",
+        serde_json::json!({"handle": handle}),
+    )
+    .await;
+    assert_eq!(producer_status["status"], "claimed");
+    assert_eq!(producer_status["caller_is_publisher"], true);
+
+    tokio::time::sleep(Duration::from_millis(5)).await;
+    let recovered = call_structured(
+        &worker_b,
+        "redis_handoff_recover",
+        serde_json::json!({
+            "capability": "triage",
+            "shard": shard,
+            "worker": "worker-b",
+            "min_idle_ms": 1
+        }),
+    )
+    .await;
+    assert_eq!(recovered["claimed"], true);
+    assert_eq!(recovered["handoff"]["handle"], handle);
+
+    let resource_uri = published["resource_uri"].as_str().unwrap();
+    let stale_resource = worker_a
+        .read_resource(resource_uri)
+        .await
+        .expect_err("stale claimant cannot read the handoff resource");
+    assert!(
+        stale_resource
+            .to_string()
+            .contains("publisher or current claimant"),
+        "{stale_resource}"
+    );
+
+    let stale_completion = worker_a
+        .call_tool(
+            "redis_handoff_complete",
+            serde_json::json!({
+                "handle": handle,
+                "idempotency_key": "stale-completion",
+                "result": {"type": "text", "value": "stale"}
+            }),
+        )
+        .await
+        .expect("stale completion returns a tool result");
+    assert!(stale_completion.is_error);
+
+    let completion_input = serde_json::json!({
+        "handle": handle,
+        "idempotency_key": "completion-42",
+        "result": {"type": "json", "value": {"resolution": "restarted"}}
+    });
+    let completed = call_structured(
+        &worker_b,
+        "redis_handoff_complete",
+        completion_input.clone(),
+    )
+    .await;
+    assert_eq!(completed["status"], "completed");
+    assert_eq!(completed["acknowledged"], true);
+
+    let completion_replay =
+        call_structured(&worker_b, "redis_handoff_complete", completion_input).await;
+    assert_eq!(completion_replay["status"], "completed");
+
+    let final_status = call_structured(
+        &producer,
+        "redis_handoff_status",
+        serde_json::json!({"handle": handle, "max_events": 10}),
+    )
+    .await;
+    assert_eq!(final_status["status"], "completed");
+    assert_eq!(final_status["timeline"].as_array().unwrap().len(), 4);
+    let resource = producer
+        .read_resource(resource_uri)
+        .await
+        .expect("publisher reads authorized handoff resource");
+    let content = serde_json::to_value(resource.contents.first().expect("resource content"))
+        .expect("serialize handoff resource content");
+    let body: serde_json::Value = serde_json::from_str(content["text"].as_str().unwrap())
+        .expect("handoff resource is JSON text");
+    assert_eq!(body["status"], "completed");
+
+    let empty = call_structured(
+        &worker_b,
+        "redis_handoff_claim",
+        serde_json::json!({
+            "capability": "triage",
+            "shard": shard,
+            "worker": "worker-b",
+            "wait_ms": 1
+        }),
+    )
+    .await;
+    assert_eq!(empty["claimed"], false);
+
+    for invalid in [
+        serde_json::json!({
+            "capability": "triage",
+            "shard": shard,
+            "worker": "worker-b",
+            "wait_ms": 5_001
+        }),
+        serde_json::json!({
+            "capability": "triage",
+            "shard": 16,
+            "worker": "worker-b"
+        }),
+    ] {
+        let result = worker_b
+            .call_tool("redis_handoff_claim", invalid)
+            .await
+            .expect("invalid claim returns a tool result");
+        assert!(
+            result.is_error,
+            "invalid claim unexpectedly succeeded: {result:?}"
+        );
+    }
+}
+
+#[cfg(unix)]
+#[tokio::test]
+async fn durable_handoff_acl_is_least_privilege_and_redacts_denied_payloads() {
+    let Some(redis) = TestRedis::start().await else {
+        return;
+    };
+    let version = DirectRedis::connect(&redis.url)
+        .await
+        .expect("connect for coordination ACL discovery")
+        .discover_capabilities()
+        .await
+        .expect("discover coordination ACL capabilities")
+        .redis_version()
+        .expect("coordination ACL Redis reports its version");
+    if version < RedisVersion::new(6, 2, 0) {
+        eprintln!("skipping coordination ACL test on Redis {version}");
+        return;
+    }
+
+    let namespace = format!("coordacl{}", std::process::id());
+    let allowed_user = format!("coord_allowed_{}", std::process::id());
+    let denied_user = format!("coord_denied_{}", std::process::id());
+    let password = "coordination-acl-secret";
+    let admin = redis::Client::open(redis.url.as_str()).expect("open coordination ACL admin");
+    let mut connection = admin
+        .get_multiplexed_async_connection()
+        .await
+        .expect("connect coordination ACL admin");
+    let required_commands = [
+        "eval",
+        "get",
+        "set",
+        "xgroup",
+        "xadd",
+        "hset",
+        "hincrby",
+        "xreadgroup",
+        "exists",
+        "hget",
+        "xack",
+        "hgetall",
+        "xrevrange",
+        "xautoclaim",
+    ];
+    let mut create_allowed = redis::cmd("ACL");
+    create_allowed
+        .arg("SETUSER")
+        .arg(&allowed_user)
+        .arg("reset")
+        .arg("on")
+        .arg(format!(">{password}"))
+        .arg("~rmcp:*");
+    for command in required_commands {
+        create_allowed.arg(format!("+{command}"));
+    }
+    create_allowed
+        .query_async::<()>(&mut connection)
+        .await
+        .expect("create least-privilege coordination ACL user");
+    redis::cmd("ACL")
+        .arg("SETUSER")
+        .arg(&denied_user)
+        .arg("reset")
+        .arg("on")
+        .arg(format!(">{password}"))
+        .arg("~rmcp:*")
+        .arg("+eval")
+        .arg("+get")
+        .query_async::<()>(&mut connection)
+        .await
+        .expect("create denied coordination ACL user");
+
+    let restricted_url = |username: &str| {
+        let mut url = redis::parse_redis_url(&redis.url).expect("parse coordination ACL URL");
+        url.set_username(username)
+            .expect("set coordination ACL username");
+        url.set_password(Some(password))
+            .expect("set coordination ACL password");
+        url
+    };
+    let allowed_url = restricted_url(&allowed_user);
+    let producer = coordination_router_client(allowed_url.as_str(), &namespace).await;
+    let worker = coordination_router_client(allowed_url.as_str(), &namespace).await;
+    let published = call_structured(
+        &producer,
+        "redis_handoff_publish",
+        serde_json::json!({
+            "capability": "acl_work",
+            "idempotency_key": "acl-job-1",
+            "payload": {"type": "text", "value": "allowed"}
+        }),
+    )
+    .await;
+    let claimed = call_structured(
+        &worker,
+        "redis_handoff_claim",
+        serde_json::json!({
+            "capability": "acl_work",
+            "shard": published["shard"],
+            "worker": "acl_worker"
+        }),
+    )
+    .await;
+    assert_eq!(claimed["claimed"], true);
+
+    let denied_url = restricted_url(&denied_user);
+    let denied_client = coordination_router_client(denied_url.as_str(), &namespace).await;
+    let secret_payload = "payload-that-must-not-leak";
+    let denied = denied_client
+        .call_tool(
+            "redis_handoff_publish",
+            serde_json::json!({
+                "capability": "acl_work",
+                "idempotency_key": "acl-denied-job",
+                "payload": {"type": "text", "value": secret_payload}
+            }),
+        )
+        .await
+        .expect("ACL denial is represented as a tool result");
+    assert!(denied.is_error);
+    let denied = serde_json::to_string(&denied).expect("serialize coordination ACL denial");
+    assert!(denied.contains("Authorization"), "{denied}");
+    assert!(!denied.contains(password));
+    assert!(!denied.contains(secret_payload));
+
+    redis::cmd("ACL")
+        .arg("DELUSER")
+        .arg(&allowed_user)
+        .arg(&denied_user)
+        .query_async::<()>(&mut connection)
+        .await
+        .expect("delete coordination ACL users");
+}
+
+#[cfg(unix)]
+#[tokio::test]
+async fn durable_handoff_retries_resolve_ambiguous_publish_and_completion() {
+    let Some(redis) = TestRedis::start().await else {
+        return;
+    };
+    let namespace = format!("coordambiguous{}", std::process::id());
+    let producer_executor = AmbiguousAfterSuccess::new(
+        DirectRedis::connect(&redis.url)
+            .await
+            .expect("connect ambiguous publish executor"),
+        "redis_handoff_publish",
+    );
+    let producer = coordination_router_client_with_executor(producer_executor, &namespace).await;
+    let publish_input = serde_json::json!({
+        "capability": "ambiguous_work",
+        "idempotency_key": "ambiguous-publish-1",
+        "payload": {"type": "text", "value": "work"}
+    });
+    let first_publish = producer
+        .call_tool("redis_handoff_publish", publish_input.clone())
+        .await
+        .expect("ambiguous publish returns a tool result");
+    assert!(first_publish.is_error);
+    let published = call_structured(&producer, "redis_handoff_publish", publish_input).await;
+    assert_eq!(published["created"], false);
+
+    let worker_executor = AmbiguousAfterSuccess::new(
+        DirectRedis::connect(&redis.url)
+            .await
+            .expect("connect ambiguous completion executor"),
+        "redis_handoff_complete",
+    );
+    let worker = coordination_router_client_with_executor(worker_executor, &namespace).await;
+    let claimed = call_structured(
+        &worker,
+        "redis_handoff_claim",
+        serde_json::json!({
+            "capability": "ambiguous_work",
+            "shard": published["shard"],
+            "worker": "ambiguous_worker"
+        }),
+    )
+    .await;
+    let completion_input = serde_json::json!({
+        "handle": claimed["handoff"]["handle"],
+        "idempotency_key": "ambiguous-completion-1",
+        "result": {"type": "json", "value": {"ok": true}}
+    });
+    let first_completion = worker
+        .call_tool("redis_handoff_complete", completion_input.clone())
+        .await
+        .expect("ambiguous completion returns a tool result");
+    assert!(first_completion.is_error);
+    let completed = call_structured(&worker, "redis_handoff_complete", completion_input).await;
+    assert_eq!(completed["status"], "completed");
+    assert_eq!(completed["acknowledged"], true);
+
+    let status = call_structured(
+        &producer,
+        "redis_handoff_status",
+        serde_json::json!({"handle": published["handle"]}),
+    )
+    .await;
+    assert_eq!(status["status"], "completed");
+    assert_eq!(status["attempts"], 1);
+    assert_eq!(status["timeline"].as_array().unwrap().len(), 3);
 }
 
 #[cfg(unix)]

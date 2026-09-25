@@ -29,6 +29,7 @@ full = [
     "transactions",
     "admin",
     "bulk",
+    "coordination",
     "guidance",
 ]
 all-families = [
@@ -72,6 +73,7 @@ sessions = []
 transactions = []
 admin = []
 bulk = []
+coordination = ["tower-mcp/stateless"]
 guidance = []
 
 [dependencies]
@@ -85,6 +87,7 @@ redis-tower-cluster.workspace = true
 schemars.workspace = true
 serde.workspace = true
 serde_json.workspace = true
+sha2.workspace = true
 tokio.workspace = true
 tower-mcp.workspace = true
 url.workspace = true

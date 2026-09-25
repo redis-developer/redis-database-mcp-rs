@@ -52,6 +52,7 @@ sessions = ["redis-mcp/sessions"]
 transactions = ["redis-mcp/transactions"]
 admin = ["redis-mcp/admin"]
 bulk = ["redis-mcp/bulk"]
+coordination = ["redis-mcp/coordination"]
 guidance = ["redis-mcp/guidance"]
 
 [dependencies]

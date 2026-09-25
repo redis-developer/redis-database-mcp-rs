@@ -55,7 +55,8 @@ The additive family features are `keyspace`, `strings`, `hashes`, `lists`,
 `sets`, `sorted-sets`, `streams`, `bitmaps`, `arrays`, `hyperloglog`,
 `geospatial`, `vector-sets`, `pubsub`, `scripting`, `json`, `search`, and
 `timeseries`. The `diagnostics`, `sessions`, `transactions`, `admin`, `bulk`,
-and `guidance` features compile their corresponding cross-cutting surfaces.
+`coordination`, and `guidance` features compile their corresponding
+cross-cutting surfaces.
 `all-families` enables every command family, while `full` enables every family
 and cross-cutting surface.
 

@@ -23,6 +23,7 @@ fn server_error(message: &str) -> RedisError {
         "NOAUTH" | "WRONGPASS" => RedisErrorKind::Authentication,
         "NOPERM" => RedisErrorKind::Authorization,
         "CROSSSLOT" => RedisErrorKind::InvalidRequest,
+        _ if message.contains("ACL failure in script") => RedisErrorKind::Authorization,
         _ => RedisErrorKind::Server,
     };
     RedisError::new(kind, message).with_code(code)
@@ -605,6 +606,11 @@ mod tests {
                 "CROSSSLOT keys differ",
                 RedisErrorKind::InvalidRequest,
                 "CROSSSLOT",
+            ),
+            (
+                "ERR ACL failure in script: User worker cannot run XADD",
+                RedisErrorKind::Authorization,
+                "ERR",
             ),
             ("WRONGTYPE wrong value", RedisErrorKind::Server, "WRONGTYPE"),
         ] {

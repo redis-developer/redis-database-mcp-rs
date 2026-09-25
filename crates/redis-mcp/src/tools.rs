@@ -6,6 +6,8 @@ mod admin;
 mod blocking;
 #[cfg(feature = "bulk")]
 mod bulk;
+#[cfg(feature = "coordination")]
+mod coordination;
 #[cfg(any(
     feature = "hashes",
     feature = "lists",
@@ -86,6 +88,8 @@ pub(crate) struct ToolState {
     bulk_limits: crate::RedisBulkLimits,
     blocking: Option<crate::RedisBlockingEngine>,
     pub(crate) monitor_sessions: Option<Arc<dyn crate::MonitorSessionManager>>,
+    #[cfg(feature = "coordination")]
+    coordination_config: crate::CoordinationConfig,
 }
 
 impl ToolState {
@@ -99,6 +103,7 @@ impl ToolState {
         bulk_limits: crate::RedisBulkLimits,
         blocking: Option<crate::RedisBlockingEngine>,
         monitor_sessions: Option<Arc<dyn crate::MonitorSessionManager>>,
+        #[cfg(feature = "coordination")] coordination_config: crate::CoordinationConfig,
     ) -> Self {
         Self {
             access,
@@ -109,6 +114,8 @@ impl ToolState {
             bulk_limits,
             blocking,
             monitor_sessions,
+            #[cfg(feature = "coordination")]
+            coordination_config,
         }
     }
 
@@ -211,6 +218,11 @@ impl ToolState {
 
     fn command_timeout(&self) -> Duration {
         self.invocation_engine.command_timeout()
+    }
+
+    #[cfg(feature = "coordination")]
+    fn coordination_config(&self) -> &crate::CoordinationConfig {
+        &self.coordination_config
     }
 
     fn validate_requested_entries(&self, requested: usize, name: &str) -> tower_mcp::Result<()> {
@@ -571,7 +583,11 @@ pub(crate) fn add_read_only_tools(
     }
     #[cfg(feature = "admin")]
     if bundles.contains(&ToolBundle::Admin) {
-        router = admin::add_read_tools(router, state);
+        router = admin::add_read_tools(router, state.clone());
+    }
+    #[cfg(feature = "coordination")]
+    if bundles.contains(&ToolBundle::Coordination) {
+        router = coordination::add_read_tools(router, state);
     }
     router
 }
@@ -729,7 +745,11 @@ pub(crate) fn add_write_tools(
     }
     #[cfg(feature = "bulk")]
     if bundles.contains(&ToolBundle::Bulk) {
-        router = bulk::add_write_tools(router, state);
+        router = bulk::add_write_tools(router, state.clone());
+    }
+    #[cfg(feature = "coordination")]
+    if bundles.contains(&ToolBundle::Coordination) {
+        router = coordination::add_write_tools(router, state);
     }
     router
 }
@@ -900,7 +920,11 @@ pub(crate) fn add_destructive_tools(
     }
     #[cfg(feature = "admin")]
     if bundles.contains(&ToolBundle::Admin) {
-        router = admin::add_full_tools(router, state);
+        router = admin::add_full_tools(router, state.clone());
+    }
+    #[cfg(feature = "coordination")]
+    if bundles.contains(&ToolBundle::Coordination) {
+        router = coordination::add_full_tools(router, state);
     }
     router
 }
@@ -929,6 +953,11 @@ pub(crate) fn add_invocation_read_tools(router: McpRouter, state: Arc<ToolState>
 
 pub(crate) fn add_invocation_write_tools(router: McpRouter, state: Arc<ToolState>) -> McpRouter {
     invocation::add_write_tools(router, state)
+}
+
+#[cfg(feature = "coordination")]
+pub(crate) fn add_coordination_resources(router: McpRouter, state: Arc<ToolState>) -> McpRouter {
+    coordination::add_resources(router, state)
 }
 
 fn output_schema<T: JsonSchema>() -> JsonValue {

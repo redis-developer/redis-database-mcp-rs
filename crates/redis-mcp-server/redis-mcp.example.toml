@@ -39,7 +39,7 @@ raw = "disabled"
 # Bounded atomic MULTI/EXEC execution; requires an enabled raw policy.
 transactions = false
 # Optional bundles added to the curated defaults: "admin", "bulk",
-# "invocation", "json", "search", "scripting", "timeseries".
+# "coordination", "invocation", "json", "search", "scripting", "timeseries".
 bundles = []
 # Tools the discovered target cannot serve: "advertise" (with preflight
 # errors) or "hide".

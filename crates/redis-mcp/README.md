@@ -57,7 +57,7 @@ surface.
   `streams`, `bitmaps`, `arrays`, `hyperloglog`, `geospatial`, `vector-sets`,
   `pubsub`, `scripting`, `json`, `search`, and `timeseries`.
 - Cross-cutting surfaces: `diagnostics`, `sessions`, `transactions`, `admin`,
-  `bulk`, and `guidance`.
+  `bulk`, `coordination`, and `guidance`.
 - `all-families` enables every family.
 - `full` enables every family and cross-cutting surface; it is the default.
 
@@ -65,6 +65,11 @@ Stateful Pub/Sub and MONITOR sessions require a host-provided stable owner and
 lifecycle. Transactions and blocking operations use dedicated connections.
 Redis ACLs remain the authorization boundary; MCP access modes and annotations
 are defense in depth.
+
+The opt-in `coordination` bundle provides a Redis Streams-backed durable
+handoff protocol with publish, claim, complete, status, and recovery tools.
+Its keys are sharded and hash-tagged for Redis Cluster, and its principal is a
+host extension separate from transient MCP transport sessions.
 
 ## Documentation and support
 

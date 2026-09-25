@@ -9171,7 +9171,8 @@ async fn command_docs_template_reads_completes_and_fails_closed() {
             .await
             .expect("list bare templates")
             .resource_templates
-            .is_empty()
+            .iter()
+            .all(|template| template.uri_template != redis_mcp::REDIS_DOCS_URI_TEMPLATE)
     );
 }
 

@@ -19277,6 +19277,1163 @@
       "requires_raw_opt_in": false
     },
     {
+      "bundle": "coordination",
+      "capability_requirements": {
+        "deployment": "any",
+        "minimum_module_version": null,
+        "minimum_redis_version": "6.2.0",
+        "required_commands": [
+          "XREADGROUP",
+          "EVAL",
+          "EXISTS",
+          "HGET",
+          "HSET",
+          "HINCRBY",
+          "XADD"
+        ],
+        "required_module": null
+      },
+      "family": null,
+      "name": "redis_handoff_claim",
+      "output_policy": "intrinsically_bounded",
+      "protocol": {
+        "annotations": {
+          "destructiveHint": false
+        },
+        "description": "Claim at most one new handoff from one explicit capability shard. Poll shards independently so Redis Cluster never needs a cross-slot read.",
+        "inputSchema": {
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "capability": {
+              "type": "string"
+            },
+            "shard": {
+              "format": "uint16",
+              "maximum": 65535,
+              "minimum": 0,
+              "type": "integer"
+            },
+            "wait_ms": {
+              "default": 0,
+              "description": "Finite long-poll duration. Zero performs a non-blocking claim.",
+              "format": "uint64",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "worker": {
+              "description": "Stable worker label; authenticated identity remains a separate server extension.",
+              "type": "string"
+            }
+          },
+          "required": [
+            "capability",
+            "shard",
+            "worker"
+          ],
+          "title": "ClaimInput",
+          "type": "object"
+        },
+        "name": "redis_handoff_claim",
+        "outputSchema": {
+          "$defs": {
+            "ClaimedHandoff": {
+              "additionalProperties": false,
+              "properties": {
+                "attempt": {
+                  "format": "uint64",
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                "capability": {
+                  "type": "string"
+                },
+                "correlation_id": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "deadline_at_ms": {
+                  "format": "uint64",
+                  "minimum": 0,
+                  "type": [
+                    "integer",
+                    "null"
+                  ]
+                },
+                "handle": {
+                  "$ref": "#/$defs/CoordinationHandle"
+                },
+                "metadata": {
+                  "additionalProperties": true,
+                  "type": "object"
+                },
+                "payload": {
+                  "$ref": "#/$defs/CoordinationPayload"
+                },
+                "resource_uri": {
+                  "type": "string"
+                },
+                "shard": {
+                  "format": "uint16",
+                  "maximum": 65535,
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                "stream_id": {
+                  "type": "string"
+                },
+                "traceparent": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                }
+              },
+              "required": [
+                "handle",
+                "capability",
+                "shard",
+                "stream_id",
+                "payload",
+                "metadata",
+                "attempt",
+                "resource_uri"
+              ],
+              "type": "object"
+            },
+            "CoordinationHandle": {
+              "description": "Opaque durable handoff locator returned by publish and claim.",
+              "type": "string"
+            },
+            "CoordinationPayload": {
+              "description": "A bounded, explicitly tagged handoff or completion payload.",
+              "oneOf": [
+                {
+                  "additionalProperties": false,
+                  "properties": {
+                    "schema_ref": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "type": {
+                      "const": "json",
+                      "type": "string"
+                    },
+                    "value": true
+                  },
+                  "required": [
+                    "type",
+                    "value"
+                  ],
+                  "type": "object"
+                },
+                {
+                  "additionalProperties": false,
+                  "properties": {
+                    "content_type": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "schema_ref": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "type": {
+                      "const": "text",
+                      "type": "string"
+                    },
+                    "value": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "type",
+                    "value"
+                  ],
+                  "type": "object"
+                },
+                {
+                  "additionalProperties": false,
+                  "properties": {
+                    "content_type": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "schema_ref": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "type": {
+                      "const": "binary",
+                      "type": "string"
+                    },
+                    "value": {
+                      "description": "Standard padded base64.",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "type",
+                    "value"
+                  ],
+                  "type": "object"
+                }
+              ]
+            }
+          },
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "claimed": {
+              "type": "boolean"
+            },
+            "handoff": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/ClaimedHandoff"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          },
+          "required": [
+            "claimed"
+          ],
+          "title": "ClaimOutput",
+          "type": "object"
+        },
+        "title": "Claim Durable Redis Handoff"
+      },
+      "required_access": "read_write",
+      "required_module": null,
+      "requires_raw_opt_in": false
+    },
+    {
+      "bundle": "coordination",
+      "capability_requirements": {
+        "deployment": "any",
+        "minimum_module_version": null,
+        "minimum_redis_version": "6.2.0",
+        "required_commands": [
+          "EVAL",
+          "GET",
+          "SET",
+          "EXISTS",
+          "HGET",
+          "HSET",
+          "XADD",
+          "XACK"
+        ],
+        "required_module": null
+      },
+      "family": null,
+      "name": "redis_handoff_complete",
+      "output_policy": "intrinsically_bounded",
+      "protocol": {
+        "annotations": {
+          "destructiveHint": false,
+          "idempotentHint": true
+        },
+        "description": "Atomically verify durable claimant ownership, store a bounded result, append the timeline, and acknowledge the inbox entry. Safe to retry with the same idempotency key.",
+        "inputSchema": {
+          "$defs": {
+            "CoordinationHandle": {
+              "description": "Opaque durable handoff locator returned by publish and claim.",
+              "type": "string"
+            },
+            "CoordinationPayload": {
+              "description": "A bounded, explicitly tagged handoff or completion payload.",
+              "oneOf": [
+                {
+                  "additionalProperties": false,
+                  "properties": {
+                    "schema_ref": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "type": {
+                      "const": "json",
+                      "type": "string"
+                    },
+                    "value": true
+                  },
+                  "required": [
+                    "type",
+                    "value"
+                  ],
+                  "type": "object"
+                },
+                {
+                  "additionalProperties": false,
+                  "properties": {
+                    "content_type": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "schema_ref": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "type": {
+                      "const": "text",
+                      "type": "string"
+                    },
+                    "value": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "type",
+                    "value"
+                  ],
+                  "type": "object"
+                },
+                {
+                  "additionalProperties": false,
+                  "properties": {
+                    "content_type": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "schema_ref": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "type": {
+                      "const": "binary",
+                      "type": "string"
+                    },
+                    "value": {
+                      "description": "Standard padded base64.",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "type",
+                    "value"
+                  ],
+                  "type": "object"
+                }
+              ]
+            }
+          },
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "handle": {
+              "$ref": "#/$defs/CoordinationHandle"
+            },
+            "idempotency_key": {
+              "description": "Stable retry key scoped to the authenticated claimant.",
+              "type": "string"
+            },
+            "result": {
+              "$ref": "#/$defs/CoordinationPayload"
+            }
+          },
+          "required": [
+            "handle",
+            "idempotency_key",
+            "result"
+          ],
+          "title": "CompleteInput",
+          "type": "object"
+        },
+        "name": "redis_handoff_complete",
+        "outputSchema": {
+          "$defs": {
+            "CoordinationHandle": {
+              "description": "Opaque durable handoff locator returned by publish and claim.",
+              "type": "string"
+            }
+          },
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "acknowledged": {
+              "type": "boolean"
+            },
+            "handle": {
+              "$ref": "#/$defs/CoordinationHandle"
+            },
+            "resource_uri": {
+              "type": "string"
+            },
+            "status": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "handle",
+            "status",
+            "acknowledged",
+            "resource_uri"
+          ],
+          "title": "CompleteOutput",
+          "type": "object"
+        },
+        "title": "Complete Durable Redis Handoff"
+      },
+      "required_access": "read_write",
+      "required_module": null,
+      "requires_raw_opt_in": false
+    },
+    {
+      "bundle": "coordination",
+      "capability_requirements": {
+        "deployment": "any",
+        "minimum_module_version": null,
+        "minimum_redis_version": "6.2.0",
+        "required_commands": [
+          "EVAL",
+          "GET",
+          "SET",
+          "XGROUP",
+          "XADD",
+          "HSET"
+        ],
+        "required_module": null
+      },
+      "family": null,
+      "name": "redis_handoff_publish",
+      "output_policy": "intrinsically_bounded",
+      "protocol": {
+        "annotations": {
+          "destructiveHint": false,
+          "idempotentHint": true
+        },
+        "description": "Atomically publish one bounded, idempotent handoff into a sharded capability inbox and create its durable state and timeline.",
+        "inputSchema": {
+          "$defs": {
+            "CoordinationPayload": {
+              "description": "A bounded, explicitly tagged handoff or completion payload.",
+              "oneOf": [
+                {
+                  "additionalProperties": false,
+                  "properties": {
+                    "schema_ref": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "type": {
+                      "const": "json",
+                      "type": "string"
+                    },
+                    "value": true
+                  },
+                  "required": [
+                    "type",
+                    "value"
+                  ],
+                  "type": "object"
+                },
+                {
+                  "additionalProperties": false,
+                  "properties": {
+                    "content_type": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "schema_ref": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "type": {
+                      "const": "text",
+                      "type": "string"
+                    },
+                    "value": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "type",
+                    "value"
+                  ],
+                  "type": "object"
+                },
+                {
+                  "additionalProperties": false,
+                  "properties": {
+                    "content_type": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "schema_ref": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "type": {
+                      "const": "binary",
+                      "type": "string"
+                    },
+                    "value": {
+                      "description": "Standard padded base64.",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "type",
+                    "value"
+                  ],
+                  "type": "object"
+                }
+              ]
+            }
+          },
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "capability": {
+              "description": "Queue/capability required to process this handoff.",
+              "type": "string"
+            },
+            "correlation_id": {
+              "default": null,
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "deadline_at_ms": {
+              "default": null,
+              "description": "Optional absolute Unix epoch deadline in milliseconds.",
+              "format": "uint64",
+              "minimum": 0,
+              "type": [
+                "integer",
+                "null"
+              ]
+            },
+            "idempotency_key": {
+              "description": "Stable retry key scoped to the authenticated publisher.",
+              "type": "string"
+            },
+            "metadata": {
+              "additionalProperties": true,
+              "default": {},
+              "type": "object"
+            },
+            "payload": {
+              "$ref": "#/$defs/CoordinationPayload"
+            },
+            "traceparent": {
+              "default": null,
+              "description": "Optional W3C traceparent propagated as opaque metadata.",
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          "required": [
+            "capability",
+            "idempotency_key",
+            "payload"
+          ],
+          "title": "PublishInput",
+          "type": "object"
+        },
+        "name": "redis_handoff_publish",
+        "outputSchema": {
+          "$defs": {
+            "CoordinationHandle": {
+              "description": "Opaque durable handoff locator returned by publish and claim.",
+              "type": "string"
+            }
+          },
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "created": {
+              "type": "boolean"
+            },
+            "handle": {
+              "$ref": "#/$defs/CoordinationHandle"
+            },
+            "resource_uri": {
+              "type": "string"
+            },
+            "shard": {
+              "format": "uint16",
+              "maximum": 65535,
+              "minimum": 0,
+              "type": "integer"
+            },
+            "stream_id": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          "required": [
+            "handle",
+            "shard",
+            "created",
+            "resource_uri"
+          ],
+          "title": "PublishOutput",
+          "type": "object"
+        },
+        "title": "Publish Durable Redis Handoff"
+      },
+      "required_access": "read_write",
+      "required_module": null,
+      "requires_raw_opt_in": false
+    },
+    {
+      "bundle": "coordination",
+      "capability_requirements": {
+        "deployment": "any",
+        "minimum_module_version": null,
+        "minimum_redis_version": "6.2.0",
+        "required_commands": [
+          "XAUTOCLAIM",
+          "EVAL",
+          "EXISTS",
+          "HGET",
+          "HSET",
+          "HINCRBY",
+          "XADD"
+        ],
+        "required_module": null
+      },
+      "family": null,
+      "name": "redis_handoff_recover",
+      "output_policy": "intrinsically_bounded",
+      "protocol": {
+        "annotations": {},
+        "description": "Claim at most one pending handoff that exceeded the explicit idle threshold, then durably transfer ownership to the authenticated worker.",
+        "inputSchema": {
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "capability": {
+              "type": "string"
+            },
+            "min_idle_ms": {
+              "description": "Only entries idle for at least this duration are eligible.",
+              "format": "uint64",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "shard": {
+              "format": "uint16",
+              "maximum": 65535,
+              "minimum": 0,
+              "type": "integer"
+            },
+            "worker": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "capability",
+            "shard",
+            "worker",
+            "min_idle_ms"
+          ],
+          "title": "RecoverInput",
+          "type": "object"
+        },
+        "name": "redis_handoff_recover",
+        "outputSchema": {
+          "$defs": {
+            "ClaimedHandoff": {
+              "additionalProperties": false,
+              "properties": {
+                "attempt": {
+                  "format": "uint64",
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                "capability": {
+                  "type": "string"
+                },
+                "correlation_id": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "deadline_at_ms": {
+                  "format": "uint64",
+                  "minimum": 0,
+                  "type": [
+                    "integer",
+                    "null"
+                  ]
+                },
+                "handle": {
+                  "$ref": "#/$defs/CoordinationHandle"
+                },
+                "metadata": {
+                  "additionalProperties": true,
+                  "type": "object"
+                },
+                "payload": {
+                  "$ref": "#/$defs/CoordinationPayload"
+                },
+                "resource_uri": {
+                  "type": "string"
+                },
+                "shard": {
+                  "format": "uint16",
+                  "maximum": 65535,
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                "stream_id": {
+                  "type": "string"
+                },
+                "traceparent": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                }
+              },
+              "required": [
+                "handle",
+                "capability",
+                "shard",
+                "stream_id",
+                "payload",
+                "metadata",
+                "attempt",
+                "resource_uri"
+              ],
+              "type": "object"
+            },
+            "CoordinationHandle": {
+              "description": "Opaque durable handoff locator returned by publish and claim.",
+              "type": "string"
+            },
+            "CoordinationPayload": {
+              "description": "A bounded, explicitly tagged handoff or completion payload.",
+              "oneOf": [
+                {
+                  "additionalProperties": false,
+                  "properties": {
+                    "schema_ref": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "type": {
+                      "const": "json",
+                      "type": "string"
+                    },
+                    "value": true
+                  },
+                  "required": [
+                    "type",
+                    "value"
+                  ],
+                  "type": "object"
+                },
+                {
+                  "additionalProperties": false,
+                  "properties": {
+                    "content_type": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "schema_ref": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "type": {
+                      "const": "text",
+                      "type": "string"
+                    },
+                    "value": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "type",
+                    "value"
+                  ],
+                  "type": "object"
+                },
+                {
+                  "additionalProperties": false,
+                  "properties": {
+                    "content_type": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "schema_ref": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "type": {
+                      "const": "binary",
+                      "type": "string"
+                    },
+                    "value": {
+                      "description": "Standard padded base64.",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "type",
+                    "value"
+                  ],
+                  "type": "object"
+                }
+              ]
+            }
+          },
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "claimed": {
+              "type": "boolean"
+            },
+            "handoff": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/ClaimedHandoff"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          },
+          "required": [
+            "claimed"
+          ],
+          "title": "ClaimOutput",
+          "type": "object"
+        },
+        "title": "Recover Abandoned Redis Handoff"
+      },
+      "required_access": "full",
+      "required_module": null,
+      "requires_raw_opt_in": false
+    },
+    {
+      "bundle": "coordination",
+      "capability_requirements": {
+        "deployment": "any",
+        "minimum_module_version": null,
+        "minimum_redis_version": "6.2.0",
+        "required_commands": [
+          "HGETALL",
+          "XREVRANGE"
+        ],
+        "required_module": null
+      },
+      "family": null,
+      "name": "redis_handoff_status",
+      "output_policy": "budget_guarded",
+      "protocol": {
+        "annotations": {
+          "destructiveHint": false,
+          "idempotentHint": true,
+          "readOnlyHint": true
+        },
+        "description": "Read bounded durable state and timeline for a handoff. Payloads are returned only to its publisher or current claimant.",
+        "inputSchema": {
+          "$defs": {
+            "CoordinationHandle": {
+              "description": "Opaque durable handoff locator returned by publish and claim.",
+              "type": "string"
+            }
+          },
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "handle": {
+              "$ref": "#/$defs/CoordinationHandle"
+            },
+            "max_events": {
+              "default": 20,
+              "format": "uint",
+              "minimum": 0,
+              "type": "integer"
+            }
+          },
+          "required": [
+            "handle"
+          ],
+          "title": "StatusInput",
+          "type": "object"
+        },
+        "name": "redis_handoff_status",
+        "outputSchema": {
+          "$defs": {
+            "CoordinationHandle": {
+              "description": "Opaque durable handoff locator returned by publish and claim.",
+              "type": "string"
+            },
+            "CoordinationPayload": {
+              "description": "A bounded, explicitly tagged handoff or completion payload.",
+              "oneOf": [
+                {
+                  "additionalProperties": false,
+                  "properties": {
+                    "schema_ref": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "type": {
+                      "const": "json",
+                      "type": "string"
+                    },
+                    "value": true
+                  },
+                  "required": [
+                    "type",
+                    "value"
+                  ],
+                  "type": "object"
+                },
+                {
+                  "additionalProperties": false,
+                  "properties": {
+                    "content_type": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "schema_ref": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "type": {
+                      "const": "text",
+                      "type": "string"
+                    },
+                    "value": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "type",
+                    "value"
+                  ],
+                  "type": "object"
+                },
+                {
+                  "additionalProperties": false,
+                  "properties": {
+                    "content_type": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "schema_ref": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "type": {
+                      "const": "binary",
+                      "type": "string"
+                    },
+                    "value": {
+                      "description": "Standard padded base64.",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "type",
+                    "value"
+                  ],
+                  "type": "object"
+                }
+              ]
+            },
+            "CoordinationStatus": {
+              "description": "Durable lifecycle state for one handoff.",
+              "enum": [
+                "published",
+                "claimed",
+                "completed"
+              ],
+              "type": "string"
+            },
+            "TimelineEvent": {
+              "additionalProperties": false,
+              "properties": {
+                "at_ms": {
+                  "format": "uint64",
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                "event": {
+                  "type": "string"
+                },
+                "id": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "id",
+                "event",
+                "at_ms"
+              ],
+              "type": "object"
+            }
+          },
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "attempts": {
+              "format": "uint64",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "caller_is_claimant": {
+              "type": "boolean"
+            },
+            "caller_is_publisher": {
+              "type": "boolean"
+            },
+            "capability": {
+              "type": "string"
+            },
+            "correlation_id": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "deadline_at_ms": {
+              "format": "uint64",
+              "minimum": 0,
+              "type": [
+                "integer",
+                "null"
+              ]
+            },
+            "handle": {
+              "$ref": "#/$defs/CoordinationHandle"
+            },
+            "metadata": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "payload": {
+              "$ref": "#/$defs/CoordinationPayload"
+            },
+            "resource_uri": {
+              "type": "string"
+            },
+            "result": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/CoordinationPayload"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "shard": {
+              "format": "uint16",
+              "maximum": 65535,
+              "minimum": 0,
+              "type": "integer"
+            },
+            "status": {
+              "$ref": "#/$defs/CoordinationStatus"
+            },
+            "stream_id": {
+              "type": "string"
+            },
+            "timeline": {
+              "items": {
+                "$ref": "#/$defs/TimelineEvent"
+              },
+              "type": "array"
+            },
+            "traceparent": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          "required": [
+            "handle",
+            "capability",
+            "shard",
+            "status",
+            "stream_id",
+            "payload",
+            "metadata",
+            "attempts",
+            "caller_is_publisher",
+            "caller_is_claimant",
+            "timeline",
+            "resource_uri"
+          ],
+          "title": "StatusOutput",
+          "type": "object"
+        },
+        "title": "Read Durable Redis Handoff Status"
+      },
+      "required_access": "read_only",
+      "required_module": null,
+      "requires_raw_opt_in": false
+    },
+    {
       "bundle": "data_structures",
       "capability_requirements": {
         "deployment": "any",

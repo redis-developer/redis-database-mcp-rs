@@ -15,6 +15,73 @@ use tower_mcp::client::{ChannelTransport, McpClient};
 
 static CLUSTER_TEST_LOCK: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
 
+#[tokio::test]
+async fn durable_handoffs_keep_every_atomic_operation_in_one_cluster_slot() {
+    let _cluster_guard = CLUSTER_TEST_LOCK.lock().await;
+    let Some(cluster) = TestCluster::start().await else {
+        return;
+    };
+    let namespace = format!("coordcluster{}", std::process::id());
+    let producer = coordination_router_client(
+        DirectRedisCluster::connect(&cluster.seed_urls)
+            .await
+            .expect("connect producer to coordination cluster"),
+        &namespace,
+    )
+    .await;
+    let worker = coordination_router_client(
+        DirectRedisCluster::connect(&cluster.seed_urls)
+            .await
+            .expect("connect worker to coordination cluster"),
+        &namespace,
+    )
+    .await;
+
+    let published = producer
+        .call_tool(
+            "redis_handoff_publish",
+            serde_json::json!({
+                "capability": "cluster_work",
+                "idempotency_key": "cluster-job-1",
+                "payload": {"type": "text", "value": "work"}
+            }),
+        )
+        .await
+        .expect("publish same-slot handoff")
+        .structured_content
+        .expect("structured publish result");
+    let handle = published["handle"].as_str().unwrap();
+    let shard = published["shard"].as_u64().unwrap();
+    let claimed = worker
+        .call_tool(
+            "redis_handoff_claim",
+            serde_json::json!({
+                "capability": "cluster_work",
+                "shard": shard,
+                "worker": "cluster_worker"
+            }),
+        )
+        .await
+        .expect("claim same-slot handoff")
+        .structured_content
+        .expect("structured claim result");
+    assert_eq!(claimed["handoff"]["handle"], handle);
+    let completed = worker
+        .call_tool(
+            "redis_handoff_complete",
+            serde_json::json!({
+                "handle": handle,
+                "idempotency_key": "cluster-completion-1",
+                "result": {"type": "json", "value": {"ok": true}}
+            }),
+        )
+        .await
+        .expect("complete same-slot handoff")
+        .structured_content
+        .expect("structured completion result");
+    assert_eq!(completed["status"], "completed");
+}
+
 struct TestCluster {
     seed_urls: Vec<String>,
     _managed: Option<ManagedCluster>,
@@ -1187,6 +1254,26 @@ async fn router_client(executor: impl RedisExecutor) -> McpClient {
         .initialize("redis-mcp-cluster-test", "0")
         .await
         .expect("initialize cluster MCP client");
+    client
+}
+
+async fn coordination_router_client(executor: impl RedisExecutor, namespace: &str) -> McpClient {
+    let router = RedisMcp::builder(executor)
+        .access(AccessMode::Full)
+        .bundles([ToolBundle::Coordination])
+        .coordination_config(
+            redis_mcp::CoordinationConfig::default()
+                .with_namespace(namespace)
+                .with_shards(4),
+        )
+        .build();
+    let client = McpClient::connect(ChannelTransport::new(router))
+        .await
+        .expect("connect coordination Cluster MCP client");
+    client
+        .initialize("redis-mcp-coordination-cluster-test", "0")
+        .await
+        .expect("initialize coordination Cluster MCP client");
     client
 }
 

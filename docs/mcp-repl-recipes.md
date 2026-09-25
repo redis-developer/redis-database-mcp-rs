@@ -78,6 +78,51 @@ redis_monitor_read session_id=$monitor.session_id wait_ms=1000
 redis_monitor_close session_id=$monitor.session_id
 ```
 
+## Two-client durable handoff
+
+The opt-in `coordination` bundle is a useful two-agent smoke test. Start two
+interactive mcp-repl processes against the same Redis target. Each stdio
+server supplies a distinct durable principal while Redis supplies the shared
+handoff state:
+
+```console
+# Terminal A: producer (keep this process open for the final status read)
+mcp-repl -- ./target/debug/redis-mcp-server \
+  --url redis://127.0.0.1:6379 --access full \
+  --enable-bundle coordination --stdio
+
+# Terminal B: worker/recovery agent
+mcp-repl -- ./target/debug/redis-mcp-server \
+  --url redis://127.0.0.1:6379 --access full \
+  --enable-bundle coordination --stdio
+```
+
+In terminal A, publish and note the returned `handle` and `shard`:
+
+```text
+job = redis_handoff_publish capability=incident_triage idempotency_key=incident-42 payload={"type":"json","value":{"incident":42}} metadata={"severity":"high"} correlation_id=trace-42
+```
+
+In terminal B, substitute the returned shard, claim, and then complete with
+the returned handle:
+
+```text
+claimed = redis_handoff_claim capability=incident_triage shard=0 worker=worker_b
+redis_handoff_complete handle=$claimed.handoff.handle idempotency_key=completion-42 result={"type":"text","value":"triaged"}
+```
+
+Back in terminal A:
+
+```text
+redis_handoff_status handle=$job.handle max_events=20
+```
+
+The producer sees `published`, `claimed`, and `completed` timeline events.
+Repeat the publish or completion with the same idempotency key to verify that
+the operation is not duplicated. Read
+`redis-mcp://guidance/agent-handoffs` for sharding, ownership, and recovery
+rules.
+
 ## One-shot and NDJSON use
 
 For a raw stdio child, use repeatable `-e` commands before `--`. Every command
@@ -149,7 +194,7 @@ The verified catalog sizes are:
 | Server shape | Access and bundles | Tools |
 | --- | --- | ---: |
 | Curated default | read-only | 113 |
-| Fully enabled | full, raw, transactions, every optional bundle | 335 |
+| Fully enabled | full, raw, transactions, every optional bundle | 340 |
 | Strings only | full | 19 |
 
 Every tool in all three catalogs has a unique name, object input schema,

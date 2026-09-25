@@ -17,11 +17,11 @@ cargo package \
   --locked \
   -p redis-mcp
 
-echo "==> Assembling redis-mcp-server package"
+echo "==> Assembling workspace packages for server verification"
 cargo package \
   --manifest-path "$repo_root/Cargo.toml" \
   --locked \
-  -p redis-mcp-server \
+  --workspace \
   --no-verify
 
 shopt -s nullglob

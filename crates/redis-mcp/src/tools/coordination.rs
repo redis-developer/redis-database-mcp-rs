@@ -108,7 +108,6 @@ return {acknowledged, 'completed', ARGV[3]}
 const REQUEST_APPROVAL_SCRIPT: &str = r#"
 if redis.call('EXISTS', KEYS[1]) == 0 then return redis.error_reply('HANDOFF_NOT_FOUND') end
 local status = redis.call('HGET', KEYS[1], 'status')
-if status == 'completed' then return redis.error_reply('HANDOFF_COMPLETED') end
 local owner = redis.call('HGET', KEYS[1], 'claimed_by')
 if owner ~= ARGV[1] then return redis.error_reply('HANDOFF_NOT_OWNED') end
 local record_prefix = 'approval:' .. ARGV[2] .. ':'
@@ -124,6 +123,7 @@ if existing_id then
     0
   }
 end
+if status == 'completed' then return redis.error_reply('HANDOFF_COMPLETED') end
 if status == 'awaiting_approval' then return redis.error_reply('HANDOFF_APPROVAL_PENDING') end
 if status ~= 'claimed' then return redis.error_reply('HANDOFF_NOT_CLAIMED') end
 redis.call('HSET', KEYS[1],

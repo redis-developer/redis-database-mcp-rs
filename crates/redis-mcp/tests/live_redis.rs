@@ -764,6 +764,21 @@ async fn durable_handoff_approval_round_trips_without_process_local_state() {
     )
     .await;
     assert_eq!(completed["status"], "completed");
+
+    // Completing the handoff does not erase approval idempotency. An
+    // authorized delayed retry still returns the originally committed result.
+    let post_completion_replay = call_structured(
+        &worker,
+        "redis_handoff_request_approval",
+        serde_json::json!({
+            "handle": handle,
+            "idempotency_key": "restart-approval",
+            "message": "Approve restarting the affected service?"
+        }),
+    )
+    .await;
+    assert_eq!(post_completion_replay, approved);
+    assert_eq!(handler_observer.calls.load(Ordering::SeqCst), 3);
 }
 
 #[cfg(unix)]

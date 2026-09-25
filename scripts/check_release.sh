@@ -83,17 +83,14 @@ done
 echo "==> Compiling packaged server surfaces"
 cargo check \
   --manifest-path "$server_dir/Cargo.toml" \
-  --locked \
   --no-default-features \
   --features keyspace,strings \
   --config "$patch_arg"
 cargo check \
   --manifest-path "$server_dir/Cargo.toml" \
-  --locked \
   --config "$patch_arg"
 cargo check \
   --manifest-path "$server_dir/Cargo.toml" \
-  --locked \
   --all-features \
   --config "$patch_arg"
 

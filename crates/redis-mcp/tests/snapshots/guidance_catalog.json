@@ -3,6 +3,18 @@
     {
       "arguments": [
         {
+          "description": "One of producer, worker, or recovery; omit to explain the full lifecycle.",
+          "name": "role",
+          "required": false
+        }
+      ],
+      "description": "Guide a producer, worker, or recovery operator through the synchronous durable handoff lifecycle.",
+      "name": "redis_coordinate_handoff",
+      "title": "Coordinate durable agent work"
+    },
+    {
+      "arguments": [
+        {
           "description": "The queries the index must serve, in plain language or query syntax.",
           "name": "queries",
           "required": true
@@ -87,6 +99,13 @@
       "name": "guidance-index",
       "title": "Redis guidance index",
       "uri": "redis-mcp://guidance"
+    },
+    {
+      "description": "Publish, claim, complete, inspect, and recover bounded agent handoffs with cluster-safe keys and durable identity.",
+      "mimeType": "text/markdown",
+      "name": "guidance-agent-handoffs",
+      "title": "Durable agent handoffs with Redis Streams",
+      "uri": "redis-mcp://guidance/agent-handoffs"
     },
     {
       "description": "Hash tags, slots, what same-slot enables, anti-patterns, and how cluster changes the meaning of keyspace operations.",

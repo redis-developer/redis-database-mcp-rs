@@ -17,12 +17,29 @@ fn connection_url(url: &str) -> Result<(String, redis_tower_core::ProtocolVersio
     Ok((target.url, target.config.protocol()))
 }
 
-fn server_error(message: &str) -> RedisError {
-    let code = message.split_whitespace().next().unwrap_or("ERR");
+pub(crate) fn server_error(message: &str) -> RedisError {
+    let code = [
+        "HANDOFF_NOT_OWNED",
+        "HANDOFF_NOT_FOUND",
+        "HANDOFF_ALREADY_COMPLETED",
+        "HANDOFF_COMPLETED",
+        "HANDOFF_STREAM_MISMATCH",
+    ]
+    .into_iter()
+    .find(|code| message.split_whitespace().any(|part| part == *code))
+    .unwrap_or_else(|| message.split_whitespace().next().unwrap_or("ERR"));
     let kind = match code {
         "NOAUTH" | "WRONGPASS" => RedisErrorKind::Authentication,
-        "NOPERM" => RedisErrorKind::Authorization,
-        "CROSSSLOT" => RedisErrorKind::InvalidRequest,
+        "NOPERM" | "HANDOFF_NOT_OWNED" => RedisErrorKind::Authorization,
+        "CROSSSLOT"
+        | "HANDOFF_NOT_FOUND"
+        | "HANDOFF_ALREADY_COMPLETED"
+        | "HANDOFF_COMPLETED"
+        | "HANDOFF_STREAM_MISMATCH" => RedisErrorKind::InvalidRequest,
+        _ if message.contains("ACL failure in script") => RedisErrorKind::Authorization,
+        _ if message.contains("user executing the script can't run this command") => {
+            RedisErrorKind::Authorization
+        }
         _ => RedisErrorKind::Server,
     };
     RedisError::new(kind, message).with_code(code)
@@ -605,6 +622,26 @@ mod tests {
                 "CROSSSLOT keys differ",
                 RedisErrorKind::InvalidRequest,
                 "CROSSSLOT",
+            ),
+            (
+                "ERR ACL failure in script: User worker cannot run XADD",
+                RedisErrorKind::Authorization,
+                "ERR",
+            ),
+            (
+                "ERR @user_script: 4: The user executing the script can't run this command or subcommand",
+                RedisErrorKind::Authorization,
+                "ERR",
+            ),
+            (
+                "ERR HANDOFF_NOT_OWNED",
+                RedisErrorKind::Authorization,
+                "HANDOFF_NOT_OWNED",
+            ),
+            (
+                "ERR HANDOFF_NOT_FOUND",
+                RedisErrorKind::InvalidRequest,
+                "HANDOFF_NOT_FOUND",
             ),
             ("WRONGTYPE wrong value", RedisErrorKind::Server, "WRONGTYPE"),
         ] {

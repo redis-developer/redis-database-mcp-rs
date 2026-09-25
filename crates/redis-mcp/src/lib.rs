@@ -13,6 +13,8 @@ mod blocking;
 mod bulk;
 mod capabilities;
 mod catalog;
+#[cfg(feature = "coordination")]
+mod coordination;
 mod docs;
 mod executor;
 pub mod families;
@@ -54,6 +56,12 @@ pub use capabilities::{
 pub use catalog::{
     RedisModule, ToolBundle, ToolCapabilityRequirements, ToolDeploymentRequirement, ToolMetadata,
     ToolOutputPolicy, tool_catalog,
+};
+#[cfg(feature = "coordination")]
+pub use coordination::{
+    COORDINATION_GUIDE_URI, CoordinationConfig, CoordinationHandle, CoordinationPayload,
+    CoordinationPrincipal, CoordinationStatus, DEFAULT_COORDINATION_MAX_METADATA_BYTES,
+    DEFAULT_COORDINATION_MAX_PAYLOAD_BYTES, DEFAULT_COORDINATION_SHARDS,
 };
 pub use docs::{
     DEFAULT_DOC_CACHE_ENTRIES, DEFAULT_DOC_FETCH_TIMEOUT, DEFAULT_MAX_DOC_BYTES,
@@ -156,6 +164,8 @@ impl RedisMcp {
             transactions: None,
             transaction_limits: RedisTransactionLimits::default(),
             bulk_limits: RedisBulkLimits::default(),
+            #[cfg(feature = "coordination")]
+            coordination_config: CoordinationConfig::default(),
             blocking: None,
             blocking_limits: RedisBlockingLimits::default(),
             monitor_sessions: None,
@@ -182,6 +192,8 @@ pub struct RedisMcpBuilder {
     transactions: Option<Arc<dyn RedisTransactionExecutor>>,
     transaction_limits: RedisTransactionLimits,
     bulk_limits: RedisBulkLimits,
+    #[cfg(feature = "coordination")]
+    coordination_config: CoordinationConfig,
     blocking: Option<Arc<dyn RedisBlockingExecutor>>,
     blocking_limits: RedisBlockingLimits,
     monitor_sessions: Option<Arc<dyn MonitorSessionManager>>,
@@ -194,6 +206,13 @@ pub struct RedisMcpBuilder {
 }
 
 impl RedisMcpBuilder {
+    /// Replace the durable handoff namespace, sharding, and payload bounds.
+    #[cfg(feature = "coordination")]
+    pub fn coordination_config(mut self, config: CoordinationConfig) -> Self {
+        self.coordination_config = config;
+        self
+    }
+
     /// Set the maximum side-effect level exposed by the router.
     pub fn access(mut self, access: AccessMode) -> Self {
         self.access = access;
@@ -324,6 +343,25 @@ impl RedisMcpBuilder {
     pub fn shared_blocking(mut self, executor: Arc<dyn RedisBlockingExecutor>) -> Self {
         self.blocking = Some(executor);
         self.bundles.insert(ToolBundle::Sessions);
+        self
+    }
+
+    /// Supply the dedicated connection executor required by coordination
+    /// long-polls without enabling the unrelated sessions tool bundle.
+    #[cfg(feature = "coordination")]
+    pub fn coordination_blocking(mut self, executor: impl RedisBlockingExecutor) -> Self {
+        self.blocking = Some(Arc::new(executor));
+        self
+    }
+
+    /// Supply a shared coordination long-poll executor without changing the
+    /// selected tool bundles.
+    #[cfg(feature = "coordination")]
+    pub fn shared_coordination_blocking(
+        mut self,
+        executor: Arc<dyn RedisBlockingExecutor>,
+    ) -> Self {
+        self.blocking = Some(executor);
         self
     }
 
@@ -475,6 +513,20 @@ impl RedisMcpBuilder {
         if self.docs_fetcher.is_some() && self.docs_options.validate().is_err() {
             return Err(RedisMcpBuildError::InvalidDocsOptions);
         }
+        #[cfg(feature = "coordination")]
+        let coordination_enabled = self.bundles.contains(&ToolBundle::Coordination);
+        #[cfg(feature = "coordination")]
+        if coordination_enabled {
+            self.coordination_config
+                .validate()
+                .map_err(|_| RedisMcpBuildError::InvalidCoordinationConfig)?;
+            if self.blocking.is_none() {
+                return Err(RedisMcpBuildError::CoordinationRequiresBlockingExecutor);
+            }
+            if self.blocking.is_some() && self.blocking_limits.validate().is_err() {
+                return Err(RedisMcpBuildError::InvalidBlockingLimits);
+            }
+        }
         let transactions_enabled =
             cfg!(feature = "transactions") && self.bundles.contains(&ToolBundle::Transactions);
         if transactions_enabled {
@@ -516,13 +568,19 @@ impl RedisMcpBuilder {
                 RedisTransactionEngine::from_shared(invocation_engine.clone(), executor)
                     .with_limits(self.transaction_limits)
             });
-        let blocking_engine = sessions_enabled
-            .then_some(self.blocking)
-            .flatten()
-            .map(|executor| {
-                RedisBlockingEngine::from_shared(executor).with_limits(self.blocking_limits)
-            });
+        let blocking_engine = (sessions_enabled
+            || cfg!(feature = "coordination") && self.bundles.contains(&ToolBundle::Coordination))
+        .then_some(self.blocking)
+        .flatten()
+        .map(|executor| {
+            RedisBlockingEngine::from_shared(executor).with_limits(self.blocking_limits)
+        });
         let monitor_sessions = sessions_enabled.then_some(self.monitor_sessions).flatten();
+        #[cfg(feature = "coordination")]
+        let coordination_principal = self
+            .bundles
+            .contains(&ToolBundle::Coordination)
+            .then(CoordinationPrincipal::random);
         let state = Arc::new(tools::ToolState::new(
             self.access,
             self.output_budget,
@@ -532,6 +590,8 @@ impl RedisMcpBuilder {
             self.bulk_limits,
             blocking_engine,
             monitor_sessions,
+            #[cfg(feature = "coordination")]
+            self.coordination_config,
         ));
         let mut router = McpRouter::new().server_info(self.server_name, self.server_version);
         if let Some(owner) = session_owner {
@@ -548,6 +608,10 @@ impl RedisMcpBuilder {
                     owner,
                 }));
             }
+        }
+        #[cfg(feature = "coordination")]
+        if let Some(principal) = coordination_principal {
+            router = router.with_extension(principal);
         }
         router = tools::add_read_only_tools(
             router,
@@ -581,12 +645,17 @@ impl RedisMcpBuilder {
                 router = tools::add_transaction_tool(router, state.clone());
             }
             if self.raw_command_policy.is_enabled() {
-                router = tools::add_raw_tool(router, state);
+                router = tools::add_raw_tool(router, state.clone());
             }
         }
         #[cfg(feature = "guidance")]
         if self.bundles.contains(&ToolBundle::Guidance) {
             router = guidance::add_guidance(router, &capabilities);
+        }
+        #[cfg(feature = "coordination")]
+        if self.bundles.contains(&ToolBundle::Coordination) {
+            router = coordination::add_resources(router);
+            router = tools::add_coordination_resources(router, state);
         }
         if let Some(fetcher) = self.docs_fetcher {
             router = docs::add_docs(router, fetcher, self.docs_options);
@@ -629,6 +698,11 @@ pub enum RedisMcpBuildError {
     InvalidBlockingLimits,
     /// Documentation reads require a well-formed pin and non-zero bounds.
     InvalidDocsOptions,
+    /// Durable coordination requires a valid namespace and non-zero bounds.
+    InvalidCoordinationConfig,
+    /// Durable coordination long-polls require a dedicated connection
+    /// executor, independently of the sessions bundle.
+    CoordinationRequiresBlockingExecutor,
     /// Atomic transactions require an explicit dedicated-connection executor.
     TransactionsRequireExecutor,
     /// Transactions execute argv-shaped nested commands and therefore require
@@ -667,6 +741,12 @@ impl std::fmt::Display for RedisMcpBuildError {
             }
             Self::InvalidDocsOptions => formatter.write_str(
                 "documentation options require a well-formed pin and non-zero bounds",
+            ),
+            Self::InvalidCoordinationConfig => formatter.write_str(
+                "coordination options require a safe namespace and non-zero shard and byte bounds",
+            ),
+            Self::CoordinationRequiresBlockingExecutor => formatter.write_str(
+                "the coordination bundle requires a dedicated blocking executor",
             ),
             Self::TransactionsRequireExecutor => {
                 formatter.write_str("the transactions bundle requires a transaction executor")

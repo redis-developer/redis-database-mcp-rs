@@ -59,6 +59,17 @@ invocation, and transactions require explicit runtime policy where applicable.
 Capability discovery can advertise unavailable tools with a stable preflight
 error or hide them.
 
+Durable Redis Streams-backed agent handoffs are also opt-in:
+
+```console
+redis-mcp-server --url redis://127.0.0.1:6379 --access full \
+  --enable-bundle coordination --stdio
+```
+
+The bundle exposes bounded publish, claim, complete, status, and recovery
+tools plus `redis-mcp://guidance/agent-handoffs`. Recovery is the only
+full-access operation; the ordinary lifecycle requires read-write access.
+
 ## Interim human interface
 
 Until a first-party Redis CLI/REPL ships, mcp-repl derives interactive and

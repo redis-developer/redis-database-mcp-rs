@@ -66,6 +66,7 @@ impl From<CliRawPolicy> for RawCommandPolicy {
 pub(crate) enum CliOptionalBundle {
     Admin,
     Bulk,
+    Coordination,
     Invocation,
     Json,
     Search,
@@ -78,6 +79,7 @@ impl From<CliOptionalBundle> for ToolBundle {
         match value {
             CliOptionalBundle::Admin => Self::Admin,
             CliOptionalBundle::Bulk => Self::Bulk,
+            CliOptionalBundle::Coordination => Self::Coordination,
             CliOptionalBundle::Invocation => Self::Invocation,
             CliOptionalBundle::Json => Self::Json,
             CliOptionalBundle::Search => Self::Search,

@@ -6,6 +6,8 @@ mod admin;
 mod blocking;
 #[cfg(feature = "bulk")]
 mod bulk;
+#[cfg(feature = "coordination")]
+mod coordination;
 #[cfg(any(
     feature = "hashes",
     feature = "lists",
@@ -86,6 +88,8 @@ pub(crate) struct ToolState {
     bulk_limits: crate::RedisBulkLimits,
     blocking: Option<crate::RedisBlockingEngine>,
     pub(crate) monitor_sessions: Option<Arc<dyn crate::MonitorSessionManager>>,
+    #[cfg(feature = "coordination")]
+    coordination_config: crate::CoordinationConfig,
 }
 
 impl ToolState {
@@ -99,6 +103,7 @@ impl ToolState {
         bulk_limits: crate::RedisBulkLimits,
         blocking: Option<crate::RedisBlockingEngine>,
         monitor_sessions: Option<Arc<dyn crate::MonitorSessionManager>>,
+        #[cfg(feature = "coordination")] coordination_config: crate::CoordinationConfig,
     ) -> Self {
         Self {
             access,
@@ -109,6 +114,8 @@ impl ToolState {
             bulk_limits,
             blocking,
             monitor_sessions,
+            #[cfg(feature = "coordination")]
+            coordination_config,
         }
     }
 
@@ -146,7 +153,7 @@ impl ToolState {
             .ok_or_else(|| tower_mcp::Error::tool("Pub/Sub session manager is not configured"))
     }
 
-    #[cfg(feature = "sessions")]
+    #[cfg(any(feature = "sessions", feature = "coordination"))]
     fn blocking(&self) -> tower_mcp::Result<&crate::RedisBlockingEngine> {
         self.blocking
             .as_ref()
@@ -213,6 +220,11 @@ impl ToolState {
         self.invocation_engine.command_timeout()
     }
 
+    #[cfg(feature = "coordination")]
+    fn coordination_config(&self) -> &crate::CoordinationConfig {
+        &self.coordination_config
+    }
+
     fn validate_requested_entries(&self, requested: usize, name: &str) -> tower_mcp::Result<()> {
         let limit = self.max_collection_entries();
         if requested == 0 || requested > limit {
@@ -237,6 +249,20 @@ impl ToolState {
             ))
         } else {
             Ok(result)
+        }
+    }
+
+    #[cfg(feature = "coordination")]
+    fn ensure_output_fits<T: Serialize>(&self, value: &T, context: &str) -> tower_mcp::Result<()> {
+        let result = CallToolResult::from_serialize(value)?;
+        let actual_bytes = serde_json::to_vec(&result)?.len();
+        let max_bytes = self.output_budget.max_bytes();
+        if actual_bytes > max_bytes {
+            Err(tower_mcp::Error::tool(format!(
+                "{context} would encode to {actual_bytes} bytes, exceeding the configured MCP output limit of {max_bytes} bytes"
+            )))
+        } else {
+            Ok(())
         }
     }
 
@@ -571,7 +597,11 @@ pub(crate) fn add_read_only_tools(
     }
     #[cfg(feature = "admin")]
     if bundles.contains(&ToolBundle::Admin) {
-        router = admin::add_read_tools(router, state);
+        router = admin::add_read_tools(router, state.clone());
+    }
+    #[cfg(feature = "coordination")]
+    if bundles.contains(&ToolBundle::Coordination) {
+        router = coordination::add_read_tools(router, state);
     }
     router
 }
@@ -729,7 +759,11 @@ pub(crate) fn add_write_tools(
     }
     #[cfg(feature = "bulk")]
     if bundles.contains(&ToolBundle::Bulk) {
-        router = bulk::add_write_tools(router, state);
+        router = bulk::add_write_tools(router, state.clone());
+    }
+    #[cfg(feature = "coordination")]
+    if bundles.contains(&ToolBundle::Coordination) {
+        router = coordination::add_write_tools(router, state);
     }
     router
 }
@@ -900,7 +934,11 @@ pub(crate) fn add_destructive_tools(
     }
     #[cfg(feature = "admin")]
     if bundles.contains(&ToolBundle::Admin) {
-        router = admin::add_full_tools(router, state);
+        router = admin::add_full_tools(router, state.clone());
+    }
+    #[cfg(feature = "coordination")]
+    if bundles.contains(&ToolBundle::Coordination) {
+        router = coordination::add_full_tools(router, state);
     }
     router
 }
@@ -929,6 +967,11 @@ pub(crate) fn add_invocation_read_tools(router: McpRouter, state: Arc<ToolState>
 
 pub(crate) fn add_invocation_write_tools(router: McpRouter, state: Arc<ToolState>) -> McpRouter {
     invocation::add_write_tools(router, state)
+}
+
+#[cfg(feature = "coordination")]
+pub(crate) fn add_coordination_resources(router: McpRouter, state: Arc<ToolState>) -> McpRouter {
+    coordination::add_resources(router, state)
 }
 
 fn output_schema<T: JsonSchema>() -> JsonValue {

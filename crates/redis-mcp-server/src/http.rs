@@ -16,6 +16,8 @@ use axum::{
     middleware::{self, Next},
     response::{IntoResponse, Response},
 };
+#[cfg(feature = "coordination")]
+use redis_mcp::CoordinationPrincipal;
 use redis_mcp::PubSubSessionOwner;
 use sha2::{Digest, Sha256};
 use subtle::ConstantTimeEq;
@@ -120,6 +122,8 @@ where
         .max_body_size(config.max_body_bytes)
         .session_config(session_config)
         .bridge_extension::<PubSubSessionOwner>();
+    #[cfg(feature = "coordination")]
+    let transport = transport.bridge_extension::<CoordinationPrincipal>();
 
     let session_owners = Arc::new(tokio::sync::Mutex::new(HashMap::new()));
     let (app, session_handle) = transport.into_router_at_with_handle("/mcp");
@@ -309,6 +313,11 @@ async fn enforce_policy(
             .map_or_else(|| fresh_owner("anonymous-request"), principal_owner)
     };
     request.extensions_mut().insert(owner.clone());
+    #[cfg(feature = "coordination")]
+    request.extensions_mut().insert(coordination_principal(
+        authenticated_token.as_ref(),
+        mcp_session_id.as_deref(),
+    ));
 
     let method = request.method().clone();
     let is_delete = method == Method::DELETE;
@@ -393,6 +402,30 @@ fn principal_owner(token: &SecretString) -> PubSubSessionOwner {
         .expect("SHA-256 HTTP owner is non-empty and bounded")
 }
 
+#[cfg(feature = "coordination")]
+fn coordination_principal(
+    token: Option<&SecretString>,
+    session_id: Option<&str>,
+) -> CoordinationPrincipal {
+    let mut hash = Sha256::new();
+    match token {
+        Some(token) => {
+            hash.update(b"authenticated\0");
+            hash.update(token.expose().as_bytes());
+        }
+        None => {
+            hash.update(b"anonymous\0");
+            if let Some(session_id) = session_id {
+                hash.update(session_id.as_bytes());
+            } else {
+                hash.update(NEXT_OWNER.fetch_add(1, Ordering::Relaxed).to_be_bytes());
+            }
+        }
+    }
+    CoordinationPrincipal::new(format!("http-principal:{}", hex::encode(hash.finalize())))
+        .expect("SHA-256 coordination principal is non-empty and bounded")
+}
+
 fn session_owner(token: Option<&SecretString>, session_id: &str) -> PubSubSessionOwner {
     let mut hash = Sha256::new();
     if let Some(token) = token {
@@ -452,6 +485,29 @@ mod tests {
             !principal_owner(&token_a)
                 .as_str()
                 .contains("agent-a-secret")
+        );
+    }
+
+    #[cfg(feature = "coordination")]
+    #[test]
+    fn coordination_identity_survives_sessions_without_exposing_credentials() {
+        let token_a = SecretString::new("agent-a-secret".to_string()).unwrap();
+        let token_b = SecretString::new("agent-b-secret".to_string()).unwrap();
+        let a_session_one = coordination_principal(Some(&token_a), Some("session-one"));
+        let a_session_two = coordination_principal(Some(&token_a), Some("session-two"));
+        assert_eq!(a_session_one, a_session_two);
+        assert_ne!(
+            a_session_one,
+            coordination_principal(Some(&token_b), Some("session-one"))
+        );
+        assert!(!a_session_one.as_str().contains("agent-a-secret"));
+        assert_eq!(
+            format!("{a_session_one:?}"),
+            "CoordinationPrincipal([REDACTED])"
+        );
+        assert_ne!(
+            coordination_principal(None, Some("anonymous-one")),
+            coordination_principal(None, Some("anonymous-two"))
         );
     }
 

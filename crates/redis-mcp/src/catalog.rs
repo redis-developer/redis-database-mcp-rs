@@ -148,6 +148,8 @@ pub enum ToolBundle {
     Admin,
     /// Deliberately bounded bulk workflows.
     Bulk,
+    /// Durable Redis Streams-backed agent handoffs.
+    Coordination,
     /// Curated Redis expertise exposed as MCP prompts and resources.
     Guidance,
     /// Governed Redis argv invocation tiers for Redis-syntax MCP clients.
@@ -181,6 +183,7 @@ impl ToolBundle {
         Self::Scripting,
         Self::Admin,
         Self::Bulk,
+        Self::Coordination,
         Self::Guidance,
         Self::Invocation,
         Self::Raw,
@@ -199,6 +202,7 @@ impl ToolBundle {
             Self::Scripting => "scripting",
             Self::Admin => "admin",
             Self::Bulk => "bulk",
+            Self::Coordination => "coordination",
             Self::Guidance => "guidance",
             Self::Invocation => "invocation",
             Self::Raw => "raw",
@@ -305,6 +309,7 @@ impl ToolMetadata {
                 ToolBundle::Admin => cfg!(feature = "admin"),
                 ToolBundle::Raw => true,
                 ToolBundle::Bulk => cfg!(feature = "bulk"),
+                ToolBundle::Coordination => cfg!(feature = "coordination"),
                 ToolBundle::Guidance => cfg!(feature = "guidance"),
                 ToolBundle::Invocation => true,
                 ToolBundle::Essentials
@@ -461,6 +466,11 @@ impl ToolMetadata {
             | "redis_xgroup_delconsumer" => Some(RedisVersion::new(5, 0, 0)),
             "redis_lpos" => Some(RedisVersion::new(6, 0, 0)),
             "redis_xgroup_createconsumer" | "redis_xautoclaim" => Some(RedisVersion::new(6, 2, 0)),
+            "redis_handoff_publish"
+            | "redis_handoff_claim"
+            | "redis_handoff_complete"
+            | "redis_handoff_status"
+            | "redis_handoff_recover" => Some(RedisVersion::new(6, 2, 0)),
             "redis_copy" | "redis_copy_replace" | "redis_getdel" | "redis_getex"
             | "redis_hrandfield" | "redis_lmove" | "redis_lpop" | "redis_rpop"
             | "redis_smismember" | "redis_zadd" | "redis_zdiffstore" | "redis_zmscore"
@@ -506,6 +516,29 @@ impl ToolMetadata {
         };
         let required_commands = match self.name {
             "redis_transaction" => &["MULTI", "EXEC", "WATCH"] as &'static [&'static str],
+            "redis_handoff_publish" => &["EVAL", "GET", "SET", "XGROUP", "XADD", "HSET"],
+            "redis_handoff_claim" => &[
+                "XREADGROUP",
+                "EVAL",
+                "EXISTS",
+                "HGET",
+                "HSET",
+                "HINCRBY",
+                "XADD",
+            ],
+            "redis_handoff_complete" => &[
+                "HGETALL", "EVAL", "GET", "SET", "EXISTS", "HGET", "HSET", "XADD", "XACK",
+            ],
+            "redis_handoff_status" => &["HGETALL", "XREVRANGE"],
+            "redis_handoff_recover" => &[
+                "XAUTOCLAIM",
+                "EVAL",
+                "EXISTS",
+                "HGET",
+                "HSET",
+                "HINCRBY",
+                "XADD",
+            ],
             "redis_ts_create" => &["TS.CREATE"],
             "redis_ts_alter" => &["TS.ALTER"],
             "redis_ts_add" => &["TS.ADD"],
@@ -992,12 +1025,43 @@ impl ToolMetadata {
             | "redis_ts_mget"
             | "redis_ts_info"
             | "redis_ts_queryindex" => ToolOutputPolicy::BudgetGuarded,
+            "redis_handoff_status" => ToolOutputPolicy::BudgetGuarded,
             _ => ToolOutputPolicy::IntrinsicallyBounded,
         }
     }
 }
 
 pub(crate) const CATALOG: &[ToolMetadata] = &[
+    ToolMetadata {
+        name: "redis_handoff_status",
+        bundle: ToolBundle::Coordination,
+        required_access: AccessMode::ReadOnly,
+        requires_raw_opt_in: false,
+    },
+    ToolMetadata {
+        name: "redis_handoff_publish",
+        bundle: ToolBundle::Coordination,
+        required_access: AccessMode::ReadWrite,
+        requires_raw_opt_in: false,
+    },
+    ToolMetadata {
+        name: "redis_handoff_claim",
+        bundle: ToolBundle::Coordination,
+        required_access: AccessMode::ReadWrite,
+        requires_raw_opt_in: false,
+    },
+    ToolMetadata {
+        name: "redis_handoff_complete",
+        bundle: ToolBundle::Coordination,
+        required_access: AccessMode::ReadWrite,
+        requires_raw_opt_in: false,
+    },
+    ToolMetadata {
+        name: "redis_handoff_recover",
+        bundle: ToolBundle::Coordination,
+        required_access: AccessMode::Full,
+        requires_raw_opt_in: false,
+    },
     ToolMetadata {
         name: "redis_ping",
         bundle: ToolBundle::Essentials,

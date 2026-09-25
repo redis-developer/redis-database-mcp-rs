@@ -185,12 +185,14 @@ jobs:
           cargo check -p redis-mcp --no-default-features --features strings
           cargo check -p redis-mcp --no-default-features --features json,search
           cargo check -p redis-mcp --no-default-features --features sessions,transactions,admin,bulk,guidance
+          cargo check -p redis-mcp --no-default-features --features coordination
       - name: Slim server compiles and its config tests pass
         run: |
           cargo check -p redis-mcp-server --no-default-features \
             --features keyspace,strings,hashes,diagnostics
           cargo test -p redis-mcp-server --no-default-features \
             --features keyspace,strings,hashes,diagnostics --bin redis-mcp-server
+          cargo check -p redis-mcp-server --no-default-features --features coordination
       - name: Slim server rejects bundles it was built without
         run: |
           set -o pipefail

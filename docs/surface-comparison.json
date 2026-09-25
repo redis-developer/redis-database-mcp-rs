@@ -1243,6 +1243,20 @@
       "reason": "The opt-in bulk bundle loads bounded structured records and deterministic seed datasets through the shared executor with explicit batch, concurrency, byte, duration, and result-summary bounds; validation and dry-run precede any write, stop/continue-on-error and partial application are machine-readable, and identical seed requests always generate identical datasets."
     },
     {
+      "id": "coordination.durable_handoffs",
+      "redis_mcp_tools": [],
+      "redisctl_tools": [],
+      "library_tools": [
+        "redis_handoff_publish",
+        "redis_handoff_claim",
+        "redis_handoff_complete",
+        "redis_handoff_status",
+        "redis_handoff_recover"
+      ],
+      "disposition": "implemented",
+      "reason": "The opt-in coordination bundle composes Redis Streams, consumer groups, and same-slot durable state into bounded at-least-once agent handoffs: publishing and completion are atomic and idempotent, claims and recovery are finite, principals remain stable across authenticated transports, payloads are explicitly tagged, and canonical status resources expose an authorized correlated timeline."
+    },
+    {
       "id": "aliases.application",
       "redis_mcp_tools": [],
       "redisctl_tools": ["redis_alias_delete", "redis_alias_list", "redis_alias_run", "redis_alias_set"],

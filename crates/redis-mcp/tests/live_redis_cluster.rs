@@ -1,6 +1,11 @@
 #![cfg(unix)]
 
-use std::{collections::BTreeMap, io, net::TcpListener, time::Duration};
+use std::{
+    collections::{BTreeMap, BTreeSet},
+    io,
+    net::TcpListener,
+    time::Duration,
+};
 
 use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64};
 use redis_mcp::{
@@ -14,6 +19,102 @@ use redis_server_wrapper::{Error as RedisServerError, RedisCluster, RedisCluster
 use tower_mcp::client::{ChannelTransport, McpClient};
 
 static CLUSTER_TEST_LOCK: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
+
+#[tokio::test]
+async fn durable_handoffs_keep_every_atomic_operation_in_one_cluster_slot() {
+    let _cluster_guard = CLUSTER_TEST_LOCK.lock().await;
+    let Some(cluster) = TestCluster::start().await else {
+        return;
+    };
+    let namespace = format!("coordcluster{}", std::process::id());
+    let producer = coordination_router_client(
+        DirectRedisCluster::connect(&cluster.seed_urls)
+            .await
+            .expect("connect producer to coordination cluster"),
+        &cluster.seed_urls,
+        &namespace,
+    )
+    .await;
+    let worker = coordination_router_client(
+        DirectRedisCluster::connect(&cluster.seed_urls)
+            .await
+            .expect("connect worker to coordination cluster"),
+        &cluster.seed_urls,
+        &namespace,
+    )
+    .await;
+
+    let mut exercised = BTreeSet::new();
+    for index in 0..8 {
+        let capability = if index % 2 == 0 {
+            "cluster_work_a"
+        } else {
+            "cluster_work_b"
+        };
+        let published = producer
+            .call_tool(
+                "redis_handoff_publish",
+                serde_json::json!({
+                    "capability": capability,
+                    "idempotency_key": format!("cluster-job-{index}"),
+                    "payload": {"type": "text", "value": format!("work-{index}")}
+                }),
+            )
+            .await
+            .expect("publish same-slot handoff")
+            .structured_content
+            .expect("structured publish result");
+        let handle = published["handle"].as_str().unwrap().to_string();
+        let shard = published["shard"].as_u64().unwrap();
+        exercised.insert((capability.to_string(), shard));
+        let claimed = worker
+            .call_tool(
+                "redis_handoff_claim",
+                serde_json::json!({
+                    "capability": capability,
+                    "shard": shard,
+                    "worker": "cluster_worker"
+                }),
+            )
+            .await
+            .expect("claim same-slot handoff")
+            .structured_content
+            .expect("structured claim result");
+        assert_eq!(claimed["handoff"]["handle"], handle);
+        let completed = worker
+            .call_tool(
+                "redis_handoff_complete",
+                serde_json::json!({
+                    "handle": handle,
+                    "idempotency_key": format!("cluster-completion-{index}"),
+                    "result": {"type": "json", "value": {"ok": true, "index": index}}
+                }),
+            )
+            .await
+            .expect("complete same-slot handoff")
+            .structured_content
+            .expect("structured completion result");
+        assert_eq!(completed["status"], "completed");
+        assert_eq!(completed["result"]["value"]["index"], index);
+    }
+    assert!(
+        exercised
+            .iter()
+            .map(|(_, shard)| shard)
+            .collect::<BTreeSet<_>>()
+            .len()
+            > 1,
+        "deterministic cases must span multiple coordination shards: {exercised:?}"
+    );
+    assert_eq!(
+        exercised
+            .iter()
+            .map(|(capability, _)| capability)
+            .collect::<BTreeSet<_>>()
+            .len(),
+        2
+    );
+}
 
 struct TestCluster {
     seed_urls: Vec<String>,
@@ -1187,6 +1288,33 @@ async fn router_client(executor: impl RedisExecutor) -> McpClient {
         .initialize("redis-mcp-cluster-test", "0")
         .await
         .expect("initialize cluster MCP client");
+    client
+}
+
+async fn coordination_router_client(
+    executor: impl RedisExecutor,
+    seed_urls: &[String],
+    namespace: &str,
+) -> McpClient {
+    let blocking = DirectRedisBlocking::cluster(seed_urls)
+        .expect("prepare coordination Cluster blocking executor");
+    let router = RedisMcp::builder(executor)
+        .access(AccessMode::Full)
+        .bundles([ToolBundle::Coordination])
+        .coordination_config(
+            redis_mcp::CoordinationConfig::default()
+                .with_namespace(namespace)
+                .with_shards(4),
+        )
+        .coordination_blocking(blocking)
+        .build();
+    let client = McpClient::connect(ChannelTransport::new(router))
+        .await
+        .expect("connect coordination Cluster MCP client");
+    client
+        .initialize("redis-mcp-coordination-cluster-test", "0")
+        .await
+        .expect("initialize coordination Cluster MCP client");
     client
 }
 

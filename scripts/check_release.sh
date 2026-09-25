@@ -7,6 +7,9 @@ work_dir="$(mktemp -d "${TMPDIR:-/tmp}/redis-mcp-release.XXXXXX")"
 trap 'rm -rf "$work_dir"' EXIT
 
 export CARGO_TARGET_DIR="$work_dir/target"
+export CARGO_INCREMENTAL=0
+export CARGO_PROFILE_DEV_DEBUG=0
+export CARGO_PROFILE_TEST_DEBUG=0
 package_dir="$CARGO_TARGET_DIR/package"
 extract_dir="$work_dir/extracted"
 mkdir -p "$extract_dir"
@@ -114,5 +117,13 @@ cargo test \
   --all-features \
   --test router_contract \
   catalog_matches_checked_in_contract_snapshot
+cargo test \
+  --manifest-path "$repo_root/Cargo.toml" \
+  --locked \
+  -p redis-mcp \
+  --all-features \
+  --test command_coverage \
+  --test surface_comparison \
+  --test timeseries_coverage
 
 echo "release package checks passed"

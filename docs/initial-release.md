@@ -134,6 +134,7 @@ few commands that are standalone-only or require same-slot Cluster keys.
    default, and full feature modes;
 4. compiles the packaged server against the packaged library in minimal,
    default, and all-feature modes; and
-5. verifies the family and checked-in catalog/guidance snapshots.
+5. verifies family composition, command-coverage ledgers, the competitive
+   surface scorecard, and the checked-in catalog/guidance snapshots.
 
 See [releasing.md](releasing.md) for the publish order and operator checklist.

@@ -181,7 +181,7 @@ impl ServerRuntime {
         monitor_sessions: Option<Arc<dyn MonitorSessionManager>>,
         transactions: Option<DirectRedisTransactions>,
     ) -> Result<McpRouter, tower_mcp::BoxError> {
-        let mut builder: RedisMcpBuilder = RedisMcp::builder(executor)
+        let builder: RedisMcpBuilder = RedisMcp::builder(executor)
             .access(config.access)
             .raw_command_policy(config.raw_policy)
             .output_budget(redis_mcp::OutputBudget::new(
@@ -191,10 +191,13 @@ impl ServerRuntime {
             .command_timeout(config.command_timeout)
             .unavailable_tool_policy(config.unavailable_tools)
             .shared_pubsub_sessions(pubsub_sessions)
-            .blocking(blocking)
             .blocking_limits(config.blocking_limits)
             .bulk_limits(config.bulk_limits)
             .server_info("redis-mcp-server", env!("CARGO_PKG_VERSION"));
+        #[cfg(feature = "coordination")]
+        let mut builder = builder.coordination_blocking(blocking);
+        #[cfg(not(feature = "coordination"))]
+        let mut builder = builder.blocking(blocking);
         if let Some(capabilities) = capabilities {
             builder = builder.capabilities(capabilities);
         }

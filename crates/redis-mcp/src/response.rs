@@ -17,7 +17,7 @@ fn connection_url(url: &str) -> Result<(String, redis_tower_core::ProtocolVersio
     Ok((target.url, target.config.protocol()))
 }
 
-fn server_error(message: &str) -> RedisError {
+pub(crate) fn server_error(message: &str) -> RedisError {
     let code = [
         "HANDOFF_NOT_OWNED",
         "HANDOFF_NOT_FOUND",

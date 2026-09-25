@@ -8,6 +8,11 @@ works with ordinary MCP tool and resource reads.
 
 The `coordination` Cargo feature compiles one opt-in runtime bundle:
 
+Library hosts must also provide a dedicated blocking executor through
+`coordination_blocking` (or its shared variant). This is a build-time
+requirement and does not enable the unrelated sessions bundle. The packaged
+server wires the executor automatically.
+
 | Tool | Access | Retry contract |
 | --- | --- | --- |
 | `redis_handoff_publish` | read-write | Required publisher/idempotency key returns the original handle. |

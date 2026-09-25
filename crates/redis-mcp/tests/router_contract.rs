@@ -970,6 +970,8 @@ async fn client_for_bundles(
             .pubsub_sessions(StubPubSubSessions)
             .blocking(StubBlocking)
             .monitor_sessions(StubMonitorSessions);
+    } else if bundles.contains(&ToolBundle::Coordination) {
+        builder = builder.coordination_blocking(StubBlocking);
     }
     if bundles.contains(&ToolBundle::Transactions) {
         builder = builder.transactions(StubTransactions);
@@ -4696,6 +4698,30 @@ async fn list_annotations_match_read_write_and_destructive_semantics() {
 
 #[tokio::test]
 async fn bundles_are_composable_and_raw_remains_a_separate_opt_in() {
+    let coordination = client_for_bundles(
+        AccessMode::Full,
+        [ToolBundle::Coordination],
+        RawCommandPolicy::Disabled,
+    )
+    .await;
+    assert_eq!(
+        coordination
+            .list_tools()
+            .await
+            .expect("list coordination")
+            .tools
+            .into_iter()
+            .map(|tool| tool.name)
+            .collect::<Vec<_>>(),
+        vec![
+            "redis_handoff_claim",
+            "redis_handoff_complete",
+            "redis_handoff_publish",
+            "redis_handoff_recover",
+            "redis_handoff_status",
+        ]
+    );
+
     let diagnostics = client_for_bundles(
         AccessMode::Full,
         [ToolBundle::Diagnostics],
@@ -5215,6 +5241,19 @@ fn invalid_builder_safety_configuration_is_rejected() {
             .try_build(),
         Err(RedisMcpBuildError::SessionsRequireManager)
     ));
+    assert!(matches!(
+        RedisMcp::builder(StubRedis)
+            .bundles([ToolBundle::Coordination])
+            .try_build(),
+        Err(RedisMcpBuildError::CoordinationRequiresBlockingExecutor)
+    ));
+    assert!(
+        RedisMcp::builder(StubRedis)
+            .bundles([ToolBundle::Coordination])
+            .coordination_blocking(StubBlocking)
+            .try_build()
+            .is_ok()
+    );
 }
 
 fn assert_output_limit(

@@ -927,11 +927,10 @@ impl RedisBlockingExecutor for DirectRedisBlocking {
             };
             let value = RedisValue::from(frame);
             if let RedisValue::ServerError { code, message } = value {
-                return Err(RedisError::new(
-                    RedisErrorKind::Server,
-                    message.unwrap_or_else(|| code.clone()),
-                )
-                .with_code(code));
+                let message = message
+                    .map(|message| format!("{code} {message}"))
+                    .unwrap_or(code);
+                return Err(crate::response::server_error(&message));
             }
             Ok(value)
         };

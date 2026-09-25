@@ -278,7 +278,7 @@ async fn coordination_router_client(url: &str, namespace: &str) -> McpClient {
                 .with_namespace(namespace)
                 .with_shards(4),
         )
-        .blocking(blocking)
+        .coordination_blocking(blocking)
         .build();
     let client = McpClient::connect(ChannelTransport::new(router))
         .await
@@ -292,8 +292,11 @@ async fn coordination_router_client(url: &str, namespace: &str) -> McpClient {
 
 async fn coordination_router_client_with_executor(
     executor: impl RedisExecutor,
+    url: &str,
     namespace: &str,
 ) -> McpClient {
+    let blocking =
+        DirectRedisBlocking::standalone(url).expect("prepare coordination blocking executor");
     let router = RedisMcp::builder(executor)
         .access(AccessMode::Full)
         .bundles([ToolBundle::Coordination])
@@ -302,6 +305,7 @@ async fn coordination_router_client_with_executor(
                 .with_namespace(namespace)
                 .with_shards(4),
         )
+        .coordination_blocking(blocking)
         .build();
     let client = McpClient::connect(ChannelTransport::new(router))
         .await
@@ -559,7 +563,7 @@ async fn durable_handoff_rejects_valid_envelopes_that_cannot_fit_claim_output() 
                 .with_shards(4),
         )
         .output_budget(OutputBudget::new(8 * 1024, 100))
-        .blocking(blocking)
+        .coordination_blocking(blocking)
         .build();
     let client = McpClient::connect(ChannelTransport::new(router))
         .await
@@ -738,6 +742,25 @@ async fn durable_handoff_acl_is_least_privilege_and_redacts_denied_payloads() {
     assert!(!denied.contains(password));
     assert!(!denied.contains(secret_payload));
 
+    let denied_wait = denied_client
+        .call_tool(
+            "redis_handoff_claim",
+            serde_json::json!({
+                "capability": "acl_work",
+                "shard": published["shard"],
+                "worker": "denied_worker",
+                "wait_ms": 1
+            }),
+        )
+        .await
+        .expect("dedicated claim ACL denial is represented as a tool result");
+    assert!(denied_wait.is_error);
+    let denied_wait =
+        serde_json::to_string(&denied_wait).expect("serialize dedicated claim ACL denial");
+    assert!(denied_wait.contains("Authorization"), "{denied_wait}");
+    assert!(denied_wait.contains("NOPERM"), "{denied_wait}");
+    assert!(!denied_wait.contains(password));
+
     redis::cmd("ACL")
         .arg("DELUSER")
         .arg(&allowed_user)
@@ -760,7 +783,8 @@ async fn durable_handoff_retries_resolve_ambiguous_publish_and_completion() {
             .expect("connect ambiguous publish executor"),
         "redis_handoff_publish",
     );
-    let producer = coordination_router_client_with_executor(producer_executor, &namespace).await;
+    let producer =
+        coordination_router_client_with_executor(producer_executor, &redis.url, &namespace).await;
     let publish_input = serde_json::json!({
         "capability": "ambiguous_work",
         "idempotency_key": "ambiguous-publish-1",
@@ -780,7 +804,8 @@ async fn durable_handoff_retries_resolve_ambiguous_publish_and_completion() {
             .expect("connect ambiguous completion executor"),
         "redis_handoff_complete",
     );
-    let worker = coordination_router_client_with_executor(worker_executor, &namespace).await;
+    let worker =
+        coordination_router_client_with_executor(worker_executor, &redis.url, &namespace).await;
     let claimed = call_structured(
         &worker,
         "redis_handoff_claim",

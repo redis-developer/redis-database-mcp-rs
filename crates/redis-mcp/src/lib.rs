@@ -346,6 +346,25 @@ impl RedisMcpBuilder {
         self
     }
 
+    /// Supply the dedicated connection executor required by coordination
+    /// long-polls without enabling the unrelated sessions tool bundle.
+    #[cfg(feature = "coordination")]
+    pub fn coordination_blocking(mut self, executor: impl RedisBlockingExecutor) -> Self {
+        self.blocking = Some(Arc::new(executor));
+        self
+    }
+
+    /// Supply a shared coordination long-poll executor without changing the
+    /// selected tool bundles.
+    #[cfg(feature = "coordination")]
+    pub fn shared_coordination_blocking(
+        mut self,
+        executor: Arc<dyn RedisBlockingExecutor>,
+    ) -> Self {
+        self.blocking = Some(executor);
+        self
+    }
+
     /// Replace the default blocking-call bounds.
     pub fn blocking_limits(mut self, limits: RedisBlockingLimits) -> Self {
         self.blocking_limits = limits;
@@ -501,6 +520,9 @@ impl RedisMcpBuilder {
             self.coordination_config
                 .validate()
                 .map_err(|_| RedisMcpBuildError::InvalidCoordinationConfig)?;
+            if self.blocking.is_none() {
+                return Err(RedisMcpBuildError::CoordinationRequiresBlockingExecutor);
+            }
             if self.blocking.is_some() && self.blocking_limits.validate().is_err() {
                 return Err(RedisMcpBuildError::InvalidBlockingLimits);
             }
@@ -678,6 +700,9 @@ pub enum RedisMcpBuildError {
     InvalidDocsOptions,
     /// Durable coordination requires a valid namespace and non-zero bounds.
     InvalidCoordinationConfig,
+    /// Durable coordination long-polls require a dedicated connection
+    /// executor, independently of the sessions bundle.
+    CoordinationRequiresBlockingExecutor,
     /// Atomic transactions require an explicit dedicated-connection executor.
     TransactionsRequireExecutor,
     /// Transactions execute argv-shaped nested commands and therefore require
@@ -719,6 +744,9 @@ impl std::fmt::Display for RedisMcpBuildError {
             ),
             Self::InvalidCoordinationConfig => formatter.write_str(
                 "coordination options require a safe namespace and non-zero shard and byte bounds",
+            ),
+            Self::CoordinationRequiresBlockingExecutor => formatter.write_str(
+                "the coordination bundle requires a dedicated blocking executor",
             ),
             Self::TransactionsRequireExecutor => {
                 formatter.write_str("the transactions bundle requires a transaction executor")

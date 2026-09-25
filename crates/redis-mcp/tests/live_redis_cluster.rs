@@ -31,6 +31,7 @@ async fn durable_handoffs_keep_every_atomic_operation_in_one_cluster_slot() {
         DirectRedisCluster::connect(&cluster.seed_urls)
             .await
             .expect("connect producer to coordination cluster"),
+        &cluster.seed_urls,
         &namespace,
     )
     .await;
@@ -38,6 +39,7 @@ async fn durable_handoffs_keep_every_atomic_operation_in_one_cluster_slot() {
         DirectRedisCluster::connect(&cluster.seed_urls)
             .await
             .expect("connect worker to coordination cluster"),
+        &cluster.seed_urls,
         &namespace,
     )
     .await;
@@ -1289,7 +1291,13 @@ async fn router_client(executor: impl RedisExecutor) -> McpClient {
     client
 }
 
-async fn coordination_router_client(executor: impl RedisExecutor, namespace: &str) -> McpClient {
+async fn coordination_router_client(
+    executor: impl RedisExecutor,
+    seed_urls: &[String],
+    namespace: &str,
+) -> McpClient {
+    let blocking = DirectRedisBlocking::cluster(seed_urls)
+        .expect("prepare coordination Cluster blocking executor");
     let router = RedisMcp::builder(executor)
         .access(AccessMode::Full)
         .bundles([ToolBundle::Coordination])
@@ -1298,6 +1306,7 @@ async fn coordination_router_client(executor: impl RedisExecutor, namespace: &st
                 .with_namespace(namespace)
                 .with_shards(4),
         )
+        .coordination_blocking(blocking)
         .build();
     let client = McpClient::connect(ChannelTransport::new(router))
         .await

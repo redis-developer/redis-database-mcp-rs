@@ -7,11 +7,14 @@ authors.workspace = true
 license.workspace = true
 repository.workspace = true
 homepage.workspace = true
-readme.workspace = true
+readme = "README.md"
 documentation = "https://docs.rs/redis-mcp"
 description = "Composable MCP tools for Redis databases"
 keywords = ["redis", "mcp", "database", "ai", "tower"]
 categories = ["database", "development-tools"]
+
+[package.metadata.docs.rs]
+all-features = true
 
 [lib]
 name = "redis_mcp"

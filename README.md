@@ -19,6 +19,30 @@ For now, `mcp-repl` dynamically derives both interactive and one-shot commands
 from the server's MCP surface, which lets the library contract drive agent and
 human workflows without duplicating command definitions.
 
+## Install and choose an entry point
+
+Embed the library:
+
+    [dependencies]
+    redis-mcp = "0.1"
+
+Install the standalone server:
+
+    cargo install redis-mcp-server
+
+The package-specific guides keep their published-crate examples focused:
+
+- [`redis-mcp`](crates/redis-mcp/README.md) for library composition and Cargo
+  features;
+- [`redis-mcp-server`](crates/redis-mcp-server/README.md) for stdio, Streamable
+  HTTP, configuration, and mcp-repl; and
+- [the initial release boundary](docs/initial-release.md) for the supported
+  Redis/module/MCP matrix, security defaults, exclusions, and release evidence.
+
+The two crates are versioned together initially. The server's published
+manifest resolves `redis-mcp` by version, while the workspace uses the sibling
+path for development.
+
 ## Library-first family composition
 
 The default `redis-mcp` Cargo feature set compiles the full library surface so
@@ -30,10 +54,10 @@ features and enable only the Redis families they embed:
 The additive family features are `keyspace`, `strings`, `hashes`, `lists`,
 `sets`, `sorted-sets`, `streams`, `bitmaps`, `arrays`, `hyperloglog`,
 `geospatial`, `vector-sets`, `pubsub`, `scripting`, `json`, `search`, and
-`timeseries`. The `diagnostics`, `sessions`, `transactions`, and `admin`
-features compile their corresponding cross-cutting bundles. `all-families` enables every command
-family, while `full` also enables diagnostics, sessions, transactions, and
-guarded administration.
+`timeseries`. The `diagnostics`, `sessions`, `transactions`, `admin`, `bulk`,
+and `guidance` features compile their corresponding cross-cutting surfaces.
+`all-families` enables every command family, while `full` enables every family
+and cross-cutting surface.
 
 Compile-time inclusion and runtime exposure are separate. `families(...)`
 replaces the compatibility bundle defaults with a precise family selection;
@@ -291,6 +315,8 @@ the fetcher.
 
 See [the spike decision record](docs/spike.md) for the tested architecture,
 REPL findings, and redisctl migration sequence.
+The [release process](docs/releasing.md) defines package verification and
+publish order.
 
 ## Run the standalone server
 
@@ -703,11 +729,12 @@ explain/profile, dictionaries, synonyms, deprecated tag values, binary fields,
 output limits, ACL command restrictions, module versions, and same-slot
 three-node Cluster routing.
 
-CI runs the complete suite on Redis 8.8 and the live router/stdio/HTTP contract on
-every currently supported Redis Open Source series: 6.2, 7.2, 7.4, 8.0, 8.2,
-8.4, 8.6, 8.8, and 8.10.1. Standalone and Cluster jobs cover the latest pin,
-and a separate job regenerates the official command metadata from the pinned
-Redis image. Live tests exercise both RESP2 and RESP3, the 201-tool curated
+CI runs the complete workspace, including the stdio and HTTP server contracts,
+on Redis 8.8. The library's live Redis contract additionally runs on every
+supported Redis Open Source series: 6.2, 7.2, 7.4, 8.0, 8.2, 8.4, 8.6, and
+8.10.1. Dedicated Cluster jobs cover 6.2, 8.8, and 8.10.1, and a separate job
+regenerates the official command metadata from the pinned Redis image. Live
+tests exercise both RESP2 and RESP3, the 201-tool curated
 catalog, binary and nil responses, conditional and absolute expiration,
 bounded serialization/restore, complete bounded list semantics, typed
 hash-field expiration, binary-safe membership, budgeted set algebra, complete

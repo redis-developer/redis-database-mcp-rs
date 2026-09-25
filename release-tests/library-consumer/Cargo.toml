@@ -1,0 +1,19 @@
+[package]
+name = "redis-mcp-release-consumer"
+version = "0.0.0"
+edition = "2024"
+rust-version = "1.90"
+publish = false
+
+# Keep this fixture outside the repository workspace so it behaves like a
+# downstream crate during the package gate.
+[workspace]
+
+[features]
+minimal = ["redis-mcp/strings"]
+library-default = ["redis-mcp/default"]
+library-full = ["redis-mcp/full"]
+
+[dependencies]
+async-trait = "0.1"
+redis-mcp = { version = "=0.1.0", default-features = false }

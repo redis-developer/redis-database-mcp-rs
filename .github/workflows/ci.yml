@@ -47,20 +47,8 @@ jobs:
       - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@1.90.0
       - uses: Swatinem/rust-cache@v2
-      - name: Verify library package
-        run: cargo package -p redis-mcp
-      - name: Assemble workspace packages
-        run: cargo package --workspace --no-verify
-      - name: Verify server package against packaged library
-        shell: bash
-        run: |
-          server_archive="$(find target/package -maxdepth 1 -name 'redis-mcp-server-*.crate' -print -quit)"
-          server_dir="${server_archive%.crate}"
-          tar -xzf "$server_archive" -C target/package
-          library_dir="$(find target/package -maxdepth 1 -type d -name 'redis-mcp-[0-9]*' -print -quit)"
-          cargo check \
-            --manifest-path "$server_dir/Cargo.toml" \
-            --config "patch.crates-io.redis-mcp.path=\"$library_dir\""
+      - name: Verify packaged crates and clean-room consumers
+        run: ./scripts/check_release.sh
 
   command-ledger:
     runs-on: ubuntu-latest

@@ -37,7 +37,7 @@ tempfile = "3"
 tokio = { version = "1.40", features = ["macros", "net", "process", "rt-multi-thread", "signal", "sync", "time"] }
 toml = "1.1"
 tower = { version = "0.5", features = ["limit"] }
-tower-mcp = { version = "0.22", features = ["protocol-2026-07-28"] }
+tower-mcp = { version = "0.23.2", features = ["protocol-2026-07-28"] }
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 url = "2"

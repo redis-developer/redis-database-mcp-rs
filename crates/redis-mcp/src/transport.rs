@@ -141,10 +141,10 @@ impl Target {
 
     async fn connect_unbounded(&self) -> Result<RedisConnection, TowerError> {
         if let Some(TransportSetup::TlsIpv6(setup)) = self.setup.as_deref() {
-            // redis-tower 0.1.2 keeps IPv6 brackets in the parsed host. They
-            // belong in the socket address, but rustls rejects them in a
-            // ServerName. Keep those two representations separate until the
-            // upstream parser does so itself.
+            // Keep the verified adapter path for TLS IPv6 during this
+            // dependency update. The socket address needs brackets, while
+            // rustls needs an unbracketed ServerName. redis-tower now handles
+            // this split too; the adapter can be simplified separately.
             let initial = self.config.clone().with_protocol(ProtocolVersion::Resp2);
             let tls = redis_tower_core::tls::TlsConfig::default_rustls();
             let connection = RedisConnection::connect_tls_with_config(
@@ -168,10 +168,10 @@ impl Target {
             return RedisConnection::connect_url_with_config(&self.url, &self.config).await;
         };
 
-        // redis-tower's Unix URL parser owns transport and database parsing,
-        // but redis-rs also accepted query-based ACL credentials. Establish a
-        // RESP2 connection first, replay the full legacy setup, then negotiate
-        // the requested protocol. This path is also used for reconnection.
+        // Preserve the verified query-based ACL setup path during this
+        // dependency update. redis-tower now supports it directly too;
+        // simplifying the adapter is separate from updating the release set.
+        // This path is also used for reconnection.
         let initial = self.config.clone().with_protocol(ProtocolVersion::Resp2);
         #[cfg(unix)]
         let connection = {

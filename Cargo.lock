@@ -1488,9 +1488,9 @@ dependencies = [
 
 [[package]]
 name = "redis-tower"
-version = "0.1.3"
+version = "0.1.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "cbd1ebeb0482cfb299a7819842b8969b95294042faffff871550095516657724"
+checksum = "d5ff45c08986866124c8191f36f91efe1d7ba0c3cbbadd9a2a8061d3d0f6d5c6"
 dependencies = [
  "async-stream",
  "bytes",
@@ -1512,9 +1512,9 @@ dependencies = [
 
 [[package]]
 name = "redis-tower-cluster"
-version = "0.1.3"
+version = "0.1.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f15bb7820c6b16210d6326c25e3e7483f1b89864f62b05f5d9d9f1e1d1cc5a2e"
+checksum = "324128016d331930d56301c9b212655d5c853109c8e0038b1773b7310bcedaae"
 dependencies = [
  "async-stream",
  "bytes",
@@ -1532,9 +1532,9 @@ dependencies = [
 
 [[package]]
 name = "redis-tower-commands"
-version = "0.1.2"
+version = "0.1.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d9be904757d4b31ce4ca8e674356bbe05934d41723fc14b1f509dace8eeff365"
+checksum = "58b98eafc435880e28510511ff7648cafec781c68d19009f37dedfa6bd3097ec"
 dependencies = [
  "bytes",
  "hex",
@@ -1545,9 +1545,9 @@ dependencies = [
 
 [[package]]
 name = "redis-tower-core"
-version = "0.1.2"
+version = "0.1.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8432b27bd13df313cd9a052290f47ef3ed6bd0681383626122ebf77aca4bf1e1"
+checksum = "c429663df5453b28a72789e824b738318e002cf7a84af6c005fbc8754e85e1c1"
 dependencies = [
  "bytes",
  "futures",
@@ -1568,9 +1568,9 @@ dependencies = [
 
 [[package]]
 name = "redis-tower-protocol"
-version = "0.1.3"
+version = "0.1.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9e2886a68f13604e6957cd51a27fb87f048cb42ca4d6293bdeb6030546edcf91"
+checksum = "591a4be5eb77f09fc8b68a1dbde763691dd907b4249b4460ff9df7b94e050554"
 dependencies = [
  "bytes",
  "resp-rs",

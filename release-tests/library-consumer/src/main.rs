@@ -1,7 +1,7 @@
 use async_trait::async_trait;
 use redis_mcp::{
-    AccessMode, RedisCommand, RedisError, RedisErrorKind, RedisExecutor, RedisMcp, RedisValue,
-    ToolFamily,
+    AccessMode, RedisCommand, RedisDeployment, RedisError, RedisErrorKind, RedisExecutor,
+    RedisMcp, RedisValue, ToolFamily, validate_redis_target_url,
 };
 
 #[cfg(not(any(
@@ -25,6 +25,17 @@ impl RedisExecutor for StubRedis {
 }
 
 fn main() {
+    validate_redis_target_url(
+        "redis://127.0.0.1:1/",
+        RedisDeployment::Standalone,
+    )
+    .expect("offline standalone target validation");
+    assert_eq!(
+        validate_redis_target_url("redis://127.0.0.1:1/1", RedisDeployment::Cluster)
+            .expect_err("Cluster rejects nonzero database")
+            .code(),
+        Some("CLUSTER_DATABASE_UNSUPPORTED")
+    );
     let router = RedisMcp::builder(StubRedis)
         .access(AccessMode::ReadOnly)
         .family(ToolFamily::Strings)

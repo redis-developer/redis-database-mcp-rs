@@ -46,6 +46,30 @@ The `custom_executor` example shows the seam for redisctl or another host that
 already owns its Redis connection lifecycle. The `native_argv` example shows
 the governed Redis-command interface for CLI/REPL frontends.
 
+Direct adapters also accept optional replayable connection-local setup:
+
+```rust,ignore
+use redis_mcp::{ConnectionSetup, DirectRedis, DirectRedisCluster};
+
+# async fn example() -> Result<(), Box<dyn std::error::Error>> {
+let setup = ConnectionSetup::new().with_client_name("my-redis-agent");
+let standalone = DirectRedis::connect_with_setup("redis://127.0.0.1:6379", setup.clone()).await?;
+let cluster = DirectRedisCluster::connect_with_setup(
+    ["redis://127.0.0.1:7000"], setup,
+).await?;
+# let _ = (standalone, cluster);
+# Ok(())
+# }
+```
+
+The existing `connect` methods use an empty policy and retain their behavior.
+The embedding host chooses the name; no profile or client identity enters MCP
+tool schemas. Redis ACLs must allow `CLIENT SETNAME` for a named connection, and
+setup failure prevents that socket from carrying ordinary traffic. Do not put
+secrets in client names: Redis administrators can see them in `CLIENT LIST`.
+The `from_multiplexed_client` adapters retain the caller's setup and reconnect
+policy; they do not retrofit a borrowed client.
+
 ## Cargo features
 
 All features are additive. Compile-time inclusion and runtime exposure remain

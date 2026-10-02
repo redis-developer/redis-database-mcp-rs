@@ -6,7 +6,7 @@ use redis_tower_cluster::MultiplexedClusterClient;
 #[cfg(unix)]
 use redis_tower_core::RedisStream;
 use redis_tower_core::{
-    ConnectionConfig, ProtocolVersion, RedisConnection, RedisError as TowerError,
+    ConnectionConfig, ConnectionSetup, ProtocolVersion, RedisConnection, RedisError as TowerError,
 };
 #[cfg(unix)]
 use std::path::PathBuf;
@@ -48,6 +48,11 @@ struct TlsIpv6Setup {
 }
 
 impl Target {
+    pub(crate) fn with_connection_setup(mut self, setup: ConnectionSetup) -> Self {
+        self.config = self.config.with_setup(setup);
+        self
+    }
+
     pub fn parse(input: &str) -> Result<Self, RedisError> {
         let mut url = url::Url::parse(input).map_err(|_| invalid_url())?;
         let mut protocol = ProtocolVersion::Resp2;
@@ -145,7 +150,11 @@ impl Target {
             // dependency update. The socket address needs brackets, while
             // rustls needs an unbracketed ServerName. redis-tower now handles
             // this split too; the adapter can be simplified separately.
-            let initial = self.config.clone().with_protocol(ProtocolVersion::Resp2);
+            let initial = self
+                .config
+                .clone()
+                .with_protocol(ProtocolVersion::Resp2)
+                .with_setup(ConnectionSetup::default());
             let tls = redis_tower_core::tls::TlsConfig::default_rustls();
             let connection = RedisConnection::connect_tls_with_config(
                 &setup.address,
@@ -160,6 +169,7 @@ impl Target {
                 setup.password.as_deref(),
                 setup.database,
                 self.config.protocol(),
+                self.config.setup(),
             )
             .await;
         }
@@ -195,6 +205,7 @@ impl Target {
             setup.password.as_deref(),
             setup.database,
             self.config.protocol(),
+            self.config.setup(),
         )
         .await
     }
@@ -267,6 +278,7 @@ async fn finish_setup(
     password: Option<&str>,
     database: Option<u16>,
     protocol: ProtocolVersion,
+    setup: &ConnectionSetup,
 ) -> Result<RedisConnection, TowerError> {
     if let Some(password) = password {
         let mut auth = RawCommand::new("AUTH");
@@ -281,6 +293,7 @@ async fn finish_setup(
             .await?;
     }
     connection.negotiate_protocol(protocol).await?;
+    connection.apply_setup(setup).await?;
     Ok(connection)
 }
 
@@ -368,7 +381,7 @@ mod tests {
         let acl_file = directory.path().join("users.acl");
         std::fs::write(
             &acl_file,
-            "user default on nopass ~* +@all\nuser agent on >secret ~* +@all\n",
+            "user default on nopass ~* +@all\nuser agent on >secret ~* +@all\nuser restricted on >secret ~* +ping\n",
         )
         .expect("write Redis ACL file");
         let server = redis_server_wrapper::RedisServer::new()
@@ -396,7 +409,9 @@ mod tests {
                 "{scheme}://{}?user=agent&pass=secret&db=1&protocol=resp3",
                 encoded_socket
             );
-            let target = Target::parse(&url).expect("parse authenticated Unix target");
+            let target = Target::parse(&url)
+                .expect("parse authenticated Unix target")
+                .with_connection_setup(ConnectionSetup::new().with_client_name("redis-mcp-unix"));
             assert!(target.url.starts_with("unix:"));
             assert!(target.url.contains("%20"));
             let mut connection = target.connect().await.expect("connect with ACL identity");
@@ -406,6 +421,29 @@ mod tests {
                 .expect("query authenticated identity");
             assert_eq!(identity, "agent");
             assert!(connection.is_resp3());
+            let name: String = connection
+                .execute(RawCommand::new("CLIENT").arg("GETNAME").query())
+                .await
+                .expect("query replayed client name");
+            assert_eq!(name, "redis-mcp-unix");
+
+            let denied_url = format!(
+                "{scheme}://{}?user=restricted&pass=secret&protocol=resp3",
+                encoded_socket
+            );
+            let denied = Target::parse(&denied_url)
+                .expect("parse restricted Unix target")
+                .with_connection_setup(
+                    ConnectionSetup::new().with_client_name("private-client-name-canary"),
+                )
+                .connect()
+                .await;
+            let denied = match denied {
+                Ok(_) => panic!("denied CLIENT SETNAME must fail setup"),
+                Err(error) => error,
+            };
+            assert!(!denied.to_string().contains("private-client-name-canary"));
+            assert!(!format!("{denied:?}").contains("private-client-name-canary"));
 
             let wrong_url = format!(
                 "{scheme}://{}?user=agent&pass=wrong&protocol=resp3",

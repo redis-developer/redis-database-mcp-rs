@@ -10,11 +10,12 @@ use std::{
 use async_trait::async_trait;
 use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64};
 use redis_mcp::{
-    AccessMode, CapabilityStatus, DirectRedis, DirectRedisBlocking, DirectRedisCluster,
-    DirectRedisPubSubSessionManager, DirectRedisTransactions, NativeRedisInvocation,
-    PubSubSessionLimits, PubSubSessionManager, RawCommandPolicy, RedisDeployment, RedisExecutor,
-    RedisInvocationEngine, RedisMcp, RedisModule, RedisTransactionEngine, RedisTransactionOutcome,
-    RedisTransactionRequest, RedisValue, RedisVersion, ToolBundle,
+    AccessMode, CapabilityStatus, ConnectionSetup, DirectRedis, DirectRedisBlocking,
+    DirectRedisCluster, DirectRedisPubSubSessionManager, DirectRedisTransactions,
+    NativeRedisInvocation, PubSubSessionLimits, PubSubSessionManager, RawCommandPolicy,
+    RedisDeployment, RedisExecutor, RedisInvocationEngine, RedisMcp, RedisModule,
+    RedisTransactionEngine, RedisTransactionOutcome, RedisTransactionRequest, RedisValue,
+    RedisVersion, ToolBundle,
 };
 use redis_server_wrapper::{Error as RedisServerError, RedisCluster, RedisClusterHandle};
 use tower_mcp::{
@@ -137,6 +138,64 @@ async fn durable_handoffs_keep_every_atomic_operation_in_one_cluster_slot() {
 struct TestCluster {
     seed_urls: Vec<String>,
     _managed: Option<ManagedCluster>,
+}
+
+#[tokio::test]
+async fn connection_setup_names_every_cluster_node_socket() {
+    let _cluster_guard = CLUSTER_TEST_LOCK.lock().await;
+    let Some(cluster) = TestCluster::start().await else {
+        return;
+    };
+    if cluster._managed.is_none() {
+        eprintln!("skipping connection-name test against externally managed Cluster");
+        return;
+    }
+    let name = "redis-mcp-cluster-setup-test";
+    let executor = DirectRedisCluster::connect_with_setup(
+        &cluster.seed_urls,
+        ConnectionSetup::new().with_client_name(name),
+    )
+    .await
+    .expect("connect with cluster-wide client name");
+    let capabilities = executor.discover_capabilities().await.unwrap();
+    let router = RedisMcp::builder(executor)
+        .access(AccessMode::Full)
+        .capabilities(capabilities)
+        .build();
+    let client = McpClient::connect(ChannelTransport::new(router))
+        .await
+        .unwrap();
+    client
+        .initialize("redis-mcp-cluster-setup-test", "0")
+        .await
+        .unwrap();
+    let listed = client
+        .call_tool(
+            "redis_client_list",
+            serde_json::json!({
+                "include_sensitive": true,
+                "name": name,
+                "max_results": 20,
+                "max_cluster_nodes": 8
+            }),
+        )
+        .await
+        .expect("list named clients on every primary")
+        .structured_content
+        .expect("structured named client list");
+    assert_eq!(listed["cluster"]["nodes_queried"], 3);
+    assert_eq!(listed["cluster"]["nodes_succeeded"], 3);
+    let nodes = listed["clients"]
+        .as_array()
+        .expect("client list")
+        .iter()
+        .filter_map(|record| record["node"].as_str())
+        .collect::<BTreeSet<_>>();
+    assert_eq!(
+        nodes.len(),
+        3,
+        "named clients must appear on each node: {listed}"
+    );
 }
 
 #[tokio::test]

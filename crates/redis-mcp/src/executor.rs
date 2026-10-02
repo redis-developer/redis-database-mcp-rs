@@ -555,9 +555,20 @@ impl DirectRedis {
     /// commands have no transport response timeout; the library invocation
     /// deadline remains authoritative. In-flight writes are not blindly retried.
     pub async fn connect(url: &str) -> Result<Self, RedisError> {
+        Self::connect_with_setup(url, crate::ConnectionSetup::default()).await
+    }
+
+    /// Connect with replayable, connection-local setup for every physical socket.
+    ///
+    /// The caller owns the chosen client identity. Setup failures close the
+    /// socket and fail connection establishment; names are not logged in errors.
+    pub async fn connect_with_setup(
+        url: &str,
+        setup: crate::ConnectionSetup,
+    ) -> Result<Self, RedisError> {
         let reconnect = ReconnectConfig::default().connect_timeout(Duration::from_secs(10));
         let connection = MultiplexedClient::from_factory(
-            crate::response::connection_factory(url)?,
+            crate::response::connection_factory(url)?.with_connection_setup(setup),
             AutoPipelineConfig {
                 response_timeout: None,
                 ..AutoPipelineConfig::default()
@@ -630,9 +641,27 @@ impl DirectRedisCluster {
         I: IntoIterator<Item = S>,
         S: AsRef<str>,
     {
+        Self::connect_with_setup(seed_urls, crate::ConnectionSetup::default()).await
+    }
+
+    /// Connect with one replayable setup policy for all Cluster sockets.
+    ///
+    /// The policy is retained for topology discovery, redirects, replacement
+    /// connections, and dedicated node sockets. Every seed shares it.
+    pub async fn connect_with_setup<I, S>(
+        seed_urls: I,
+        setup: crate::ConnectionSetup,
+    ) -> Result<Self, RedisError>
+    where
+        I: IntoIterator<Item = S>,
+        S: AsRef<str>,
+    {
         let targets = seed_urls
             .into_iter()
-            .map(|url| Target::parse(url.as_ref()))
+            .map(|url| {
+                Target::parse(url.as_ref())
+                    .map(|target| target.with_connection_setup(setup.clone()))
+            })
             .collect::<Result<Vec<_>, _>>()?;
         let connection = connect_cluster(&targets).await?;
         Ok(Self { connection })
@@ -1253,6 +1282,62 @@ mod tests {
             })
             .await
             .unwrap();
+        }
+
+        #[tokio::test]
+        async fn client_name_setup_survives_reconnect() {
+            let Some((_server, _directory, url)) = server().await else {
+                return;
+            };
+            let name = b"redis-mcp-reconnect-test";
+            let client = DirectRedis::connect_with_setup(
+                &url,
+                crate::ConnectionSetup::new().with_client_name(name),
+            )
+            .await
+            .expect("connect with client name");
+            assert_eq!(
+                client
+                    .execute(command("CLIENT", &[b"GETNAME"]))
+                    .await
+                    .unwrap(),
+                RedisValue::BulkString(name.to_vec())
+            );
+            let RedisValue::Integer(id) =
+                client.execute(command("CLIENT", &[b"ID"])).await.unwrap()
+            else {
+                panic!("expected client ID");
+            };
+            let admin = redis::Client::open(url).unwrap();
+            let mut admin = admin.get_multiplexed_async_connection().await.unwrap();
+            let killed: i64 = redis::cmd("CLIENT")
+                .arg("KILL")
+                .arg("ID")
+                .arg(id)
+                .query_async(&mut admin)
+                .await
+                .unwrap();
+            assert_eq!(killed, 1);
+            tokio::time::timeout(Duration::from_secs(5), async {
+                loop {
+                    if let Ok(RedisValue::Integer(new_id)) =
+                        client.execute(command("CLIENT", &[b"ID"])).await
+                        && new_id != id
+                    {
+                        assert_eq!(
+                            client
+                                .execute(command("CLIENT", &[b"GETNAME"]))
+                                .await
+                                .unwrap(),
+                            RedisValue::BulkString(name.to_vec())
+                        );
+                        break;
+                    }
+                    tokio::time::sleep(Duration::from_millis(25)).await;
+                }
+            })
+            .await
+            .expect("reconnect and replay client name");
         }
 
         #[tokio::test]

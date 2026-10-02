@@ -1489,8 +1489,7 @@ dependencies = [
 [[package]]
 name = "redis-tower"
 version = "0.1.4"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d5ff45c08986866124c8191f36f91efe1d7ba0c3cbbadd9a2a8061d3d0f6d5c6"
+source = "git+https://github.com/joshrotenberg/redis-tower?rev=e4bfc051ab3a30e02064288b1bb6bae261cdec25#e4bfc051ab3a30e02064288b1bb6bae261cdec25"
 dependencies = [
  "async-stream",
  "bytes",
@@ -1513,8 +1512,7 @@ dependencies = [
 [[package]]
 name = "redis-tower-cluster"
 version = "0.1.4"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "324128016d331930d56301c9b212655d5c853109c8e0038b1773b7310bcedaae"
+source = "git+https://github.com/joshrotenberg/redis-tower?rev=e4bfc051ab3a30e02064288b1bb6bae261cdec25#e4bfc051ab3a30e02064288b1bb6bae261cdec25"
 dependencies = [
  "async-stream",
  "bytes",
@@ -1533,8 +1531,7 @@ dependencies = [
 [[package]]
 name = "redis-tower-commands"
 version = "0.1.3"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "58b98eafc435880e28510511ff7648cafec781c68d19009f37dedfa6bd3097ec"
+source = "git+https://github.com/joshrotenberg/redis-tower?rev=e4bfc051ab3a30e02064288b1bb6bae261cdec25#e4bfc051ab3a30e02064288b1bb6bae261cdec25"
 dependencies = [
  "bytes",
  "hex",
@@ -1546,8 +1543,7 @@ dependencies = [
 [[package]]
 name = "redis-tower-core"
 version = "0.1.3"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c429663df5453b28a72789e824b738318e002cf7a84af6c005fbc8754e85e1c1"
+source = "git+https://github.com/joshrotenberg/redis-tower?rev=e4bfc051ab3a30e02064288b1bb6bae261cdec25#e4bfc051ab3a30e02064288b1bb6bae261cdec25"
 dependencies = [
  "bytes",
  "futures",
@@ -1569,8 +1565,7 @@ dependencies = [
 [[package]]
 name = "redis-tower-protocol"
 version = "0.1.4"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "591a4be5eb77f09fc8b68a1dbde763691dd907b4249b4460ff9df7b94e050554"
+source = "git+https://github.com/joshrotenberg/redis-tower?rev=e4bfc051ab3a30e02064288b1bb6bae261cdec25#e4bfc051ab3a30e02064288b1bb6bae261cdec25"
 dependencies = [
  "bytes",
  "resp-rs",

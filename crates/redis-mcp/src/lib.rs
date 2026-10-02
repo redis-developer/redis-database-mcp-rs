@@ -100,6 +100,7 @@ pub use pubsub_sessions::{
     PubSubSessionOwner, PubSubSessionSnapshot, PubSubSubscription, PubSubSubscriptionKind,
 };
 pub use raw::RawCommandPolicy;
+pub use redis_tower_core::ConnectionSetup;
 use tower_mcp::{CapabilityFilter, Filterable, McpRouter, Tool};
 pub use transactions::{
     DEFAULT_MAX_CONCURRENT_TRANSACTIONS, DEFAULT_MAX_TRANSACTION_COMMANDS,

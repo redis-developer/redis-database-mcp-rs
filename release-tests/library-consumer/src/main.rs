@@ -1,7 +1,7 @@
 use async_trait::async_trait;
 use redis_mcp::{
-    AccessMode, RedisCommand, RedisError, RedisErrorKind, RedisExecutor, RedisMcp, RedisValue,
-    ToolFamily,
+    AccessMode, ConnectionSetup, DirectRedis, DirectRedisCluster, RedisCommand, RedisError,
+    RedisErrorKind, RedisExecutor, RedisMcp, RedisValue, ToolFamily,
 };
 
 #[cfg(not(any(
@@ -30,4 +30,14 @@ fn main() {
         .family(ToolFamily::Strings)
         .build();
     drop(router);
+}
+
+// Compile the public setup seam from an external crate. The release gate does
+// not connect to Redis or depend on a running server.
+#[allow(dead_code)]
+async fn direct_connection_setup_api() -> Result<(), RedisError> {
+    let setup = ConnectionSetup::new().with_client_name("redis-mcp-consumer");
+    let _standalone = DirectRedis::connect_with_setup("redis://127.0.0.1:6379", setup.clone()).await?;
+    let _cluster = DirectRedisCluster::connect_with_setup(["redis://127.0.0.1:7000"], setup).await?;
+    Ok(())
 }

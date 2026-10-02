@@ -1,6 +1,6 @@
 //! Connection configuration shared by the direct redis-tower adapters.
 
-use crate::{RedisError, RedisErrorKind};
+use crate::{RedisDeployment, RedisError, RedisErrorKind};
 use redis_tower::{commands::RawCommand, reconnect::ConnectionFactory};
 use redis_tower_cluster::MultiplexedClusterClient;
 #[cfg(unix)]
@@ -13,6 +13,25 @@ use std::path::PathBuf;
 use std::{future::Future, pin::Pin, time::Duration};
 
 pub(crate) const CONNECT_TIMEOUT: Duration = Duration::from_secs(10);
+
+/// Validate a fixed Redis target before building a router, without connecting.
+///
+/// This uses the same URL parser as the bundled direct executors. A host may
+/// call it during synchronous startup, then connect lazily on the first tool
+/// call. Errors have stable codes and never contain the input URL or secrets.
+/// `Unknown` is not a valid deployment choice for a fixed target.
+pub fn validate_redis_target_url(url: &str, deployment: RedisDeployment) -> Result<(), RedisError> {
+    let target = Target::parse(url)?;
+    match deployment {
+        RedisDeployment::Standalone => Ok(()),
+        RedisDeployment::Cluster => target.parsed_cluster_url().map(|_| ()),
+        RedisDeployment::Unknown => Err(RedisError::new(
+            RedisErrorKind::InvalidRequest,
+            "fixed Redis target requires standalone or Cluster mode",
+        )
+        .with_code("INVALID_REDIS_DEPLOYMENT")),
+    }
+}
 
 /// Retain redis-rs protocol and authenticated Unix URL options at the
 /// application boundary while using redis-tower for the transport.
@@ -66,10 +85,16 @@ impl Target {
                 "db" => database = Some(value.parse::<u16>().map_err(|_| invalid_url())?),
                 "user" => username = Some(value.into_owned()),
                 "pass" => password = Some(value.into_owned()),
-                _ => {}
+                _ => return Err(invalid_url()),
             }
         }
         let unix = matches!(url.scheme(), "unix" | "redis+unix" | "valkey+unix");
+        // Query credentials and database selection are supported on Unix
+        // sockets. On TCP/TLS targets they were previously stripped without
+        // being applied, which could silently select the wrong identity or DB.
+        if !unix && (username.is_some() || password.is_some() || database.is_some()) {
+            return Err(invalid_url());
+        }
         #[cfg(unix)]
         let unix_path = unix
             .then(|| url.to_file_path().map_err(|_| invalid_url()))
@@ -202,10 +227,7 @@ impl Target {
     pub async fn exclusive_cluster(
         &self,
     ) -> Result<redis_tower_cluster::ClusterConnection, RedisError> {
-        let parsed = redis_tower_core::parse_redis_url(&self.url).map_err(RedisError::from)?;
-        if parsed.unix || parsed.database.is_some_and(|db| db != 0) {
-            return Err(invalid_url());
-        }
+        let parsed = self.parsed_cluster_url()?;
         let mut builder = redis_tower_cluster::ClusterConnection::builder(format!(
             "{}:{}",
             parsed.host, parsed.port
@@ -238,10 +260,7 @@ impl Target {
     pub fn cluster_builder(
         &self,
     ) -> Result<redis_tower_cluster::MultiplexedClusterClientBuilder, RedisError> {
-        let parsed = redis_tower_core::parse_redis_url(&self.url).map_err(RedisError::from)?;
-        if parsed.unix || parsed.database.is_some_and(|db| db != 0) {
-            return Err(invalid_url());
-        }
+        let parsed = self.parsed_cluster_url()?;
         let mut builder =
             MultiplexedClusterClient::builder(format!("{}:{}", parsed.host, parsed.port))
                 .connection_config(self.config.clone());
@@ -258,6 +277,25 @@ impl Target {
             builder = builder.tls(redis_tower_core::tls::TlsConfig::default_rustls());
         }
         Ok(builder)
+    }
+
+    fn parsed_cluster_url(&self) -> Result<redis_tower_core::RedisUrl, RedisError> {
+        let parsed = redis_tower_core::parse_redis_url(&self.url).map_err(|_| invalid_url())?;
+        if parsed.unix {
+            return Err(RedisError::new(
+                RedisErrorKind::InvalidRequest,
+                "Redis Cluster targets cannot use Unix sockets",
+            )
+            .with_code("CLUSTER_UNIX_UNSUPPORTED"));
+        }
+        if parsed.database.is_some_and(|db| db != 0) {
+            return Err(RedisError::new(
+                RedisErrorKind::InvalidRequest,
+                "Redis Cluster targets must use database 0",
+            )
+            .with_code("CLUSTER_DATABASE_UNSUPPORTED"));
+        }
+        Ok(parsed)
     }
 }
 
@@ -314,6 +352,10 @@ impl ConnectionFactory for Target {
 pub(crate) async fn connect_cluster(
     targets: &[Target],
 ) -> Result<MultiplexedClusterClient, RedisError> {
+    // Reject an invalid later seed before a healthy earlier seed can hide it.
+    for target in targets {
+        target.parsed_cluster_url()?;
+    }
     connect_cluster_with_timeout(targets, CONNECT_TIMEOUT).await
 }
 
@@ -359,6 +401,83 @@ fn invalid_url() -> RedisError {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn fixed_target_validation_is_offline_and_matches_deployment_rules() {
+        for url in [
+            "redis://unreachable.invalid:6379/1?protocol=resp3",
+            "rediss://agent:password@unreachable.invalid:6379/1",
+            "unix:///tmp/redis-mcp-not-running.sock?user=agent&pass=password&db=1",
+        ] {
+            validate_redis_target_url(url, RedisDeployment::Standalone)
+                .expect("standalone syntax is valid without dialing");
+        }
+        for url in [
+            "redis://unreachable.invalid:6379/0?protocol=resp3",
+            "rediss://agent:password@unreachable.invalid:6379/",
+        ] {
+            validate_redis_target_url(url, RedisDeployment::Cluster)
+                .expect("Cluster seed syntax is valid without dialing");
+        }
+
+        let error = validate_redis_target_url(
+            "redis://unreachable.invalid:6379/1",
+            RedisDeployment::Cluster,
+        )
+        .expect_err("Cluster rejects a nonzero logical database");
+        assert_eq!(error.code(), Some("CLUSTER_DATABASE_UNSUPPORTED"));
+
+        let error = validate_redis_target_url(
+            "unix:///tmp/redis-mcp-not-running.sock",
+            RedisDeployment::Cluster,
+        )
+        .expect_err("Cluster rejects Unix sockets");
+        assert_eq!(error.code(), Some("CLUSTER_UNIX_UNSUPPORTED"));
+
+        let error = validate_redis_target_url(
+            "redis://unreachable.invalid:6379/",
+            RedisDeployment::Unknown,
+        )
+        .expect_err("fixed target deployment must be explicit");
+        assert_eq!(error.code(), Some("INVALID_REDIS_DEPLOYMENT"));
+    }
+
+    #[test]
+    fn fixed_target_validation_fails_closed_without_echoing_secrets() {
+        let secret = "unique-redis-mcp-canary-secret";
+        for url in [
+            format!("redis://unreachable.invalid:6379/?pass={secret}"),
+            format!("redis://unreachable.invalid:6379/?db=1&pass={secret}"),
+            format!("rediss://unreachable.invalid:6379/?user=agent&pass={secret}"),
+            format!("redis://unreachable.invalid:6379/?auth={secret}"),
+            format!("redis://agent:{secret}@unreachable.invalid:6379/?protocol=bad"),
+        ] {
+            let error = validate_redis_target_url(&url, RedisDeployment::Standalone)
+                .expect_err("unsupported or malformed target syntax fails closed");
+            assert_eq!(error.kind(), RedisErrorKind::InvalidRequest);
+            assert_eq!(error.code(), Some("INVALID_REDIS_URL"));
+            for rendered in [error.to_string(), format!("{error:?}")] {
+                assert!(!rendered.contains(secret), "validation leaked a secret");
+                assert!(!rendered.contains(&url), "validation leaked the URL");
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn invalid_later_cluster_seed_fails_before_any_connection_attempt() {
+        let targets = [
+            Target::parse("redis://127.0.0.1:1/0").unwrap(),
+            Target::parse("redis://127.0.0.1:1/1").unwrap(),
+        ];
+        let result = tokio::time::timeout(Duration::from_millis(100), connect_cluster(&targets))
+            .await
+            .expect("validation must finish before dialing the first seed");
+        let error = match result {
+            Ok(_) => panic!("invalid second seed must be rejected"),
+            Err(error) => error,
+        };
+        assert_eq!(error.code(), Some("CLUSTER_DATABASE_UNSUPPORTED"));
+    }
 
     #[cfg(unix)]
     #[tokio::test]

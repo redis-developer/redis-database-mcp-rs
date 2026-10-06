@@ -12,7 +12,7 @@ crates.io. Install from an immutable, reviewed commit SHA:
 
 ```console
 cargo install --git https://github.com/redis-developer/redis-database-mcp-rs \
-  --rev <reviewed-commit-sha> --bin redis-mcp-server --locked
+  --rev <reviewed-commit-sha> --locked redis-mcp-server
 ```
 
 The shorter `cargo install redis-mcp-server` form is for a future crates.io
@@ -58,8 +58,8 @@ library feature names:
 
 ```console
 cargo install --git https://github.com/redis-developer/redis-database-mcp-rs \
-  --rev <reviewed-commit-sha> --bin redis-mcp-server --locked \
-  --no-default-features --features keyspace,strings,hashes,diagnostics
+  --rev <reviewed-commit-sha> --locked --no-default-features \
+  --features keyspace,strings,hashes,diagnostics redis-mcp-server
 ```
 
 Use repeated `--cluster-url` values or `REDIS_CLUSTER_URLS` for a Cluster

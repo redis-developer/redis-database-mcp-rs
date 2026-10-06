@@ -40,7 +40,7 @@ list. Install the server from that same reviewed revision with:
 
 ```console
 cargo install --git https://github.com/redis-developer/redis-database-mcp-rs \
-  --rev <reviewed-commit-sha> --bin redis-mcp-server --locked
+  --rev <reviewed-commit-sha> --locked redis-mcp-server
 ```
 
 The public repository needs no source-access credentials. A GitHub release

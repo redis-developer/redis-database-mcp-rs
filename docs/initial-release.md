@@ -35,10 +35,16 @@ redis-mcp = { git = "https://github.com/redis-developer/redis-database-mcp-rs", 
 ```
 
 For a feature subset, add `default-features = false` and the required feature
-list. A server can be built from the same reviewed revision with Cargo's Git
-source support. Internal repository access may require Git authentication in
-the consuming environment; a GitHub release alone does not make a private or
-internal repository fetchable by external CI.
+list. Install the server from that same reviewed revision with:
+
+```console
+cargo install --git https://github.com/redis-developer/redis-database-mcp-rs \
+  --rev <reviewed-commit-sha> --bin redis-mcp-server --locked
+```
+
+Internal repository access may require Git authentication in the consuming
+environment; a GitHub release alone does not make a private or internal
+repository fetchable by external CI.
 
 ## Future crates.io installation (not yet available)
 

@@ -1,0 +1,62 @@
+name: GitHub-only release
+
+on:
+  push:
+    branches: [main]
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
+
+permissions: {}
+
+jobs:
+  release-pr:
+    if: github.repository == 'redis-developer/redis-database-mcp-rs' && github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+    concurrency:
+      group: release-plz-pr-main
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@1.90.0
+      - uses: release-plz/action@51e32d708d306b2c2e98540245b276439f3137c3 # v0.5.139
+        with:
+          command: release-pr
+          version: 0.3.169
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  release:
+    # A successful push CI run is required; PR CI alone is not a release gate.
+    # release_always=false additionally requires this commit to belong to a
+    # merged release-plz release PR, so merging this workflow cannot tag it.
+    if: >-
+      github.repository == 'redis-developer/redis-database-mcp-rs' &&
+      github.event_name == 'workflow_run' &&
+      github.event.workflow_run.repository.full_name == github.repository &&
+      github.event.workflow_run.event == 'push' &&
+      github.event.workflow_run.head_branch == 'main' &&
+      github.event.workflow_run.conclusion == 'success'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: read
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event.workflow_run.head_sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@1.90.0
+      - uses: release-plz/action@51e32d708d306b2c2e98540245b276439f3137c3 # v0.5.139
+        with:
+          command: release
+          version: 0.3.169
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

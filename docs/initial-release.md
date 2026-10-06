@@ -20,10 +20,27 @@ target.
 
 redisctl adoption and a Redis-specific CLI/REPL remain follow-on work. They can
 consume the same library or MCP surface, but neither is implied by the initial
-crate release. Prebuilt binaries and container images are also separate release
-artifacts; `cargo install redis-mcp-server` is the initial installation path.
+release. Prebuilt binaries and container images are separate release artifacts.
+The interim release channel is GitHub source tags; crates.io installation is
+deferred.
 
-## Install and compose
+## Use a reviewed Git source revision (interim)
+
+After repository visibility permits consumers to fetch it, pin an immutable,
+reviewed commit SHA rather than a moving branch or tag. For example:
+
+```toml
+[dependencies]
+redis-mcp = { git = "https://github.com/redis-developer/redis-database-mcp-rs", rev = "<reviewed-commit-sha>" }
+```
+
+For a feature subset, add `default-features = false` and the required feature
+list. A server can be built from the same reviewed revision with Cargo's Git
+source support. Internal repository access may require Git authentication in
+the consuming environment; a GitHub release alone does not make a private or
+internal repository fetchable by external CI.
+
+## Future crates.io installation (not yet available)
 
 Use the full library surface:
 
@@ -47,8 +64,9 @@ cargo install redis-mcp-server
 
 The server's dependency declares both a crates.io version and a workspace path.
 Cargo removes the workspace path from the published manifest, so local
-development uses the sibling crate while releases resolve the already-published
-`redis-mcp` version.
+development uses the sibling crate while a future registry release can resolve
+the published `redis-mcp` version. The examples in this section are plans, not
+currently working crates.io installation instructions.
 
 ## Compile-time and runtime composition
 
@@ -137,4 +155,5 @@ few commands that are standalone-only or require same-slot Cluster keys.
 5. verifies family composition, command-coverage ledgers, the competitive
    surface scorecard, and the checked-in catalog/guidance snapshots.
 
-See [releasing.md](releasing.md) for the publish order and operator checklist.
+See [releasing.md](releasing.md) for the current GitHub-only release path, the
+future registry publish order, and the operator checklist.

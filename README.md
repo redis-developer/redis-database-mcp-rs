@@ -21,6 +21,15 @@ human workflows without duplicating command definitions.
 
 ## Install and choose an entry point
 
+Until crates.io publication is approved, the release channel is GitHub source
+tags. Once repository visibility allows your environment to fetch it, use an
+immutable reviewed commit SHA for Cargo Git dependencies:
+
+    redis-mcp = { git = "https://github.com/redis-developer/redis-database-mcp-rs", rev = "<reviewed-commit-sha>" }
+
+The following registry examples describe the planned later crates.io release;
+they are not yet available:
+
 Embed the library:
 
     [dependencies]
@@ -42,9 +51,10 @@ The package-specific guides keep their published-crate examples focused:
 - [durable coordination approval](docs/coordination-approval.md) for the
   Redis-backed MRTR waiting, retry, recovery, and fallback contract.
 
-The two crates are versioned together initially. The server's published
-manifest resolves `redis-mcp` by version, while the workspace uses the sibling
-path for development.
+The two crates are versioned together initially. The server's eventual
+published manifest resolves `redis-mcp` by version, while the workspace uses
+the sibling path for development. See the [release process](docs/releasing.md)
+for the current GitHub-only flow and future registry handoff.
 
 ## Library-first family composition
 
@@ -319,8 +329,8 @@ the fetcher.
 
 See [the spike decision record](docs/spike.md) for the tested architecture,
 REPL findings, and redisctl migration sequence.
-The [release process](docs/releasing.md) defines package verification and
-publish order.
+The [release process](docs/releasing.md) defines GitHub-only releases, package
+verification, and the deferred registry publish order.
 
 ## Run the standalone server
 

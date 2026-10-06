@@ -21,13 +21,14 @@ target.
 redisctl adoption and a Redis-specific CLI/REPL remain follow-on work. They can
 consume the same library or MCP surface, but neither is implied by the initial
 release. Prebuilt binaries and container images are separate release artifacts.
-The interim release channel is GitHub source tags; crates.io installation is
-deferred.
+The interim consumption path is GitHub source at a reviewed commit SHA;
+package-specific tags and releases follow a separate reviewed release PR.
+Crates.io installation is deferred.
 
 ## Use a reviewed Git source revision (interim)
 
-After repository visibility permits consumers to fetch it, pin an immutable,
-reviewed commit SHA rather than a moving branch or tag. For example:
+The repository is public. Pin an immutable, reviewed commit SHA rather than a
+moving branch or tag. For example:
 
 ```toml
 [dependencies]
@@ -42,9 +43,8 @@ cargo install --git https://github.com/redis-developer/redis-database-mcp-rs \
   --rev <reviewed-commit-sha> --bin redis-mcp-server --locked
 ```
 
-Internal repository access may require Git authentication in the consuming
-environment; a GitHub release alone does not make a private or internal
-repository fetchable by external CI.
+The public repository needs no source-access credentials. A GitHub release
+does not make these packages available through crates.io.
 
 ## Future crates.io installation (not yet available)
 

@@ -43,7 +43,9 @@ that the next `main` push generates; merge it only after all checks pass.
 
 ## Prerequisites
 
-- use the Rust toolchain declared by `workspace.package.rust-version`;
+- use the Rust toolchain declared by `workspace.package.rust-version` for
+  package/CI verification; the release-plz jobs use current stable Rust because
+  their pinned `cargo-semver-checks` tool requires Rust 1.93 or newer;
 - start from a clean commit on the intended release branch;
 - verify the Redis, Redis Stack, and Cluster CI matrix is green;
 - reconcile any deliberate public schema changes in

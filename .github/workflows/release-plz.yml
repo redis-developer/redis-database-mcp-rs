@@ -24,7 +24,9 @@ jobs:
         with:
           fetch-depth: 0
           persist-credentials: false
-      - uses: dtolnay/rust-toolchain@1.90.0
+      # release-plz's cargo-semver-checks 0.50 needs Rust >= 1.93.
+      # The separate CI workflow continues to enforce the project's 1.90 MSRV.
+      - uses: dtolnay/rust-toolchain@stable
       - uses: release-plz/action@51e32d708d306b2c2e98540245b276439f3137c3 # v0.5.139
         with:
           command: release-pr
@@ -53,7 +55,7 @@ jobs:
           ref: ${{ github.event.workflow_run.head_sha }}
           fetch-depth: 0
           persist-credentials: false
-      - uses: dtolnay/rust-toolchain@1.90.0
+      - uses: dtolnay/rust-toolchain@stable
       - uses: release-plz/action@51e32d708d306b2c2e98540245b276439f3137c3 # v0.5.139
         with:
           command: release

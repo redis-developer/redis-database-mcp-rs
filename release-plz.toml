@@ -1,0 +1,17 @@
+[workspace]
+# Until crates.io publication is approved, tags are the version source and
+# cargo publish must never run. `publish = false` alone still queries a registry.
+git_only = true
+release_always = false
+pr_draft = true
+pr_branch_prefix = "release-plz-"
+git_tag_name = "{{ package }}-v{{ version }}"
+git_release_name = "{{ package }} v{{ version }}"
+
+[[package]]
+name = "redis-mcp"
+version_group = "redis-mcp"
+
+[[package]]
+name = "redis-mcp-server"
+version_group = "redis-mcp"

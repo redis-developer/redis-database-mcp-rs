@@ -9,11 +9,14 @@ Applications own transport, target selection, authenticated identity, and
 product policy. Use the companion `redis-mcp-server` package when a ready-made
 stdio or Streamable HTTP host is preferable.
 
-## Install
+## Use from GitHub (current channel)
+
+The repository is public, but `redis-mcp` has not been published to crates.io.
+Pin a reviewed commit SHA rather than a moving branch or tag:
 
 ```toml
 [dependencies]
-redis-mcp = "0.1"
+redis-mcp = { git = "https://github.com/redis-developer/redis-database-mcp-rs", rev = "<reviewed-commit-sha>" }
 ```
 
 The default feature set builds the complete library. A smaller host can select
@@ -21,8 +24,12 @@ only the command families it embeds:
 
 ```toml
 [dependencies]
-redis-mcp = { version = "0.1", default-features = false, features = ["keyspace", "strings", "hashes"] }
+redis-mcp = { git = "https://github.com/redis-developer/redis-database-mcp-rs", rev = "<reviewed-commit-sha>", default-features = false, features = ["keyspace", "strings", "hashes"] }
 ```
+
+The version-only `redis-mcp = "0.1"` form is for a future crates.io release,
+not the current GitHub-only channel. See the repository's
+[release process](https://github.com/redis-developer/redis-database-mcp-rs/blob/main/docs/releasing.md).
 
 ## Compose a router
 

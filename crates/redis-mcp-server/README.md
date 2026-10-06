@@ -5,11 +5,19 @@ assembles one fixed Redis target and serves the same typed surface over MCP
 stdio or Streamable HTTP. It is a server and one-shot process, not the planned
 first-party Redis CLI/REPL.
 
-## Install
+## Install from GitHub (current channel)
+
+The repository is public, but `redis-mcp-server` has not been published to
+crates.io. Install from an immutable, reviewed commit SHA:
 
 ```console
-cargo install redis-mcp-server
+cargo install --git https://github.com/redis-developer/redis-database-mcp-rs \
+  --rev <reviewed-commit-sha> --locked redis-mcp-server
 ```
+
+The shorter `cargo install redis-mcp-server` form is for a future crates.io
+release, not the current GitHub-only channel. See the repository's
+[release process](https://github.com/redis-developer/redis-database-mcp-rs/blob/main/docs/releasing.md).
 
 Run over stdio:
 
@@ -49,8 +57,9 @@ fetcher. Runtime defaults remain curated and read-only. Slim builds mirror the
 library feature names:
 
 ```console
-cargo install redis-mcp-server --no-default-features \
-  --features keyspace,strings,hashes,diagnostics
+cargo install --git https://github.com/redis-developer/redis-database-mcp-rs \
+  --rev <reviewed-commit-sha> --locked --no-default-features \
+  --features keyspace,strings,hashes,diagnostics redis-mcp-server
 ```
 
 Use repeated `--cluster-url` values or `REDIS_CLUSTER_URLS` for a Cluster

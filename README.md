@@ -21,6 +21,15 @@ human workflows without duplicating command definitions.
 
 ## Install and choose an entry point
 
+Until crates.io publication is approved, consume the public GitHub source at
+an immutable reviewed commit SHA. Package-specific GitHub tags and releases
+will follow a separate reviewed release PR:
+
+    redis-mcp = { git = "https://github.com/redis-developer/redis-database-mcp-rs", rev = "<reviewed-commit-sha>" }
+
+The following registry examples describe the planned later crates.io release;
+they are not yet available:
+
 Embed the library:
 
     [dependencies]
@@ -30,7 +39,7 @@ Install the standalone server:
 
     cargo install redis-mcp-server
 
-The package-specific guides keep their published-crate examples focused:
+The package-specific guides cover current Git-source usage and composition:
 
 - [`redis-mcp`](crates/redis-mcp/README.md) for library composition and Cargo
   features;
@@ -42,9 +51,10 @@ The package-specific guides keep their published-crate examples focused:
 - [durable coordination approval](docs/coordination-approval.md) for the
   Redis-backed MRTR waiting, retry, recovery, and fallback contract.
 
-The two crates are versioned together initially. The server's published
-manifest resolves `redis-mcp` by version, while the workspace uses the sibling
-path for development.
+The two crates are versioned together initially. The server's eventual
+published manifest resolves `redis-mcp` by version, while the workspace uses
+the sibling path for development. See the [release process](docs/releasing.md)
+for the current GitHub-only flow and future registry handoff.
 
 ## Library-first family composition
 
@@ -52,7 +62,7 @@ The default `redis-mcp` Cargo feature set compiles the full library surface so
 existing applications remain compatible. Smaller consumers can disable default
 features and enable only the Redis families they embed:
 
-    redis-mcp = { version = "0.1", default-features = false, features = ["strings", "hashes"] }
+    redis-mcp = { git = "https://github.com/redis-developer/redis-database-mcp-rs", rev = "<reviewed-commit-sha>", default-features = false, features = ["strings", "hashes"] }
 
 The additive family features are `keyspace`, `strings`, `hashes`, `lists`,
 `sets`, `sorted-sets`, `streams`, `bitmaps`, `arrays`, `hyperloglog`,
@@ -319,8 +329,8 @@ the fetcher.
 
 See [the spike decision record](docs/spike.md) for the tested architecture,
 REPL findings, and redisctl migration sequence.
-The [release process](docs/releasing.md) defines package verification and
-publish order.
+The [release process](docs/releasing.md) defines GitHub-only releases, package
+verification, and the deferred registry publish order.
 
 ## Run the standalone server
 

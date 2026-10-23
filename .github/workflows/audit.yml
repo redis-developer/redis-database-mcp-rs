@@ -1,0 +1,36 @@
+name: Audit
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  # New RustSec advisories land without any change here; the weekly run
+  # surfaces them on main between dependency updates.
+  schedule:
+    - cron: "17 6 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  cargo-deny:
+    name: cargo-deny (${{ matrix.checks }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        # Advisories run separately so a fresh advisory is reported on its
+        # own and does not hide license, ban, or source regressions.
+        checks: [advisories, bans licenses sources]
+    steps:
+      - uses: actions/checkout@v7
+      - uses: EmbarkStudios/cargo-deny-action@v2
+        with:
+          command: check ${{ matrix.checks }}
+          arguments: --all-features

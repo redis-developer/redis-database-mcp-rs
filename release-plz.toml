@@ -1,0 +1,23 @@
+[workspace]
+changelog_update = true
+git_release_enable = true
+git_tag_enable = true
+semver_check = true
+pr_labels = ["release"]
+# Tags carry the package name because the workspace has two crates.
+git_tag_name = "{{ package }}-v{{ version }}"
+# Publish on merge. On every push to main, `release` publishes any package
+# version that crates.io does not have yet, whether or not a release PR was
+# merged. A version edited by hand on main is published as soon as it lands,
+# so change versions only through the release PR. Set this to false to publish
+# only when a release-plz release PR merges.
+release_always = true
+
+# The server is not released yet: release-plz does not version, changelog,
+# tag, or publish it. Its version still moves with the library because both
+# crates inherit the workspace version. To release it, remove this table, put
+# both packages in one `version_group`, and add
+# crates/redis-mcp-server/CHANGELOG.md (see docs/releasing.md).
+[[package]]
+name = "redis-mcp-server"
+release = false

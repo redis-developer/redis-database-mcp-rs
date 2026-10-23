@@ -108,6 +108,7 @@ pub use transactions::{
     RedisTransactionCommandFailure, RedisTransactionEngine, RedisTransactionExecutor,
     RedisTransactionLimits, RedisTransactionOutcome, RedisTransactionRequest,
 };
+pub use transport::validate_redis_target_url;
 
 struct PubSubOwnerCleanup {
     manager: Arc<dyn PubSubSessionManager>,

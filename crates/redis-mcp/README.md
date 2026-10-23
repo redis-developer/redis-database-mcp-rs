@@ -46,6 +46,25 @@ The `custom_executor` example shows the seam for redisctl or another host that
 already owns its Redis connection lifecycle. The `native_argv` example shows
 the governed Redis-command interface for CLI/REPL frontends.
 
+For a host whose router must be built before Redis is reachable, validate the
+fixed target synchronously and connect lazily inside its `RedisExecutor`:
+
+```rust,ignore
+use redis_mcp::{RedisDeployment, validate_redis_target_url};
+
+let url = "redis://127.0.0.1:6379/0";
+validate_redis_target_url(url, RedisDeployment::Cluster)?;
+// Keep the chosen URL in host-owned configuration; the executor connects on
+// its first command, not while the MCP router is assembled.
+# Ok::<(), redis_mcp::RedisError>(())
+```
+
+Validation uses the direct adapters' parser without network access. A Cluster
+target must use database 0 and cannot be a Unix socket. TCP/TLS URLs put
+credentials in the URL authority and a database number in the path; query
+credentials/database values are rejected rather than silently ignored. Error
+messages and debug output never include the input URL or its secrets.
+
 ## Cargo features
 
 All features are additive. Compile-time inclusion and runtime exposure remain

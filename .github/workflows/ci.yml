@@ -8,9 +8,18 @@ on:
 permissions:
   contents: read
 
+# A new push to a PR supersedes its running checks; main keeps every run.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+env:
+  CARGO_TERM_COLOR: always
+
 jobs:
   rust:
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     services:
       redis:
         image: redis:8.8
@@ -29,8 +38,16 @@ jobs:
         with:
           components: rustfmt, clippy
       - uses: Swatinem/rust-cache@v2
+        with:
+          save-if: ${{ github.ref == 'refs/heads/main' }}
       - run: cargo fmt --all -- --check
       - run: cargo clippy --workspace --all-targets --all-features -- -D warnings
+      # docs.rs builds the library with all features; broken intra-doc links
+      # and other rustdoc warnings fail here instead of on the published page.
+      - name: Check rustdoc
+        run: cargo doc --workspace --all-features --no-deps
+        env:
+          RUSTDOCFLAGS: -D warnings
       - run: cargo test --workspace --all-features --no-fail-fast
       - name: Test minimal family composition
         run: >-
@@ -43,15 +60,40 @@ jobs:
 
   package:
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@1.90.0
       - uses: Swatinem/rust-cache@v2
+        with:
+          save-if: ${{ github.ref == 'refs/heads/main' }}
       - name: Verify packaged crates and clean-room consumers
         run: ./scripts/check_release.sh
 
+  # Library consumers build on current stable and resolve dependencies without
+  # this lockfile. Catch new compiler errors and semver-compatible dependency
+  # releases that break the build before a crates.io user does.
+  latest:
+    name: stable (latest dependencies)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      # rust-toolchain.toml pins the MSRV and would otherwise win.
+      RUSTUP_TOOLCHAIN: stable
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: latest
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+      - run: cargo update --verbose
+      - run: cargo check --workspace --all-targets --all-features
+      - run: cargo test --workspace --all-features --lib --bins
+
   command-ledger:
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v7
       - name: Start pinned Redis
@@ -78,6 +120,7 @@ jobs:
   redis-compatibility:
     name: Redis ${{ matrix.redis }}
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     strategy:
       fail-fast: false
       matrix:
@@ -99,12 +142,14 @@ jobs:
       - uses: dtolnay/rust-toolchain@1.90.0
       - uses: Swatinem/rust-cache@v2
         with:
+          save-if: ${{ github.ref == 'refs/heads/main' }}
           key: redis-${{ matrix.redis }}
       - run: cargo test -p redis-mcp --all-features --test live_redis
 
   redis-stack:
     name: Redis Stack 7.4.0-v8
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     services:
       redis-stack:
         image: redis/redis-stack-server:7.4.0-v8
@@ -122,12 +167,14 @@ jobs:
       - uses: dtolnay/rust-toolchain@1.90.0
       - uses: Swatinem/rust-cache@v2
         with:
+          save-if: ${{ github.ref == 'refs/heads/main' }}
           key: redis-stack-7.4.0-v8
       - run: cargo test -p redis-mcp --all-features --test live_redis_stack
 
   redis-cluster:
     name: Redis Cluster ${{ matrix.redis }}
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     strategy:
       fail-fast: false
       matrix:
@@ -139,6 +186,7 @@ jobs:
       - uses: dtolnay/rust-toolchain@1.90.0
       - uses: Swatinem/rust-cache@v2
         with:
+          save-if: ${{ github.ref == 'refs/heads/main' }}
           key: redis-cluster-${{ matrix.redis }}
       - name: Start Redis Cluster
         run: |
@@ -174,11 +222,13 @@ jobs:
 
   slim-build:
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@1.90.0
       - uses: Swatinem/rust-cache@v2
         with:
+          save-if: ${{ github.ref == 'refs/heads/main' }}
           key: slim-build
       - name: Library compiles per feature slice
         run: |

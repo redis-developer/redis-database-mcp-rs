@@ -34,3 +34,6 @@ jobs:
         with:
           command: check ${{ matrix.checks }}
           arguments: --all-features
+          # Match rust-toolchain.toml so the container doesn't try to resolve
+          # an uninstalled override toolchain.
+          rust-version: "1.90"
